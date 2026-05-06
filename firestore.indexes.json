@@ -1,0 +1,18 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "publicCatches",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerUid", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "feedPosts",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [{ "fieldPath": "ownerUid", "order": "ASCENDING" }]
+    }
+  ],
+  "fieldOverrides": []
+}

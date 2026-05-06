@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "966535631632",
+    "project_id": "ribolov-4ef41",
+    "storage_bucket": "ribolov-4ef41.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:966535631632:android:86006628e03fcc8cec8b95",
+        "android_client_info": {
+          "package_name": "com.ribolov.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAwJjwHtpFJCVSGaA22FcnTTkQnP_NiIe8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
