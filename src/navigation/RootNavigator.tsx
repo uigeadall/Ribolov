@@ -3,7 +3,9 @@ import { StyleSheet } from 'react-native';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { PlatformPressable } from '@react-navigation/elements';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../services/themeContext';
 import {
   LogbookStackParamList,
@@ -122,34 +124,63 @@ function ProfileNavigator() {
 
 function TabNavigator() {
   const { colors, mode } = useTheme();
+  const insets = useSafeAreaInsets();
+  /** По-малък ред за икона+етикет от стандартните ~49px; отделно се добавя само долният inset. */
+  const tabRowInner = 34;
+  const tabPadTop = 2;
+  /** По-малко от пълния insets.bottom (~34px) — по-близо до долния ръб без двойно приложен inset от навигатора */
+  const rawBottom = insets.bottom;
+  const bottomPad =
+    rawBottom <= 0 ? 6 : Math.max(7, Math.min(12, Math.round(rawBottom * 0.28 + 5)));
+
+  const tabBarStyle = useMemo(
+    () => ({
+      backgroundColor: colors.card,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
+      elevation: 12,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: -2 },
+      shadowOpacity: mode === 'dark' ? 0.28 : 0.06,
+      shadowRadius: 10,
+      paddingTop: tabPadTop,
+      paddingBottom: bottomPad,
+      height: tabPadTop + tabRowInner + bottomPad,
+    }),
+    [colors.border, colors.card, mode, bottomPad]
+  );
+
   return (
+    // bottom safe area за табовете контролираме само чрез tabBarStyle.paddingBottom — без втори пълен inset от навигатора
     <Tabs.Navigator
+      safeAreaInsets={{ bottom: 0 }}
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
-        tabBarStyle: {
-          backgroundColor: colors.card,
-          borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: colors.border,
-          paddingTop: 8,
-          paddingBottom: 10,
-          height: 64,
-          elevation: 12,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: mode === 'dark' ? 0.28 : 0.06,
-          shadowRadius: 10,
+        tabBarStyle,
+        tabBarButton: (props) => (
+          <PlatformPressable
+            {...props}
+            style={[props.style, { justifyContent: 'center', paddingVertical: 2 }]}
+          />
+        ),
+        tabBarLabelStyle: {
+          fontSize: 9,
+          fontWeight: '600',
+          letterSpacing: 0.2,
+          marginBottom: 0,
+          marginTop: 1,
         },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '700', letterSpacing: 0.35, marginBottom: 2 },
-        tabBarIcon: ({ color, size }) => {
+        tabBarIcon: ({ color }) => {
+          const iconSize = 19;
           let icon: keyof typeof Ionicons.glyphMap = 'home';
           if (route.name === 'HomeTab') icon = 'home-outline';
           if (route.name === 'LogbookTab') icon = 'book-outline';
           if (route.name === 'MapTab') icon = 'map-outline';
           if (route.name === 'SpeciesTab') icon = 'fish-outline';
           if (route.name === 'ProfileTab') icon = 'person-outline';
-          return <Ionicons name={icon} size={size} color={color} />;
+          return <Ionicons name={icon} size={iconSize} color={color} />;
         },
       })}
     >

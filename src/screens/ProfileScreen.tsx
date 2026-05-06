@@ -6,11 +6,11 @@ import {
   Pressable,
   ScrollView,
   Alert,
-  Switch,
   TextInput,
-  Share,
   ActivityIndicator,
   Platform,
+  Modal,
+  Keyboard,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
@@ -24,8 +24,6 @@ import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 import { shadowCard } from '../theme/shadows';
 import { useAuth } from '../services/authContext';
-import { catchesStore } from '../storage/storage';
-import { catchesToCsv } from '../services/exportCatchesCsv';
 import { updateProfile } from 'firebase/auth';
 import { formatFirebaseError } from '../services/firebaseErrors';
 import { ensureFirebase } from '../services/firebase';
@@ -49,6 +47,7 @@ export default function ProfileScreen() {
   const [profileLoading, setProfileLoading] = useState(false);
   const [remotePhotoUrl, setRemotePhotoUrl] = useState<string | undefined>();
   const [pickedAvatarUri, setPickedAvatarUri] = useState<string | undefined>();
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
 
   const loadRemoteProfile = useCallback(async () => {
     if (!configured) {
@@ -113,7 +112,10 @@ export default function ProfileScreen() {
           paddingVertical: spacing.sm + 2,
         },
         topBarTitle: { ...typography.bodyBold, fontSize: 17, color: colors.white },
-        topBarSignOut: { paddingVertical: spacing.xs, paddingLeft: spacing.sm },
+        topBarRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+        themeToggle: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+        themeIconHit: { paddingVertical: spacing.xs, paddingHorizontal: spacing.sm },
+        topBarSignOut: { paddingVertical: spacing.xs, paddingLeft: spacing.xs },
         topBarSignOutText: { ...typography.bodyBold, fontSize: 14, color: 'rgba(255,255,255,0.92)' },
         bodyPad: { paddingHorizontal: spacing.lg },
         identityRow: {
@@ -212,22 +214,6 @@ export default function ProfileScreen() {
         },
         panelTitle: { ...typography.bodyBold, fontSize: 15, color: colors.text },
         panelSub: { ...typography.caption, color: colors.textMuted, marginTop: 2, lineHeight: 18 },
-        rowBetween: {
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: spacing.sm,
-        },
-        appearanceIcon: {
-          width: 38,
-          height: 38,
-          borderRadius: radius.sm,
-          backgroundColor: colors.primarySurface,
-          alignItems: 'center',
-          justifyContent: 'center',
-        },
-        appearanceTexts: { flex: 1 },
-        appearanceTitle: { ...typography.bodyBold, fontSize: 15, color: colors.text },
-        appearanceHint: { ...typography.caption, color: colors.textMuted, marginTop: 1, fontSize: 12 },
         fieldLabel: {
           ...typography.small,
           fontWeight: '700',
@@ -249,13 +235,35 @@ export default function ProfileScreen() {
           fontSize: 15,
           color: colors.text,
         },
-        hint: { ...typography.caption, color: colors.textMuted, marginTop: spacing.xs, lineHeight: 18 },
-        dangerPanel: {
-          borderLeftWidth: 3,
-          borderLeftColor: colors.danger,
-          backgroundColor: mode === 'dark' ? 'rgba(255,138,138,0.08)' : 'rgba(214,69,69,0.06)',
+        modalBackdrop: {
+          flex: 1,
+          backgroundColor: 'rgba(0,0,0,0.48)',
+          justifyContent: 'center',
+          paddingHorizontal: spacing.lg,
         },
-        dangerTitle: { ...typography.bodyBold, fontSize: 15, color: colors.danger },
+        modalCard: {
+          backgroundColor: colors.card,
+          borderRadius: radius.lg,
+          padding: spacing.lg,
+          borderWidth: 1,
+          borderColor: colors.cardEdge,
+          zIndex: 2,
+          ...shadowCard(mode),
+        },
+        modalTitle: { ...typography.bodyBold, fontSize: 17, color: colors.danger },
+        modalHint: { ...typography.caption, color: colors.textMuted, marginTop: spacing.sm, lineHeight: 18 },
+        modalInput: {
+          backgroundColor: colors.surfaceAlt,
+          borderWidth: 1,
+          borderColor: colors.border,
+          borderRadius: radius.md,
+          paddingHorizontal: spacing.md,
+          paddingVertical: Platform.OS === 'ios' ? spacing.sm + 2 : spacing.sm,
+          fontSize: 15,
+          color: colors.text,
+          marginTop: spacing.md,
+        },
+        modalActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
         menuCardTitle: {
           ...typography.small,
           fontWeight: '700',
@@ -327,17 +335,13 @@ export default function ProfileScreen() {
     }
   };
 
-  const exportCsv = async () => {
-    const rows = await catchesStore.list();
-    const csv = catchesToCsv(rows);
-    try {
-      await Share.share({ message: csv, title: 'Дневник улови CSV' });
-    } catch {
-      Alert.alert('Споделяне', 'Неуспешно споделяне.');
-    }
+  const closeDeleteModal = () => {
+    Keyboard.dismiss();
+    setDeleteModalVisible(false);
+    setDelPassword('');
   };
 
-  const onDeleteAccount = () => {
+  const submitDeleteAccount = () => {
     if (!delPassword.trim()) {
       Alert.alert('Парола', 'Въведи текущата парола за потвърждение.');
       return;
@@ -350,7 +354,7 @@ export default function ProfileScreen() {
         onPress: async () => {
           try {
             await deleteAccount(delPassword);
-            setDelPassword('');
+            closeDeleteModal();
           } catch (e: unknown) {
             Alert.alert('Грешка', formatFirebaseError(e));
           }
@@ -381,13 +385,41 @@ export default function ProfileScreen() {
       >
         <View style={styles.topBar}>
           <Text style={styles.topBarTitle}>Профил</Text>
-          {user ? (
-            <Pressable style={styles.topBarSignOut} onPress={onSignOut} hitSlop={12}>
-              <Text style={styles.topBarSignOutText}>Изход</Text>
-            </Pressable>
-          ) : (
-            <View style={{ width: 44 }} />
-          )}
+          <View style={styles.topBarRight}>
+            <View style={styles.themeToggle}>
+              <Pressable
+                style={styles.themeIconHit}
+                onPress={() => mode === 'dark' && toggleMode()}
+                accessibilityRole="button"
+                accessibilityLabel="Светла тема"
+                hitSlop={8}
+              >
+                <Ionicons
+                  name="sunny-outline"
+                  size={22}
+                  color={mode === 'light' ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.45)'}
+                />
+              </Pressable>
+              <Pressable
+                style={styles.themeIconHit}
+                onPress={() => mode === 'light' && toggleMode()}
+                accessibilityRole="button"
+                accessibilityLabel="Тъмна тема"
+                hitSlop={8}
+              >
+                <Ionicons
+                  name="moon-outline"
+                  size={21}
+                  color={mode === 'dark' ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.45)'}
+                />
+              </Pressable>
+            </View>
+            {user ? (
+              <Pressable style={styles.topBarSignOut} onPress={onSignOut} hitSlop={12}>
+                <Text style={styles.topBarSignOutText}>Изход</Text>
+              </Pressable>
+            ) : null}
+          </View>
         </View>
 
         <View style={styles.bodyPad}>
@@ -457,24 +489,6 @@ export default function ProfileScreen() {
             </View>
           ) : null}
 
-          <View style={styles.panel}>
-            <View style={styles.rowBetween}>
-              <View style={styles.appearanceIcon}>
-                <Ionicons name={mode === 'dark' ? 'moon' : 'sunny-outline'} size={20} color={colors.primary} />
-              </View>
-              <View style={styles.appearanceTexts}>
-                <Text style={styles.appearanceTitle}>Тъмна тема</Text>
-                <Text style={styles.appearanceHint}>По-комфортно при здрач.</Text>
-              </View>
-              <Switch
-                value={mode === 'dark'}
-                onValueChange={() => toggleMode()}
-                trackColor={{ false: colors.border, true: colors.primaryLight }}
-                thumbColor={colors.white}
-              />
-            </View>
-          </View>
-
           {user && configured ? (
             <View style={styles.panel}>
               <Text style={styles.panelTitle}>Публични данни</Text>
@@ -512,31 +526,6 @@ export default function ProfileScreen() {
             </View>
           ) : null}
 
-          <View style={styles.panel}>
-            <Text style={styles.panelTitle}>Експорт от дневника</Text>
-            <Text style={styles.panelSub}>CSV за архив или таблица.</Text>
-            <View style={{ marginTop: spacing.xs }}>
-              <MenuRow icon="download-outline" title="Сподели CSV файл" onPress={exportCsv} />
-            </View>
-          </View>
-
-          {user ? (
-            <View style={[styles.panel, styles.dangerPanel]}>
-              <Text style={styles.dangerTitle}>Изтриване на акаунта</Text>
-              <Text style={styles.hint}>Необратимо изчиства облак и локални данни.</Text>
-              <TextInput
-                style={[styles.input, { marginTop: spacing.sm, backgroundColor: colors.card }]}
-                placeholder="Парола за потвърждение"
-                placeholderTextColor={colors.textMuted}
-                secureTextEntry
-                value={delPassword}
-                onChangeText={setDelPassword}
-                autoCapitalize="none"
-              />
-              <Button title="Изтрий завинаги" variant="danger" onPress={onDeleteAccount} style={{ marginTop: spacing.sm }} />
-            </View>
-          ) : null}
-
           <Text style={styles.menuCardTitle}>Още</Text>
           <Card style={styles.menuCardWrap}>
             <MenuRow dense icon="stats-chart-outline" title="Статистики" onPress={() => navigation.navigate('Stats')} showDivider />
@@ -551,10 +540,52 @@ export default function ProfileScreen() {
             <MenuRow dense icon="podium-outline" title="Класирания" onPress={() => navigation.navigate('Leaderboard')} showDivider />
             <MenuRow dense icon="chatbubbles-outline" title="Съобщения" onPress={() => navigation.navigate('Chats')} showDivider />
             <MenuRow dense icon="bulb-outline" title="Инсайти" onPress={() => navigation.navigate('Insights')} showDivider />
-            <MenuRow dense icon="document-text-outline" title="Правна информация" onPress={() => navigation.navigate('LegalInfo')} />
+            <MenuRow
+              dense
+              icon="document-text-outline"
+              title="Правна информация"
+              onPress={() => navigation.navigate('LegalInfo')}
+              showDivider={!!user}
+            />
+            {user ? (
+              <MenuRow
+                dense
+                destructive
+                icon="trash-outline"
+                title="Изтриване на акаунта"
+                onPress={() => setDeleteModalVisible(true)}
+              />
+            ) : null}
           </Card>
         </View>
       </ScrollView>
+
+      {user ? (
+        <Modal visible={deleteModalVisible} transparent animationType="fade" onRequestClose={closeDeleteModal}>
+          <View style={styles.modalBackdrop}>
+            <Pressable style={StyleSheet.absoluteFillObject} onPress={closeDeleteModal} accessibilityLabel="Затвори" />
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>Изтриване на акаунта</Text>
+              <Text style={styles.modalHint}>
+                Необратимо изчиства облака и локалните данни. Въведи паролата си:
+              </Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Парола"
+                placeholderTextColor={colors.textMuted}
+                secureTextEntry
+                value={delPassword}
+                onChangeText={setDelPassword}
+                autoCapitalize="none"
+              />
+              <View style={styles.modalActions}>
+                <Button title="Отказ" variant="ghost" onPress={closeDeleteModal} style={{ flex: 1 }} compact />
+                <Button title="Изтрий" variant="danger" compact onPress={submitDeleteAccount} style={{ flex: 1 }} />
+              </View>
+            </View>
+          </View>
+        </Modal>
+      ) : null}
     </Screen>
   );
 }

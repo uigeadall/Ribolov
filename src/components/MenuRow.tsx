@@ -13,9 +13,11 @@ type Props = {
   showDivider?: boolean;
   /** По-тесни редове (напр. дълги списъци в профила) */
   dense?: boolean;
+  /** Червено оформление (опасни действия) */
+  destructive?: boolean;
 };
 
-export function MenuRow({ icon, title, subtitle, onPress, showDivider, dense }: Props) {
+export function MenuRow({ icon, title, subtitle, onPress, showDivider, dense, destructive }: Props) {
   const { colors } = useTheme();
   const iconBox = dense ? 30 : 40;
   const iconRadius = dense ? 9 : 12;
@@ -39,7 +41,7 @@ export function MenuRow({ icon, title, subtitle, onPress, showDivider, dense }: 
           width: iconBox,
           height: iconBox,
           borderRadius: iconRadius,
-          backgroundColor: colors.primarySurface,
+          backgroundColor: destructive ? `${colors.danger}22` : colors.primarySurface,
           alignItems: 'center',
           justifyContent: 'center',
           marginRight: iconGap,
@@ -48,7 +50,7 @@ export function MenuRow({ icon, title, subtitle, onPress, showDivider, dense }: 
           ...(dense
             ? { fontSize: 14, fontWeight: '600' as const, letterSpacing: 0.06, lineHeight: 19 }
             : typography.bodyBold),
-          color: colors.text,
+          color: destructive ? colors.danger : colors.text,
           flex: 1,
         },
         sub: { ...typography.caption, color: colors.textMuted, marginTop: dense ? 1 : 2 },
@@ -58,8 +60,11 @@ export function MenuRow({ icon, title, subtitle, onPress, showDivider, dense }: 
           marginLeft: dividerInset,
         },
       }),
-    [colors, dense]
+    [colors, dense, destructive]
   );
+
+  const iconColor = destructive ? colors.danger : colors.primary;
+  const chevronColor = destructive ? colors.danger : colors.textMuted;
 
   return (
     <View>
@@ -67,20 +72,25 @@ export function MenuRow({ icon, title, subtitle, onPress, showDivider, dense }: 
         onPress={onPress}
         accessibilityRole="button"
         accessibilityLabel={title}
-        android_ripple={{ color: `${colors.primary}18`, borderless: false }}
+        android_ripple={{
+          color: destructive ? `${colors.danger}33` : `${colors.primary}18`,
+          borderless: false,
+        }}
         style={({ pressed }) => [
           styles.press,
-          pressed && Platform.OS === 'ios' ? { backgroundColor: colors.primarySurface } : null,
+          pressed && Platform.OS === 'ios'
+            ? { backgroundColor: destructive ? `${colors.danger}18` : colors.primarySurface }
+            : null,
         ]}
       >
         <View style={styles.iconBg}>
-          <Ionicons name={icon} size={iconGlyph} color={colors.primary} />
+          <Ionicons name={icon} size={iconGlyph} color={iconColor} />
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={styles.title}>{title}</Text>
           {subtitle ? <Text style={styles.sub}>{subtitle}</Text> : null}
         </View>
-        <Ionicons name="chevron-forward" size={chevronSz} color={colors.textMuted} />
+        <Ionicons name="chevron-forward" size={chevronSz} color={chevronColor} />
       </Pressable>
       {showDivider ? <View style={styles.divider} /> : null}
     </View>
