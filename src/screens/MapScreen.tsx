@@ -40,7 +40,6 @@ import { openDrivingDirections } from '../utils/openDrivingDirections';
 import { BiteForecast } from '../components/BiteForecast';
 import { getWaterReports, addWaterReport, CONDITION_LABELS, type WaterCondition, type WaterReport } from '../services/fishingReports';
 import { getDamLevel, type DamLevel } from '../services/damLevels';
-import { getGuidesForWater, type GuideProfile } from '../services/guides';
 
 type SelectedWater = { kind: 'dam'; item: Dam } | { kind: 'river'; item: River };
 
@@ -105,7 +104,6 @@ export default function MapScreen() {
   const [reportNote, setReportNote] = useState('');
   const [reportSaving, setReportSaving] = useState(false);
   const [damLevel, setDamLevel] = useState<DamLevel | null>(null);
-  const [waterGuides, setWaterGuides] = useState<GuideProfile[]>([]);
 
   useEffect(() => {
     const t = setTimeout(() => setHintVisible(false), 5000);
@@ -241,7 +239,6 @@ export default function MapScreen() {
     } else {
       setDamLevel(null);
     }
-    getGuidesForWater(selectedWater.item.id).then(setWaterGuides).catch(() => {});
   }, [selectedWater]);
 
   useEffect(() => {
@@ -852,22 +849,6 @@ export default function MapScreen() {
                       <View style={{ height: 8, width: `${damLevel.fillPercent}%` as unknown as number, backgroundColor: colors.primary, borderRadius: 4 }} />
                     </View>
                   </View>
-                </>
-              ) : null}
-
-              {waterGuides.length > 0 ? (
-                <>
-                  <Text style={styles.speciesTitle}>Верифицирани водачи</Text>
-                  {waterGuides.map((g) => (
-                    <Pressable key={g.uid} onPress={() => navigation.navigate('UserPublicProfile', { uid: g.uid, displayName: g.displayName, photoUrlHint: g.photoUrl })} style={{ backgroundColor: colors.card, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-                      <Ionicons name="shield-checkmark" size={20} color={colors.primary} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ ...typography.bodyBold, color: colors.text }}>{g.displayName}</Text>
-                        <Text style={{ ...typography.small, color: colors.textMuted }}>{g.specialty}{g.priceRange ? ` · ${g.priceRange}` : ''}</Text>
-                      </View>
-                      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-                    </Pressable>
-                  ))}
                 </>
               ) : null}
 

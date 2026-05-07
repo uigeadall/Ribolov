@@ -28,10 +28,6 @@ export type ProfileStackParamList = {
   Groups: undefined;
   GroupDetail: { groupId: string; groupName: string };
   CreateGroup: undefined;
-  Marketplace: undefined;
-  PostListing: undefined;
-  ListingDetail: { listingId: string };
-  GuideRequest: undefined;
   Notifications: undefined;
   Stats: undefined;
   Auth: undefined;
@@ -62,11 +58,6 @@ export type FeedStackParamList = {
   Explore: undefined;
 };
 
-export type MarketplaceStackParamList = {
-  MarketplaceList: undefined;
-  PostListing: undefined;
-  ListingDetail: { listingId: string };
-};
 
 export type TabsParamList = {
   HomeTab: undefined;

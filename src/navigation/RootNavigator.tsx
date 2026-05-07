@@ -55,10 +55,6 @@ import GroupsScreen from '../screens/GroupsScreen';
 import GroupDetailScreen from '../screens/GroupDetailScreen';
 import CreateGroupScreen from '../screens/CreateGroupScreen';
 import ExploreScreen from '../screens/ExploreScreen';
-import MarketplaceScreen from '../screens/MarketplaceScreen';
-import PostListingScreen from '../screens/PostListingScreen';
-import ListingDetailScreen from '../screens/ListingDetailScreen';
-import GuideRequestScreen from '../screens/GuideRequestScreen';
 
 const wrap = (label: string, Component: React.ComponentType<any>) => (props: any) =>
   (
@@ -149,10 +145,6 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="Groups" component={GroupsScreen} />
       <ProfileStack.Screen name="GroupDetail" component={GroupDetailScreen} />
       <ProfileStack.Screen name="CreateGroup" component={CreateGroupScreen} />
-      <ProfileStack.Screen name="Marketplace" component={MarketplaceScreen} />
-      <ProfileStack.Screen name="PostListing" component={PostListingScreen} />
-      <ProfileStack.Screen name="ListingDetail" component={ListingDetailScreen} />
-      <ProfileStack.Screen name="GuideRequest" component={GuideRequestScreen} />
     </ProfileStack.Navigator>
   );
 }

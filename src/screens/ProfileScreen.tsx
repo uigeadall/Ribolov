@@ -537,8 +537,6 @@ export default function ProfileScreen() {
             <MenuRow dense icon="notifications-outline" title="Известия" onPress={() => navigation.navigate('Notifications')} showDivider />
             <MenuRow dense icon="people-outline" title="Приятели" onPress={() => navigation.navigate('Friends')} showDivider />
             <MenuRow dense icon="trophy-outline" title="Постижения" onPress={() => navigation.navigate('Achievements')} showDivider />
-            <MenuRow dense icon="bag-outline" title="Марзет" onPress={() => navigation.navigate('Marketplace')} showDivider />
-            <MenuRow dense icon="shield-checkmark-outline" title="Стани верифициран водач" onPress={() => navigation.navigate('GuideRequest')} showDivider />
             <MenuRow dense icon="calendar-outline" title="Излети" onPress={() => navigation.navigate('Trips')} showDivider />
             <MenuRow dense icon="ribbon-outline" title="Турнири" onPress={() => navigation.navigate('Tournaments')} showDivider />
             <MenuRow dense icon="podium-outline" title="Класирания" onPress={() => navigation.navigate('Leaderboard')} showDivider />
