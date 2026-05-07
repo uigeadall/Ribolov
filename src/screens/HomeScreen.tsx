@@ -5,11 +5,13 @@ import {
   StyleSheet,
   ActivityIndicator,
   RefreshControl,
+  Pressable,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
+import { useAuth } from '../services/authContext';
 import { Card } from '../components/Card';
 import { WeatherIcon } from '../components/WeatherIcon';
 import { StarRatingBar } from '../components/StarRatingBar';
@@ -21,6 +23,7 @@ import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
 import { fetchWeather, windDirectionLabel, type WeatherSnapshot } from '../services/weather';
 import { catchesStore } from '../storage/storage';
+import type { Catch } from '../types/index';
 
 const FALLBACK_COORD = { latitude: 42.6977, longitude: 23.3219 };
 
@@ -64,33 +67,64 @@ function createHomeStyles(colors: AppColors) {
       flex: 1,
       backgroundColor: colors.primarySurface,
       borderRadius: radius.md,
-      paddingVertical: spacing.md + 2,
+      paddingVertical: spacing.md + 4,
       paddingHorizontal: spacing.md,
       borderWidth: 1,
       borderColor: colors.border,
       alignItems: 'center',
     },
-    statNum: { ...typography.h2, fontSize: 26, color: colors.primary },
-    statLbl: { ...typography.caption, color: colors.textMuted, marginTop: 6, textAlign: 'center' },
-    heroTitle: { ...typography.h1, color: colors.primaryDark },
-    heroDate: { ...typography.caption, color: colors.textMuted, marginTop: spacing.sm, textTransform: 'capitalize' },
-    heroLead: { ...typography.body, color: colors.text, marginTop: spacing.md, lineHeight: 24 },
+    statNum: { ...typography.h2, fontSize: 26, color: colors.primary, letterSpacing: -0.5 },
+    statLbl: { ...typography.caption, color: colors.textMuted, marginTop: 4, textAlign: 'center' },
+    heroRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.md },
+    heroIconWrap: {
+      width: 52,
+      height: 52,
+      borderRadius: 26,
+      backgroundColor: colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    heroTitle: { ...typography.h2, color: colors.text, letterSpacing: -0.3 },
+    heroDate: { ...typography.caption, color: colors.textMuted, marginTop: 2, textTransform: 'capitalize' },
     heroFoot: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.sm,
-      marginTop: spacing.md,
-      paddingTop: spacing.md,
+      marginTop: spacing.sm,
+      paddingTop: spacing.sm,
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: colors.border,
     },
     heroFootText: { ...typography.caption, color: colors.textMuted, flex: 1, lineHeight: 18 },
+    lastCatchRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+      marginBottom: spacing.sm,
+    },
+    lastCatchText: { ...typography.caption, color: colors.textMuted, flex: 1 },
+    feedCard: {
+      marginBottom: spacing.xl,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+    },
+    feedIconWrap: {
+      width: 44,
+      height: 44,
+      borderRadius: radius.md,
+      backgroundColor: colors.primarySurface,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
   });
 }
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
   const { colors } = useTheme();
+  const { user } = useAuth();
+  const firstName = user?.displayName?.trim().split(/\s+/)[0] || 'рибарю';
   const styles = useMemo(() => createHomeStyles(colors), [colors]);
 
   const [weather, setWeather] = useState<WeatherSnapshot | null>(null);
@@ -98,6 +132,7 @@ export default function HomeScreen() {
   const [locLabel, setLocLabel] = useState<string>('София (примерно)');
   const [totalCatches, setTotalCatches] = useState(0);
   const [weekCatches, setWeekCatches] = useState(0);
+  const [lastCatch, setLastCatch] = useState<Catch | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadStats = useCallback(async () => {
@@ -109,6 +144,8 @@ export default function HomeScreen() {
       return !Number.isNaN(t) && t >= weekAgo;
     }).length;
     setWeekCatches(n);
+    const sorted = [...list].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+    setLastCatch(sorted[0] ?? null);
   }, []);
 
   const loadWeather = useCallback(async () => {
@@ -175,20 +212,51 @@ export default function HomeScreen() {
     >
       <Card
         style={{
-          marginBottom: spacing.xl,
+          marginBottom: spacing.md,
           backgroundColor: colors.primarySurface,
           borderColor: colors.cardEdge,
         }}
       >
-        <Text style={styles.heroTitle}>{greetingBg()}</Text>
-        <Text style={styles.heroDate}>{dateStr}</Text>
-        <Text style={styles.heroLead}>
-          Оттук виждаш времето, обобщение от дневника и най-полезните екрани — всичко е на едно място.
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+          <View style={styles.heroRow}>
+            <View style={styles.heroIconWrap}>
+              <Ionicons name="fish" size={26} color={colors.white} />
+            </View>
+            <View>
+              <Text style={styles.heroTitle}>{greetingBg()}, {firstName}!</Text>
+              <Text style={styles.heroDate}>{dateStr}</Text>
+            </View>
+          </View>
+          <Pressable
+            onPress={() => navigation.navigate('ProfileTab', { screen: 'Notifications' })}
+            hitSlop={10}
+            style={{ marginTop: 2 }}
+          >
+            <Ionicons name="notifications-outline" size={24} color={colors.primary} />
+          </Pressable>
+        </View>
+
+        {lastCatch ? (
+          <View style={styles.lastCatchRow}>
+            <Ionicons name="time-outline" size={13} color={colors.textMuted} />
+            <Text style={styles.lastCatchText} numberOfLines={1}>
+              Последен: {lastCatch.speciesName}
+              {lastCatch.weightKg != null ? ` · ${lastCatch.weightKg} кг` : ''}
+              {' · '}{new Date(lastCatch.date).toLocaleDateString('bg-BG')}
+            </Text>
+          </View>
+        ) : null}
+
+        <Button
+          title="Запиши улов"
+          onPress={() => navigation.navigate('LogbookTab', { screen: 'AddCatch' })}
+          style={{ marginTop: spacing.sm }}
+        />
+
         <View style={styles.heroFoot}>
-          <Ionicons name="information-circle-outline" size={18} color={colors.primary} />
+          <Ionicons name="information-circle-outline" size={15} color={colors.primary} />
           <Text style={styles.heroFootText}>
-            Дълго натискане на картата добавя спот. В профила са лентата и класиките със снимки.
+            Дълго натискане на картата добавя спот · Лентата е в Профил
           </Text>
         </View>
       </Card>
@@ -266,10 +334,12 @@ export default function HomeScreen() {
       <Card style={{ marginBottom: spacing.xl }}>
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
+            <Ionicons name="archive-outline" size={20} color={colors.primary} style={{ marginBottom: 6 }} />
             <Text style={styles.statNum}>{totalCatches}</Text>
             <Text style={styles.statLbl}>общо записа</Text>
           </View>
           <View style={styles.statBox}>
+            <Ionicons name="time-outline" size={20} color={colors.primary} style={{ marginBottom: 6 }} />
             <Text style={styles.statNum}>{weekCatches}</Text>
             <Text style={styles.statLbl}>последни 7 дни</Text>
           </View>
@@ -283,7 +353,7 @@ export default function HomeScreen() {
         />
       </Card>
 
-      <SectionHeader hint="НАВИГАЦИЯ" title="Къде да отидеш" subtitle="Един докос за най-често ползваните екрани." />
+      <SectionHeader hint="НАВИГАЦИЯ" title="Бързи връзки" subtitle="Един докос за най-използваните функции." />
 
       <ListRow
         icon="book-outline"
@@ -300,7 +370,7 @@ export default function HomeScreen() {
       />
       <ListRow
         icon="podium-outline"
-        iconTint="#7C4DFF"
+        iconTint={colors.accent}
         title="Класирания"
         subtitle="Резултати от общността и по водоем"
         onPress={() => navigation.navigate('ProfileTab', { screen: 'Leaderboard' })}
@@ -310,18 +380,21 @@ export default function HomeScreen() {
         iconTint={colors.accent}
         title="Видове риби"
         subtitle="Описания, сезони и съвети"
-        onPress={() => navigation.navigate('SpeciesTab')}
+        onPress={() => navigation.navigate('ProfileTab', { screen: 'Species', params: { screen: 'SpeciesList' } })}
       />
       <ListRow
-        icon="people-outline"
-        iconTint="#C97D12"
-        title="Лента и профил"
-        subtitle="Споделени улови, приятели, настройки"
-        onPress={() =>
-          navigation.navigate('ProfileTab', {
-            screen: 'Feed',
-          })
-        }
+        icon="newspaper-outline"
+        iconTint={colors.warning}
+        title="Лента"
+        subtitle="Споделени улови от общността"
+        onPress={() => navigation.navigate('FeedTab')}
+      />
+      <ListRow
+        icon="person-outline"
+        iconTint={colors.textMuted}
+        title="Профил и настройки"
+        subtitle="Акаунт, приятели, постижения и още"
+        onPress={() => navigation.navigate('ProfileTab', { screen: 'ProfileMain' })}
       />
 
       <View style={{ height: spacing.md }} />

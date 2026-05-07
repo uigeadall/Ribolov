@@ -23,6 +23,7 @@ export type SpeciesStackParamList = {
 
 export type ProfileStackParamList = {
   ProfileMain: undefined;
+  Species: NavigatorScreenParams<SpeciesStackParamList>;
   Notifications: undefined;
   Stats: undefined;
   Auth: undefined;
@@ -43,11 +44,20 @@ export type ProfileStackParamList = {
   LegalInfo: undefined;
 };
 
+export type FeedStackParamList = {
+  FeedList: undefined;
+  Classics: undefined;
+  SavedPosts: undefined;
+  Notifications: undefined;
+  Auth: undefined;
+  Friends: undefined;
+};
+
 export type TabsParamList = {
   HomeTab: undefined;
   LogbookTab: NavigatorScreenParams<LogbookStackParamList>;
   MapTab: { focusDamId?: string; focusRiverId?: string } | undefined;
-  SpeciesTab: NavigatorScreenParams<SpeciesStackParamList>;
+  FeedTab: NavigatorScreenParams<FeedStackParamList>;
   ProfileTab: NavigatorScreenParams<ProfileStackParamList>;
 };
 

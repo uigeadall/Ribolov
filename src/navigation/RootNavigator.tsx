@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../services/themeContext';
 import {
+  FeedStackParamList,
   LogbookStackParamList,
   ProfileStackParamList,
   RootStackParamList,
@@ -68,6 +69,7 @@ const SavedPostsWrapped = wrap('Запазени', SavedPostsScreen);
 
 const Tabs = createBottomTabNavigator<TabsParamList>();
 const LogbookStack = createNativeStackNavigator<LogbookStackParamList>();
+const FeedStack = createNativeStackNavigator<FeedStackParamList>();
 const SpeciesStack = createNativeStackNavigator<SpeciesStackParamList>();
 const ProfileStack = createNativeStackNavigator<ProfileStackParamList>();
 const RootStack = createNativeStackNavigator<RootStackParamList>();
@@ -96,6 +98,19 @@ function SpeciesNavigator() {
   );
 }
 
+function FeedNavigator() {
+  return (
+    <FeedStack.Navigator screenOptions={{ headerShown: false }}>
+      <FeedStack.Screen name="FeedList" component={FeedScreenWrapped} />
+      <FeedStack.Screen name="Classics" component={ClassicsScreenWrapped} />
+      <FeedStack.Screen name="SavedPosts" component={SavedPostsWrapped} />
+      <FeedStack.Screen name="Notifications" component={NotificationsWrapped} />
+      <FeedStack.Screen name="Auth" component={AuthScreenWrapped} />
+      <FeedStack.Screen name="Friends" component={FriendsScreenWrapped} />
+    </FeedStack.Navigator>
+  );
+}
+
 function ProfileNavigator() {
   return (
     <ProfileStack.Navigator screenOptions={{ headerShown: false }}>
@@ -118,6 +133,7 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="Chats" component={ChatsScreen} />
       <ProfileStack.Screen name="ChatDetail" component={ChatDetailScreen} />
       <ProfileStack.Screen name="LegalInfo" component={LegalInfoScreen} />
+      <ProfileStack.Screen name="Species" component={SpeciesNavigator} />
     </ProfileStack.Navigator>
   );
 }
@@ -172,14 +188,14 @@ function TabNavigator() {
           marginBottom: 0,
           marginTop: 1,
         },
-        tabBarIcon: ({ color }) => {
-          const iconSize = 19;
+        tabBarIcon: ({ color, focused }) => {
+          const iconSize = 22;
           let icon: keyof typeof Ionicons.glyphMap = 'home';
-          if (route.name === 'HomeTab') icon = 'home-outline';
-          if (route.name === 'LogbookTab') icon = 'book-outline';
-          if (route.name === 'MapTab') icon = 'map-outline';
-          if (route.name === 'SpeciesTab') icon = 'fish-outline';
-          if (route.name === 'ProfileTab') icon = 'person-outline';
+          if (route.name === 'HomeTab') icon = focused ? 'home' : 'home-outline';
+          if (route.name === 'LogbookTab') icon = focused ? 'book' : 'book-outline';
+          if (route.name === 'MapTab') icon = focused ? 'map' : 'map-outline';
+          if (route.name === 'FeedTab') icon = focused ? 'newspaper' : 'newspaper-outline';
+          if (route.name === 'ProfileTab') icon = focused ? 'person' : 'person-outline';
           return <Ionicons name={icon} size={iconSize} color={color} />;
         },
       })}
@@ -187,7 +203,7 @@ function TabNavigator() {
       <Tabs.Screen name="HomeTab" component={HomeScreen} options={{ title: 'Начало' }} />
       <Tabs.Screen name="LogbookTab" component={LogbookNavigator} options={{ title: 'Дневник' }} />
       <Tabs.Screen name="MapTab" component={MapScreenWrapped} options={{ title: 'Карта' }} />
-      <Tabs.Screen name="SpeciesTab" component={SpeciesNavigator} options={{ title: 'Видове' }} />
+      <Tabs.Screen name="FeedTab" component={FeedNavigator} options={{ title: 'Лента' }} />
       <Tabs.Screen name="ProfileTab" component={ProfileNavigator} options={{ title: 'Профил' }} />
     </Tabs.Navigator>
   );

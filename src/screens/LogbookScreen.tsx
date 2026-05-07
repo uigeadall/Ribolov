@@ -12,6 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useAuth } from '../services/authContext';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -206,12 +207,12 @@ function createLogbookStyles(colors: AppColors, mode: 'light' | 'dark') {
     itemMeta: { ...typography.caption, color: colors.textMuted, marginTop: 4, lineHeight: 18 },
     rowTrail: { alignItems: 'flex-end', justifyContent: 'center', gap: spacing.sm, marginLeft: spacing.sm },
     badge: {
-      backgroundColor: colors.primarySurface,
+      backgroundColor: colors.accent + '18',
       paddingHorizontal: 10,
       paddingVertical: 4,
       borderRadius: radius.pill,
       borderWidth: 1,
-      borderColor: colors.accent + '55',
+      borderColor: colors.accent + '66',
     },
     badgeText: { color: colors.accent, ...typography.small, fontWeight: '700' },
     listFooterPad: { height: spacing.md },
@@ -248,6 +249,7 @@ function SpeciesChip({ label, selected, onPress, colors, styles }: SpeciesChipPr
 export default function LogbookScreen() {
   const navigation = useNavigation<Nav>();
   const { colors, mode } = useTheme();
+  const { user } = useAuth();
   const styles = useMemo(() => createLogbookStyles(colors, mode), [colors, mode]);
   const [items, setItems] = useState<Catch[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -353,7 +355,10 @@ export default function LogbookScreen() {
                 <Text style={styles.badgeText}>Пуснат</Text>
               </View>
             ) : null}
-            <Ionicons name="chevron-forward" size={22} color={colors.textMuted} />
+            {user && !item.syncedToCloud ? (
+              <Ionicons name="cloud-upload-outline" size={16} color={colors.textMuted} />
+            ) : null}
+            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
           </View>
         </View>
       </Card>

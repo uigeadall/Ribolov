@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Switch,
   Alert,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { LogbookStackParamList } from '../navigation/types';
@@ -33,6 +34,7 @@ import { enqueueCatchSync } from '../services/catchSyncQueue';
 import { checkBanPeriod } from '../services/notifications';
 import { checkForNewUnlocks } from '../services/achievements';
 import { AchievementUnlockModal } from '../components/AchievementUnlockModal';
+import { SpeciesPicker } from '../components/SpeciesPicker';
 import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
 import { isRemoteImageUri } from '../utils/formatCatchDate';
 
@@ -88,15 +90,15 @@ function createAddCatchStyles(colors: AppColors) {
       flexDirection: 'row',
       alignItems: 'flex-start',
       gap: spacing.sm,
-      backgroundColor: '#FFE8E8',
+      backgroundColor: colors.danger + '15',
       borderRadius: radius.md,
       padding: spacing.md,
       marginTop: spacing.md,
       borderWidth: 1,
-      borderColor: '#F4B7B7',
+      borderColor: colors.danger + '44',
     },
-    banTitle: { ...typography.bodyBold, color: '#9C2222' },
-    banText: { ...typography.caption, color: '#9C2222', marginTop: 2 },
+    banTitle: { ...typography.bodyBold, color: colors.danger },
+    banText: { ...typography.caption, color: colors.danger, marginTop: 2 },
   });
 }
 
@@ -127,9 +129,32 @@ export default function AddCatchScreen() {
   /** За публични постове с локален файл — само камерата е позволена */
   const [cameraVerifiedPhoto, setCameraVerifiedPhoto] = useState(false);
   const [initialCatch, setInitialCatch] = useState<Catch | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const formDirtyRef = useRef(false);
 
   const selectedSpecies = useMemo(() => speciesList.find((s) => s.id === speciesId)!, [speciesId]);
   const banInfo = useMemo(() => checkBanPeriod(selectedSpecies?.banPeriod), [selectedSpecies]);
+
+  useEffect(() => {
+    if (weight || length || bait || notes || photoUri) formDirtyRef.current = true;
+  }, [weight, length, bait, notes, photoUri]);
+
+  useEffect(() => {
+    if (editCatchId || saving) return;
+    const unsub = navigation.addListener('beforeRemove', (e) => {
+      if (!formDirtyRef.current) return;
+      e.preventDefault();
+      Alert.alert(
+        'Несъхранени данни',
+        'Уловът не е записан. Сигурен ли си, че искаш да излезеш?',
+        [
+          { text: 'Остани', style: 'cancel' },
+          { text: 'Излез', style: 'destructive', onPress: () => navigation.dispatch(e.data.action) },
+        ]
+      );
+    });
+    return unsub;
+  }, [navigation, editCatchId, saving]);
 
   useEffect(() => {
     if (!editCatchId) return;
@@ -203,11 +228,20 @@ export default function AddCatchScreen() {
   };
 
   const takePhoto = async () => {
-    const perm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert('Нужно е разрешение', 'Разреши достъп до камерата, за да направиш снимка.');
+    const current = await ImagePicker.getCameraPermissionsAsync();
+    if (current.status === 'denied' && !current.canAskAgain) {
+      Alert.alert(
+        'Достъп до камерата',
+        'Ribolov няма достъп до камерата. Отвори настройките на телефона и разреши достъп.',
+        [
+          { text: 'Отказ', style: 'cancel' },
+          { text: 'Отвори настройките', onPress: () => Linking.openSettings() },
+        ]
+      );
       return;
     }
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) return;
     const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
     if (!result.canceled && result.assets[0]) {
       setPhotoUri(result.assets[0].uri);
@@ -434,19 +468,24 @@ export default function AddCatchScreen() {
         ) : null}
 
         <Text style={styles.label}>Вид риба</Text>
-        <View style={styles.chips}>
-          {speciesList.map((s) => (
-            <Pressable
-              key={s.id}
-              onPress={() => setSpeciesId(s.id)}
-              style={[styles.chip, speciesId === s.id && styles.chipActive]}
-            >
-              <Text style={[styles.chipText, speciesId === s.id && styles.chipTextActive]}>
-                {s.nameBg}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
+        <Pressable
+          onPress={() => setPickerOpen(true)}
+          style={[styles.input, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
+        >
+          <View>
+            <Text style={{ ...typography.bodyBold, color: colors.text }}>{selectedSpecies.nameBg}</Text>
+            <Text style={{ ...typography.small, color: colors.textMuted, fontStyle: 'italic' }}>
+              {selectedSpecies.nameLatin}
+            </Text>
+          </View>
+          <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
+        </Pressable>
+        <SpeciesPicker
+          visible={pickerOpen}
+          selectedId={speciesId}
+          onSelect={setSpeciesId}
+          onClose={() => setPickerOpen(false)}
+        />
 
         {banInfo.active ? (
           <View style={styles.banCard}>
@@ -469,6 +508,7 @@ export default function AddCatchScreen() {
               onChangeText={setWeight}
               placeholder="напр. 2.5"
               keyboardType="decimal-pad"
+              returnKeyType="next"
               style={styles.input}
               placeholderTextColor={colors.textMuted}
             />
@@ -491,6 +531,7 @@ export default function AddCatchScreen() {
           value={bait}
           onChangeText={setBait}
           placeholder="напр. царевица, червей, воблер..."
+          returnKeyType="next"
           style={styles.input}
           placeholderTextColor={colors.textMuted}
         />

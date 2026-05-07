@@ -1,11 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TextInput, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { useTheme } from '../services/themeContext';
-import { spacing, typography } from '../theme/typography';
+import { radius, spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
 import { formatFirebaseError } from '../services/firebaseErrors';
 import { GoogleSignInSection } from '../components/GoogleSignInButton';
@@ -24,30 +25,44 @@ export default function AuthScreen() {
   const styles = useMemo(
     () =>
       StyleSheet.create({
-        title: { ...typography.h2, color: colors.text, marginBottom: spacing.sm },
+        brandWrap: { alignItems: 'center', paddingTop: spacing.xl, paddingBottom: spacing.xl },
+        brandIconWrap: {
+          width: 80,
+          height: 80,
+          borderRadius: 40,
+          backgroundColor: colors.primary,
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginBottom: spacing.md,
+        },
+        brandTitle: { ...typography.h2, color: colors.text, textAlign: 'center' },
+        brandSub: {
+          ...typography.body,
+          color: colors.textMuted,
+          textAlign: 'center',
+          marginTop: spacing.xs,
+          lineHeight: 22,
+        },
         input: {
           borderWidth: 1,
           borderColor: colors.border,
-          borderRadius: 12,
+          borderRadius: radius.md,
           paddingHorizontal: spacing.md,
-          paddingVertical: spacing.sm,
+          paddingVertical: Platform.OS === 'ios' ? spacing.sm + 2 : spacing.sm,
           fontSize: 16,
           color: colors.text,
+          backgroundColor: colors.surfaceAlt,
           marginBottom: spacing.sm,
-          backgroundColor: colors.card,
         },
-        hint: { ...typography.caption, color: colors.textMuted, marginBottom: spacing.md },
+        fieldLabel: {
+          ...typography.small,
+          fontWeight: '700',
+          color: colors.textMuted,
+          letterSpacing: 0.4,
+          marginBottom: spacing.xs,
+          marginTop: spacing.sm,
+        },
         row: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg },
-        tab: {
-          flex: 1,
-          paddingVertical: spacing.sm,
-          borderRadius: 999,
-          borderWidth: 1,
-          borderColor: colors.border,
-          alignItems: 'center',
-        },
-        tabOn: { backgroundColor: colors.primary, borderColor: colors.primary },
-        tabText: { ...typography.bodyBold, color: colors.textMuted },
         divider: {
           flexDirection: 'row',
           alignItems: 'center',
@@ -56,7 +71,6 @@ export default function AuthScreen() {
         },
         dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
         dividerText: { ...typography.caption, color: colors.textMuted },
-        tabTextOn: { color: colors.white },
       }),
     [colors]
   );
@@ -89,10 +103,13 @@ export default function AuthScreen() {
   return (
     <Screen scroll avoidKeyboard>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <Text style={styles.title}>{mode === 'login' ? 'Вход' : 'Регистрация'}</Text>
-        <Text style={styles.hint}>
-          Firebase Auth: имейл и парола, Google (OAuth client IDs) или Apple на iOS (Sign In with Apple + Firebase).
-        </Text>
+        <View style={styles.brandWrap}>
+          <View style={styles.brandIconWrap}>
+            <Ionicons name="fish" size={36} color={colors.white} />
+          </View>
+          <Text style={styles.brandTitle}>Риболов</Text>
+          <Text style={styles.brandSub}>Следи уловите, разгледай общността</Text>
+        </View>
 
         <View style={styles.row}>
           <Button
@@ -111,16 +128,20 @@ export default function AuthScreen() {
 
         <Card>
           {mode === 'register' ? (
-            <TextInput
-              placeholder="Показвано име"
-              placeholderTextColor={colors.textMuted}
-              value={name}
-              onChangeText={setName}
-              style={styles.input}
-            />
+            <>
+              <Text style={styles.fieldLabel}>ИМЕ</Text>
+              <TextInput
+                placeholder="Показвано ime"
+                placeholderTextColor={colors.textMuted}
+                value={name}
+                onChangeText={setName}
+                style={styles.input}
+              />
+            </>
           ) : null}
+          <Text style={styles.fieldLabel}>ИМЕЙЛ</Text>
           <TextInput
-            placeholder="Имейл"
+            placeholder="твоят@имейл.bg"
             placeholderTextColor={colors.textMuted}
             autoCapitalize="none"
             keyboardType="email-address"
@@ -128,15 +149,21 @@ export default function AuthScreen() {
             onChangeText={setEmail}
             style={styles.input}
           />
+          <Text style={styles.fieldLabel}>ПАРОЛА</Text>
           <TextInput
-            placeholder="Парола"
+            placeholder="••••••••"
             placeholderTextColor={colors.textMuted}
             secureTextEntry
             value={password}
             onChangeText={setPassword}
             style={styles.input}
           />
-          <Button title={mode === 'login' ? 'Влез' : 'Създай акаунт'} onPress={submit} loading={busy} />
+          <Button
+            title={mode === 'login' ? 'Влез' : 'Създай акаунт'}
+            onPress={submit}
+            loading={busy}
+            style={{ marginTop: spacing.sm }}
+          />
         </Card>
 
         <View style={styles.divider}>

@@ -1,5 +1,5 @@
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { StyleSheet, View, Text } from 'react-native';
+import { Platform, StyleSheet, View, Text } from 'react-native';
 import MapView, { Circle, Marker, Polyline, type Region } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import type { LeafletMapHandle, LeafletMapProps, LeafletMapType } from './LeafletMap';

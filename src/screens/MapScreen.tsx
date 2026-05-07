@@ -80,6 +80,7 @@ export default function MapScreen() {
   const [description, setDescription] = useState('');
   const [waterType, setWaterType] = useState<Spot['waterType']>('lake');
   const [selected, setSelected] = useState<Spot | null>(null);
+  const [togglingFavorite, setTogglingFavorite] = useState(false);
   const [mapType, setMapType] = useState<LeafletMapType>('standard');
   const [showDams, setShowDams] = useState(true);
   const [showRivers, setShowRivers] = useState(true);
@@ -92,6 +93,12 @@ export default function MapScreen() {
   const [damWeatherStatus, setDamWeatherStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const weatherCacheRef = useRef<Record<string, WeatherCacheEntry>>({});
   const { user, configured } = useAuth();
+  const [hintVisible, setHintVisible] = useState(true);
+
+  useEffect(() => {
+    const t = setTimeout(() => setHintVisible(false), 5000);
+    return () => clearTimeout(t);
+  }, []);
 
   const load = useCallback(async () => {
     setSpots(await spotsStore.list());
@@ -254,21 +261,35 @@ export default function MapScreen() {
     setSelectedWater(null);
   };
 
-  const saveWaterBodyAsSpot = async (kind: 'dam' | 'river', item: Dam | River) => {
-    const spot: Spot = {
-      id: newId(),
-      name: item.name,
-      latitude: item.latitude,
-      longitude: item.longitude,
-      description: item.description,
-      waterType: kind === 'dam' ? 'dam' : 'river',
-      createdAt: new Date().toISOString(),
-      isFavorite: false,
-    };
-    await spotsStore.save(spot);
+  const saveWaterBodyAsFavorite = async (kind: 'dam' | 'river', item: Dam | River) => {
+    const existing = spots.find(
+      (s) =>
+        Math.abs(s.latitude - item.latitude) < 0.001 &&
+        Math.abs(s.longitude - item.longitude) < 0.001
+    );
+    if (existing) {
+      if (!existing.isFavorite) {
+        const updated = await spotsStore.toggleFavorite(existing.id);
+        setSpots(updated);
+      }
+    } else {
+      const spot: Spot = {
+        id: newId(),
+        name: item.name,
+        latitude: item.latitude,
+        longitude: item.longitude,
+        description: item.description,
+        waterType: kind === 'dam' ? 'dam' : 'river',
+        createdAt: new Date().toISOString(),
+        isFavorite: true,
+      };
+      const updated = await spotsStore.save(spot);
+      setSpots(updated);
+    }
     setSelectedWater(null);
-    load();
-    Alert.alert('Запазен', `„${item.name}" е добавен в спотовете ти като ${kind === 'dam' ? 'язовир' : 'река'}.`);
+    setShowFavoritesOnly(true);
+    mapRef.current?.flyTo(item.latitude, item.longitude, 12);
+    Alert.alert('Запазен в любими', `„${item.name}" е добавен в любимите ти спотове.`);
   };
 
   const recordCatchAt = (target: { latitude: number; longitude: number; name: string }) => {
@@ -352,8 +373,8 @@ export default function MapScreen() {
           <NativeMapView
             ref={mapRef}
             spots={sortedSpots}
-            dams={showDams ? DAMS : []}
-            rivers={showRivers ? RIVERS : []}
+            dams={!showFavoritesOnly && showDams ? DAMS : []}
+            rivers={!showFavoritesOnly && showRivers ? RIVERS : []}
             pendingCoord={pendingCoord}
             userCoord={userCoord}
             routeLine={routeLine}
@@ -367,8 +388,8 @@ export default function MapScreen() {
           <LeafletMap
             ref={mapRef}
             spots={sortedSpots}
-            dams={showDams ? DAMS : []}
-            rivers={showRivers ? RIVERS : []}
+            dams={!showFavoritesOnly && showDams ? DAMS : []}
+            rivers={!showFavoritesOnly && showRivers ? RIVERS : []}
             pendingCoord={pendingCoord}
             userCoord={userCoord}
             routeLine={routeLine}
@@ -398,43 +419,49 @@ export default function MapScreen() {
               </Pressable>
             ))}
           </View>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: spacing.sm }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs }}>
             <Pressable
               onPress={() => setShowDams((v) => !v)}
               style={[styles.damToggle, showDams && styles.damToggleActive]}
+              hitSlop={6}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Ionicons name="layers-outline" size={16} color={showDams ? colors.white : colors.primary} />
-                <Text style={[styles.damToggleText, showDams && styles.damToggleTextActive]}>Язовири</Text>
-                {showDams ? <Ionicons name="checkmark-circle" size={16} color={colors.white} /> : null}
-              </View>
+              <Ionicons name="layers-outline" size={13} color={showDams ? colors.white : colors.primary} />
+              <Text style={[styles.damToggleText, showDams && styles.damToggleTextActive]}>Язовири</Text>
             </Pressable>
             <Pressable
               onPress={() => setShowRivers((v) => !v)}
               style={[styles.damToggle, showRivers && styles.riverToggleActive]}
+              hitSlop={6}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Ionicons name="git-branch-outline" size={16} color={showRivers ? colors.white : '#2E9B5A'} />
-                <Text style={[styles.damToggleText, showRivers && styles.damToggleTextActive]}>Реки</Text>
-                {showRivers ? <Ionicons name="checkmark-circle" size={16} color={colors.white} /> : null}
-              </View>
+              <Ionicons name="git-branch-outline" size={13} color={showRivers ? colors.white : '#2E9B5A'} />
+              <Text style={[styles.damToggleText, showRivers && styles.damToggleTextActive]}>Реки</Text>
             </Pressable>
-            <View style={[styles.damToggle, { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 }]}>
-              <Ionicons name="star" size={16} color={showFavoritesOnly ? '#E8B923' : colors.primary} />
-              <Text style={[styles.damToggleText, !showFavoritesOnly && { color: colors.text }]}>Любими</Text>
-              <Switch
-                value={showFavoritesOnly}
-                onValueChange={setShowFavoritesOnly}
-                trackColor={{ true: '#E8B923', false: colors.border }}
-              />
-            </View>
+            <Pressable
+              onPress={() => setShowFavoritesOnly((v) => !v)}
+              style={[styles.damToggle, showFavoritesOnly && styles.favToggleActive]}
+              hitSlop={6}
+            >
+              <Ionicons name="star" size={13} color={showFavoritesOnly ? colors.white : '#C49A00'} />
+              <Text style={[styles.damToggleText, showFavoritesOnly && styles.damToggleTextActive]}>Любими</Text>
+            </Pressable>
           </View>
-          <View style={styles.hintBox}>
-            <Ionicons name="information-circle-outline" size={16} color={colors.white} />
-            <Text style={styles.hintText}>
-              Дълго натискане за нов спот · приближи картата за имена на язовири и реки
-            </Text>
-          </View>
+          {hintVisible ? (
+            <Pressable style={styles.hintBox} onPress={() => setHintVisible(false)} hitSlop={4}>
+              <Ionicons name="information-circle-outline" size={15} color={colors.white} />
+              <Text style={styles.hintText}>
+                Дълго натискане за нов спот · приближи за имена
+              </Text>
+              <Ionicons name="close" size={13} color={colors.white} />
+            </Pressable>
+          ) : (
+            <Pressable
+              onPress={() => setHintVisible(true)}
+              style={[styles.hintBox, { paddingHorizontal: spacing.sm }]}
+              hitSlop={4}
+            >
+              <Ionicons name="information-circle-outline" size={15} color={colors.white} />
+            </Pressable>
+          )}
         </View>
 
         <Pressable style={styles.fab} onPress={locateMe}>
@@ -739,10 +766,10 @@ export default function MapScreen() {
               />
               <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.md }}>
                 <Button
-                  title="Запази като спот"
+                  title="Запази в любими"
                   variant="secondary"
                   onPress={() =>
-                    saveWaterBodyAsSpot(selectedWater.kind, selectedWater.item)
+                    saveWaterBodyAsFavorite(selectedWater.kind, selectedWater.item)
                   }
                   style={{ flex: 1 }}
                 />
@@ -790,11 +817,25 @@ export default function MapScreen() {
                 </View>
                 <Switch
                   value={!!selected.isFavorite}
+                  disabled={togglingFavorite}
                   onValueChange={async () => {
-                    await spotsStore.toggleFavorite(selected.id);
-                    await load();
-                    const fresh = (await spotsStore.list()).find((x) => x.id === selected.id);
-                    if (fresh) setSelected(fresh);
+                    if (togglingFavorite) return;
+                    setTogglingFavorite(true);
+                    try {
+                      const updated = await spotsStore.toggleFavorite(selected.id);
+                      setSpots(updated);
+                      const fresh = updated.find((x) => x.id === selected.id);
+                      if (!fresh) {
+                        setSelected(null);
+                        return;
+                      }
+                      setSelected(fresh);
+                      if (showFavoritesOnly && !fresh.isFavorite) {
+                        setSelected(null);
+                      }
+                    } finally {
+                      setTogglingFavorite(false);
+                    }
                   }}
                   trackColor={{ true: '#E8B923', false: colors.border }}
                 />
@@ -872,21 +913,20 @@ function createMapStyles(colors: AppColors) {
   },
   hintText: { color: colors.white, ...typography.small },
   damToggle: {
-    backgroundColor: colors.white,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: colors.card,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 5,
     borderRadius: radius.pill,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: colors.border,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 2,
   },
   damToggleActive: { backgroundColor: '#062D3D', borderColor: '#062D3D' },
   riverToggleActive: { backgroundColor: '#1e6b3d', borderColor: '#1e6b3d' },
-  damToggleText: { ...typography.caption, color: colors.text, fontWeight: '600' },
+  favToggleActive: { backgroundColor: '#C49A00', borderColor: '#C49A00' },
+  damToggleText: { ...typography.small, color: colors.text, fontWeight: '600' },
   damToggleTextActive: { color: colors.white },
   damHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.md },
   damBadge: {

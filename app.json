@@ -30,7 +30,10 @@
         "NSCameraUsageDescription": "Достъп до камерата, за да снимаш улова си.",
         "NSPhotoLibraryUsageDescription": "Достъп до галерията, за да прикачиш снимка към улова.",
         "ITSAppUsesNonExemptEncryption": false,
-        "LSApplicationQueriesSchemes": ["maps", "comgooglemaps"]
+        "LSApplicationQueriesSchemes": [
+          "maps",
+          "comgooglemaps"
+        ]
       }
     },
     "android": {
@@ -86,7 +89,8 @@
       ],
       "expo-font",
       "expo-web-browser",
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      "@sentry/react-native"
     ],
     "extra": {
       "eas": {
