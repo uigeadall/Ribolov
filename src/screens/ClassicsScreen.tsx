@@ -8,6 +8,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   Dimensions,
+  ScrollView,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,10 +17,8 @@ import { Image } from 'expo-image';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
-import { EmptyState } from '../components/EmptyState';
 import { ClassicPhotoCard } from '../components/ClassicPhotoCard';
 import { useTheme } from '../services/themeContext';
-import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
 import { formatFirebaseError } from '../services/firebaseErrors';
@@ -60,88 +59,129 @@ export default function ClassicsScreen() {
       StyleSheet.create({
         hero: {
           backgroundColor: colors.primaryDark,
-          paddingTop: insets.top + spacing.sm,
-          paddingBottom: spacing.xl,
+          paddingTop: insets.top,
+          paddingBottom: spacing.xl + 4,
           paddingHorizontal: spacing.lg,
+          overflow: 'hidden',
+        },
+        heroTopRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: spacing.lg,
         },
         backBtn: {
           width: 36,
           height: 36,
           borderRadius: 18,
-          backgroundColor: 'rgba(255,255,255,0.15)',
+          backgroundColor: 'rgba(255,255,255,0.12)',
           alignItems: 'center',
           justifyContent: 'center',
-          marginBottom: spacing.lg,
         },
-        trophyRow: {
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: spacing.md,
-          marginBottom: spacing.sm,
+        decorRingOuter: {
+          position: 'absolute',
+          width: 260,
+          height: 260,
+          borderRadius: 130,
+          borderWidth: 1,
+          borderColor: 'rgba(255,215,0,0.08)',
+          right: -60,
+          top: -40,
         },
-        trophyWrap: {
-          width: 52,
-          height: 52,
-          borderRadius: 26,
-          backgroundColor: 'rgba(255,215,0,0.18)',
+        decorRingInner: {
+          position: 'absolute',
+          width: 180,
+          height: 180,
+          borderRadius: 90,
+          borderWidth: 1,
+          borderColor: 'rgba(255,215,0,0.12)',
+          right: -20,
+          top: 0,
+        },
+        heroCenterBlock: {
+          alignItems: 'flex-start',
+          marginTop: spacing.xs,
+        },
+        trophyCircle: {
+          width: 72,
+          height: 72,
+          borderRadius: 36,
+          backgroundColor: 'rgba(255,215,0,0.14)',
           borderWidth: 1.5,
-          borderColor: 'rgba(255,215,0,0.35)',
+          borderColor: 'rgba(255,215,0,0.3)',
           alignItems: 'center',
           justifyContent: 'center',
+          marginBottom: spacing.md,
+          shadowColor: '#FFD700',
+          shadowOpacity: 0.25,
+          shadowRadius: 12,
+          shadowOffset: { width: 0, height: 4 },
         },
-        heroTitle: { ...typography.h1, color: '#fff', letterSpacing: -0.5 },
-        heroSub: { ...typography.body, color: 'rgba(255,255,255,0.65)', marginTop: 2 },
-        countdown: {
+        heroTitle: {
+          fontSize: 34,
+          fontWeight: '800',
+          color: '#fff',
+          letterSpacing: -0.8,
+          lineHeight: 38,
+        },
+        heroSub: {
+          ...typography.body,
+          color: 'rgba(255,255,255,0.55)',
+          marginTop: spacing.xs,
+        },
+        countdownRow: {
           flexDirection: 'row',
           alignItems: 'center',
-          gap: spacing.xs,
-          marginTop: spacing.md,
+          gap: spacing.lg,
+          marginTop: spacing.lg,
+        },
+        countdownPill: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 6,
           backgroundColor: 'rgba(255,255,255,0.1)',
-          alignSelf: 'flex-start',
           paddingHorizontal: spacing.md,
-          paddingVertical: 6,
+          paddingVertical: 7,
           borderRadius: radius.pill,
         },
-        countdownText: { ...typography.small, color: 'rgba(255,255,255,0.85)', fontWeight: '700' },
-        tabs: {
+        countdownText: {
+          ...typography.small,
+          color: 'rgba(255,255,255,0.9)',
+          fontWeight: '700',
+        },
+        tabBar: {
           flexDirection: 'row',
-          gap: spacing.sm,
-          paddingHorizontal: spacing.lg,
-          paddingVertical: spacing.md,
+          backgroundColor: colors.background,
           borderBottomWidth: StyleSheet.hairlineWidth,
           borderBottomColor: colors.border,
-          backgroundColor: colors.background,
         },
-        tab: {
+        tabItem: {
           flex: 1,
-          paddingVertical: spacing.sm + 2,
           alignItems: 'center',
-          borderRadius: radius.pill,
-          borderWidth: 1,
-          borderColor: colors.border,
-          backgroundColor: colors.card,
+          paddingVertical: spacing.md,
+          gap: 4,
         },
-        tabActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-        tabText: { ...typography.small, color: colors.textMuted, fontWeight: '700' },
-        tabTextActive: { color: '#fff' },
-        howTo: {
-          marginHorizontal: spacing.lg,
-          marginTop: spacing.md,
-          marginBottom: spacing.xs,
-          padding: spacing.md,
-          backgroundColor: colors.primarySurface,
-          borderRadius: radius.md,
-          borderWidth: 1,
-          borderColor: colors.border,
-          flexDirection: 'row',
-          gap: spacing.sm,
-          alignItems: 'flex-start',
+        tabText: {
+          ...typography.bodyBold,
+          color: colors.textMuted,
+          fontSize: 14,
         },
-        howToText: { ...typography.caption, color: colors.text, flex: 1, lineHeight: 18 },
+        tabTextActive: {
+          color: colors.primary,
+        },
+        tabIndicator: {
+          height: 2.5,
+          width: 32,
+          borderRadius: 2,
+          backgroundColor: 'transparent',
+        },
+        tabIndicatorActive: {
+          backgroundColor: colors.primary,
+        },
         sectionLabel: {
           ...typography.overline,
           color: colors.textMuted,
-          letterSpacing: 1,
+          letterSpacing: 1.2,
           marginHorizontal: spacing.lg,
           marginTop: spacing.lg,
           marginBottom: spacing.sm,
@@ -151,19 +191,23 @@ export default function ClassicsScreen() {
           alignItems: 'flex-end',
           justifyContent: 'center',
           gap: spacing.md,
-          paddingHorizontal: spacing.lg,
+          paddingHorizontal: spacing.md,
           paddingTop: spacing.sm,
           paddingBottom: spacing.xs,
         },
-        podiumItem: { alignItems: 'center' },
-        podiumMedal: { fontSize: 22, marginBottom: 4 },
-        podiumLikes: { ...typography.small, color: colors.textMuted, marginTop: 4, fontWeight: '700' },
+        podiumItem: { alignItems: 'center', flex: 1 },
+        podiumMedal: { fontSize: 20, marginBottom: 6 },
+        podiumLikes: {
+          ...typography.small,
+          color: colors.textMuted,
+          marginTop: 6,
+          fontWeight: '700',
+        },
         podiumName: {
           ...typography.small,
           color: colors.text,
           fontWeight: '600',
           marginTop: 2,
-          maxWidth: 90,
           textAlign: 'center',
         },
         grid: {
@@ -171,6 +215,87 @@ export default function ClassicsScreen() {
           flexWrap: 'wrap',
           gap: spacing.sm,
           paddingHorizontal: spacing.lg,
+        },
+        howToCard: {
+          marginHorizontal: spacing.lg,
+          marginTop: spacing.md,
+          borderRadius: radius.lg,
+          backgroundColor: colors.card,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: colors.border,
+          overflow: 'hidden',
+        },
+        howToHeader: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: spacing.sm,
+          paddingHorizontal: spacing.md,
+          paddingVertical: spacing.sm + 2,
+          backgroundColor: colors.primarySurface,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: colors.border,
+        },
+        howToHeaderText: {
+          ...typography.bodyBold,
+          color: colors.primary,
+          fontSize: 13,
+        },
+        howToStep: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: spacing.md,
+          paddingHorizontal: spacing.md,
+          paddingVertical: spacing.sm + 2,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: colors.border,
+        },
+        stepNum: {
+          width: 26,
+          height: 26,
+          borderRadius: 13,
+          backgroundColor: colors.primary,
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        stepNumText: {
+          fontSize: 12,
+          fontWeight: '800',
+          color: '#fff',
+        },
+        stepText: {
+          ...typography.body,
+          color: colors.text,
+          flex: 1,
+          fontSize: 13,
+        },
+        emptyHero: {
+          alignItems: 'center',
+          paddingTop: spacing.xxl,
+          paddingBottom: spacing.xl,
+          paddingHorizontal: spacing.lg,
+        },
+        emptyTrophyWrap: {
+          width: 90,
+          height: 90,
+          borderRadius: 45,
+          backgroundColor: colors.primarySurface,
+          borderWidth: 1.5,
+          borderColor: colors.border,
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginBottom: spacing.lg,
+        },
+        emptyTitle: {
+          ...typography.h2,
+          color: colors.text,
+          textAlign: 'center',
+          marginBottom: spacing.sm,
+        },
+        emptySubtitle: {
+          ...typography.body,
+          color: colors.textMuted,
+          textAlign: 'center',
+          lineHeight: 22,
         },
       }),
     [colors, insets.top]
@@ -200,21 +325,84 @@ export default function ClassicsScreen() {
   const rest = rows.slice(3);
 
   const podiumOrder = [
-    top3[1] ? { row: top3[1], rank: 2, h: 110, w: 100, borderColor: '#C0C0C0' } : null,
-    top3[0] ? { row: top3[0], rank: 1, h: 140, w: 120, borderColor: '#FFD700' } : null,
-    top3[2] ? { row: top3[2], rank: 3, h: 90, w: 100, borderColor: '#CD7F32' } : null,
+    top3[1] ? { row: top3[1], rank: 2, h: 110, w: (SW - spacing.md * 4) / 3, borderColor: '#C0C0C0' } : null,
+    top3[0] ? { row: top3[0], rank: 1, h: 145, w: (SW - spacing.md * 4) / 3, borderColor: '#FFD700' } : null,
+    top3[2] ? { row: top3[2], rank: 3, h: 90, w: (SW - spacing.md * 4) / 3, borderColor: '#CD7F32' } : null,
   ].filter(Boolean) as { row: RankedClassicPhoto; rank: number; h: number; w: number; borderColor: string }[];
+
+  const Hero = (
+    <View style={styles.hero}>
+      <View style={styles.decorRingOuter} />
+      <View style={styles.decorRingInner} />
+      <View style={styles.heroTopRow}>
+        <Pressable onPress={() => navigation.goBack()} style={styles.backBtn} hitSlop={8}>
+          <Ionicons name="chevron-back" size={22} color="#fff" />
+        </Pressable>
+      </View>
+      <View style={styles.heroCenterBlock}>
+        <View style={styles.trophyCircle}>
+          <Text style={{ fontSize: 34 }}>🏆</Text>
+        </View>
+        <Text style={styles.heroTitle}>Класики</Text>
+        <Text style={styles.heroSub}>Топ снимки по харесвания за периода</Text>
+        <View style={styles.countdownRow}>
+          <View style={styles.countdownPill}>
+            <Ionicons name="time-outline" size={13} color="rgba(255,255,255,0.9)" />
+            <Text style={styles.countdownText}>
+              {daysLeft === 0
+                ? 'Последен ден!'
+                : `${daysLeft} ${daysLeft === 1 ? 'ден' : 'дни'} остават`}
+            </Text>
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+
+  const TabBar = (
+    <View style={styles.tabBar}>
+      {(['week', 'month'] as ClassicPeriod[]).map((p) => (
+        <Pressable key={p} style={styles.tabItem} onPress={() => setPeriod(p)}>
+          <Text style={[styles.tabText, period === p && styles.tabTextActive]}>
+            {p === 'week' ? 'Седмица' : 'Месец'}
+          </Text>
+          <View style={[styles.tabIndicator, period === p && styles.tabIndicatorActive]} />
+        </Pressable>
+      ))}
+    </View>
+  );
+
+  const HowToCard = (
+    <View style={styles.howToCard}>
+      <View style={styles.howToHeader}>
+        <Ionicons name="information-circle" size={16} color={colors.primary} />
+        <Text style={styles.howToHeaderText}>Как да участваш?</Text>
+      </View>
+      {[
+        'Запиши улов в Дневника',
+        'Добави заглавие на снимката',
+        'Сподели публично в Лентата',
+      ].map((step, i) => (
+        <View key={i} style={[styles.howToStep, i === 2 && { borderBottomWidth: 0 }]}>
+          <View style={styles.stepNum}>
+            <Text style={styles.stepNumText}>{i + 1}</Text>
+          </View>
+          <Text style={styles.stepText}>{step}</Text>
+          <Ionicons
+            name={i === 0 ? 'book-outline' : i === 1 ? 'text-outline' : 'share-social-outline'}
+            size={16}
+            color={colors.textMuted}
+          />
+        </View>
+      ))}
+    </View>
+  );
 
   if (!configured || !user) {
     return (
       <Screen padded={false}>
-        <View style={styles.hero}>
-          <Pressable onPress={() => navigation.goBack()} style={styles.backBtn} hitSlop={8}>
-            <Ionicons name="chevron-back" size={22} color="#fff" />
-          </Pressable>
-          <Text style={styles.heroTitle}>Класики 🏆</Text>
-          <Text style={styles.heroSub}>Топ снимки на общността</Text>
-        </View>
+        {Hero}
+        {TabBar}
         <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg }}>
           <Card>
             <Text style={{ ...typography.h3, color: colors.text }}>Нужен е акаунт</Text>
@@ -230,51 +418,13 @@ export default function ClassicsScreen() {
 
   return (
     <Screen padded={false}>
-      {/* Hero */}
-      <View style={styles.hero}>
-        <Pressable onPress={() => navigation.goBack()} style={styles.backBtn} hitSlop={8}>
-          <Ionicons name="chevron-back" size={22} color="#fff" />
-        </Pressable>
-        <View style={styles.trophyRow}>
-          <View style={styles.trophyWrap}>
-            <Text style={{ fontSize: 26 }}>🏆</Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.heroTitle}>Класики</Text>
-            <Text style={styles.heroSub}>Топ снимки по харесвания за периода</Text>
-          </View>
-        </View>
-        <View style={styles.countdown}>
-          <Ionicons name="time-outline" size={13} color="rgba(255,255,255,0.85)" />
-          <Text style={styles.countdownText}>
-            {daysLeft === 0
-              ? 'Последен ден!'
-              : `${daysLeft} ${daysLeft === 1 ? 'ден' : 'дни'} остават`}
-          </Text>
-        </View>
-      </View>
-
-      {/* Period tabs */}
-      <View style={styles.tabs}>
-        {(['week', 'month'] as ClassicPeriod[]).map((p) => (
-          <Pressable
-            key={p}
-            style={[styles.tab, period === p && styles.tabActive]}
-            onPress={() => setPeriod(p)}
-          >
-            <Text style={[styles.tabText, period === p && styles.tabTextActive]}>
-              {p === 'week' ? '📅 Седмица' : '🗓 Месец'}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+      {Hero}
+      {TabBar}
 
       {loading && rows.length === 0 ? (
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', gap: spacing.md }}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={{ ...typography.body, color: colors.textMuted, marginTop: spacing.md }}>
-            Броим харесванията…
-          </Text>
+          <Text style={{ ...typography.body, color: colors.textMuted }}>Броим харесванията…</Text>
         </View>
       ) : error ? (
         <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg }}>
@@ -284,11 +434,21 @@ export default function ClassicsScreen() {
           </Card>
         </View>
       ) : rows.length === 0 ? (
-        <EmptyState
-          icon="images-outline"
-          title="Все още няма снимки"
-          subtitle="Сподели улов с именувана снимка в лентата и получавай харесвания от риболовната общност."
-        />
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: spacing.xxl }}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.emptyHero}>
+            <View style={styles.emptyTrophyWrap}>
+              <Text style={{ fontSize: 40 }}>🏆</Text>
+            </View>
+            <Text style={styles.emptyTitle}>Все още няма снимки</Text>
+            <Text style={styles.emptySubtitle}>
+              Бъди първият! Сподели улов с именувана снимка и започни да получаваш харесвания.
+            </Text>
+          </View>
+          {HowToCard}
+        </ScrollView>
       ) : (
         <FlatList
           data={[]}
@@ -305,15 +465,7 @@ export default function ClassicsScreen() {
           contentContainerStyle={{ paddingBottom: spacing.xxl }}
           ListHeaderComponent={
             <>
-              {/* How to participate */}
-              <View style={styles.howTo}>
-                <Ionicons name="information-circle-outline" size={18} color={colors.primary} />
-                <Text style={styles.howToText}>
-                  Запиши улов → добави{' '}
-                  <Text style={{ fontWeight: '700' }}>заглавие на снимката</Text> → сподели публично.
-                  Риболовци гласуват с харесване. Най-много харесвания = победител!
-                </Text>
-              </View>
+              {HowToCard}
 
               {/* Podium */}
               {top3.length > 0 ? (
@@ -334,17 +486,38 @@ export default function ClassicsScreen() {
                         <Text style={styles.podiumMedal}>
                           {rank === 1 ? '🥇' : rank === 2 ? '🥈' : '🥉'}
                         </Text>
-                        <View style={{ width: w, height: h, borderRadius: radius.md, overflow: 'hidden', borderWidth: 2.5, borderColor }}>
+                        <View
+                          style={{
+                            width: w,
+                            height: h,
+                            borderRadius: radius.md,
+                            overflow: 'hidden',
+                            borderWidth: 2.5,
+                            borderColor,
+                          }}
+                        >
                           {row.item.photoUri ? (
-                            <Image source={{ uri: row.item.photoUri }} style={{ width: w, height: h }} contentFit="cover" />
+                            <Image
+                              source={{ uri: row.item.photoUri }}
+                              style={{ width: w, height: h }}
+                              contentFit="cover"
+                            />
                           ) : (
-                            <View style={{ width: w, height: h, backgroundColor: colors.primarySurface, alignItems: 'center', justifyContent: 'center' }}>
+                            <View
+                              style={{
+                                width: w,
+                                height: h,
+                                backgroundColor: colors.primarySurface,
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                            >
                               <Ionicons name="fish-outline" size={28} color={colors.primary} />
                             </View>
                           )}
                         </View>
                         <Text style={styles.podiumLikes}>❤️ {row.likes}</Text>
-                        <Text style={styles.podiumName} numberOfLines={2}>
+                        <Text style={styles.podiumName} numberOfLines={1}>
                           {row.item.ownerName ?? 'Рибар'}
                         </Text>
                       </Pressable>
