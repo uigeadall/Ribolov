@@ -559,11 +559,11 @@ export default function LogbookScreen() {
             showsVerticalScrollIndicator={false}
           >
             <EmptyState
-              icon=”book-outline”
-              title=”Дневникът е празен”
-              subtitle=”Добави първия улов с бутона „+” горе или оттук — после ще го виждаш в списъка и на картата.”
+              icon="book-outline"
+              title="Дневникът е празен"
+              subtitle={'Добави първия улов с бутона „+” горе или оттук — после ще го виждаш в списъка и на картата.'}
             />
-            <Button title=”Добави улов” onPress={() => navigation.navigate('AddCatch')} style={{ marginTop: spacing.lg }} />
+            <Button title="Добави улов" onPress={() => navigation.navigate('AddCatch')} style={{ marginTop: spacing.lg }} />
           </ScrollView>
         ) : filtered.length === 0 ? (
           <ScrollView
@@ -575,8 +575,8 @@ export default function LogbookScreen() {
             }}
             showsVerticalScrollIndicator={false}
           >
-            <EmptyState icon=”search-outline” title=”Няма съвпадения” subtitle=”Няма записи за тези филтри. Опитай друга комбинация.” />
-            <Button title=”Изчисти филтри” variant=”secondary” onPress={resetFilters} style={{ marginTop: spacing.lg }} />
+            <EmptyState icon="search-outline" title="Няма съвпадения" subtitle="Няма записи за тези филтри. Опитай друга комбинация." />
+            <Button title="Изчисти филтри" variant="secondary" onPress={resetFilters} style={{ marginTop: spacing.lg }} />
           </ScrollView>
         ) : (
           <FlatList
