@@ -23,6 +23,7 @@ import { USE_REACT_NATIVE_MAPS } from '../config/mapEngine';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { spotsStore, newId } from '../storage/storage';
 import { Spot } from '../types';
 import { DAMS, Dam } from '../data/dams';
@@ -97,6 +98,7 @@ export default function MapScreen() {
   const weatherCacheRef = useRef<Record<string, WeatherCacheEntry>>({});
   const { user, configured } = useAuth();
   const [hintVisible, setHintVisible] = useState(true);
+  const lastPosRef = useRef<{ lat: number; lng: number; zoom: number } | null>(null);
   const [waterReports, setWaterReports] = useState<WaterReport[]>([]);
   const [reportSheetOpen, setReportSheetOpen] = useState(false);
   const [reportActivity, setReportActivity] = useState(3);
@@ -108,6 +110,18 @@ export default function MapScreen() {
   useEffect(() => {
     const t = setTimeout(() => setHintVisible(false), 5000);
     return () => clearTimeout(t);
+  }, []);
+
+  // Restore last map position on mount
+  useEffect(() => {
+    AsyncStorage.getItem('@ribolov/lastMapPos').then((raw) => {
+      if (!raw) return;
+      try {
+        const pos = JSON.parse(raw) as { lat: number; lng: number; zoom: number };
+        lastPosRef.current = pos;
+        setTimeout(() => mapRef.current?.flyTo(pos.lat, pos.lng, pos.zoom), 600);
+      } catch { /* ignore bad data */ }
+    });
   }, []);
 
   const load = useCallback(async () => {
@@ -277,10 +291,18 @@ export default function MapScreen() {
     setPendingCoord({ latitude: lat, longitude: lng });
   };
 
-  const flyToSpot = (s: Spot) => mapRef.current?.flyTo(s.latitude, s.longitude, 13);
+  const saveMapPos = (lat: number, lng: number, zoom: number) => {
+    AsyncStorage.setItem('@ribolov/lastMapPos', JSON.stringify({ lat, lng, zoom })).catch(() => {});
+  };
+
+  const flyToSpot = (s: Spot) => {
+    mapRef.current?.flyTo(s.latitude, s.longitude, 13);
+    saveMapPos(s.latitude, s.longitude, 13);
+  };
 
   const flyToWaterBody = (lat: number, lng: number) => {
     mapRef.current?.flyTo(lat, lng, 12);
+    saveMapPos(lat, lng, 12);
     setSelectedWater(null);
   };
 

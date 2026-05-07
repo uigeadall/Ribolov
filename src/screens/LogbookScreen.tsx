@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Swipeable } from 'react-native-gesture-handler';
 import { useAuth } from '../services/authContext';
 import { computePersonalBests, isPersonalBestCatch } from '../services/personalBests';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -254,6 +255,15 @@ export default function LogbookScreen() {
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
   const bottomPad = insets.bottom + spacing.xl;
+
+  // Badge shows count of unsynced catches on the tab bar
+  useEffect(() => {
+    if (!user) return;
+    const unsynced = items.filter((c) => !c.syncedToCloud).length;
+    navigation.getParent()?.setOptions({
+      tabBarBadge: unsynced > 0 ? unsynced : undefined,
+    });
+  }, [items, user, navigation]);
   const styles = useMemo(() => createLogbookStyles(colors, mode), [colors, mode]);
   const [items, setItems] = useState<Catch[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -316,7 +326,33 @@ export default function LogbookScreen() {
       ? 'Записвай всеки улов с дата, място и детайли — всичко остава на телефона.'
       : `${items.length} ${items.length === 1 ? 'запис' : 'записа'} в дневника · преглед и филтри по-долу`;
 
+  const handleSwipeDelete = (item: Catch) => {
+    Alert.alert('Изтриване', `Изтриване на „${item.speciesName}"?`, [
+      { text: 'Отказ', style: 'cancel' },
+      {
+        text: 'Изтрий',
+        style: 'destructive',
+        onPress: async () => {
+          await catchesStore.remove(item.id);
+          await load();
+        },
+      },
+    ]);
+  };
+
   const renderCatchRow = (item: Catch) => (
+    <Swipeable
+      renderRightActions={() => (
+        <Pressable
+          onPress={() => handleSwipeDelete(item)}
+          style={{ backgroundColor: colors.danger, justifyContent: 'center', alignItems: 'center', width: 76, borderRadius: radius.md, marginBottom: spacing.sm }}
+        >
+          <Ionicons name="trash-outline" size={22} color={colors.white} />
+          <Text style={{ color: colors.white, fontSize: 11, fontWeight: '700', marginTop: 2 }}>Изтрий</Text>
+        </Pressable>
+      )}
+      overshootRight={false}
+    >
     <Pressable
       onPress={() => navigation.navigate('CatchDetail', { id: item.id })}
       android_ripple={{ color: `${colors.primary}18` }}
@@ -324,13 +360,20 @@ export default function LogbookScreen() {
     >
       <Card style={{ padding: spacing.sm + 2 }}>
         <View style={styles.row}>
-          {item.photoUri ? (
-            <Image source={{ uri: item.photoUri }} style={styles.thumb} contentFit="cover" />
-          ) : (
-            <View style={[styles.thumb, styles.thumbPlaceholder]}>
-              <Ionicons name="fish-outline" size={30} color={colors.primary} />
-            </View>
-          )}
+          <View>
+            {item.photoUri ? (
+              <Image source={{ uri: item.photoUri }} style={styles.thumb} contentFit="cover" />
+            ) : (
+              <View style={[styles.thumb, styles.thumbPlaceholder]}>
+                <Ionicons name="fish-outline" size={30} color={colors.primary} />
+              </View>
+            )}
+            {(item.extraPhotoUris?.length ?? 0) > 0 ? (
+              <View style={{ position: 'absolute', bottom: 4, right: 4, backgroundColor: 'rgba(0,0,0,0.62)', borderRadius: 8, paddingHorizontal: 5, paddingVertical: 2 }}>
+                <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>+{item.extraPhotoUris!.length}</Text>
+              </View>
+            ) : null}
+          </View>
           <View style={styles.itemBody}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <Text style={styles.itemTitle} numberOfLines={1}>{item.speciesName}</Text>
@@ -369,6 +412,7 @@ export default function LogbookScreen() {
         </View>
       </Card>
     </Pressable>
+    </Swipeable>
   );
 
   const filtersCard = (

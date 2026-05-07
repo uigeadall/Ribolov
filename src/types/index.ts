@@ -56,6 +56,7 @@ export type Catch = {
   photoTitle?: string;
   released?: boolean;
   photoUri?: string;
+  extraPhotoUris?: string[];
   photoStoragePath?: string;
   /** true ако снимката е заснета с камерата в приложението — изисква се за публични постове и класики */
   photoTakenWithAppCamera?: boolean;

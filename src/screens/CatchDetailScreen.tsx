@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Alert } from 'react-native';
+import { View, Text, StyleSheet, Alert, ScrollView } from 'react-native';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { Image } from 'expo-image';
 import { Screen } from '../components/Screen';
@@ -115,7 +115,16 @@ export default function CatchDetailScreen() {
       </View>
 
       {item.photoUri ? (
-        <Image source={{ uri: item.photoUri }} style={styles.photo} contentFit="cover" />
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: spacing.md }}>
+          {[item.photoUri, ...(item.extraPhotoUris ?? [])].map((uri, i) => (
+            <Image
+              key={i}
+              source={{ uri }}
+              style={[styles.photo, { marginTop: 0, marginRight: spacing.sm }]}
+              contentFit="cover"
+            />
+          ))}
+        </ScrollView>
       ) : null}
 
       {item.photoTitle ? <Text style={styles.photoTitle}>{item.photoTitle}</Text> : null}

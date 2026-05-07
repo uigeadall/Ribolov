@@ -131,6 +131,7 @@ export default function AddCatchScreen() {
   const [cameraVerifiedPhoto, setCameraVerifiedPhoto] = useState(false);
   const [initialCatch, setInitialCatch] = useState<Catch | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [extraPhotoUris, setExtraPhotoUris] = useState<string[]>([]);
   const formDirtyRef = useRef(false);
 
   const selectedSpecies = useMemo(() => speciesList.find((s) => s.id === speciesId)!, [speciesId]);
@@ -268,6 +269,19 @@ export default function AddCatchScreen() {
     }
   };
 
+  const addExtraPhoto = async () => {
+    if (extraPhotoUris.length >= 4) return;
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.7,
+    });
+    if (!result.canceled && result.assets[0]) {
+      setExtraPhotoUris((prev) => [...prev, result.assets[0].uri]);
+    }
+  };
+
   const grabLocation = async () => {
     const perm = await Location.requestForegroundPermissionsAsync();
     if (!perm.granted) {
@@ -323,6 +337,7 @@ export default function AddCatchScreen() {
       ...(photoUri && trimmedPhotoTitle ? { photoTitle: trimmedPhotoTitle } : {}),
       released,
       photoUri,
+      extraPhotoUris: extraPhotoUris.length > 0 ? extraPhotoUris : undefined,
       photoTakenWithAppCamera,
       ...(uri &&
       initialCatch?.photoUri?.trim() === uri &&
@@ -475,8 +490,36 @@ export default function AddCatchScreen() {
         )}
         {!photoUri && shareToFeed ? (
           <Text style={[styles.muted, { marginTop: spacing.xs }]}>
-            При включено публично споделяне добави снимка само през „Снимай“.
+            При включено публично споделяне добави снимка само през „Снимай”.
           </Text>
+        ) : null}
+
+        {photoUri ? (
+          <View style={{ marginTop: spacing.md }}>
+            <Text style={styles.label}>Още снимки (до 4)</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm }}>
+              {extraPhotoUris.map((uri, i) => (
+                <View key={i} style={{ position: 'relative' }}>
+                  <Image source={{ uri }} style={{ width: 80, height: 80, borderRadius: radius.md }} contentFit=”cover” />
+                  <Pressable
+                    onPress={() => setExtraPhotoUris((p) => p.filter((_, idx) => idx !== i))}
+                    style={{ position: 'absolute', top: -6, right: -6, backgroundColor: colors.danger, borderRadius: 10, width: 20, height: 20, alignItems: 'center', justifyContent: 'center' }}
+                    hitSlop={4}
+                  >
+                    <Ionicons name=”close” size={12} color={colors.white} />
+                  </Pressable>
+                </View>
+              ))}
+              {extraPhotoUris.length < 4 ? (
+                <Pressable
+                  onPress={addExtraPhoto}
+                  style={{ width: 80, height: 80, borderRadius: radius.md, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <Ionicons name=”add” size={28} color={colors.primary} />
+                </Pressable>
+              ) : null}
+            </ScrollView>
+          </View>
         ) : null}
 
         <Text style={styles.label}>Вид риба</Text>
