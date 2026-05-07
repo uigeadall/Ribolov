@@ -11,6 +11,7 @@ import {
   limit,
 } from 'firebase/firestore';
 import { ensureFirebase } from './firebase';
+import { stripUndefinedForFirestore } from './firestoreSanitize';
 
 const TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -30,12 +31,15 @@ export type Story = {
 export async function addStory(s: Omit<Story, 'id' | 'createdAt' | 'expiresAt'>): Promise<void> {
   const fb = ensureFirebase();
   if (!fb) throw new Error('Firebase не е наличен.');
-  await addDoc(collection(fb.db, 'stories'), {
-    ...s,
-    text: s.text.trim().slice(0, 280),
-    createdAt: serverTimestamp(),
-    expiresAt: Date.now() + TTL_MS,
-  });
+  await addDoc(
+    collection(fb.db, 'stories'),
+    stripUndefinedForFirestore({
+      ...s,
+      text: s.text.trim().slice(0, 280),
+      createdAt: serverTimestamp(),
+      expiresAt: Date.now() + TTL_MS,
+    })
+  );
 }
 
 export async function getStories(): Promise<Story[]> {
