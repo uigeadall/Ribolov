@@ -53,40 +53,40 @@ function createLogbookStyles(colors: AppColors, mode: 'light' | 'dark') {
       flexDirection: 'row',
       alignItems: 'flex-start',
       justifyContent: 'space-between',
-      paddingHorizontal: spacing.xl,
-      paddingTop: spacing.sm,
-      gap: spacing.md,
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.xs,
+      gap: spacing.sm,
     },
     titleCol: { flex: 1, minWidth: 0 },
     addBtn: {
-      width: 48,
-      height: 48,
-      borderRadius: 24,
+      width: 42,
+      height: 42,
+      borderRadius: 21,
       backgroundColor: colors.primary,
       alignItems: 'center',
       justifyContent: 'center',
-      marginTop: 4,
+      marginTop: 2,
       ...shadowButton(mode),
     },
     statsRow: {
       flexDirection: 'row',
-      gap: spacing.md,
-      paddingHorizontal: spacing.xl,
-      marginTop: spacing.md,
-      marginBottom: spacing.sm,
+      gap: spacing.sm,
+      paddingHorizontal: spacing.lg,
+      marginTop: spacing.sm,
+      marginBottom: spacing.xs,
     },
     statBox: {
       flex: 1,
       backgroundColor: colors.primarySurface,
-      borderRadius: radius.lg,
-      paddingVertical: spacing.md + 4,
-      paddingHorizontal: spacing.md,
+      borderRadius: radius.md,
+      paddingVertical: spacing.sm + 2,
+      paddingHorizontal: spacing.sm,
       borderWidth: 1,
       borderColor: colors.border,
       alignItems: 'center',
     },
-    statNum: { ...typography.h2, fontSize: 26, color: colors.primary, letterSpacing: -0.5 },
-    statLbl: { ...typography.caption, color: colors.textMuted, marginTop: 6, textAlign: 'center', lineHeight: 18 },
+    statNum: { ...typography.h3, fontSize: 22, color: colors.primary, letterSpacing: -0.5 },
+    statLbl: { ...typography.small, color: colors.textMuted, marginTop: 2, textAlign: 'center' },
     filtersCardInner: {
       gap: spacing.md,
     },
@@ -129,8 +129,8 @@ function createLogbookStyles(colors: AppColors, mode: 'light' | 'dark') {
       alignItems: 'center',
     },
     chip: {
-      paddingHorizontal: spacing.md + 2,
-      paddingVertical: 8,
+      paddingHorizontal: spacing.md,
+      paddingVertical: 6,
       borderRadius: radius.pill,
       backgroundColor: colors.surfaceAlt,
       borderWidth: 1,
@@ -191,8 +191,8 @@ function createLogbookStyles(colors: AppColors, mode: 'light' | 'dark') {
     releasedHint: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
     row: { flexDirection: 'row', alignItems: 'center' },
     thumb: {
-      width: 72,
-      height: 72,
+      width: 60,
+      height: 60,
       borderRadius: radius.md,
     },
     thumbPlaceholder: {
@@ -203,9 +203,9 @@ function createLogbookStyles(colors: AppColors, mode: 'light' | 'dark') {
       borderColor: colors.border,
     },
     itemBody: { flex: 1, marginLeft: spacing.md, minWidth: 0 },
-    itemTitle: { ...typography.h3, fontSize: 17, color: colors.text },
-    photoTitleLine: { ...typography.caption, color: colors.primary, marginTop: 4, fontStyle: 'italic' },
-    itemMeta: { ...typography.caption, color: colors.textMuted, marginTop: 4, lineHeight: 18 },
+    itemTitle: { ...typography.h3, fontSize: 15, color: colors.text },
+    photoTitleLine: { ...typography.small, color: colors.primary, marginTop: 2, fontStyle: 'italic' },
+    itemMeta: { ...typography.small, color: colors.textMuted, marginTop: 2, lineHeight: 16 },
     rowTrail: { alignItems: 'flex-end', justifyContent: 'center', gap: spacing.sm, marginLeft: spacing.sm },
     badge: {
       backgroundColor: colors.accent + '18',
@@ -320,7 +320,7 @@ export default function LogbookScreen() {
       android_ripple={{ color: `${colors.primary}18` }}
       style={({ pressed }) => (pressed && Platform.OS === 'ios' ? { opacity: 0.92 } : undefined)}
     >
-      <Card style={{ padding: spacing.md }}>
+      <Card style={{ padding: spacing.sm + 2 }}>
         <View style={styles.row}>
           {item.photoUri ? (
             <Image source={{ uri: item.photoUri }} style={styles.thumb} contentFit="cover" />
@@ -369,7 +369,7 @@ export default function LogbookScreen() {
   );
 
   const filtersCard = (
-    <Card style={{ marginHorizontal: spacing.xl, marginBottom: spacing.md }}>
+    <Card style={{ marginHorizontal: spacing.lg, marginBottom: spacing.sm }}>
       <View style={styles.filtersCardInner}>
         <View style={styles.filterHeadRow}>
           <Text style={styles.filterCardTitle}>ФИЛТРИ</Text>
@@ -582,7 +582,7 @@ export default function LogbookScreen() {
           <FlatList
             data={filtered}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={{ paddingHorizontal: spacing.xl, paddingBottom: bottomPad }}
+            contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: bottomPad }}
             ListHeaderComponent={
               <Text style={[styles.filterSectionLabel, { marginBottom: spacing.sm }]}>
                 РЕЗУЛТАТИ ({filtered.length})
