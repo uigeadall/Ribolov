@@ -14,6 +14,7 @@ import {
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../services/authContext';
+import { computePersonalBests, isPersonalBestCatch } from '../services/personalBests';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -298,6 +299,7 @@ export default function LogbookScreen() {
   }, [items, searchQuery, speciesId, releasedOnly, dateFrom, dateTo]);
 
   const totalKg = filtered.reduce((s, i) => s + (i.weightKg ?? 0), 0);
+  const personalBests = useMemo(() => computePersonalBests(items), [items]);
   const filtersActive =
     !!speciesId || releasedOnly || !!dateFrom || !!dateTo || searchQuery.trim().length > 0;
 
@@ -330,9 +332,10 @@ export default function LogbookScreen() {
             </View>
           )}
           <View style={styles.itemBody}>
-            <Text style={styles.itemTitle} numberOfLines={2}>
-              {item.speciesName}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Text style={styles.itemTitle} numberOfLines={1}>{item.speciesName}</Text>
+              {isPersonalBestCatch(item, personalBests) ? <Text style={{ fontSize: 14 }}>🏆</Text> : null}
+            </View>
             {item.photoTitle ? (
               <Text style={styles.photoTitleLine} numberOfLines={1}>
                 „{item.photoTitle}“

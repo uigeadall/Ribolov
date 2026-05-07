@@ -37,6 +37,8 @@ import { WeatherIcon } from '../components/WeatherIcon';
 import { StarRatingBar } from '../components/StarRatingBar';
 import { fetchDrivingRoutePoints } from '../services/osrmRoute';
 import { openDrivingDirections } from '../utils/openDrivingDirections';
+import { BiteForecast } from '../components/BiteForecast';
+import { getWaterReports, addWaterReport, CONDITION_LABELS, type WaterCondition, type WaterReport } from '../services/fishingReports';
 
 type SelectedWater = { kind: 'dam'; item: Dam } | { kind: 'river'; item: River };
 
@@ -94,6 +96,12 @@ export default function MapScreen() {
   const weatherCacheRef = useRef<Record<string, WeatherCacheEntry>>({});
   const { user, configured } = useAuth();
   const [hintVisible, setHintVisible] = useState(true);
+  const [waterReports, setWaterReports] = useState<WaterReport[]>([]);
+  const [reportSheetOpen, setReportSheetOpen] = useState(false);
+  const [reportActivity, setReportActivity] = useState(3);
+  const [reportCondition, setReportCondition] = useState<WaterCondition>('clear');
+  const [reportNote, setReportNote] = useState('');
+  const [reportSaving, setReportSaving] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setHintVisible(false), 5000);
@@ -217,6 +225,14 @@ export default function MapScreen() {
       setSelectedWater({ kind: 'river', item: r });
     }
   };
+
+  useEffect(() => {
+    if (!selectedWater) {
+      setWaterReports([]);
+      return;
+    }
+    getWaterReports(selectedWater.item.id).then(setWaterReports).catch(() => {});
+  }, [selectedWater]);
 
   useEffect(() => {
     if (!selectedWater) {
@@ -719,6 +735,74 @@ export default function MapScreen() {
                     </Text>
                   </View>
                 </View>
+              ) : null}
+
+              {damWeather ? <BiteForecast weather={damWeather} /> : null}
+
+              <Text style={styles.speciesTitle}>Рапорти от рибари</Text>
+              {waterReports.length === 0 ? (
+                <Text style={{ ...typography.caption, color: colors.textMuted, marginBottom: spacing.sm }}>
+                  Все още няма рапорти за последните 24 ч.
+                </Text>
+              ) : waterReports.map((r) => (
+                <View key={r.id} style={{ backgroundColor: colors.surfaceAlt, borderRadius: radius.md, padding: spacing.sm, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border }}>
+                  <Text style={{ ...typography.bodyBold, color: colors.text, fontSize: 13 }}>{r.reporterName}</Text>
+                  <Text style={{ ...typography.small, color: colors.textMuted }}>
+                    {CONDITION_LABELS[r.waterCondition]} · {'⭐'.repeat(r.fishingActivity)}
+                  </Text>
+                  {r.note ? <Text style={{ ...typography.small, color: colors.text, marginTop: 2 }}>{r.note}</Text> : null}
+                </View>
+              ))}
+              {user && configured ? (
+                reportSheetOpen ? (
+                  <View style={{ backgroundColor: colors.card, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.sm }}>
+                    <Text style={{ ...typography.bodyBold, color: colors.text, marginBottom: spacing.sm }}>Добави рапорт</Text>
+                    <Text style={{ ...typography.small, color: colors.textMuted, marginBottom: 4 }}>Активност (1-5)</Text>
+                    <View style={{ flexDirection: 'row', gap: spacing.xs, marginBottom: spacing.sm }}>
+                      {[1,2,3,4,5].map((n) => (
+                        <Pressable key={n} onPress={() => setReportActivity(n)} style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: n <= reportActivity ? colors.primary : colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }}>
+                          <Text style={{ color: n <= reportActivity ? colors.white : colors.text, fontWeight: '700' }}>{n}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    <Text style={{ ...typography.small, color: colors.textMuted, marginBottom: 4 }}>Вода</Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginBottom: spacing.sm }}>
+                      {(['crystal','clear','murky','muddy'] as WaterCondition[]).map((c) => (
+                        <Pressable key={c} onPress={() => setReportCondition(c)} style={{ paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radius.pill, backgroundColor: reportCondition === c ? colors.primary : colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }}>
+                          <Text style={{ ...typography.small, color: reportCondition === c ? colors.white : colors.text, fontWeight: '600' }}>{CONDITION_LABELS[c]}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    <TextInput
+                      placeholder="Бележка (по избор)"
+                      placeholderTextColor={colors.textMuted}
+                      value={reportNote}
+                      onChangeText={setReportNote}
+                      style={{ borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, color: colors.text, backgroundColor: colors.surfaceAlt, marginBottom: spacing.sm }}
+                      maxLength={200}
+                    />
+                    <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                      <Button title="Отказ" variant="ghost" compact onPress={() => setReportSheetOpen(false)} style={{ flex: 1 }} />
+                      <Button title="Изпрати" compact loading={reportSaving} onPress={async () => {
+                        if (!selectedWater) return;
+                        setReportSaving(true);
+                        try {
+                          await addWaterReport({ waterBodyId: selectedWater.item.id, waterBodyKind: selectedWater.kind, waterBodyName: selectedWater.item.name, reporterUid: user.uid, reporterName: user.displayName ?? 'Рибар', fishingActivity: reportActivity, waterCondition: reportCondition, note: reportNote.trim() || undefined });
+                          const fresh = await getWaterReports(selectedWater.item.id);
+                          setWaterReports(fresh);
+                          setReportSheetOpen(false);
+                          setReportNote('');
+                        } catch { Alert.alert('Грешка', 'Неуспешно изпращане.'); }
+                        finally { setReportSaving(false); }
+                      }} style={{ flex: 1 }} />
+                    </View>
+                  </View>
+                ) : (
+                  <Pressable onPress={() => setReportSheetOpen(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm }}>
+                    <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
+                    <Text style={{ ...typography.caption, color: colors.primary, fontWeight: '600' }}>Добави рапорт за {selectedWater?.kind === 'dam' ? 'язовира' : 'реката'}</Text>
+                  </Pressable>
+                )
               ) : null}
 
               <Text style={styles.speciesTitle}>Прогноза 7 дни</Text>

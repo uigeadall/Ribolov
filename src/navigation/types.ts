@@ -24,6 +24,10 @@ export type SpeciesStackParamList = {
 export type ProfileStackParamList = {
   ProfileMain: undefined;
   Species: NavigatorScreenParams<SpeciesStackParamList>;
+  PersonalBests: undefined;
+  Groups: undefined;
+  GroupDetail: { groupId: string; groupName: string };
+  CreateGroup: undefined;
   Notifications: undefined;
   Stats: undefined;
   Auth: undefined;

@@ -32,6 +32,7 @@ import { pushCatch, ensureCatchPhotoUploadedForCloud } from '../services/cloudSy
 import { ensureFirebase } from '../services/firebase';
 import { enqueueCatchSync } from '../services/catchSyncQueue';
 import { checkBanPeriod } from '../services/notifications';
+import { checkNewPersonalBest } from '../services/personalBests';
 import { checkForNewUnlocks } from '../services/achievements';
 import { AchievementUnlockModal } from '../components/AchievementUnlockModal';
 import { SpeciesPicker } from '../components/SpeciesPicker';
@@ -359,6 +360,17 @@ export default function AddCatchScreen() {
         Alert.alert('Нужен е акаунт', 'За да споделиш публично, влез/регистрирай се в Профил.');
       }
       const allCatches = await catchesStore.list();
+
+      // Check for new personal best
+      const pb = checkNewPersonalBest(item, allCatches);
+      if (pb.isNew && !editCatchId) {
+        const pbMsg =
+          pb.field === 'both' ? 'Нов личен рекорд по тегло и дължина! 🏆'
+          : pb.field === 'weight' ? 'Нов личен рекорд по тегло! 🏆'
+          : 'Нов личен рекорд по дължина! 🏆';
+        Alert.alert('Личен рекорд!', `${item.speciesName} — ${pbMsg}`);
+      }
+
       const achCtx = { firebaseConfigured: configured, userLoggedIn: !!user };
       const newUnlocks = await checkForNewUnlocks(allCatches, achCtx);
       if (newUnlocks.length > 0) {

@@ -529,6 +529,8 @@ export default function ProfileScreen() {
           <Text style={styles.menuCardTitle}>Още</Text>
           <Card style={styles.menuCardWrap}>
             <MenuRow dense icon="stats-chart-outline" title="Статистики" onPress={() => navigation.navigate('Stats')} showDivider />
+            <MenuRow dense icon="trophy-outline" title="Лични рекорди" onPress={() => navigation.navigate('PersonalBests')} showDivider />
+            <MenuRow dense icon="people-outline" title="Клубове" onPress={() => navigation.navigate('Groups')} showDivider />
             <MenuRow dense icon="newspaper-outline" title="Лента" onPress={() => navigation.navigate('Feed')} showDivider />
             <MenuRow dense icon="images-outline" title="Класики и награди" onPress={() => navigation.navigate('Classics')} showDivider />
             <MenuRow dense icon="bookmark-outline" title="Запазени" onPress={() => navigation.navigate('SavedPosts')} showDivider />

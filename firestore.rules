@@ -173,6 +173,51 @@ service cloud.firestore {
       allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
     }
 
+    /** Рибарски рапорти за водоеми — всеки логнат може да пише/чете; само авторът изтрива. */
+    match /waterReports/{reportId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.reporterUid == request.auth.uid
+        && request.resource.data.fishingActivity is number
+        && request.resource.data.fishingActivity >= 1
+        && request.resource.data.fishingActivity <= 5
+        && request.resource.data.waterCondition in ['crystal','clear','murky','muddy']
+        && (!('note' in request.resource.data) || request.resource.data.note.size() <= 200);
+      allow delete: if signedIn() && resource.data.reporterUid == request.auth.uid;
+      allow update: if false;
+    }
+
+    /** Клубове / групи */
+    match /groups/{groupId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.name is string && request.resource.data.name.size() <= 60;
+      allow update: if signedIn() && resource.data.createdBy == request.auth.uid;
+      allow delete: if signedIn() && resource.data.createdBy == request.auth.uid;
+
+      match /members/{uid} {
+        allow read: if signedIn();
+        allow create, update: if isSelf(uid);
+        allow delete: if isSelf(uid)
+          || get(/databases/$(database)/documents/groups/$(groupId)).data.createdBy == request.auth.uid;
+      }
+
+      match /posts/{postId} {
+        allow read: if signedIn();
+        allow create: if signedIn()
+          && request.resource.data.ownerUid == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 2000
+          && exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+        allow delete: if signedIn() && (
+          resource.data.ownerUid == request.auth.uid
+          || get(/databases/$(database)/documents/groups/$(groupId)).data.createdBy == request.auth.uid
+        );
+        allow update: if false;
+      }
+    }
+
     /** Директни съобщения — само двамата участници, само при взаимно следване. */
     match /conversations/{convId} {
       allow read: if signedIn() && request.auth.uid in resource.data.participantIds;

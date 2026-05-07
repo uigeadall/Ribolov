@@ -50,6 +50,10 @@ import NotificationsScreen from '../screens/NotificationsScreen';
 import SavedPostsScreen from '../screens/SavedPostsScreen';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import SearchScreen from '../screens/SearchScreen';
+import PersonalBestsScreen from '../screens/PersonalBestsScreen';
+import GroupsScreen from '../screens/GroupsScreen';
+import GroupDetailScreen from '../screens/GroupDetailScreen';
+import CreateGroupScreen from '../screens/CreateGroupScreen';
 
 const wrap = (label: string, Component: React.ComponentType<any>) => (props: any) =>
   (
@@ -135,6 +139,10 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="ChatDetail" component={ChatDetailScreen} />
       <ProfileStack.Screen name="LegalInfo" component={LegalInfoScreen} />
       <ProfileStack.Screen name="Species" component={SpeciesNavigator} />
+      <ProfileStack.Screen name="PersonalBests" component={PersonalBestsScreen} />
+      <ProfileStack.Screen name="Groups" component={GroupsScreen} />
+      <ProfileStack.Screen name="GroupDetail" component={GroupDetailScreen} />
+      <ProfileStack.Screen name="CreateGroup" component={CreateGroupScreen} />
     </ProfileStack.Navigator>
   );
 }
