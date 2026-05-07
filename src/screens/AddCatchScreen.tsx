@@ -500,13 +500,13 @@ export default function AddCatchScreen() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm }}>
               {extraPhotoUris.map((uri, i) => (
                 <View key={i} style={{ position: 'relative' }}>
-                  <Image source={{ uri }} style={{ width: 80, height: 80, borderRadius: radius.md }} contentFit=”cover” />
+                  <Image source={{ uri }} style={{ width: 80, height: 80, borderRadius: radius.md }} contentFit="cover" />
                   <Pressable
                     onPress={() => setExtraPhotoUris((p) => p.filter((_, idx) => idx !== i))}
                     style={{ position: 'absolute', top: -6, right: -6, backgroundColor: colors.danger, borderRadius: 10, width: 20, height: 20, alignItems: 'center', justifyContent: 'center' }}
                     hitSlop={4}
                   >
-                    <Ionicons name=”close” size={12} color={colors.white} />
+                    <Ionicons name="close" size={12} color={colors.white} />
                   </Pressable>
                 </View>
               ))}
@@ -515,7 +515,7 @@ export default function AddCatchScreen() {
                   onPress={addExtraPhoto}
                   style={{ width: 80, height: 80, borderRadius: radius.md, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}
                 >
-                  <Ionicons name=”add” size={28} color={colors.primary} />
+                  <Ionicons name="add" size={28} color={colors.primary} />
                 </Pressable>
               ) : null}
             </ScrollView>
