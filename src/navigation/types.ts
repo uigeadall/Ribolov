@@ -65,4 +65,5 @@ export type RootStackParamList = {
   Main: NavigatorScreenParams<TabsParamList>;
   /** photoUrlHint — локален URI или последно известен remote URL за мигновен преглед, докато Firestore се синхронизира */
   UserPublicProfile: { uid: string; displayName?: string; photoUrlHint?: string };
+  Search: undefined;
 };

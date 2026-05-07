@@ -45,6 +45,11 @@ service cloud.firestore {
         allow read, write: if isSelf(userId);
       }
 
+      /** Блокирани потребители — само собственикът чете/пише. */
+      match /blockedUsers/{targetUid} {
+        allow read, write: if isSelf(userId);
+      }
+
       /** Известия за харесвания и коментари по мои публични улови. */
       match /notifications/{nid} {
         allow read, delete: if isSelf(userId);

@@ -12,6 +12,7 @@ import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
 import { fetchPublicFeed, getFollowing } from '../services/cloudSync';
+import { getBlockedUids } from '../services/blockUser';
 import { useAuth } from '../services/authContext';
 import { formatFirebaseError } from '../services/firebaseErrors';
 import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
@@ -127,9 +128,13 @@ export default function FeedScreen() {
     setLoading(true);
     setError(null);
     try {
-      const [list, followingRows] = await Promise.all([fetchPublicFeed(100), getFollowing(user.uid)]);
+      const [list, followingRows, blockedUids] = await Promise.all([
+        fetchPublicFeed(100),
+        getFollowing(user.uid),
+        getBlockedUids(user.uid),
+      ]);
       const followingSet = new Set(followingRows.map((f) => f.uid));
-      let next = list as FeedItem[];
+      let next = (list as FeedItem[]).filter((i) => !blockedUids.has(i.ownerUid));
       if (scope === 'following') {
         next = next.filter((i) => followingSet.has(i.ownerUid));
       }
@@ -180,6 +185,14 @@ export default function FeedScreen() {
         accessibilityLabel="Известия"
       >
         <Ionicons name="notifications-outline" size={22} color={colors.primary} />
+      </Pressable>
+      <Pressable
+        onPress={() => navigation.navigate('Search')}
+        hitSlop={8}
+        style={styles.backBtn}
+        accessibilityLabel="Търси"
+      >
+        <Ionicons name="search-outline" size={22} color={colors.primary} />
       </Pressable>
     </View>
   );

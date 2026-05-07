@@ -33,6 +33,7 @@ import {
 } from '../services/cloudSync';
 import { sendFollowNotification } from '../services/socialFeed';
 import { formatFirebaseError } from '../services/firebaseErrors';
+import { blockUser, isBlockedBy } from '../services/blockUser';
 import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
 
 function createPublicProfileStyles(colors: AppColors) {
@@ -124,6 +125,51 @@ export default function UserPublicProfileScreen() {
   const [catches, setCatches] = useState<FeedItem[]>([]);
 
   const isSelf = user?.uid === uid;
+  const [blocked, setBlocked] = useState(false);
+
+  const handleBlockMenu = () => {
+    if (!user || isSelf) return;
+    Alert.alert(
+      summaryName,
+      blocked ? 'Вече си блокирал този потребител.' : 'Какво искаш да направиш?',
+      blocked
+        ? [
+            { text: 'Отказ', style: 'cancel' },
+            {
+              text: 'Деблокирай',
+              onPress: async () => {
+                await blockUser(user.uid, uid).catch(() => {});
+                setBlocked(false);
+              },
+            },
+          ]
+        : [
+            { text: 'Отказ', style: 'cancel' },
+            {
+              text: 'Блокирай',
+              style: 'destructive',
+              onPress: () => {
+                Alert.alert(
+                  'Блокирай потребителя',
+                  `Уловите на ${summaryName} няма да се показват в лентата ти. Той не разбира, че е блокиран.`,
+                  [
+                    { text: 'Отказ', style: 'cancel' },
+                    {
+                      text: 'Блокирай',
+                      style: 'destructive',
+                      onPress: async () => {
+                        await blockUser(user.uid, uid).catch(() => {});
+                        setBlocked(true);
+                        navigation.goBack();
+                      },
+                    },
+                  ]
+                );
+              },
+            },
+          ]
+    );
+  };
 
   const load = useCallback(async () => {
     if (!configured) return;
@@ -223,7 +269,13 @@ export default function UserPublicProfileScreen() {
         <Text style={styles.title} numberOfLines={1}>
           Профил
         </Text>
-        <View style={{ width: 28 }} />
+        {user && !isSelf ? (
+          <Pressable onPress={handleBlockMenu} hitSlop={8}>
+            <Ionicons name="ellipsis-horizontal" size={24} color={colors.textMuted} />
+          </Pressable>
+        ) : (
+          <View style={{ width: 28 }} />
+        )}
       </View>
 
       {loading && !refreshing ? (

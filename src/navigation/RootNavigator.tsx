@@ -49,6 +49,7 @@ import UserPublicProfileScreen from '../screens/UserPublicProfileScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
 import SavedPostsScreen from '../screens/SavedPostsScreen';
 import { ErrorBoundary } from '../components/ErrorBoundary';
+import SearchScreen from '../screens/SearchScreen';
 
 const wrap = (label: string, Component: React.ComponentType<any>) => (props: any) =>
   (
@@ -232,6 +233,11 @@ export function RootNavigator() {
       <RootStack.Navigator screenOptions={{ headerShown: false }}>
         <RootStack.Screen name="Main" component={TabNavigator} />
         <RootStack.Screen name="UserPublicProfile" component={UserPublicProfileWrapped} />
+        <RootStack.Screen
+          name="Search"
+          component={SearchScreen}
+          options={{ presentation: 'modal' }}
+        />
       </RootStack.Navigator>
     </NavigationContainer>
   );

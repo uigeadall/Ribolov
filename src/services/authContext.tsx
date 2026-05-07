@@ -20,6 +20,7 @@ import { isFirebaseConfigured } from './firebaseConfig';
 import { deleteAllUserCloudData } from './cloudSync';
 import { wipeAllLocalAppData } from '../storage/storage';
 import { clearCatchSyncQueue, flushPendingCatchSync } from './catchSyncQueue';
+import { registerForPushNotifications } from './pushNotifications';
 
 export type AuthContextValue = {
   user: User | null;
@@ -75,6 +76,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           flushPendingCatchSync({
             user: { uid: u.uid, displayName: u.displayName, email: u.email },
           }).catch(() => undefined);
+          registerForPushNotifications(u.uid).catch(() => undefined);
         } else {
           await AsyncStorage.removeItem(LAST_UID_KEY).catch(() => undefined);
         }

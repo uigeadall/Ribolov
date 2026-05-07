@@ -17,6 +17,7 @@ import {
 import { ensureFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
 import { allowComment, allowLikeToggle } from './socialRateLimit';
+import { getUserPushToken, sendPushNotification } from './pushNotifications';
 
 export type FeedComment = {
   id: string;
@@ -90,6 +91,17 @@ async function notifyInteraction(opts: {
       createdAt: serverTimestamp(),
     })
   );
+  // Send device push notification (fire-and-forget)
+  void getUserPushToken(opts.recipientUid).then((token) => {
+    if (!token) return;
+    const isLike = opts.type === 'like';
+    sendPushNotification({
+      to: token,
+      title: opts.actorName,
+      body: isLike ? 'Харесва твоя улов 🎣' : `Коментира: ${(opts.preview ?? '').slice(0, 80)}`,
+      data: { type: opts.type, catchId: opts.catchId },
+    });
+  });
 }
 
 /** Връща true ако след операцията уловът е харесан. */
@@ -240,6 +252,15 @@ export async function sendFollowNotification(
       createdAt: serverTimestamp(),
     })
   );
+  void getUserPushToken(followedUid).then((token) => {
+    if (!token) return;
+    sendPushNotification({
+      to: token,
+      title: followerDisplayName,
+      body: 'Започна да те следва 🎣',
+      data: { type: 'follow', actorUid: followerUid },
+    });
+  });
 }
 
 export async function fetchCatchLikers(catchId: string): Promise<CatchLiker[]> {
