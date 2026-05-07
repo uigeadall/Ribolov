@@ -668,7 +668,9 @@ export default function MapScreen() {
                     <WeatherIcon weatherCode={damWeather.weatherCode} size={44} color={colors.primary} />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.weatherTemp}>{damWeather.temperatureC}°C</Text>
-                      <Text style={styles.weatherDesc}>{damWeather.description}</Text>
+                      <Text style={styles.weatherDesc}>
+                        {damWeather.description} · усеща се {damWeather.feelsLikeC}°
+                      </Text>
                     </View>
                     <View style={styles.weatherRating}>
                       <StarRatingBar rating={damWeather.fishingRating} color={colors.accent} emptyColor={colors.border} size={14} />
@@ -693,6 +695,28 @@ export default function MapScreen() {
                       <Text style={styles.weatherDetailValue}>{damWeather.humidity}%</Text>
                       <Text style={styles.weatherDetailLabel}>влажност</Text>
                     </View>
+                  </View>
+                  <View style={[styles.weatherDetailsRow, { marginTop: spacing.sm, paddingTop: spacing.sm }]}>
+                    <View style={styles.weatherDetail}>
+                      <Ionicons name="rainy-outline" size={18} color={colors.textMuted} />
+                      <Text style={styles.weatherDetailValue}>{damWeather.precipitationProbability}%</Text>
+                      <Text style={styles.weatherDetailLabel}>дъжд</Text>
+                    </View>
+                    <View style={styles.weatherDetail}>
+                      <Ionicons name="sunny-outline" size={18} color={colors.textMuted} />
+                      <Text style={styles.weatherDetailValue}>UV {damWeather.uvIndex}</Text>
+                      <Text style={styles.weatherDetailLabel}>UV индекс</Text>
+                    </View>
+                    <View style={styles.weatherDetail}>
+                      <Ionicons name="cloud-outline" size={18} color={colors.textMuted} />
+                      <Text style={styles.weatherDetailValue}>{damWeather.cloudCover}%</Text>
+                      <Text style={styles.weatherDetailLabel}>облачност</Text>
+                    </View>
+                  </View>
+                  <View style={{ marginTop: spacing.sm, paddingTop: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+                    <Text style={{ ...typography.caption, color: colors.textMuted }}>
+                      {damWeather.moonPhaseName}
+                    </Text>
                   </View>
                 </View>
               ) : null}

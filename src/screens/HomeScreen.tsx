@@ -284,7 +284,9 @@ export default function HomeScreen() {
               <WeatherIcon weatherCode={weather.weatherCode} size={54} color={colors.primary} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.weatherTemp}>{weather.temperatureC}°C</Text>
-                <Text style={styles.weatherDesc}>{weather.description}</Text>
+                <Text style={styles.weatherDesc}>
+                  {weather.description} · усеща се {weather.feelsLikeC}°
+                </Text>
               </View>
               <View style={styles.weatherRatingCol}>
                 <StarRatingBar rating={weather.fishingRating} color={colors.accent} emptyColor={colors.border} size={14} />
@@ -315,7 +317,24 @@ export default function HomeScreen() {
                   <Text style={styles.detailLbl}>влажност</Text>
                 </View>
               </View>
+              <View style={styles.detailItem}>
+                <Ionicons name="rainy-outline" size={18} color={colors.textMuted} />
+                <View>
+                  <Text style={styles.detailVal}>{weather.precipitationProbability}%</Text>
+                  <Text style={styles.detailLbl}>дъжд</Text>
+                </View>
+              </View>
+              <View style={styles.detailItem}>
+                <Ionicons name="sunny-outline" size={18} color={colors.textMuted} />
+                <View>
+                  <Text style={styles.detailVal}>UV {weather.uvIndex}</Text>
+                  <Text style={styles.detailLbl}>UV индекс</Text>
+                </View>
+              </View>
             </View>
+            <Text style={[styles.weatherHint, { marginTop: spacing.sm }]}>
+              {weather.moonPhaseName}
+            </Text>
             <Text style={styles.weatherHint}>
               На картата можеш да избереш язовир или река и да видиш прогноза за точното място и следващите 7 дни.
             </Text>
