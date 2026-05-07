@@ -274,7 +274,7 @@ export default function AddCatchScreen() {
     setSaving(true);
     const id = editCatchId ?? newId();
     const photoTakenWithAppCamera =
-      !uri ? undefined : isRemoteImageUri(uri) ? initialCatch?.photoTakenWithAppCamera ?? true : cameraVerifiedPhoto;
+      !uri ? undefined : isRemoteImageUri(uri) ? initialCatch?.photoTakenWithAppCamera ?? false : cameraVerifiedPhoto;
 
     const item: Catch = {
       id,

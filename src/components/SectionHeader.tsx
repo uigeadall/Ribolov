@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useTheme } from '../services/themeContext';
 import { spacing, typography } from '../theme/typography';
@@ -13,26 +13,30 @@ type Props = {
 
 export function SectionHeader({ title, hint, subtitle }: Props) {
   const { colors } = useTheme();
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        wrap: { marginBottom: spacing.md },
+        hint: { ...typography.overline, color: colors.primary, marginBottom: spacing.xs },
+        title: { ...typography.h3, fontSize: 18, color: colors.text },
+        sub: { ...typography.body, color: colors.textMuted, marginTop: spacing.xs, lineHeight: 22 },
+      }),
+    [colors]
+  );
+
   return (
     <View style={styles.wrap}>
       {hint ? (
-        <Text style={[styles.hint, { color: colors.primary }]} numberOfLines={2}>
+        <Text style={styles.hint} numberOfLines={2}>
           {hint}
         </Text>
       ) : null}
-      <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
+      <Text style={styles.title}>{title}</Text>
       {subtitle ? (
-        <Text style={[styles.sub, { color: colors.textMuted }]} numberOfLines={3}>
+        <Text style={styles.sub} numberOfLines={3}>
           {subtitle}
         </Text>
       ) : null}
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  wrap: { marginBottom: spacing.md },
-  hint: { ...typography.overline, marginBottom: spacing.xs },
-  title: { ...typography.h3, fontSize: 18 },
-  sub: { ...typography.body, marginTop: spacing.xs, lineHeight: 22 },
-});

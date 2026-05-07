@@ -33,17 +33,16 @@ export async function fetchWeather(latitude: number, longitude: number): Promise
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,weather_code,surface_pressure,wind_speed_10m,wind_direction_10m`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Времето: HTTP ${res.status}`);
-  const json = (await res.json()) as {
-    current: {
-      temperature_2m: number;
-      relative_humidity_2m: number;
-      weather_code: number;
-      surface_pressure: number;
-      wind_speed_10m: number;
-      wind_direction_10m: number;
-    };
+  const json = await res.json();
+  if (!json?.current) throw new Error('Времето: неочакван формат на отговора');
+  const c = json.current as {
+    temperature_2m: number;
+    relative_humidity_2m: number;
+    weather_code: number;
+    surface_pressure: number;
+    wind_speed_10m: number;
+    wind_direction_10m: number;
   };
-  const c = json.current;
   const windKmh = c.wind_speed_10m;
   const code = c.weather_code;
   return {

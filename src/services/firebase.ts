@@ -31,7 +31,8 @@ export function ensureFirebase(): FirebaseBundle | null {
   const cfg = getFirebaseWebConfig();
   if (!cfg.apiKey || !cfg.projectId) return null;
   if (!bundle) {
-    const app = getApps().length ? getApps()[0]! : initializeApp(cfg);
+    const existingApps = getApps();
+    const app = existingApps.length ? existingApps[0]! : initializeApp(cfg);
     bundle = {
       app,
       auth: authForApp(app),

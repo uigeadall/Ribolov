@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -168,6 +168,11 @@ export function FeedPost({ item, myUid, myDisplayName, socialEnabled, onPressAut
   const [likers, setLikers] = useState<CatchLiker[]>([]);
   const [likersLoading, setLikersLoading] = useState(false);
 
+  const likeBusyRef = useRef(false);
+  const saveBusyRef = useRef(false);
+  const sendBusyRef = useRef(false);
+  const likersRequestIdRef = useRef(0);
+
   const catchId = item.id;
 
   useEffect(() => {
@@ -204,15 +209,22 @@ export function FeedPost({ item, myUid, myDisplayName, socialEnabled, onPressAut
     if (likeCount === 0) return;
     setLikersOpen(true);
     setLikersLoading(true);
+    const requestId = ++likersRequestIdRef.current;
     try {
-      setLikers(await fetchCatchLikers(catchId));
+      const result = await fetchCatchLikers(catchId);
+      if (requestId === likersRequestIdRef.current) {
+        setLikers(result);
+      }
     } finally {
-      setLikersLoading(false);
+      if (requestId === likersRequestIdRef.current) {
+        setLikersLoading(false);
+      }
     }
   }, [catchId, likeCount]);
 
   const onToggleLike = useCallback(async () => {
-    if (!socialEnabled || !myUid || likeBusy) return;
+    if (!socialEnabled || !myUid || likeBusyRef.current) return;
+    likeBusyRef.current = true;
     setLikeBusy(true);
     try {
       const next = await toggleCatchLike(catchId, myUid, item.ownerUid, myDisplayName);
@@ -220,19 +232,22 @@ export function FeedPost({ item, myUid, myDisplayName, socialEnabled, onPressAut
     } catch (e) {
       Alert.alert('Харесване', e instanceof Error ? e.message : 'Неуспешно действие.');
     } finally {
+      likeBusyRef.current = false;
       setLikeBusy(false);
     }
-  }, [socialEnabled, myUid, likeBusy, catchId, item.ownerUid, myDisplayName]);
+  }, [socialEnabled, myUid, catchId, item.ownerUid, myDisplayName]);
 
   const onToggleSave = useCallback(async () => {
-    if (!socialEnabled || !myUid || saveBusy) return;
+    if (!socialEnabled || !myUid || saveBusyRef.current) return;
+    saveBusyRef.current = true;
     setSaveBusy(true);
     try {
       await toggleSaveCatch(myUid, catchId);
     } finally {
+      saveBusyRef.current = false;
       setSaveBusy(false);
     }
-  }, [socialEnabled, myUid, saveBusy, catchId]);
+  }, [socialEnabled, myUid, catchId]);
 
   const onShare = useCallback(async () => {
     const lines = [
@@ -276,9 +291,10 @@ export function FeedPost({ item, myUid, myDisplayName, socialEnabled, onPressAut
   }, [socialEnabled, myUid, catchId]);
 
   const onSendComment = useCallback(async () => {
-    if (!socialEnabled || !myUid || sendBusy) return;
+    if (!socialEnabled || !myUid || sendBusyRef.current) return;
     const t = draft.trim();
     if (!t) return;
+    sendBusyRef.current = true;
     setSendBusy(true);
     try {
       await addCatchComment(catchId, myUid, myDisplayName, t, item.ownerUid);
@@ -286,9 +302,10 @@ export function FeedPost({ item, myUid, myDisplayName, socialEnabled, onPressAut
     } catch (e) {
       Alert.alert('Коментар', e instanceof Error ? e.message : 'Неуспешно изпращане.');
     } finally {
+      sendBusyRef.current = false;
       setSendBusy(false);
     }
-  }, [socialEnabled, myUid, sendBusy, draft, catchId, item.ownerUid, myDisplayName]);
+  }, [socialEnabled, myUid, draft, catchId, item.ownerUid, myDisplayName]);
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
