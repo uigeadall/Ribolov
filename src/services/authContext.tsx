@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { User } from 'firebase/auth';
 import {
   onAuthStateChanged,
@@ -32,6 +33,8 @@ export type AuthContextValue = {
   deleteAccount: (password: string) => Promise<void>;
 };
 
+const LAST_UID_KEY = '@ribolov/lastUid';
+
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -60,13 +63,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     const unsub = onAuthStateChanged(fb.auth, (u) => {
-      setUser(u);
-      setLoading(false);
-      if (u) {
-        flushPendingCatchSync({
-          user: { uid: u.uid, displayName: u.displayName, email: u.email },
-        }).catch(() => undefined);
-      }
+      void (async () => {
+        if (u) {
+          const lastUid = await AsyncStorage.getItem(LAST_UID_KEY).catch(() => null);
+          if (lastUid !== null && lastUid !== u.uid) {
+            // Different user signed in — clear the previous user's local data
+            await wipeAllLocalAppData().catch(() => undefined);
+            await clearCatchSyncQueue().catch(() => undefined);
+          }
+          await AsyncStorage.setItem(LAST_UID_KEY, u.uid).catch(() => undefined);
+          flushPendingCatchSync({
+            user: { uid: u.uid, displayName: u.displayName, email: u.email },
+          }).catch(() => undefined);
+        } else {
+          await AsyncStorage.removeItem(LAST_UID_KEY).catch(() => undefined);
+        }
+        setUser(u);
+        setLoading(false);
+      })();
     });
     return unsub;
   }, [configured]);
@@ -108,6 +122,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = useCallback(async () => {
     const fb = ensureFirebase();
+    await wipeAllLocalAppData().catch(() => undefined);
+    await clearCatchSyncQueue().catch(() => undefined);
+    await AsyncStorage.removeItem(LAST_UID_KEY).catch(() => undefined);
     if (fb) await firebaseSignOut(fb.auth);
     else setUser(null);
   }, []);
