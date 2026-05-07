@@ -12,6 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../services/authContext';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -250,6 +251,8 @@ export default function LogbookScreen() {
   const navigation = useNavigation<Nav>();
   const { colors, mode } = useTheme();
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
+  const bottomPad = insets.bottom + spacing.xl;
   const styles = useMemo(() => createLogbookStyles(colors, mode), [colors, mode]);
   const [items, setItems] = useState<Catch[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -546,24 +549,40 @@ export default function LogbookScreen() {
         ) : null}
 
         {items.length === 0 ? (
-          <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: spacing.xl }}>
+          <ScrollView
+            contentContainerStyle={{
+              flexGrow: 1,
+              justifyContent: 'center',
+              paddingHorizontal: spacing.xl,
+              paddingBottom: bottomPad,
+            }}
+            showsVerticalScrollIndicator={false}
+          >
             <EmptyState
-              icon="book-outline"
-              title="Дневникът е празен"
-              subtitle="Добави първия улов с бутона „+“ горе или оттук — после ще го виждаш в списъка и на картата."
+              icon=”book-outline”
+              title=”Дневникът е празен”
+              subtitle=”Добави първия улов с бутона „+” горе или оттук — после ще го виждаш в списъка и на картата.”
             />
-            <Button title="Добави улов" onPress={() => navigation.navigate('AddCatch')} style={{ marginTop: spacing.lg }} />
-          </View>
+            <Button title=”Добави улов” onPress={() => navigation.navigate('AddCatch')} style={{ marginTop: spacing.lg }} />
+          </ScrollView>
         ) : filtered.length === 0 ? (
-          <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: spacing.xl }}>
-            <EmptyState icon="search-outline" title="Няма съвпадения" subtitle="Няма записи за тези филтри. Опитай друга комбинация." />
-            <Button title="Изчисти филтри" variant="secondary" onPress={resetFilters} style={{ marginTop: spacing.lg }} />
-          </View>
+          <ScrollView
+            contentContainerStyle={{
+              flexGrow: 1,
+              justifyContent: 'center',
+              paddingHorizontal: spacing.xl,
+              paddingBottom: bottomPad,
+            }}
+            showsVerticalScrollIndicator={false}
+          >
+            <EmptyState icon=”search-outline” title=”Няма съвпадения” subtitle=”Няма записи за тези филтри. Опитай друга комбинация.” />
+            <Button title=”Изчисти филтри” variant=”secondary” onPress={resetFilters} style={{ marginTop: spacing.lg }} />
+          </ScrollView>
         ) : (
           <FlatList
             data={filtered}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={{ paddingHorizontal: spacing.xl, paddingBottom: spacing.xxl }}
+            contentContainerStyle={{ paddingHorizontal: spacing.xl, paddingBottom: bottomPad }}
             ListHeaderComponent={
               <Text style={[styles.filterSectionLabel, { marginBottom: spacing.sm }]}>
                 РЕЗУЛТАТИ ({filtered.length})
