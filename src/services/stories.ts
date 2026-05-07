@@ -10,6 +10,7 @@ import {
   where,
   limit,
 } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { ensureFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
 
@@ -24,9 +25,29 @@ export type Story = {
   locationName?: string;
   waterTempC?: number;
   emoji?: string;
+  mediaUrl?: string;
+  mediaType?: 'photo' | 'video';
   createdAt: string;
   expiresAt: number;
 };
+
+/** Качва снимка или видео в Firebase Storage под stories/{uid}/. */
+export async function uploadStoryMedia(
+  localUri: string,
+  uid: string,
+  type: 'photo' | 'video'
+): Promise<string> {
+  const fb = ensureFirebase();
+  if (!fb) throw new Error('Firebase не е наличен.');
+  const ext = type === 'video' ? 'mp4' : 'jpg';
+  const contentType = type === 'video' ? 'video/mp4' : 'image/jpeg';
+  const path = `stories/${uid}/${Date.now()}.${ext}`;
+  const storageRef = ref(fb.storage, path);
+  const resp = await fetch(localUri);
+  const blob = await resp.blob();
+  await uploadBytes(storageRef, blob, { contentType });
+  return getDownloadURL(storageRef);
+}
 
 export async function addStory(s: Omit<Story, 'id' | 'createdAt' | 'expiresAt'>): Promise<void> {
   const fb = ensureFirebase();
@@ -66,6 +87,8 @@ export async function getStories(): Promise<Story[]> {
         locationName: data.locationName,
         waterTempC: data.waterTempC,
         emoji: data.emoji,
+        mediaUrl: data.mediaUrl,
+        mediaType: data.mediaType,
         createdAt:
           typeof data.createdAt?.toMillis === 'function'
             ? new Date(data.createdAt.toMillis()).toISOString()
