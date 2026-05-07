@@ -14,6 +14,7 @@ import {
   GoogleAuthProvider,
   OAuthProvider,
   reauthenticateWithCredential,
+  sendPasswordResetEmail,
 } from 'firebase/auth';
 import { ensureFirebase } from './firebase';
 import { isFirebaseConfigured } from './firebaseConfig';
@@ -31,6 +32,7 @@ export type AuthContextValue = {
   signInWithGoogleIdToken: (idToken: string) => Promise<void>;
   signInWithApple: (idToken: string, rawNonce: string) => Promise<void>;
   signOut: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
   deleteAccount: (password: string) => Promise<void>;
 };
 
@@ -131,6 +133,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     else setUser(null);
   }, []);
 
+  const resetPassword = useCallback(async (email: string) => {
+    const fb = ensureFirebase();
+    if (!fb) throw new Error('Firebase не е конфигуриран.');
+    await sendPasswordResetEmail(fb.auth, email.trim());
+  }, []);
+
   const deleteAccount = useCallback(async (password: string) => {
     const fb = ensureFirebase();
     const u = fb?.auth.currentUser;
@@ -154,6 +162,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signInWithGoogleIdToken,
       signInWithApple,
       signOut,
+      resetPassword,
       deleteAccount,
     }),
     [
@@ -165,6 +174,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signInWithGoogleIdToken,
       signInWithApple,
       signOut,
+      resetPassword,
       deleteAccount,
     ]
   );

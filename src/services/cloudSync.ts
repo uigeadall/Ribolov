@@ -17,6 +17,8 @@ import {
   documentId,
   getCountFromServer,
   onSnapshot,
+  startAfter,
+  type DocumentSnapshot,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { ensureFirebase } from './firebase';
@@ -89,12 +91,32 @@ export async function pushCatch(c: Catch, ownerUid: string, ownerName: string, i
   }
 }
 
-export async function fetchPublicFeed(maxItems = 30): Promise<CloudCatch[]> {
+export type FeedPage = {
+  items: CloudCatch[];
+  lastDoc: DocumentSnapshot | null;
+  hasMore: boolean;
+};
+
+export async function fetchPublicFeed(
+  maxItems = 20,
+  afterDoc?: DocumentSnapshot | null
+): Promise<FeedPage> {
   const fb = ensureFirebase();
-  if (!fb) return [];
-  const q = query(collection(fb.db, 'publicCatches'), orderBy('date', 'desc'), limit(maxItems));
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => d.data() as CloudCatch);
+  if (!fb) return { items: [], lastDoc: null, hasMore: false };
+  // Fetch one extra to know if another page exists
+  const constraints: Parameters<typeof query>[1][] = [
+    orderBy('date', 'desc'),
+    limit(maxItems + 1),
+  ];
+  if (afterDoc) constraints.push(startAfter(afterDoc));
+  const snap = await getDocs(query(collection(fb.db, 'publicCatches'), ...constraints));
+  const hasMore = snap.docs.length > maxItems;
+  const docs = hasMore ? snap.docs.slice(0, maxItems) : snap.docs;
+  return {
+    items: docs.map((d) => d.data() as CloudCatch),
+    lastDoc: docs[docs.length - 1] ?? null,
+    hasMore,
+  };
 }
 
 /** Зарежда публични улови по ID (редът следва подадения масив). */

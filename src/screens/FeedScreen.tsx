@@ -11,7 +11,8 @@ import { FeedPost, FeedItem } from '../components/FeedPost';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
-import { fetchPublicFeed, getFollowing } from '../services/cloudSync';
+import { fetchPublicFeed, getFollowing, type FeedPage } from '../services/cloudSync';
+import type { DocumentSnapshot } from 'firebase/firestore';
 import { getBlockedUids } from '../services/blockUser';
 import { StoriesRow } from '../components/StoriesRow';
 import { useAuth } from '../services/authContext';
@@ -121,25 +122,30 @@ export default function FeedScreen() {
   const [items, setItems] = useState<FeedItem[]>([]);
   const [scope, setScope] = useState<FeedScope>('all');
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastDoc, setLastDoc] = useState<DocumentSnapshot | null>(null);
+  const [hasMore, setHasMore] = useState(false);
 
   const load = useCallback(async () => {
     if (!configured || !user) return;
     setLoading(true);
     setError(null);
     try {
-      const [list, followingRows, blockedUids] = await Promise.all([
-        fetchPublicFeed(100),
+      const [page, followingRows, blockedUids] = await Promise.all([
+        scope === 'all' ? fetchPublicFeed(20) : fetchPublicFeed(100),
         getFollowing(user.uid),
         getBlockedUids(user.uid),
       ]);
       const followingSet = new Set(followingRows.map((f) => f.uid));
-      let next = (list as FeedItem[]).filter((i) => !blockedUids.has(i.ownerUid));
+      let next = page.items.filter((i) => !blockedUids.has(i.ownerUid));
       if (scope === 'following') {
         next = next.filter((i) => followingSet.has(i.ownerUid));
       }
       setItems(next);
+      setLastDoc(page.lastDoc);
+      setHasMore(scope === 'all' ? page.hasMore : false);
     } catch (e: unknown) {
       setError(formatFirebaseError(e));
     } finally {
@@ -147,6 +153,23 @@ export default function FeedScreen() {
       setRefreshing(false);
     }
   }, [configured, user, scope]);
+
+  const loadMore = useCallback(async () => {
+    if (!configured || !user || !hasMore || loadingMore || !lastDoc) return;
+    setLoadingMore(true);
+    try {
+      const blockedUids = await getBlockedUids(user.uid);
+      const page = await fetchPublicFeed(20, lastDoc);
+      const next = page.items.filter((i) => !blockedUids.has(i.ownerUid));
+      setItems((prev) => [...prev, ...next]);
+      setLastDoc(page.lastDoc);
+      setHasMore(page.hasMore);
+    } catch {
+      /* silent — user can pull to refresh */
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [configured, user, hasMore, loadingMore, lastDoc]);
 
   useEffect(() => {
     if (user && configured) load();
@@ -342,6 +365,17 @@ export default function FeedScreen() {
           }
           ItemSeparatorComponent={() => <View style={styles.listGap} />}
           showsVerticalScrollIndicator={false}
+          onEndReached={loadMore}
+          onEndReachedThreshold={0.4}
+          ListFooterComponent={
+            loadingMore ? (
+              <View style={{ paddingVertical: spacing.lg, alignItems: 'center' }}>
+                <ActivityIndicator color={colors.primary} />
+              </View>
+            ) : hasMore ? (
+              <View style={{ height: spacing.lg }} />
+            ) : null
+          }
           {...keyboardAwareScrollProps}
           renderItem={({ item }) => (
             <FeedPost

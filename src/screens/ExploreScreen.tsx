@@ -47,7 +47,7 @@ export default function ExploreScreen() {
     setLoading(true);
     try {
       const oneWeekAgo = new Date(Date.now() - 7 * 86400000).toISOString();
-      const all = await fetchPublicFeed(100);
+      const { items: all } = await fetchPublicFeed(100);
       const recent = all.filter((c) => c.date >= oneWeekAgo);
 
       // Get like counts for recent catches (batch, max 20)

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TextInput, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import { View, Text, StyleSheet, TextInput, KeyboardAvoidingView, Platform, Alert, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { Screen } from '../components/Screen';
@@ -15,7 +15,7 @@ import { AppleSignInSection } from '../components/AppleSignInSection';
 export default function AuthScreen() {
   const navigation = useNavigation();
   const { colors } = useTheme();
-  const { signIn, signUp, signInWithGoogleIdToken, signInWithApple, configured, loading } = useAuth();
+  const { signIn, signUp, signInWithGoogleIdToken, signInWithApple, resetPassword, configured, loading } = useAuth();
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -164,6 +164,39 @@ export default function AuthScreen() {
             loading={busy}
             style={{ marginTop: spacing.sm }}
           />
+          {mode === 'login' ? (
+            <Pressable
+              onPress={() => {
+                const target = email.trim();
+                if (!target) {
+                  Alert.alert('Забравена парола', 'Въведи имейл адреса си в полето по-горе, след което натисни тук.');
+                  return;
+                }
+                Alert.alert(
+                  'Нулиране на парола',
+                  `Ще изпратим линк за нулиране на ${target}.`,
+                  [
+                    { text: 'Отказ', style: 'cancel' },
+                    {
+                      text: 'Изпрати',
+                      onPress: async () => {
+                        try {
+                          await resetPassword(target);
+                          Alert.alert('Изпратено', 'Провери пощата си за линк за нулиране на паролата.');
+                        } catch (e: unknown) {
+                          Alert.alert('Грешка', formatFirebaseError(e));
+                        }
+                      },
+                    },
+                  ]
+                );
+              }}
+              style={{ alignItems: 'center', paddingVertical: spacing.sm, marginTop: spacing.xs }}
+              hitSlop={8}
+            >
+              <Text style={{ ...typography.caption, color: colors.primary }}>Забравена парола?</Text>
+            </Pressable>
+          ) : null}
         </Card>
 
         <View style={styles.divider}>
