@@ -13,6 +13,7 @@ import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
 import { fetchPublicFeed, getFollowing } from '../services/cloudSync';
 import { getBlockedUids } from '../services/blockUser';
+import { StoriesRow } from '../components/StoriesRow';
 import { useAuth } from '../services/authContext';
 import { formatFirebaseError } from '../services/firebaseErrors';
 import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
@@ -194,6 +195,14 @@ export default function FeedScreen() {
       >
         <Ionicons name="search-outline" size={22} color={colors.primary} />
       </Pressable>
+      <Pressable
+        onPress={() => navigation.navigate('Explore')}
+        hitSlop={8}
+        style={styles.backBtn}
+        accessibilityLabel="Открий"
+      >
+        <Ionicons name="compass-outline" size={22} color={colors.primary} />
+      </Pressable>
     </View>
   );
 
@@ -263,6 +272,8 @@ export default function FeedScreen() {
           </View>
         </View>
       </View>
+
+      <StoriesRow />
 
       <View style={styles.segmentWrap}>
         <View style={styles.segment}>

@@ -34,6 +34,7 @@ import {
 import { sendFollowNotification } from '../services/socialFeed';
 import { formatFirebaseError } from '../services/firebaseErrors';
 import { blockUser, isBlockedBy } from '../services/blockUser';
+import { getGuideProfile, type GuideProfile } from '../services/guides';
 import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
 
 function createPublicProfileStyles(colors: AppColors) {
@@ -126,6 +127,7 @@ export default function UserPublicProfileScreen() {
 
   const isSelf = user?.uid === uid;
   const [blocked, setBlocked] = useState(false);
+  const [guideProfile, setGuideProfile] = useState<GuideProfile | null>(null);
 
   const handleBlockMenu = () => {
     if (!user || isSelf) return;
@@ -176,13 +178,15 @@ export default function UserPublicProfileScreen() {
     setError(null);
     try {
       const self = user?.uid === uid;
-      const [sum, list, fol, fc, fwc] = await Promise.all([
+      const [sum, list, fol, fc, fwc, guide] = await Promise.all([
         getUserPublicSummary(uid),
         fetchPublicCatchesByOwner(uid, 50),
         user && !self ? isFollowingUser(user.uid, uid) : Promise.resolve(false),
         getFollowerCount(uid),
         getFollowingCount(uid),
+        getGuideProfile(uid),
       ]);
+      setGuideProfile(guide);
       if (sum?.displayName) setSummaryName(sum.displayName);
       setCity(sum?.city);
       setBio(sum?.bio);
@@ -310,7 +314,20 @@ export default function UserPublicProfileScreen() {
                     <Text style={styles.avatarText}>{summaryName.slice(0, 1).toUpperCase()}</Text>
                   )}
                 </View>
-                <Text style={styles.name}>{summaryName}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={styles.name}>{summaryName}</Text>
+                  {guideProfile?.verified ? (
+                    <Ionicons name="shield-checkmark" size={20} color={colors.primary} />
+                  ) : null}
+                </View>
+                {guideProfile ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                    <Ionicons name="fish-outline" size={14} color={colors.accent} />
+                    <Text style={{ ...typography.caption, color: colors.accent, fontWeight: '600' }}>
+                      Верифициран водач · {guideProfile.specialty}
+                    </Text>
+                  </View>
+                ) : null}
                 {city ? (
                   <View style={styles.cityRow}>
                     <Ionicons name="location-outline" size={16} color={colors.textMuted} />

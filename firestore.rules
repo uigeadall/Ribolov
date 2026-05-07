@@ -173,6 +173,39 @@ service cloud.firestore {
       allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
     }
 
+    /** Истории (24ч моменти) */
+    match /stories/{storyId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 280;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+      allow update: if false;
+    }
+
+    /** Марзет — обяви за оборудване */
+    match /gearListings/{listingId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.sellerUid == request.auth.uid
+        && request.resource.data.title is string
+        && request.resource.data.title.size() <= 100
+        && request.resource.data.priceBGN is number
+        && request.resource.data.priceBGN >= 0;
+      allow update: if signedIn() && resource.data.sellerUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active']);
+      allow delete: if false;
+    }
+
+    /** Заявки за верифицирани водачи */
+    match /guideRequests/{uid} {
+      allow create, update: if isSelf(uid);
+      allow read: if false;
+      allow delete: if false;
+    }
+
     /** Рибарски рапорти за водоеми — всеки логнат може да пише/чете; само авторът изтрива. */
     match /waterReports/{reportId} {
       allow read: if signedIn();
