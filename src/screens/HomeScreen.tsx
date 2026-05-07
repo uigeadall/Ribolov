@@ -23,6 +23,8 @@ import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
 import { fetchWeather, windDirectionLabel, type WeatherSnapshot } from '../services/weather';
 import { catchesStore } from '../storage/storage';
+import { fetchRankedClassicPhotos, periodStartIso, type RankedClassicPhoto } from '../services/classicsContest';
+import { Image } from 'expo-image';
 import type { Catch } from '../types/index';
 
 const FALLBACK_COORD = { latitude: 42.6977, longitude: 23.3219 };
@@ -133,6 +135,7 @@ export default function HomeScreen() {
   const [totalCatches, setTotalCatches] = useState(0);
   const [weekCatches, setWeekCatches] = useState(0);
   const [lastCatch, setLastCatch] = useState<Catch | null>(null);
+  const [topClassic, setTopClassic] = useState<RankedClassicPhoto | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadStats = useCallback(async () => {
@@ -146,6 +149,10 @@ export default function HomeScreen() {
     setWeekCatches(n);
     const sorted = [...list].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
     setLastCatch(sorted[0] ?? null);
+    // Load top classic in background (best-effort)
+    fetchRankedClassicPhotos(periodStartIso('week'), { maxCandidates: 20, resultLimit: 1 })
+      .then((r) => setTopClassic(r[0] ?? null))
+      .catch(() => {});
   }, []);
 
   const loadWeather = useCallback(async () => {
@@ -371,6 +378,57 @@ export default function HomeScreen() {
           style={{ marginTop: spacing.md }}
         />
       </Card>
+
+      {/* ── Classics preview ── */}
+      <SectionHeader hint="КЛАСИКИ" title="Снимка на седмицата" subtitle="Гласувай с харесване · най-много харесвания печели." />
+      <Pressable
+        onPress={() => navigation.navigate('ProfileTab', { screen: 'Classics' })}
+        style={{ marginBottom: spacing.xl }}
+      >
+        <Card style={{ padding: 0, overflow: 'hidden' }}>
+          {topClassic?.item.photoUri ? (
+            <View>
+              <Image
+                source={{ uri: topClassic.item.photoUri }}
+                style={{ width: '100%', height: 200 }}
+                contentFit="cover"
+              />
+              <View style={{
+                position: 'absolute', bottom: 0, left: 0, right: 0,
+                backgroundColor: 'rgba(0,0,0,0.52)', padding: spacing.md,
+                flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
+              }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ ...typography.small, color: 'rgba(255,255,255,0.75)', fontWeight: '700' }}>
+                    🥇 {topClassic.item.ownerName ?? 'Рибар'}
+                  </Text>
+                  <Text style={{ ...typography.bodyBold, color: '#fff', marginTop: 2 }} numberOfLines={1}>
+                    {topClassic.item.photoTitle ?? topClassic.item.speciesName}
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 4 }}>
+                  <Ionicons name="heart" size={14} color="#ff6b6b" />
+                  <Text style={{ ...typography.small, color: '#fff', fontWeight: '700' }}>{topClassic.likes}</Text>
+                </View>
+              </View>
+            </View>
+          ) : (
+            <View style={{ height: 120, alignItems: 'center', justifyContent: 'center', gap: spacing.sm, padding: spacing.lg }}>
+              <Text style={{ fontSize: 32 }}>🏆</Text>
+              <Text style={{ ...typography.bodyBold, color: colors.text }}>Класики тази седмица</Text>
+              <Text style={{ ...typography.caption, color: colors.textMuted, textAlign: 'center' }}>
+                Сподели улов с именувана снимка и спечели!
+              </Text>
+            </View>
+          )}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: spacing.md }}>
+            <Text style={{ ...typography.caption, color: colors.textMuted }}>
+              Виж всички снимки в класацията
+            </Text>
+            <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+          </View>
+        </Card>
+      </Pressable>
 
       <SectionHeader hint="НАВИГАЦИЯ" title="Бързи връзки" subtitle="Един докос за най-използваните функции." />
 

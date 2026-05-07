@@ -7,21 +7,22 @@ import {
   Pressable,
   RefreshControl,
   ActivityIndicator,
+  Dimensions,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
-import { FeedPost } from '../components/FeedPost';
-import { EmptyState } from '../components/EmptyState';
 import { Button } from '../components/Button';
+import { EmptyState } from '../components/EmptyState';
+import { ClassicPhotoCard } from '../components/ClassicPhotoCard';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
 import { formatFirebaseError } from '../services/firebaseErrors';
-import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
 import {
   fetchRankedClassicPhotos,
   periodStartIso,
@@ -29,114 +30,17 @@ import {
   type RankedClassicPhoto,
 } from '../services/classicsContest';
 
-function medalForRank(rank: number): string {
-  if (rank === 1) return '🥇';
-  if (rank === 2) return '🥈';
-  if (rank === 3) return '🥉';
-  return `#${rank}`;
+const { width: SW } = Dimensions.get('window');
+
+function daysLeftInWeek(): number {
+  const d = new Date().getDay();
+  return d === 0 ? 0 : 7 - d;
 }
 
-function createStyles(colors: AppColors) {
-  return StyleSheet.create({
-    hero: {
-      paddingHorizontal: spacing.lg,
-      paddingBottom: spacing.lg,
-      backgroundColor: colors.surfaceAlt,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: colors.border,
-    },
-    header: {
-      flexDirection: 'row',
-      justifyContent: 'flex-start',
-      alignItems: 'center',
-      marginBottom: spacing.md,
-      gap: spacing.sm,
-    },
-    backBtn: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      backgroundColor: colors.card,
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    heroTitleRow: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      gap: spacing.sm,
-    },
-    heroIconWrap: {
-      width: 40,
-      height: 40,
-      borderRadius: radius.md,
-      backgroundColor: colors.card,
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderWidth: 1,
-      borderColor: colors.border,
-      marginTop: 2,
-    },
-    heroTitleBlock: { flex: 1, minWidth: 0 },
-    heroTitle: { ...typography.h1, color: colors.text },
-    heroSubtitle: {
-      ...typography.body,
-      color: colors.textMuted,
-      marginTop: spacing.xs,
-      lineHeight: 22,
-    },
-    segmentWrap: {
-      marginHorizontal: spacing.lg,
-      marginTop: spacing.lg,
-      marginBottom: spacing.sm,
-    },
-    segment: {
-      flexDirection: 'row',
-      backgroundColor: colors.card,
-      borderRadius: radius.pill,
-      padding: 4,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    segmentBtn: {
-      flex: 1,
-      paddingVertical: 11,
-      alignItems: 'center',
-      borderRadius: radius.pill,
-      flexDirection: 'row',
-      justifyContent: 'center',
-      gap: 6,
-    },
-    segmentBtnActive: { backgroundColor: colors.primary },
-    segmentText: { ...typography.caption, fontWeight: '700', color: colors.textMuted },
-    segmentTextActive: { color: colors.white },
-    listContent: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xxl },
-    listGap: { height: spacing.lg },
-    rankRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.sm,
-      marginBottom: spacing.sm,
-    },
-    rankBadge: {
-      minWidth: 44,
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingVertical: 4,
-      paddingHorizontal: 8,
-      borderRadius: radius.pill,
-      backgroundColor: colors.card,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    rankText: { ...typography.caption, fontWeight: '800', color: colors.text },
-    likesLbl: { ...typography.caption, color: colors.textMuted, flex: 1 },
-    prizeCardText: { ...typography.body, color: colors.text, lineHeight: 22 },
-    warnTitle: { ...typography.h3, color: colors.text },
-    warnBody: { ...typography.body, color: colors.textMuted, marginTop: spacing.sm, lineHeight: 22 },
-    centerMsg: { ...typography.body, color: colors.textMuted, textAlign: 'center', marginTop: spacing.md },
-  });
+function daysLeftInMonth(): number {
+  const now = new Date();
+  const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  return last - now.getDate();
 }
 
 export default function ClassicsScreen() {
@@ -144,12 +48,6 @@ export default function ClassicsScreen() {
   const insets = useSafeAreaInsets();
   const { user, configured } = useAuth();
   const { colors } = useTheme();
-  const styles = useMemo(() => createStyles(colors), [colors]);
-
-  const heroTopStyle = useMemo(
-    () => ({ paddingTop: insets.top + spacing.md }),
-    [insets.top]
-  );
 
   const [period, setPeriod] = useState<ClassicPeriod>('week');
   const [rows, setRows] = useState<RankedClassicPhoto[]>([]);
@@ -157,14 +55,133 @@ export default function ClassicsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        hero: {
+          backgroundColor: colors.primaryDark,
+          paddingTop: insets.top + spacing.sm,
+          paddingBottom: spacing.xl,
+          paddingHorizontal: spacing.lg,
+        },
+        backBtn: {
+          width: 36,
+          height: 36,
+          borderRadius: 18,
+          backgroundColor: 'rgba(255,255,255,0.15)',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginBottom: spacing.lg,
+        },
+        trophyRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: spacing.md,
+          marginBottom: spacing.sm,
+        },
+        trophyWrap: {
+          width: 52,
+          height: 52,
+          borderRadius: 26,
+          backgroundColor: 'rgba(255,215,0,0.18)',
+          borderWidth: 1.5,
+          borderColor: 'rgba(255,215,0,0.35)',
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        heroTitle: { ...typography.h1, color: '#fff', letterSpacing: -0.5 },
+        heroSub: { ...typography.body, color: 'rgba(255,255,255,0.65)', marginTop: 2 },
+        countdown: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: spacing.xs,
+          marginTop: spacing.md,
+          backgroundColor: 'rgba(255,255,255,0.1)',
+          alignSelf: 'flex-start',
+          paddingHorizontal: spacing.md,
+          paddingVertical: 6,
+          borderRadius: radius.pill,
+        },
+        countdownText: { ...typography.small, color: 'rgba(255,255,255,0.85)', fontWeight: '700' },
+        tabs: {
+          flexDirection: 'row',
+          gap: spacing.sm,
+          paddingHorizontal: spacing.lg,
+          paddingVertical: spacing.md,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: colors.border,
+          backgroundColor: colors.background,
+        },
+        tab: {
+          flex: 1,
+          paddingVertical: spacing.sm + 2,
+          alignItems: 'center',
+          borderRadius: radius.pill,
+          borderWidth: 1,
+          borderColor: colors.border,
+          backgroundColor: colors.card,
+        },
+        tabActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+        tabText: { ...typography.small, color: colors.textMuted, fontWeight: '700' },
+        tabTextActive: { color: '#fff' },
+        howTo: {
+          marginHorizontal: spacing.lg,
+          marginTop: spacing.md,
+          marginBottom: spacing.xs,
+          padding: spacing.md,
+          backgroundColor: colors.primarySurface,
+          borderRadius: radius.md,
+          borderWidth: 1,
+          borderColor: colors.border,
+          flexDirection: 'row',
+          gap: spacing.sm,
+          alignItems: 'flex-start',
+        },
+        howToText: { ...typography.caption, color: colors.text, flex: 1, lineHeight: 18 },
+        sectionLabel: {
+          ...typography.overline,
+          color: colors.textMuted,
+          letterSpacing: 1,
+          marginHorizontal: spacing.lg,
+          marginTop: spacing.lg,
+          marginBottom: spacing.sm,
+        },
+        podiumRow: {
+          flexDirection: 'row',
+          alignItems: 'flex-end',
+          justifyContent: 'center',
+          gap: spacing.md,
+          paddingHorizontal: spacing.lg,
+          paddingTop: spacing.sm,
+          paddingBottom: spacing.xs,
+        },
+        podiumItem: { alignItems: 'center' },
+        podiumMedal: { fontSize: 22, marginBottom: 4 },
+        podiumLikes: { ...typography.small, color: colors.textMuted, marginTop: 4, fontWeight: '700' },
+        podiumName: {
+          ...typography.small,
+          color: colors.text,
+          fontWeight: '600',
+          marginTop: 2,
+          maxWidth: 90,
+          textAlign: 'center',
+        },
+        grid: {
+          flexDirection: 'row',
+          flexWrap: 'wrap',
+          gap: spacing.sm,
+          paddingHorizontal: spacing.lg,
+        },
+      }),
+    [colors, insets.top]
+  );
+
   const load = useCallback(async () => {
     if (!configured || !user) return;
     setLoading(true);
     setError(null);
     try {
-      const since = periodStartIso(period);
-      const next = await fetchRankedClassicPhotos(since);
-      setRows(next);
+      setRows(await fetchRankedClassicPhotos(periodStartIso(period)));
     } catch (e: unknown) {
       setError(formatFirebaseError(e));
       setRows([]);
@@ -178,62 +195,32 @@ export default function ClassicsScreen() {
     if (user && configured) load();
   }, [load, user, configured]);
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    load();
-  };
+  const daysLeft = period === 'week' ? daysLeftInWeek() : daysLeftInMonth();
+  const top3 = rows.slice(0, 3);
+  const rest = rows.slice(3);
 
-  const Header = () => (
-    <View style={styles.header}>
-      <Pressable onPress={() => navigation.goBack()} hitSlop={8} style={styles.backBtn}>
-        <Ionicons name="chevron-back" size={22} color={colors.primary} />
-      </Pressable>
-      <View style={{ flex: 1 }} />
-    </View>
-  );
+  const podiumOrder = [
+    top3[1] ? { row: top3[1], rank: 2, h: 110, w: 100, borderColor: '#C0C0C0' } : null,
+    top3[0] ? { row: top3[0], rank: 1, h: 140, w: 120, borderColor: '#FFD700' } : null,
+    top3[2] ? { row: top3[2], rank: 3, h: 90, w: 100, borderColor: '#CD7F32' } : null,
+  ].filter(Boolean) as { row: RankedClassicPhoto; rank: number; h: number; w: number; borderColor: string }[];
 
-  if (!configured) {
+  if (!configured || !user) {
     return (
-      <Screen padded={false} safeAreaEdges={['left', 'right']}>
-        <View style={[styles.hero, heroTopStyle]}>
-          <Header />
-          <View style={styles.heroTitleRow}>
-            <View style={styles.heroIconWrap}>
-              <Ionicons name="images-outline" size={22} color={colors.primary} />
-            </View>
-            <View style={styles.heroTitleBlock}>
-              <Text style={styles.heroTitle}>Класики</Text>
-            </View>
-          </View>
+      <Screen padded={false}>
+        <View style={styles.hero}>
+          <Pressable onPress={() => navigation.goBack()} style={styles.backBtn} hitSlop={8}>
+            <Ionicons name="chevron-back" size={22} color="#fff" />
+          </Pressable>
+          <Text style={styles.heroTitle}>Класики 🏆</Text>
+          <Text style={styles.heroSub}>Топ снимки на общността</Text>
         </View>
         <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg }}>
           <Card>
-            <Text style={styles.warnTitle}>Нужен е Firebase</Text>
-            <Text style={styles.warnBody}>Настрой облака, за да участваш и да гласуваш с лайкове.</Text>
-          </Card>
-        </View>
-      </Screen>
-    );
-  }
-
-  if (!user) {
-    return (
-      <Screen padded={false} safeAreaEdges={['left', 'right']}>
-        <View style={[styles.hero, heroTopStyle]}>
-          <Header />
-          <View style={styles.heroTitleRow}>
-            <View style={styles.heroIconWrap}>
-              <Ionicons name="images-outline" size={22} color={colors.primary} />
-            </View>
-            <View style={styles.heroTitleBlock}>
-              <Text style={styles.heroTitle}>Класики</Text>
-            </View>
-          </View>
-        </View>
-        <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg }}>
-          <Card>
-            <Text style={styles.warnTitle}>Влез в акаунта си</Text>
-            <Text style={styles.warnBody}>За да виждаш класацията и да харесваш снимки.</Text>
+            <Text style={{ ...typography.h3, color: colors.text }}>Нужен е акаунт</Text>
+            <Text style={{ ...typography.body, color: colors.textMuted, marginTop: spacing.sm }}>
+              Влез, за да виждаш класацията и да гласуваш с харесвания.
+            </Text>
             <Button title="Вход / Регистрация" onPress={() => navigation.navigate('Auth')} style={{ marginTop: spacing.md }} />
           </Card>
         </View>
@@ -242,107 +229,174 @@ export default function ClassicsScreen() {
   }
 
   return (
-    <Screen padded={false} safeAreaEdges={['left', 'right']}>
-      <View style={[styles.hero, heroTopStyle]}>
-        <Header />
-        <View style={styles.heroTitleRow}>
-          <View style={styles.heroIconWrap}>
-            <Ionicons name="trophy-outline" size={22} color={colors.primary} />
+    <Screen padded={false}>
+      {/* Hero */}
+      <View style={styles.hero}>
+        <Pressable onPress={() => navigation.goBack()} style={styles.backBtn} hitSlop={8}>
+          <Ionicons name="chevron-back" size={22} color="#fff" />
+        </Pressable>
+        <View style={styles.trophyRow}>
+          <View style={styles.trophyWrap}>
+            <Text style={{ fontSize: 26 }}>🏆</Text>
           </View>
-          <View style={styles.heroTitleBlock}>
+          <View style={{ flex: 1 }}>
             <Text style={styles.heroTitle}>Класики</Text>
-            <Text style={styles.heroSubtitle}>
-              Именувани снимки от лентата · гласуване със сърце · топ по лайкове за периода
-            </Text>
+            <Text style={styles.heroSub}>Топ снимки по харесвания за периода</Text>
           </View>
+        </View>
+        <View style={styles.countdown}>
+          <Ionicons name="time-outline" size={13} color="rgba(255,255,255,0.85)" />
+          <Text style={styles.countdownText}>
+            {daysLeft === 0
+              ? 'Последен ден!'
+              : `${daysLeft} ${daysLeft === 1 ? 'ден' : 'дни'} остават`}
+          </Text>
         </View>
       </View>
 
-      <Card style={{ marginHorizontal: spacing.lg, marginTop: spacing.md }}>
-        <Text style={styles.prizeCardText}>
-          <Text style={{ ...typography.bodyBold, color: colors.text }}>Награди: </Text>
-          Победителите за седмицата и за месеца са снимките с най-много харесвания сред публичните постове със снимка за
-          съответния период. Конкретните награди (значки в приложението, партньорски подаръци и др.) се обявяват от екипа —
-          следи известията и лентата.
-        </Text>
-      </Card>
-
-      <View style={styles.segmentWrap}>
-        <View style={styles.segment}>
+      {/* Period tabs */}
+      <View style={styles.tabs}>
+        {(['week', 'month'] as ClassicPeriod[]).map((p) => (
           <Pressable
-            onPress={() => setPeriod('week')}
-            style={[styles.segmentBtn, period === 'week' && styles.segmentBtnActive]}
+            key={p}
+            style={[styles.tab, period === p && styles.tabActive]}
+            onPress={() => setPeriod(p)}
           >
-            <Ionicons
-              name="calendar-outline"
-              size={16}
-              color={period === 'week' ? colors.white : colors.textMuted}
-            />
-            <Text style={[styles.segmentText, period === 'week' && styles.segmentTextActive]}>Седмица</Text>
+            <Text style={[styles.tabText, period === p && styles.tabTextActive]}>
+              {p === 'week' ? '📅 Седмица' : '🗓 Месец'}
+            </Text>
           </Pressable>
-          <Pressable
-            onPress={() => setPeriod('month')}
-            style={[styles.segmentBtn, period === 'month' && styles.segmentBtnActive]}
-          >
-            <Ionicons name="calendar-number-outline" size={16} color={period === 'month' ? colors.white : colors.textMuted} />
-            <Text style={[styles.segmentText, period === 'month' && styles.segmentTextActive]}>Месец</Text>
-          </Pressable>
-        </View>
+        ))}
       </View>
 
       {loading && rows.length === 0 ? (
-        <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg }}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.centerMsg}>Броим лайкове и подреждаме…</Text>
+          <Text style={{ ...typography.body, color: colors.textMuted, marginTop: spacing.md }}>
+            Броим харесванията…
+          </Text>
         </View>
-      ) : error && rows.length === 0 ? (
+      ) : error ? (
         <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg }}>
           <Card>
-            <Text style={styles.warnTitle}>Неуспешно зареждане</Text>
-            <Text style={styles.warnBody}>{error}</Text>
-            <Button title="Опитай отново" onPress={() => load()} style={{ marginTop: spacing.md }} />
+            <Text style={{ ...typography.h3, color: colors.text }}>Грешка при зареждане</Text>
+            <Button title="Опитай отново" onPress={load} style={{ marginTop: spacing.md }} />
           </Card>
         </View>
       ) : rows.length === 0 ? (
-        <View style={{ flex: 1, justifyContent: 'center' }}>
-          <EmptyState
-            icon="images-outline"
-            title="Още няма класики за периода"
-            subtitle="Сподели улов със снимка в лентата и добави заглавие на снимката при записване. Получавай лайкове от други риболовци."
-          />
-        </View>
+        <EmptyState
+          icon="images-outline"
+          title="Все още няма снимки"
+          subtitle="Сподели улов с именувана снимка в лентата и получавай харесвания от риболовната общност."
+        />
       ) : (
         <FlatList
-          data={rows}
-          keyExtractor={(r) => r.item.id}
-          contentContainerStyle={styles.listContent}
+          data={[]}
+          renderItem={null}
+          keyExtractor={() => 'placeholder'}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => { setRefreshing(true); load(); }}
+              tintColor={colors.primary}
+            />
           }
-          ItemSeparatorComponent={() => <View style={styles.listGap} />}
           showsVerticalScrollIndicator={false}
-          {...keyboardAwareScrollProps}
-          renderItem={({ item: row, index }) => (
-            <View>
-              <View style={styles.rankRow}>
-                <View style={styles.rankBadge}>
-                  <Text style={styles.rankText}>{medalForRank(index + 1)}</Text>
-                </View>
-                <Text style={styles.likesLbl}>
-                  {row.likes} {row.likes === 1 ? 'харесване' : 'харесвания'}
+          contentContainerStyle={{ paddingBottom: spacing.xxl }}
+          ListHeaderComponent={
+            <>
+              {/* How to participate */}
+              <View style={styles.howTo}>
+                <Ionicons name="information-circle-outline" size={18} color={colors.primary} />
+                <Text style={styles.howToText}>
+                  Запиши улов → добави{' '}
+                  <Text style={{ fontWeight: '700' }}>заглавие на снимката</Text> → сподели публично.
+                  Риболовци гласуват с харесване. Най-много харесвания = победител!
                 </Text>
               </View>
-              <FeedPost
-                item={row.item}
-                myUid={user?.uid}
-                myDisplayName={user?.displayName ?? user?.email ?? 'Аз'}
-                socialEnabled={!!user && !!configured}
-                onPressAuthor={(authorUid, name) =>
-                  navigation.navigate('UserPublicProfile', { uid: authorUid, displayName: name })
-                }
-              />
-            </View>
-          )}
+
+              {/* Podium */}
+              {top3.length > 0 ? (
+                <>
+                  <Text style={styles.sectionLabel}>ТОП 3</Text>
+                  <View style={styles.podiumRow}>
+                    {podiumOrder.map(({ row, rank, h, w, borderColor }) => (
+                      <Pressable
+                        key={row.item.id}
+                        style={styles.podiumItem}
+                        onPress={() =>
+                          navigation.navigate('UserPublicProfile', {
+                            uid: row.item.ownerUid,
+                            displayName: row.item.ownerName,
+                          })
+                        }
+                      >
+                        <Text style={styles.podiumMedal}>
+                          {rank === 1 ? '🥇' : rank === 2 ? '🥈' : '🥉'}
+                        </Text>
+                        <View style={{ width: w, height: h, borderRadius: radius.md, overflow: 'hidden', borderWidth: 2.5, borderColor }}>
+                          {row.item.photoUri ? (
+                            <Image source={{ uri: row.item.photoUri }} style={{ width: w, height: h }} contentFit="cover" />
+                          ) : (
+                            <View style={{ width: w, height: h, backgroundColor: colors.primarySurface, alignItems: 'center', justifyContent: 'center' }}>
+                              <Ionicons name="fish-outline" size={28} color={colors.primary} />
+                            </View>
+                          )}
+                        </View>
+                        <Text style={styles.podiumLikes}>❤️ {row.likes}</Text>
+                        <Text style={styles.podiumName} numberOfLines={2}>
+                          {row.item.ownerName ?? 'Рибар'}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </>
+              ) : null}
+
+              {/* #1 full-width card */}
+              {top3[0] ? (
+                <>
+                  <Text style={styles.sectionLabel}>№1 ЗА ПЕРИОДА</Text>
+                  <View style={{ paddingHorizontal: spacing.lg }}>
+                    <ClassicPhotoCard
+                      row={top3[0]}
+                      rank={1}
+                      variant="full"
+                      onPress={() =>
+                        navigation.navigate('UserPublicProfile', {
+                          uid: top3[0].item.ownerUid,
+                          displayName: top3[0].item.ownerName,
+                        })
+                      }
+                    />
+                  </View>
+                </>
+              ) : null}
+
+              {/* Rest as 2-column grid */}
+              {rest.length > 0 ? (
+                <>
+                  <Text style={styles.sectionLabel}>ОСТАНАЛИ</Text>
+                  <View style={styles.grid}>
+                    {rest.map((row, i) => (
+                      <ClassicPhotoCard
+                        key={row.item.id}
+                        row={row}
+                        rank={i + 4}
+                        variant="grid"
+                        onPress={() =>
+                          navigation.navigate('UserPublicProfile', {
+                            uid: row.item.ownerUid,
+                            displayName: row.item.ownerName,
+                          })
+                        }
+                      />
+                    ))}
+                  </View>
+                </>
+              ) : null}
+            </>
+          }
         />
       )}
     </Screen>
