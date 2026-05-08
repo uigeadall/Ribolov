@@ -106,6 +106,8 @@ export default function MapScreen() {
   const [reportNote, setReportNote] = useState('');
   const [reportSaving, setReportSaving] = useState(false);
   const [damLevel, setDamLevel] = useState<DamLevel | null>(null);
+  const [spotWeather, setSpotWeather] = useState<WeatherSnapshot | null>(null);
+  const [spotWeatherLoading, setSpotWeatherLoading] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setHintVisible(false), 5000);
@@ -286,6 +288,27 @@ export default function MapScreen() {
       cancelled = true;
     };
   }, [selectedWater]);
+
+  useEffect(() => {
+    if (!selected) { setSpotWeather(null); return; }
+    const cached = weatherCacheRef.current[`spot-${selected.id}`];
+    if (cached && Date.now() - cached.fetchedAt < WEATHER_TTL_MS) {
+      setSpotWeather(cached.data);
+      return;
+    }
+    let cancelled = false;
+    setSpotWeather(null);
+    setSpotWeatherLoading(true);
+    fetchWeather(selected.latitude, selected.longitude)
+      .then((w) => {
+        if (cancelled) return;
+        weatherCacheRef.current[`spot-${selected.id}`] = { data: w, fetchedAt: Date.now() };
+        setSpotWeather(w);
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setSpotWeatherLoading(false); });
+    return () => { cancelled = true; };
+  }, [selected]);
 
   const onLongPress = (lat: number, lng: number) => {
     setPendingCoord({ latitude: lat, longitude: lng });
@@ -999,6 +1022,31 @@ export default function MapScreen() {
               </View>
             ) : null}
             {selected?.description ? <Text style={styles.modalDesc}>{selected.description}</Text> : null}
+            {spotWeatherLoading ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md }}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={{ ...typography.small, color: colors.textMuted }}>Зареждане на прогнозата…</Text>
+              </View>
+            ) : spotWeather ? (
+              <View style={{
+                flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap',
+                gap: spacing.md, marginTop: spacing.md,
+                padding: spacing.sm, backgroundColor: colors.primarySurface,
+                borderRadius: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+              }}>
+                <WeatherIcon weatherCode={spotWeather.weatherCode} size={32} color={colors.primary} />
+                <View>
+                  <Text style={{ ...typography.bodyBold, color: colors.text }}>{spotWeather.temperatureC}°C · {spotWeather.description}</Text>
+                  <Text style={{ ...typography.small, color: colors.textMuted }}>
+                    💨 {spotWeather.windKmh} км/ч · 💧 {spotWeather.humidity}% · {spotWeather.moonPhaseName}
+                  </Text>
+                </View>
+                <View style={{ marginLeft: 'auto' }}>
+                  <StarRatingBar rating={spotWeather.fishingRating} color={colors.accent} emptyColor={colors.border} size={12} />
+                  <Text style={{ ...typography.small, color: colors.textMuted, marginTop: 2, textAlign: 'right' }}>риболов</Text>
+                </View>
+              </View>
+            ) : null}
             <View style={[styles.modalRow, { flexWrap: 'wrap', gap: spacing.sm }]}>
               <Text style={styles.modalCoords}>
                 {selected?.latitude.toFixed(4)}, {selected?.longitude.toFixed(4)}

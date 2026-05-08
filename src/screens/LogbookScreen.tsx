@@ -638,6 +638,10 @@ export default function LogbookScreen() {
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
             ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
             ListFooterComponent={<View style={styles.listFooterPad} />}
+            removeClippedSubviews={Platform.OS === 'android'}
+            maxToRenderPerBatch={10}
+            windowSize={5}
+            initialNumToRender={10}
             {...keyboardAwareScrollProps}
             renderItem={({ item }) => renderCatchRow(item)}
           />

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, Pressable, RefreshControl, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Pressable, RefreshControl, ActivityIndicator, Platform } from 'react-native';
+import { Image } from 'expo-image';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -128,6 +129,13 @@ export default function FeedScreen() {
   const [lastDoc, setLastDoc] = useState<DocumentSnapshot | null>(null);
   const [hasMore, setHasMore] = useState(false);
 
+  const prefetchBatch = useCallback((list: FeedItem[]) => {
+    list.forEach((item) => {
+      if (item.photoUri) Image.prefetch(item.photoUri).catch(() => {});
+      if (item.ownerPhotoUrl) Image.prefetch(item.ownerPhotoUrl).catch(() => {});
+    });
+  }, []);
+
   const load = useCallback(async () => {
     if (!configured || !user) return;
     setLoading(true);
@@ -144,6 +152,7 @@ export default function FeedScreen() {
         next = next.filter((i) => followingSet.has(i.ownerUid));
       }
       setItems(next);
+      prefetchBatch(next);
       setLastDoc(page.lastDoc);
       setHasMore(scope === 'all' ? page.hasMore : false);
     } catch (e: unknown) {
@@ -152,7 +161,7 @@ export default function FeedScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [configured, user, scope]);
+  }, [configured, user, scope, prefetchBatch]);
 
   const loadMore = useCallback(async () => {
     if (!configured || !user || !hasMore || loadingMore || !lastDoc) return;
@@ -162,6 +171,7 @@ export default function FeedScreen() {
       const page = await fetchPublicFeed(20, lastDoc);
       const next = page.items.filter((i) => !blockedUids.has(i.ownerUid));
       setItems((prev) => [...prev, ...next]);
+      prefetchBatch(next);
       setLastDoc(page.lastDoc);
       setHasMore(page.hasMore);
     } catch {
@@ -169,7 +179,7 @@ export default function FeedScreen() {
     } finally {
       setLoadingMore(false);
     }
-  }, [configured, user, hasMore, loadingMore, lastDoc]);
+  }, [configured, user, hasMore, loadingMore, lastDoc, prefetchBatch]);
 
   useEffect(() => {
     if (user && configured) load();
@@ -367,6 +377,11 @@ export default function FeedScreen() {
           showsVerticalScrollIndicator={false}
           onEndReached={loadMore}
           onEndReachedThreshold={0.4}
+          removeClippedSubviews={Platform.OS === 'android'}
+          maxToRenderPerBatch={8}
+          windowSize={5}
+          initialNumToRender={6}
+          updateCellsBatchingPeriod={50}
           ListFooterComponent={
             loadingMore ? (
               <View style={{ paddingVertical: spacing.lg, alignItems: 'center' }}>

@@ -11,6 +11,7 @@ import {
 import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
 import { useTheme } from '../services/themeContext';
 import { spacing } from '../theme/typography';
+import { OfflineBanner } from './OfflineBanner';
 
 type Props = ViewProps & {
   scroll?: boolean;
@@ -79,6 +80,7 @@ export function Screen({
 
   return (
     <SafeAreaView style={styles.safe} edges={safeAreaEdges}>
+      <OfflineBanner />
       {body}
     </SafeAreaView>
   );
