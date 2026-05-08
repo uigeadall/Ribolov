@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, TextInput, StyleSheet, Pressable, Alert, Platform } from 'react-native';
+import { View, Text, TextInput, StyleSheet, Pressable, Alert, Platform, Modal } from 'react-native';
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -155,20 +155,18 @@ export default function TripDetailScreen() {
               <Ionicons name="calendar-outline" size={18} color={colors.primary} />
             </Pressable>
 
-            {showPicker && (
+            {/* Android native dialog rendered outside Card */}
+            {Platform.OS === 'android' && showPicker && (
               <DateTimePicker
                 value={editDate}
                 mode="date"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onChange={(_, d) => {
-                  if (d) setEditDate(d);
-                  if (Platform.OS !== 'ios') setShowPicker(false);
+                display="default"
+                onChange={(event, d) => {
+                  setShowPicker(false);
+                  if (event.type === 'set' && d) setEditDate(d);
                 }}
                 maximumDate={new Date()}
               />
-            )}
-            {Platform.OS === 'ios' && showPicker && (
-              <Button title="Готово" variant="secondary" compact onPress={() => setShowPicker(false)} style={{ marginTop: spacing.sm }} />
             )}
 
             <TextInput
@@ -198,6 +196,28 @@ export default function TripDetailScreen() {
           </>
         )}
       </View>
+
+      {/* iOS: bottom-sheet modal with spinner */}
+      {Platform.OS === 'ios' && (
+        <Modal visible={showPicker} transparent animationType="slide" onRequestClose={() => setShowPicker(false)}>
+          <Pressable style={{ flex: 1 }} onPress={() => setShowPicker(false)} />
+          <View style={{ backgroundColor: colors.card, borderTopWidth: 1, borderTopColor: colors.border, paddingBottom: 24 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', padding: spacing.md }}>
+              <Pressable onPress={() => setShowPicker(false)}>
+                <Text style={{ ...typography.bodyBold, color: colors.primary }}>Готово</Text>
+              </Pressable>
+            </View>
+            <DateTimePicker
+              value={editDate}
+              mode="date"
+              display="spinner"
+              onChange={(_, d) => { if (d) setEditDate(d); }}
+              maximumDate={new Date()}
+              locale="bg"
+            />
+          </View>
+        </Modal>
+      )}
     </Screen>
   );
 }
