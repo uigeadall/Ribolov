@@ -358,7 +358,8 @@ export default function ProfileScreen() {
       await pushUserProfilePublic(user.uid, patch);
       const urlForAuth = patch.photoUrl?.trim();
       const fb = ensureFirebase();
-      if (urlForAuth && fb?.auth.currentUser) {
+      // Firebase Auth photoURL has a ~1 KB limit — skip it for base64 data URLs
+      if (urlForAuth && !urlForAuth.startsWith('data:') && fb?.auth.currentUser) {
         await updateProfile(fb.auth.currentUser, { photoURL: urlForAuth });
       }
       Alert.alert('Готово', 'Профилът е запазен.');
