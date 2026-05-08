@@ -133,6 +133,10 @@ export default function AddCatchScreen() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [extraPhotoUris, setExtraPhotoUris] = useState<string[]>([]);
   const formDirtyRef = useRef(false);
+  // Stable ID for this form instance — never changes between retries so a
+  // failed save followed by a retry always writes to the same record,
+  // preventing duplicate entries.
+  const catchIdRef = useRef<string>(editCatchId ?? newId());
 
   const selectedSpecies = useMemo(() => speciesList.find((s) => s.id === speciesId)!, [speciesId]);
   const banInfo = useMemo(() => checkBanPeriod(selectedSpecies?.banPeriod), [selectedSpecies]);
@@ -321,7 +325,7 @@ export default function AddCatchScreen() {
     }
 
     setSaving(true);
-    const id = editCatchId ?? newId();
+    const id = catchIdRef.current;
     const photoTakenWithAppCamera =
       !uri ? undefined : isRemoteImageUri(uri) ? initialCatch?.photoTakenWithAppCamera ?? false : cameraVerifiedPhoto;
 
