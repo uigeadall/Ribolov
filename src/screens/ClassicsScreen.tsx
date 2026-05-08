@@ -29,7 +29,6 @@ import {
 } from '../services/classicsContest';
 
 const { width: SW } = Dimensions.get('window');
-const HALF = (SW - spacing.lg * 2 - spacing.sm) / 2;
 
 function daysLeftInWeek(): number {
   const d = new Date().getDay();
@@ -39,6 +38,10 @@ function daysLeftInMonth(): number {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() - now.getDate();
 }
+
+const GOLD = '#F5A623';
+const SILVER = '#A8B2BC';
+const BRONZE = '#C27B3E';
 
 export default function ClassicsScreen() {
   const navigation = useNavigation<any>();
@@ -55,30 +58,33 @@ export default function ClassicsScreen() {
   const styles = useMemo(() => StyleSheet.create({
     header: {
       paddingTop: insets.top + spacing.xs,
-      paddingBottom: spacing.sm,
+      paddingBottom: spacing.md,
       paddingHorizontal: spacing.lg,
       backgroundColor: colors.background,
+    },
+    headerTop: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: spacing.md,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: colors.border,
+      marginBottom: spacing.md,
     },
-    headerTitle: { ...typography.h2, color: colors.text, flex: 1, letterSpacing: -0.3 },
-    countdownBadge: {
-      flexDirection: 'row',
+    headerTitle: {
+      ...typography.h2,
+      color: colors.text,
+      flex: 1,
+      textAlign: 'center',
+      letterSpacing: -0.3,
+    },
+    headerSide: { width: 36 },
+    backBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: colors.surfaceAlt,
       alignItems: 'center',
-      gap: 4,
-      backgroundColor: colors.primarySurface,
-      paddingHorizontal: spacing.sm,
-      paddingVertical: 4,
-      borderRadius: radius.pill,
+      justifyContent: 'center',
     },
-    countdownText: { ...typography.small, color: colors.primary, fontWeight: '700' },
     segmented: {
       flexDirection: 'row',
-      marginHorizontal: spacing.lg,
-      marginVertical: spacing.md,
       backgroundColor: colors.surfaceAlt,
       borderRadius: radius.md,
       padding: 3,
@@ -92,105 +98,127 @@ export default function ClassicsScreen() {
     segItemActive: {
       backgroundColor: colors.card,
       shadowColor: '#000',
-      shadowOpacity: 0.08,
-      shadowRadius: 4,
+      shadowOpacity: 0.07,
+      shadowRadius: 3,
       shadowOffset: { width: 0, height: 1 },
       elevation: 2,
     },
     segText: { ...typography.small, fontWeight: '700', color: colors.textMuted },
     segTextActive: { color: colors.text },
-    winnerCard: {
+    countdownRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 5,
+      marginTop: spacing.sm,
+    },
+    countdownText: { ...typography.small, color: colors.textMuted },
+    podiumSection: {
+      paddingTop: spacing.xl,
+      paddingBottom: spacing.md,
+      paddingHorizontal: spacing.lg,
+      alignItems: 'center',
+    },
+    podiumRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      justifyContent: 'center',
+      gap: spacing.xl,
+      width: '100%',
+    },
+    podiumItem: { alignItems: 'center', gap: spacing.xs },
+    ringWrap: {
+      borderRadius: 999,
+      padding: 3,
+    },
+    circle: {
+      borderRadius: 999,
+      overflow: 'hidden',
+      backgroundColor: colors.primarySurface,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    podiumName: {
+      ...typography.small,
+      color: colors.text,
+      fontWeight: '700',
+      textAlign: 'center',
+      maxWidth: 80,
+    },
+    podiumLikes: {
+      ...typography.small,
+      color: colors.textMuted,
+      textAlign: 'center',
+      fontSize: 11,
+    },
+    rankLabel: {
+      fontSize: 18,
+      textAlign: 'center',
+      marginBottom: spacing.xs,
+    },
+    spotlightWrap: {
       marginHorizontal: spacing.lg,
       borderRadius: radius.xl,
       overflow: 'hidden',
-      height: 260,
-      marginBottom: spacing.md,
+      height: 220,
     },
-    winnerPhoto: { width: '100%', height: '100%' },
-    winnerOverlay: {
+    spotlightOverlay: {
       position: 'absolute',
       inset: 0,
-      justifyContent: 'space-between',
+      justifyContent: 'flex-end',
       padding: spacing.md,
     },
-    winnerTopRow: {
+    spotlightTopRow: {
+      position: 'absolute',
+      top: spacing.md,
+      left: spacing.md,
+      right: spacing.md,
       flexDirection: 'row',
       justifyContent: 'space-between',
-      alignItems: 'flex-start',
     },
-    winnerBadge: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 6,
-      backgroundColor: '#FFD700',
-      paddingHorizontal: spacing.md,
-      paddingVertical: 6,
-      borderRadius: radius.pill,
+    spotlightLabel: {
+      ...typography.overline,
+      color: GOLD,
+      letterSpacing: 2,
+      fontSize: 10,
+      fontWeight: '800',
     },
-    winnerBadgeText: { fontSize: 12, fontWeight: '800', color: '#1a1a1a', letterSpacing: 0.5 },
-    likesBadge: {
+    spotlightLikesBadge: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 4,
-      backgroundColor: 'rgba(0,0,0,0.5)',
-      paddingHorizontal: spacing.sm,
-      paddingVertical: 5,
-      borderRadius: radius.pill,
-    },
-    likesText: { ...typography.small, color: '#fff', fontWeight: '700' },
-    winnerBottom: {
-      backgroundColor: 'rgba(0,0,0,0.55)',
-      borderRadius: radius.md,
-      padding: spacing.sm,
-    },
-    winnerAuthor: { ...typography.small, color: 'rgba(255,255,255,0.7)', fontWeight: '600' },
-    winnerTitle: { ...typography.bodyBold, color: '#fff', marginTop: 2, fontSize: 16 },
-    runnerRow: {
-      flexDirection: 'row',
-      gap: spacing.sm,
-      marginHorizontal: spacing.lg,
-      marginBottom: spacing.md,
-    },
-    runnerCard: {
-      width: HALF,
-      height: HALF * 1.15,
-      borderRadius: radius.lg,
-      overflow: 'hidden',
-    },
-    runnerOverlay: {
-      position: 'absolute',
-      inset: 0,
-      justifyContent: 'space-between',
-      padding: spacing.sm,
-    },
-    runnerMedalBadge: {
-      alignSelf: 'flex-start',
       backgroundColor: 'rgba(0,0,0,0.45)',
-      paddingHorizontal: 8,
+      paddingHorizontal: spacing.sm,
       paddingVertical: 4,
       borderRadius: radius.pill,
     },
-    runnerMedalText: { fontSize: 16 },
-    runnerBottom: {
-      backgroundColor: 'rgba(0,0,0,0.5)',
-      borderRadius: radius.sm,
-      padding: 6,
+    spotlightLikesText: { ...typography.small, color: '#fff', fontWeight: '700' },
+    spotlightInfo: {
+      gap: 2,
     },
-    runnerName: { ...typography.small, color: '#fff', fontWeight: '700', fontSize: 11 },
-    runnerLikes: { ...typography.small, color: 'rgba(255,255,255,0.75)', fontSize: 10, marginTop: 1 },
-    divider: {
+    spotlightAuthor: {
+      ...typography.small,
+      color: 'rgba(255,255,255,0.65)',
+      fontWeight: '600',
+    },
+    spotlightTitle: {
+      ...typography.h3,
+      color: '#fff',
+      letterSpacing: -0.3,
+    },
+    divLine: {
       height: StyleSheet.hairlineWidth,
       backgroundColor: colors.border,
       marginHorizontal: spacing.lg,
-      marginBottom: spacing.sm,
+      marginTop: spacing.lg,
     },
-    sectionLabel: {
+    listLabel: {
       ...typography.overline,
       color: colors.textMuted,
       letterSpacing: 1.2,
       marginHorizontal: spacing.lg,
-      marginBottom: spacing.sm,
-      marginTop: spacing.xs,
+      marginTop: spacing.md,
+      marginBottom: spacing.xs,
     },
     rankRow: {
       flexDirection: 'row',
@@ -202,58 +230,59 @@ export default function ClassicsScreen() {
       borderBottomColor: colors.border,
     },
     rankNum: {
-      width: 28,
+      width: 24,
       alignItems: 'center',
     },
-    rankNumText: { ...typography.bodyBold, color: colors.textMuted, fontSize: 15 },
+    rankNumText: {
+      ...typography.bodyBold,
+      color: colors.textMuted,
+      fontSize: 13,
+    },
     rankThumb: {
-      width: 52,
-      height: 52,
+      width: 48,
+      height: 48,
       borderRadius: radius.md,
-      backgroundColor: colors.primarySurface,
       overflow: 'hidden',
+      backgroundColor: colors.primarySurface,
     },
     rankInfo: { flex: 1 },
     rankName: { ...typography.bodyBold, color: colors.text, fontSize: 14 },
-    rankSub: { ...typography.small, color: colors.textMuted, marginTop: 2 },
-    rankLikes: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-    },
-    rankLikesText: { ...typography.bodyBold, color: colors.text, fontSize: 13 },
+    rankSub: { ...typography.small, color: colors.textMuted, marginTop: 1 },
+    rankLikes: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+    rankLikesNum: { ...typography.bodyBold, color: colors.text, fontSize: 13 },
     emptyWrap: {
       flex: 1,
       alignItems: 'center',
       justifyContent: 'center',
       padding: spacing.xl,
-      gap: spacing.lg,
+      gap: spacing.md,
     },
-    emptyTrophy: { fontSize: 64 },
+    emptyIcon: {
+      width: 88,
+      height: 88,
+      borderRadius: 44,
+      backgroundColor: colors.primarySurface,
+      borderWidth: 2,
+      borderColor: colors.border,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
     emptyTitle: { ...typography.h2, color: colors.text, textAlign: 'center' },
     emptyBody: { ...typography.body, color: colors.textMuted, textAlign: 'center', lineHeight: 22 },
     stepsCard: {
       width: '100%',
       borderRadius: radius.lg,
+      overflow: 'hidden',
       backgroundColor: colors.card,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
-      overflow: 'hidden',
+      marginTop: spacing.sm,
     },
-    stepsHeader: {
-      backgroundColor: colors.primarySurface,
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: colors.border,
-    },
-    stepsHeaderText: { ...typography.bodyBold, color: colors.primary, fontSize: 13 },
-    step: {
+    stepsRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.md,
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm + 2,
+      padding: spacing.md,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.border,
     },
@@ -293,38 +322,130 @@ export default function ClassicsScreen() {
 
   const Header = (
     <View style={styles.header}>
-      <Pressable onPress={() => navigation.goBack()} hitSlop={8}>
-        <Ionicons name="chevron-back" size={26} color={colors.primary} />
-      </Pressable>
-      <Text style={styles.headerTitle}>🏆 Класики</Text>
-      <View style={styles.countdownBadge}>
-        <Ionicons name="time-outline" size={12} color={colors.primary} />
+      <View style={styles.headerTop}>
+        <Pressable onPress={() => navigation.goBack()} style={styles.backBtn} hitSlop={8}>
+          <Ionicons name="chevron-back" size={20} color={colors.text} />
+        </Pressable>
+        <Text style={styles.headerTitle}>🏆  Класики</Text>
+        <View style={styles.headerSide} />
+      </View>
+      <View style={styles.segmented}>
+        {(['week', 'month'] as ClassicPeriod[]).map((p) => (
+          <Pressable key={p} style={[styles.segItem, period === p && styles.segItemActive]} onPress={() => setPeriod(p)}>
+            <Text style={[styles.segText, period === p && styles.segTextActive]}>
+              {p === 'week' ? 'Седмица' : 'Месец'}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+      <View style={styles.countdownRow}>
+        <Ionicons name="time-outline" size={12} color={colors.textMuted} />
         <Text style={styles.countdownText}>
-          {daysLeft === 0 ? 'Последен ден' : `${daysLeft} ${daysLeft === 1 ? 'ден' : 'дни'}`}
+          {daysLeft === 0
+            ? 'Последен ден от периода'
+            : `${daysLeft} ${daysLeft === 1 ? 'ден' : 'дни'} до края на периода`}
         </Text>
       </View>
     </View>
   );
 
-  const Segmented = (
-    <View style={styles.segmented}>
-      {(['week', 'month'] as ClassicPeriod[]).map((p) => (
-        <Pressable key={p} style={[styles.segItem, period === p && styles.segItemActive]} onPress={() => setPeriod(p)}>
-          <Text style={[styles.segText, period === p && styles.segTextActive]}>
-            {p === 'week' ? 'Седмица' : 'Месец'}
-          </Text>
-        </Pressable>
-      ))}
+  const CirclePhoto = ({
+    row,
+    size,
+    ringColor,
+  }: {
+    row: RankedClassicPhoto;
+    size: number;
+    ringColor: string;
+  }) => (
+    <View style={[styles.ringWrap, { borderWidth: 3, borderColor: ringColor }]}>
+      <View style={[styles.circle, { width: size, height: size }]}>
+        {row.item.photoUri ? (
+          <Image source={{ uri: row.item.photoUri }} style={{ width: size, height: size }} contentFit="cover" />
+        ) : (
+          <Ionicons name="fish-outline" size={size * 0.4} color={colors.primary} />
+        )}
+      </View>
     </View>
   );
 
+  const Podium = (
+    <View style={styles.podiumSection}>
+      <View style={styles.podiumRow}>
+        {second ? (
+          <Pressable
+            style={styles.podiumItem}
+            onPress={() => navigation.navigate('UserPublicProfile', { uid: second.item.ownerUid, displayName: second.item.ownerName })}
+          >
+            <Text style={styles.rankLabel}>🥈</Text>
+            <CirclePhoto row={second} size={72} ringColor={SILVER} />
+            <Text style={styles.podiumName} numberOfLines={1}>{second.item.ownerName ?? 'Рибар'}</Text>
+            <Text style={styles.podiumLikes}>❤️ {second.likes}</Text>
+          </Pressable>
+        ) : <View style={{ width: 72 }} />}
+
+        {first ? (
+          <Pressable
+            style={[styles.podiumItem, { marginBottom: 0 }]}
+            onPress={() => navigation.navigate('UserPublicProfile', { uid: first.item.ownerUid, displayName: first.item.ownerName })}
+          >
+            <Text style={[styles.rankLabel, { fontSize: 24 }]}>🥇</Text>
+            <CirclePhoto row={first} size={96} ringColor={GOLD} />
+            <Text style={[styles.podiumName, { color: GOLD, maxWidth: 100 }]} numberOfLines={1}>{first.item.ownerName ?? 'Рибар'}</Text>
+            <Text style={styles.podiumLikes}>❤️ {first.likes}</Text>
+          </Pressable>
+        ) : null}
+
+        {third ? (
+          <Pressable
+            style={styles.podiumItem}
+            onPress={() => navigation.navigate('UserPublicProfile', { uid: third.item.ownerUid, displayName: third.item.ownerName })}
+          >
+            <Text style={styles.rankLabel}>🥉</Text>
+            <CirclePhoto row={third} size={72} ringColor={BRONZE} />
+            <Text style={styles.podiumName} numberOfLines={1}>{third.item.ownerName ?? 'Рибар'}</Text>
+            <Text style={styles.podiumLikes}>❤️ {third.likes}</Text>
+          </Pressable>
+        ) : <View style={{ width: 72 }} />}
+      </View>
+    </View>
+  );
+
+  const WinnerSpotlight = first ? (
+    <Pressable
+      style={styles.spotlightWrap}
+      onPress={() => navigation.navigate('UserPublicProfile', { uid: first.item.ownerUid, displayName: first.item.ownerName })}
+    >
+      {first.item.photoUri ? (
+        <Image source={{ uri: first.item.photoUri }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
+      ) : (
+        <View style={{ flex: 1, backgroundColor: colors.primarySurface, alignItems: 'center', justifyContent: 'center' }}>
+          <Ionicons name="fish-outline" size={56} color={colors.primary} />
+        </View>
+      )}
+      <View style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)' }} />
+      <View style={styles.spotlightTopRow}>
+        <Text style={styles.spotlightLabel}>СНИМКА НА ПОБЕДИТЕЛЯ</Text>
+        <View style={styles.spotlightLikesBadge}>
+          <Ionicons name="heart" size={12} color="#ff6b6b" />
+          <Text style={styles.spotlightLikesText}>{first.likes}</Text>
+        </View>
+      </View>
+      <View style={styles.spotlightOverlay}>
+        <View style={styles.spotlightInfo}>
+          <Text style={styles.spotlightAuthor}>{first.item.ownerName ?? 'Рибар'}</Text>
+          <Text style={styles.spotlightTitle} numberOfLines={1}>
+            {first.item.photoTitle ?? first.item.speciesName}
+          </Text>
+        </View>
+      </View>
+    </Pressable>
+  ) : null;
+
   const StepsCard = (
     <View style={styles.stepsCard}>
-      <View style={styles.stepsHeader}>
-        <Text style={styles.stepsHeaderText}>Как да участваш?</Text>
-      </View>
       {['Запиши улов в Дневника', 'Добави заглавие на снимката', 'Сподели публично в Лентата'].map((s, i) => (
-        <View key={i} style={[styles.step, i === 2 && { borderBottomWidth: 0 }]}>
+        <View key={i} style={[styles.stepsRow, i === 2 && { borderBottomWidth: 0 }]}>
           <View style={styles.stepDot}><Text style={styles.stepDotText}>{i + 1}</Text></View>
           <Text style={styles.stepText}>{s}</Text>
         </View>
@@ -336,7 +457,6 @@ export default function ClassicsScreen() {
     return (
       <Screen padded={false}>
         {Header}
-        {Segmented}
         <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg }}>
           <Card>
             <Text style={{ ...typography.h3, color: colors.text }}>Нужен е акаунт</Text>
@@ -355,123 +475,51 @@ export default function ClassicsScreen() {
       {Header}
 
       {loading && rows.length === 0 ? (
-        <>
-          {Segmented}
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', gap: spacing.md }}>
-            <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={{ ...typography.body, color: colors.textMuted }}>Броим харесванията…</Text>
-          </View>
-        </>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', gap: spacing.md }}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={{ ...typography.body, color: colors.textMuted }}>Броим харесванията…</Text>
+        </View>
       ) : error ? (
-        <>
-          {Segmented}
-          <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg }}>
-            <Card>
-              <Text style={{ ...typography.h3, color: colors.text }}>Грешка при зареждане</Text>
-              <Button title="Опитай отново" onPress={load} style={{ marginTop: spacing.md }} />
-            </Card>
-          </View>
-        </>
+        <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg }}>
+          <Card>
+            <Text style={{ ...typography.h3, color: colors.text }}>Грешка при зареждане</Text>
+            <Button title="Опитай отново" onPress={load} style={{ marginTop: spacing.md }} />
+          </Card>
+        </View>
       ) : rows.length === 0 ? (
-        <>
-          {Segmented}
-          <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
-            <View style={styles.emptyWrap}>
-              <Text style={styles.emptyTrophy}>🏆</Text>
-              <Text style={styles.emptyTitle}>Все още няма снимки</Text>
-              <Text style={styles.emptyBody}>
-                Бъди първият! Сподели улов с именувана снимка в Лентата.
-              </Text>
-              {StepsCard}
+        <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
+          <View style={styles.emptyWrap}>
+            <View style={styles.emptyIcon}>
+              <Text style={{ fontSize: 42 }}>🏆</Text>
             </View>
-          </ScrollView>
-        </>
+            <Text style={styles.emptyTitle}>Все още няма снимки</Text>
+            <Text style={styles.emptyBody}>
+              Бъди първият! Сподели улов с именувана снимка в Лентата.
+            </Text>
+            {StepsCard}
+          </View>
+        </ScrollView>
       ) : (
         <FlatList
           data={rest}
           keyExtractor={(item) => item.item.id}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.primary} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => { setRefreshing(true); load(); }}
+              tintColor={colors.primary}
+            />
           }
           contentContainerStyle={{ paddingBottom: spacing.xxl }}
           ListHeaderComponent={
             <>
-              {Segmented}
-
-              {/* #1 Winner card */}
-              {first ? (
-                <Pressable
-                  style={styles.winnerCard}
-                  onPress={() => navigation.navigate('UserPublicProfile', { uid: first.item.ownerUid, displayName: first.item.ownerName })}
-                >
-                  {first.item.photoUri ? (
-                    <Image source={{ uri: first.item.photoUri }} style={styles.winnerPhoto} contentFit="cover" />
-                  ) : (
-                    <View style={[styles.winnerPhoto, { backgroundColor: colors.primarySurface, alignItems: 'center', justifyContent: 'center' }]}>
-                      <Ionicons name="fish-outline" size={56} color={colors.primary} />
-                    </View>
-                  )}
-                  <View style={styles.winnerOverlay}>
-                    <View style={styles.winnerTopRow}>
-                      <View style={styles.winnerBadge}>
-                        <Text style={{ fontSize: 14 }}>🥇</Text>
-                        <Text style={styles.winnerBadgeText}>ПОБЕДИТЕЛ</Text>
-                      </View>
-                      <View style={styles.likesBadge}>
-                        <Ionicons name="heart" size={13} color="#ff6b6b" />
-                        <Text style={styles.likesText}>{first.likes}</Text>
-                      </View>
-                    </View>
-                    <View style={styles.winnerBottom}>
-                      <Text style={styles.winnerAuthor}>{first.item.ownerName ?? 'Рибар'}</Text>
-                      <Text style={styles.winnerTitle} numberOfLines={1}>
-                        {first.item.photoTitle ?? first.item.speciesName}
-                      </Text>
-                    </View>
-                  </View>
-                </Pressable>
-              ) : null}
-
-              {/* #2 and #3 side by side */}
-              {(second || third) ? (
-                <View style={styles.runnerRow}>
-                  {[second, third].filter(Boolean).map((row, idx) => {
-                    const rank = idx + 2;
-                    const borderColor = rank === 2 ? '#C0C0C0' : '#CD7F32';
-                    return (
-                      <Pressable
-                        key={row!.item.id}
-                        style={[styles.runnerCard, { borderWidth: 2, borderColor }]}
-                        onPress={() => navigation.navigate('UserPublicProfile', { uid: row!.item.ownerUid, displayName: row!.item.ownerName })}
-                      >
-                        {row!.item.photoUri ? (
-                          <Image source={{ uri: row!.item.photoUri }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
-                        ) : (
-                          <View style={{ flex: 1, backgroundColor: colors.primarySurface, alignItems: 'center', justifyContent: 'center' }}>
-                            <Ionicons name="fish-outline" size={32} color={colors.primary} />
-                          </View>
-                        )}
-                        <View style={styles.runnerOverlay}>
-                          <View style={styles.runnerMedalBadge}>
-                            <Text style={styles.runnerMedalText}>{rank === 2 ? '🥈' : '🥉'}</Text>
-                          </View>
-                          <View style={styles.runnerBottom}>
-                            <Text style={styles.runnerName} numberOfLines={1}>{row!.item.ownerName ?? 'Рибар'}</Text>
-                            <Text style={styles.runnerLikes}>❤️ {row!.likes}</Text>
-                          </View>
-                        </View>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              ) : null}
-
-              {/* Rest header */}
+              {Podium}
+              {WinnerSpotlight}
               {rest.length > 0 ? (
                 <>
-                  <View style={styles.divider} />
-                  <Text style={styles.sectionLabel}>ОСТАНАЛИ</Text>
+                  <View style={styles.divLine} />
+                  <Text style={styles.listLabel}>ОСТАНАЛИ</Text>
                 </>
               ) : null}
             </>
@@ -486,22 +534,20 @@ export default function ClassicsScreen() {
               </View>
               <View style={styles.rankThumb}>
                 {row.item.photoUri ? (
-                  <Image source={{ uri: row.item.photoUri }} style={{ width: 52, height: 52 }} contentFit="cover" recyclingKey={row.item.id} />
+                  <Image source={{ uri: row.item.photoUri }} style={{ width: 48, height: 48 }} contentFit="cover" recyclingKey={row.item.id} />
                 ) : (
                   <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                    <Ionicons name="fish-outline" size={22} color={colors.primary} />
+                    <Ionicons name="fish-outline" size={20} color={colors.primary} />
                   </View>
                 )}
               </View>
               <View style={styles.rankInfo}>
                 <Text style={styles.rankName} numberOfLines={1}>{row.item.ownerName ?? 'Рибар'}</Text>
-                <Text style={styles.rankSub} numberOfLines={1}>
-                  {row.item.photoTitle ?? row.item.speciesName}
-                </Text>
+                <Text style={styles.rankSub} numberOfLines={1}>{row.item.photoTitle ?? row.item.speciesName}</Text>
               </View>
               <View style={styles.rankLikes}>
-                <Ionicons name="heart" size={14} color="#ff6b6b" />
-                <Text style={styles.rankLikesText}>{row.likes}</Text>
+                <Ionicons name="heart" size={13} color="#ff6b6b" />
+                <Text style={styles.rankLikesNum}>{row.likes}</Text>
               </View>
             </Pressable>
           )}
