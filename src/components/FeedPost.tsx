@@ -33,6 +33,10 @@ import {
   type CatchLiker,
 } from '../services/socialFeed';
 import { submitContentReport } from '../services/contentReports';
+import { getUserPublicSummary } from '../services/cloudSync';
+
+// Module-level cache — one Firestore read per unique user per app session
+const _avatarCache = new Map<string, string>();
 
 type Props = {
   item: FeedItem;
@@ -153,8 +157,24 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, socialEnabled
   const ownerName = item.ownerName || 'Рибар';
   const initials = ownerName.slice(0, 1).toUpperCase();
   const isMine = Boolean(myUid && item.ownerUid === myUid);
-  // For own posts, prefer the live myPhotoUrl over the potentially stale stored ownerPhotoUrl
-  const avatarUrl = (isMine ? myPhotoUrl?.trim() : undefined) || item.ownerPhotoUrl?.trim();
+  // Resolved avatar: live myPhotoUrl for own posts, stored ownerPhotoUrl for others,
+  // with a lazy Firestore fallback when the document field is missing.
+  const storedAvatar = item.ownerPhotoUrl?.trim();
+  const [fetchedAvatar, setFetchedAvatar] = useState<string>(_avatarCache.get(item.ownerUid) ?? '');
+
+  useEffect(() => {
+    if (isMine || storedAvatar || fetchedAvatar) return;
+    const cached = _avatarCache.get(item.ownerUid);
+    if (cached) { setFetchedAvatar(cached); return; }
+    getUserPublicSummary(item.ownerUid)
+      .then((s) => {
+        const p = s?.photoUrl?.trim();
+        if (p) { _avatarCache.set(item.ownerUid, p); setFetchedAvatar(p); }
+      })
+      .catch(() => {});
+  }, [item.ownerUid, isMine, storedAvatar, fetchedAvatar]);
+
+  const avatarUrl = (isMine ? myPhotoUrl?.trim() : undefined) || storedAvatar || fetchedAvatar;
 
   const [liked, setLiked] = useState(false);
   const [likeBusy, setLikeBusy] = useState(false);
