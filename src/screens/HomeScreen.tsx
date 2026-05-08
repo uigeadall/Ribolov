@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -24,6 +24,9 @@ import { radius, spacing, typography } from '../theme/typography';
 import { fetchWeather, windDirectionLabel, type WeatherSnapshot } from '../services/weather';
 import { catchesStore } from '../storage/storage';
 import { fetchRankedClassicPhotos, periodStartIso, type RankedClassicPhoto } from '../services/classicsContest';
+import { subscribeUnreadMessagesCount } from '../services/cloudSync';
+import { subscribeMyNotifications } from '../services/socialFeed';
+import { BadgeIcon } from '../components/BadgeIcon';
 import { Image } from 'expo-image';
 import type { Catch } from '../types/index';
 
@@ -137,6 +140,8 @@ export default function HomeScreen() {
   const [lastCatch, setLastCatch] = useState<Catch | null>(null);
   const [topClassic, setTopClassic] = useState<RankedClassicPhoto | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [unreadMsgs, setUnreadMsgs] = useState(0);
+  const [unreadNotifs, setUnreadNotifs] = useState(0);
 
   const loadStats = useCallback(async () => {
     const list = await catchesStore.list();
@@ -192,6 +197,16 @@ export default function HomeScreen() {
     }, [loadStats, loadWeather])
   );
 
+  // Live badge counts
+  useEffect(() => {
+    if (!user) return;
+    const unsubMsgs = subscribeUnreadMessagesCount(user.uid, setUnreadMsgs);
+    const unsubNotifs = subscribeMyNotifications(user.uid, (items) =>
+      setUnreadNotifs(items.filter((n) => !n.read).length)
+    );
+    return () => { unsubMsgs(); unsubNotifs(); };
+  }, [user]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     await Promise.all([loadStats(), loadWeather()]);
@@ -234,18 +249,18 @@ export default function HomeScreen() {
               <Text style={styles.heroDate}>{dateStr}</Text>
             </View>
           </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: 2 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: 2 }}>
             <Pressable
               onPress={() => navigation.navigate('ProfileTab', { screen: 'Chats' })}
               hitSlop={10}
             >
-              <Ionicons name="chatbubble-outline" size={24} color={colors.primary} />
+              <BadgeIcon name="chatbubble-outline" size={24} color={colors.primary} count={unreadMsgs} />
             </Pressable>
             <Pressable
               onPress={() => navigation.navigate('ProfileTab', { screen: 'Notifications' })}
               hitSlop={10}
             >
-              <Ionicons name="notifications-outline" size={24} color={colors.primary} />
+              <BadgeIcon name="notifications-outline" size={24} color={colors.primary} count={unreadNotifs} />
             </Pressable>
           </View>
         </View>

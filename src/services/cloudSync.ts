@@ -18,6 +18,8 @@ import {
   getCountFromServer,
   onSnapshot,
   startAfter,
+  increment,
+  updateDoc,
   type DocumentSnapshot,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -383,19 +385,63 @@ export function subscribeConversationMessages(
   );
 }
 
-export async function sendConversationMessage(convId: string, senderUid: string, text: string): Promise<void> {
+export async function sendConversationMessage(
+  convId: string,
+  senderUid: string,
+  text: string,
+  recipientUid: string,
+): Promise<void> {
   const fb = ensureFirebase();
   if (!fb) throw new Error('Firebase не е наличен.');
   const trimmed = text.trim();
   if (!trimmed) return;
-  await addDoc(
-    collection(fb.db, 'conversations', convId, 'messages'),
-    stripUndefinedForFirestore({
-      senderUid,
-      text: trimmed,
-      createdAt: serverTimestamp(),
-    })
+  await Promise.all([
+    addDoc(
+      collection(fb.db, 'conversations', convId, 'messages'),
+      stripUndefinedForFirestore({ senderUid, text: trimmed, createdAt: serverTimestamp() }),
+    ),
+    // Update conversation metadata + increment recipient unread count
+    setDoc(
+      doc(fb.db, 'conversations', convId),
+      {
+        lastMessage: trimmed,
+        lastMessageAt: serverTimestamp(),
+        lastSenderUid: senderUid,
+        [`unreadCounts.${recipientUid}`]: increment(1),
+      },
+      { merge: true },
+    ),
+  ]);
+}
+
+/** Reset unread count for myUid when they open a chat. */
+export async function markConversationRead(convId: string, myUid: string): Promise<void> {
+  const fb = ensureFirebase();
+  if (!fb) return;
+  await updateDoc(doc(fb.db, 'conversations', convId), {
+    [`unreadCounts.${myUid}`]: 0,
+  }).catch(() => {});
+}
+
+/** Real-time total unread message count across all conversations for myUid. */
+export function subscribeUnreadMessagesCount(
+  myUid: string,
+  onNext: (count: number) => void,
+): () => void {
+  const fb = ensureFirebase();
+  if (!fb) return () => {};
+  const q = query(
+    collection(fb.db, 'conversations'),
+    where('participantIds', 'array-contains', myUid),
   );
+  return onSnapshot(q, (snap) => {
+    let total = 0;
+    snap.docs.forEach((d) => {
+      const counts = (d.data() as Record<string, unknown>).unreadCounts as Record<string, number> | undefined;
+      total += counts?.[myUid] ?? 0;
+    });
+    onNext(total);
+  }, () => onNext(0));
 }
 
 export async function createTournament(t: Tournament) {

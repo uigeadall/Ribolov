@@ -18,7 +18,7 @@ import { spacing, typography } from '../theme/typography';
 import type { ProfileStackParamList } from '../navigation/types';
 import type { DirectMessage } from '../types';
 import { useAuth } from '../services/authContext';
-import { sendConversationMessage, subscribeConversationMessages } from '../services/cloudSync';
+import { sendConversationMessage, subscribeConversationMessages, markConversationRead } from '../services/cloudSync';
 
 type R = RouteProp<ProfileStackParamList, 'ChatDetail'>;
 
@@ -32,9 +32,17 @@ export default function ChatDetailScreen() {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
 
+  const { otherUid } = route.params;
+
   useEffect(() => {
     if (!configured || !user) return;
-    const unsub = subscribeConversationMessages(convId, setMsgs);
+    // Mark as read when screen opens
+    markConversationRead(convId, user.uid).catch(() => {});
+    const unsub = subscribeConversationMessages(convId, (next) => {
+      setMsgs(next);
+      // Mark as read whenever new messages arrive while screen is open
+      markConversationRead(convId, user.uid).catch(() => {});
+    });
     return unsub;
   }, [convId, configured, user]);
 
@@ -42,12 +50,12 @@ export default function ChatDetailScreen() {
     if (!user || !text.trim()) return;
     setSending(true);
     try {
-      await sendConversationMessage(convId, user.uid, text);
+      await sendConversationMessage(convId, user.uid, text, otherUid);
       setText('');
     } finally {
       setSending(false);
     }
-  }, [convId, text, user]);
+  }, [convId, text, user, otherUid]);
 
   const styles = useMemo(
     () =>
