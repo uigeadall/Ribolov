@@ -38,6 +38,7 @@ type Props = {
   item: FeedItem;
   myUid?: string;
   myDisplayName: string;
+  myPhotoUrl?: string;
   socialEnabled?: boolean;
   onPressAuthor: (authorUid: string, displayName: string) => void;
 };
@@ -146,13 +147,14 @@ function feedStyles(colors: AppColors) {
 
 export type { FeedItem };
 
-export function FeedPost({ item, myUid, myDisplayName, socialEnabled, onPressAuthor }: Props) {
+export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, socialEnabled, onPressAuthor }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => feedStyles(colors), [colors]);
   const ownerName = item.ownerName || 'Рибар';
   const initials = ownerName.slice(0, 1).toUpperCase();
   const isMine = Boolean(myUid && item.ownerUid === myUid);
-  const avatarUrl = item.ownerPhotoUrl?.trim();
+  // For own posts, prefer the live myPhotoUrl over the potentially stale stored ownerPhotoUrl
+  const avatarUrl = (isMine ? myPhotoUrl?.trim() : undefined) || item.ownerPhotoUrl?.trim();
 
   const [liked, setLiked] = useState(false);
   const [likeBusy, setLikeBusy] = useState(false);

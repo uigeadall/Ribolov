@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { View, Text, StyleSheet, FlatList, Pressable, RefreshControl, ActivityIndicator, Platform } from 'react-native';
 import { Image } from 'expo-image';
 import { useNavigation } from '@react-navigation/native';
@@ -121,6 +122,14 @@ export default function FeedScreen() {
   );
 
   const [items, setItems] = useState<FeedItem[]>([]);
+  const [myPhotoUrl, setMyPhotoUrl] = useState<string | undefined>();
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    AsyncStorage.getItem(`@ribolov/profilePhoto/${user.uid}`)
+      .then((v) => { if (v) setMyPhotoUrl(v); })
+      .catch(() => {});
+  }, [user?.uid]);
   const [scope, setScope] = useState<FeedScope>('all');
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -397,6 +406,7 @@ export default function FeedScreen() {
               item={item}
               myUid={user?.uid}
               myDisplayName={user?.displayName ?? user?.email ?? 'Аз'}
+              myPhotoUrl={myPhotoUrl}
               socialEnabled={!!user && !!configured}
               onPressAuthor={(authorUid, name) =>
                 navigation.navigate('UserPublicProfile', { uid: authorUid, displayName: name })
