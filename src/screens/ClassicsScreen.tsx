@@ -304,7 +304,7 @@ export default function ClassicsScreen() {
   // ── steps card ────────────────────────────────────────────────────────────────
   const StepsCard = (
     <View style={s.stepsCard}>
-      {['Запиши улов в Дневника', 'Добави заглавие на снимката', 'Сподели публично в Лентата'].map((txt, i) => (
+      {['Снимай улова с камерата на приложението', 'Добави заглавие на снимката', 'Сподели публично в Лентата'].map((txt, i) => (
         <View key={i} style={[s.stepRow, i === 2 && { borderBottomWidth: 0 }]}>
           <View style={s.stepDot}><Text style={s.stepDotText}>{i + 1}</Text></View>
           <Text style={s.stepText}>{txt}</Text>
@@ -399,7 +399,9 @@ export default function ClassicsScreen() {
             </View>
             <Text style={{ fontSize: 56 }}>🏆</Text>
             <Text style={s.emptyTitle}>Все още няма снимки</Text>
-            <Text style={s.emptyBody}>Бъди първият! Сподели улов с именувана снимка в Лентата.</Text>
+            <Text style={s.emptyBody}>
+              Само снимки, направени с камерата на приложението, участват в класацията.
+            </Text>
           </View>
           {StepsCard}
         </ScrollView>
