@@ -107,16 +107,33 @@ export default function ChatDetailScreen() {
     try {
       const fb = ensureFirebase();
       if (!fb) throw new Error('Firebase не е наличен.');
-      const ext = isVideo ? 'mp4' : 'jpg';
+
+      // Derive extension from URI so HEIC/PNG/etc. are handled correctly
+      const uriExt = asset.uri.split('?')[0].split('.').pop()?.toLowerCase();
+      const ext = isVideo ? (uriExt ?? 'mp4') : (uriExt ?? 'jpg');
+      const contentType = isVideo
+        ? 'video/mp4'
+        : ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+
       const path = `chatMedia/${convId}/${user.uid}_${Date.now()}.${ext}`;
       const sRef = storageRef(fb.storage, path);
-      const resp = await fetch(asset.uri);
-      const blob = await resp.blob();
-      await uploadBytes(sRef, blob, { contentType: isVideo ? 'video/mp4' : 'image/jpeg' });
+
+      // XHR blob fetch is more reliable than fetch().blob() for
+      // local file:// and content:// URIs on Android and iOS.
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.responseType = 'blob';
+        xhr.onload = () => resolve(xhr.response as Blob);
+        xhr.onerror = () => reject(new Error(`XHR failed for URI: ${asset.uri}`));
+        xhr.open('GET', asset.uri, true);
+        xhr.send(null);
+      });
+
+      await uploadBytes(sRef, blob, { contentType });
       const url = await getDownloadURL(sRef);
       await sendConversationMessage(convId, user.uid, '', otherUid, url, isVideo ? 'video' : 'photo');
     } catch (e) {
-      Alert.alert('Грешка', 'Неуспешно качване на медия.');
+      Alert.alert('Грешка при качване', e instanceof Error ? e.message : String(e));
     } finally {
       setUploading(false);
     }

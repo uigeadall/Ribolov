@@ -48,9 +48,7 @@ service firebase.storage {
 
     match /chatMedia/{convId}/{fileName} {
       allow read: if signedIn();
-      allow write: if signedIn()
-        && (request.resource.contentType.matches('image/.*') || request.resource.contentType.matches('video/.*'))
-        && request.resource.size < 50 * 1024 * 1024;
+      allow write: if signedIn() && request.resource.size < 50 * 1024 * 1024;
     }
   }
 }
