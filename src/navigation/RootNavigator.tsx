@@ -217,7 +217,7 @@ function TabNavigator() {
         component={LogbookNavigator}
         options={{ title: 'Дневник' }}
         listeners={({ navigation }) => ({
-          tabPress: () => navigation.navigate('LogbookTab', { screen: 'LogbookList' }),
+          tabPress: (e) => { e.preventDefault(); navigation.navigate('LogbookTab', { screen: 'LogbookList' }); },
         })}
       />
       <Tabs.Screen name="MapTab" component={MapScreenWrapped} options={{ title: 'Карта' }} />
@@ -226,7 +226,7 @@ function TabNavigator() {
         component={FeedNavigator}
         options={{ title: 'Лента' }}
         listeners={({ navigation }) => ({
-          tabPress: () => navigation.navigate('FeedTab', { screen: 'FeedList' }),
+          tabPress: (e) => { e.preventDefault(); navigation.navigate('FeedTab', { screen: 'FeedList' }); },
         })}
       />
       <Tabs.Screen
@@ -234,7 +234,7 @@ function TabNavigator() {
         component={ProfileNavigator}
         options={{ title: 'Профил' }}
         listeners={({ navigation }) => ({
-          tabPress: () => navigation.navigate('ProfileTab', { screen: 'ProfileMain' }),
+          tabPress: (e) => { e.preventDefault(); navigation.navigate('ProfileTab', { screen: 'ProfileMain' }); },
         })}
       />
     </Tabs.Navigator>
