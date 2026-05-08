@@ -15,6 +15,7 @@ import {
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
@@ -48,6 +49,8 @@ export default function ProfileScreen() {
   const [profileLoading, setProfileLoading] = useState(false);
   const [remotePhotoUrl, setRemotePhotoUrl] = useState<string | undefined>();
   const [pickedAvatarUri, setPickedAvatarUri] = useState<string | undefined>();
+  // Resized base64 data URL — small enough for Firestore, used for save + persistent display
+  const [pickedAvatarDataUrl, setPickedAvatarDataUrl] = useState<string | null>(null);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
 
   const loadRemoteProfile = useCallback(async () => {
@@ -316,17 +319,20 @@ export default function ProfileScreen() {
       mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.5,   // keeps base64 small; displayed at 76px so quality 0.5 looks fine
-      base64: true,
+      quality: 1,
     });
     if (!res.canceled && res.assets[0]) {
-      const asset = res.assets[0];
-      if (asset.base64) {
-        // Store as data URL — no Firebase Storage needed, survives restart via Firestore
-        setPickedAvatarUri(`data:image/jpeg;base64,${asset.base64}`);
-      } else {
-        setPickedAvatarUri(asset.uri);
-      }
+      const picked = res.assets[0];
+      // Resize to 300×300 and compress — keeps base64 under ~30 KB regardless of source size
+      const manipulated = await ImageManipulator.manipulateAsync(
+        picked.uri,
+        [{ resize: { width: 300, height: 300 } }],
+        { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+      );
+      setPickedAvatarUri(manipulated.uri);        // file URI → shown by expo-image immediately
+      setPickedAvatarDataUrl(                      // data URL → stored in Firestore on save
+        manipulated.base64 ? `data:image/jpeg;base64,${manipulated.base64}` : null
+      );
     }
   };
 
@@ -340,14 +346,11 @@ export default function ProfileScreen() {
         bio: bio.trim(),
       };
       if (pickedAvatarUri) {
-        if (pickedAvatarUri.startsWith('data:')) {
-          // base64 data URL — store directly in Firestore, no Firebase Storage needed
-          patch.photoUrl = pickedAvatarUri;
-        } else {
-          patch.photoUrl = await uploadProfileAvatar(user.uid, pickedAvatarUri);
-        }
+        // Prefer the pre-resized data URL (no Firebase Storage, always persists)
+        patch.photoUrl = pickedAvatarDataUrl ?? await uploadProfileAvatar(user.uid, pickedAvatarUri);
         setRemotePhotoUrl(patch.photoUrl);
         setPickedAvatarUri(undefined);
+        setPickedAvatarDataUrl(null);
         AsyncStorage.setItem(`@ribolov/profilePhoto/${user.uid}`, patch.photoUrl).catch(() => {});
       } else if (remotePhotoUrl?.trim()) {
         patch.photoUrl = remotePhotoUrl.trim();
