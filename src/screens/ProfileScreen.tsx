@@ -316,9 +316,18 @@ export default function ProfileScreen() {
       mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.85,
+      quality: 0.5,   // keeps base64 small; displayed at 76px so quality 0.5 looks fine
+      base64: true,
     });
-    if (!res.canceled && res.assets[0]?.uri) setPickedAvatarUri(res.assets[0].uri);
+    if (!res.canceled && res.assets[0]) {
+      const asset = res.assets[0];
+      if (asset.base64) {
+        // Store as data URL — no Firebase Storage needed, survives restart via Firestore
+        setPickedAvatarUri(`data:image/jpeg;base64,${asset.base64}`);
+      } else {
+        setPickedAvatarUri(asset.uri);
+      }
+    }
   };
 
   const savePublicProfile = async () => {
@@ -331,10 +340,14 @@ export default function ProfileScreen() {
         bio: bio.trim(),
       };
       if (pickedAvatarUri) {
-        patch.photoUrl = await uploadProfileAvatar(user.uid, pickedAvatarUri);
+        if (pickedAvatarUri.startsWith('data:')) {
+          // base64 data URL — store directly in Firestore, no Firebase Storage needed
+          patch.photoUrl = pickedAvatarUri;
+        } else {
+          patch.photoUrl = await uploadProfileAvatar(user.uid, pickedAvatarUri);
+        }
         setRemotePhotoUrl(patch.photoUrl);
         setPickedAvatarUri(undefined);
-        // Persist URL locally so it survives app restart regardless of auth/Firestore state
         AsyncStorage.setItem(`@ribolov/profilePhoto/${user.uid}`, patch.photoUrl).catch(() => {});
       } else if (remotePhotoUrl?.trim()) {
         patch.photoUrl = remotePhotoUrl.trim();
