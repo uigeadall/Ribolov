@@ -218,6 +218,34 @@ export default function SpeciesScreen() {
         </View>
       </View>
 
+      <Pressable
+        onPress={() => navigation.navigate('WeightCalc')}
+        style={{
+          flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+          marginHorizontal: spacing.xl, marginBottom: spacing.md,
+          padding: spacing.md,
+          backgroundColor: colors.primarySurface,
+          borderRadius: 12,
+          borderWidth: 1,
+          borderColor: colors.border,
+        }}
+      >
+        <View style={{
+          width: 40, height: 40, borderRadius: 10,
+          backgroundColor: colors.primary,
+          alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Ionicons name="scale-outline" size={20} color="#fff" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={{ ...typography.bodyBold, color: colors.text }}>Калкулатор за размер</Text>
+          <Text style={{ ...typography.small, color: colors.textMuted, marginTop: 2 }}>
+            Дължина ↔ тегло · минимален размер по вид
+          </Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+      </Pressable>
+
       {filtersCard}
 
       {filtered.length === 0 ? (

@@ -453,6 +453,13 @@ export default function HomeScreen() {
         onPress={() => navigation.navigate('ProfileTab', { screen: 'Species', params: { screen: 'SpeciesList' } })}
       />
       <ListRow
+        icon="scale-outline"
+        iconTint={colors.primary}
+        title="Калкулатор за размер"
+        subtitle="Дължина ↔ тегло по вид риба"
+        onPress={() => navigation.navigate('ProfileTab', { screen: 'Species', params: { screen: 'WeightCalc' } })}
+      />
+      <ListRow
         icon="newspaper-outline"
         iconTint={colors.warning}
         title="Лента"
