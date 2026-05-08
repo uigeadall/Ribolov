@@ -385,49 +385,42 @@ export default function HomeScreen() {
         onPress={() => navigation.navigate('ProfileTab', { screen: 'Classics' })}
         style={{ marginBottom: spacing.xl }}
       >
-        <Card style={{ padding: 0, overflow: 'hidden' }}>
-          {topClassic?.item.photoUri ? (
-            <View>
-              <Image
-                source={{ uri: topClassic.item.photoUri }}
-                style={{ width: '100%', height: 200 }}
-                contentFit="cover"
-              />
-              <View style={{
-                position: 'absolute', bottom: 0, left: 0, right: 0,
-                backgroundColor: 'rgba(0,0,0,0.52)', padding: spacing.md,
-                flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
-              }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ ...typography.small, color: 'rgba(255,255,255,0.75)', fontWeight: '700' }}>
-                    🥇 {topClassic.item.ownerName ?? 'Рибар'}
-                  </Text>
-                  <Text style={{ ...typography.bodyBold, color: '#fff', marginTop: 2 }} numberOfLines={1}>
-                    {topClassic.item.photoTitle ?? topClassic.item.speciesName}
-                  </Text>
+        {topClassic?.item.photoUri ? (
+          <View style={{ borderRadius: radius.xl, overflow: 'hidden', height: 200 }}>
+            <Image source={{ uri: topClassic.item.photoUri }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
+            <View style={{ position: 'absolute', inset: 0, justifyContent: 'space-between', padding: spacing.md }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FFD700', paddingHorizontal: spacing.md, paddingVertical: 5, borderRadius: radius.pill }}>
+                  <Text style={{ fontSize: 13 }}>🥇</Text>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: '#1a1a1a', letterSpacing: 0.5 }}>ПОБЕДИТЕЛ</Text>
                 </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 4 }}>
-                  <Ionicons name="heart" size={14} color="#ff6b6b" />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: spacing.sm, paddingVertical: 5, borderRadius: radius.pill }}>
+                  <Ionicons name="heart" size={13} color="#ff6b6b" />
                   <Text style={{ ...typography.small, color: '#fff', fontWeight: '700' }}>{topClassic.likes}</Text>
                 </View>
               </View>
+              <View style={{ backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: radius.md, padding: spacing.sm }}>
+                <Text style={{ ...typography.small, color: 'rgba(255,255,255,0.7)', fontWeight: '600' }}>{topClassic.item.ownerName ?? 'Рибар'}</Text>
+                <Text style={{ ...typography.bodyBold, color: '#fff', marginTop: 2 }} numberOfLines={1}>
+                  {topClassic.item.photoTitle ?? topClassic.item.speciesName}
+                </Text>
+              </View>
             </View>
-          ) : (
-            <View style={{ height: 120, alignItems: 'center', justifyContent: 'center', gap: spacing.sm, padding: spacing.lg }}>
-              <Text style={{ fontSize: 32 }}>🏆</Text>
+          </View>
+        ) : (
+          <Card style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+            <View style={{ width: 52, height: 52, borderRadius: radius.md, backgroundColor: colors.primarySurface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 26 }}>🏆</Text>
+            </View>
+            <View style={{ flex: 1 }}>
               <Text style={{ ...typography.bodyBold, color: colors.text }}>Класики тази седмица</Text>
-              <Text style={{ ...typography.caption, color: colors.textMuted, textAlign: 'center' }}>
-                Сподели улов с именувана снимка и спечели!
+              <Text style={{ ...typography.small, color: colors.textMuted, marginTop: 2 }}>
+                Сподели улов и спечели!
               </Text>
             </View>
-          )}
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: spacing.md }}>
-            <Text style={{ ...typography.caption, color: colors.textMuted }}>
-              Виж всички снимки в класацията
-            </Text>
-            <Ionicons name="chevron-forward" size={18} color={colors.primary} />
-          </View>
-        </Card>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </Card>
+        )}
       </Pressable>
 
       <SectionHeader hint="НАВИГАЦИЯ" title="Бързи връзки" subtitle="Един докос за най-използваните функции." />
