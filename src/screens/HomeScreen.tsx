@@ -234,13 +234,20 @@ export default function HomeScreen() {
               <Text style={styles.heroDate}>{dateStr}</Text>
             </View>
           </View>
-          <Pressable
-            onPress={() => navigation.navigate('ProfileTab', { screen: 'Notifications' })}
-            hitSlop={10}
-            style={{ marginTop: 2 }}
-          >
-            <Ionicons name="notifications-outline" size={24} color={colors.primary} />
-          </Pressable>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: 2 }}>
+            <Pressable
+              onPress={() => navigation.navigate('ProfileTab', { screen: 'Chats' })}
+              hitSlop={10}
+            >
+              <Ionicons name="chatbubble-outline" size={24} color={colors.primary} />
+            </Pressable>
+            <Pressable
+              onPress={() => navigation.navigate('ProfileTab', { screen: 'Notifications' })}
+              hitSlop={10}
+            >
+              <Ionicons name="notifications-outline" size={24} color={colors.primary} />
+            </Pressable>
+          </View>
         </View>
 
         {lastCatch ? (
