@@ -119,5 +119,6 @@ export type ConversationPreview = {
   otherUid: string;
   otherName: string;
   lastMessage?: string;
-  updatedAt?: number;
+  lastMessageAt?: number;
+  unreadCount: number;
 };

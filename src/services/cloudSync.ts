@@ -343,26 +343,39 @@ export async function ensureDirectConversation(
 }
 
 export async function listMyConversations(myUid: string): Promise<
-  { convId: string; otherUid: string; otherName: string; lastMessage?: string; updatedAt?: number }[]
+  { convId: string; otherUid: string; otherName: string; lastMessage?: string; lastMessageAt?: number; unreadCount: number }[]
 > {
   const fb = ensureFirebase();
   if (!fb) return [];
-  const q = query(collection(fb.db, 'conversations'), where('participantIds', 'array-contains', myUid));
+  const q = query(
+    collection(fb.db, 'conversations'),
+    where('participantIds', 'array-contains', myUid),
+  );
   const snap = await getDocs(q);
-  return snap.docs.map((d) => {
+  const rows = snap.docs.map((d) => {
     const data = d.data() as {
       participantIds: string[];
       participantNames?: Record<string, string>;
+      lastMessage?: string;
+      lastMessageAt?: { toMillis?: () => number } | number;
+      unreadCounts?: Record<string, number>;
     };
     const other = data.participantIds.find((id) => id !== myUid) ?? '';
+    const ts = data.lastMessageAt;
+    const lastMessageAt = ts
+      ? typeof ts === 'number' ? ts : ts.toMillis?.() ?? 0
+      : 0;
     return {
       convId: d.id,
       otherUid: other,
       otherName: data.participantNames?.[other] ?? 'Рибар',
-      lastMessage: undefined,
-      updatedAt: undefined,
+      lastMessage: data.lastMessage,
+      lastMessageAt,
+      unreadCount: data.unreadCounts?.[myUid] ?? 0,
     };
   });
+  // Most recent conversation first
+  return rows.sort((a, b) => b.lastMessageAt - a.lastMessageAt);
 }
 
 export function subscribeConversationMessages(

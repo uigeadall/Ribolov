@@ -12,6 +12,16 @@ import { useAuth } from '../services/authContext';
 import { listMyConversations } from '../services/cloudSync';
 import { ConversationPreview } from '../types';
 
+function formatTime(ms: number): string {
+  if (!ms) return '';
+  const now = Date.now();
+  const diff = now - ms;
+  if (diff < 60_000) return 'Сега';
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} мин`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} ч`;
+  return new Date(ms).toLocaleDateString('bg-BG', { day: 'numeric', month: 'short' });
+}
+
 function createChatsStyles(colors: AppColors) {
   return StyleSheet.create({
     header: {
@@ -36,7 +46,13 @@ function createChatsStyles(colors: AppColors) {
     avatarText: { color: colors.white, fontWeight: '700', fontSize: 20 },
     name: { ...typography.h3, color: colors.text },
     preview: { ...typography.body, color: colors.textMuted, marginTop: 2 },
+    previewUnread: { ...typography.bodyBold, color: colors.text, marginTop: 2 },
     warn: { ...typography.body, color: colors.textMuted },
+    timeText: { ...typography.small, color: colors.textMuted },
+    unreadDot: {
+      width: 10, height: 10, borderRadius: 5,
+      backgroundColor: colors.primary, marginTop: 2,
+    },
   });
 }
 
@@ -126,14 +142,22 @@ export default function ChatsScreen() {
                     <Text style={styles.avatarText}>{item.otherName.slice(0, 1).toUpperCase()}</Text>
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.name} numberOfLines={1}>
-                      {item.otherName}
-                    </Text>
-                    <Text style={styles.preview} numberOfLines={1}>
+                    <Text style={styles.name} numberOfLines={1}>{item.otherName}</Text>
+                    <Text
+                      style={item.unreadCount > 0 ? styles.previewUnread : styles.preview}
+                      numberOfLines={1}
+                    >
                       {item.lastMessage || 'Без съобщения'}
                     </Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+                  <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                    {item.lastMessageAt ? (
+                      <Text style={styles.timeText}>{formatTime(item.lastMessageAt)}</Text>
+                    ) : null}
+                    {item.unreadCount > 0 ? (
+                      <View style={styles.unreadDot} />
+                    ) : null}
+                  </View>
                 </View>
               </Card>
             </Pressable>
