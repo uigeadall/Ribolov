@@ -1,22 +1,28 @@
-import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import React, {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Platform, StyleSheet, View, Text } from 'react-native';
 import MapView, { Circle, Marker, Polyline, type Region } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import type { LeafletMapHandle, LeafletMapProps, LeafletMapType } from './LeafletMap';
 
-/** По-малко delta = по-силен zoom; под този праг показваме имена на язовири/реки. */
-const LABEL_LAT_DELTA_THRESHOLD = 0.11;
+const LABEL_THRESHOLD = 0.11;
+// Degrees of extra padding beyond the visible region when culling markers.
+const CULL_BUFFER = 0.25;
+// How long (ms) to keep tracksViewChanges=true after a marker mounts/remounts on Android.
+const ANDROID_TRACK_MS = 600;
 
 function zoomToRegion(lat: number, lng: number, zoom: number): Region {
   const latDelta = Math.min(40, Math.max(0.003, 360 / Math.pow(2, zoom + 0.85)));
   const cos = Math.cos((lat * Math.PI) / 180);
   const lngDelta = latDelta / (Math.abs(cos) > 0.2 ? Math.abs(cos) : 0.2);
-  return {
-    latitude: lat,
-    longitude: lng,
-    latitudeDelta: latDelta,
-    longitudeDelta: lngDelta,
-  };
+  return { latitude: lat, longitude: lng, latitudeDelta: latDelta, longitudeDelta: lngDelta };
 }
 
 function rnMapType(mt: LeafletMapType): 'standard' | 'satellite' | 'hybrid' {
@@ -25,7 +31,6 @@ function rnMapType(mt: LeafletMapType): 'standard' | 'satellite' | 'hybrid' {
   return 'standard';
 }
 
-/** Спот — риба в акварелен кръг (по-голям от предишния маркер). */
 function SpotPin() {
   return (
     <View style={styles.spotPlate}>
@@ -34,15 +39,12 @@ function SpotPin() {
   );
 }
 
-/** Язовир — „слойове“ върху тъмен диск (водно огледало). */
 function DamPin({ name, showLabel }: { name: string; showLabel: boolean }) {
   return (
     <View style={styles.markerCol} accessibilityLabel={name}>
       {showLabel ? (
         <View style={[styles.labelBubble, styles.labelDam]}>
-          <Text numberOfLines={1} style={styles.labelTextDam}>
-            {name}
-          </Text>
+          <Text numberOfLines={1} style={styles.labelTextDam}>{name}</Text>
         </View>
       ) : null}
       <View style={[styles.iconPlate, styles.plateDam]}>
@@ -52,15 +54,12 @@ function DamPin({ name, showLabel }: { name: string; showLabel: boolean }) {
   );
 }
 
-/** Река — водно конче в зелен диск. */
 function RiverPin({ name, showLabel }: { name: string; showLabel: boolean }) {
   return (
     <View style={styles.markerCol} accessibilityLabel={name}>
       {showLabel ? (
         <View style={[styles.labelBubble, styles.labelRiver]}>
-          <Text numberOfLines={1} style={styles.labelTextRiver}>
-            {name}
-          </Text>
+          <Text numberOfLines={1} style={styles.labelTextRiver}>{name}</Text>
         </View>
       ) : null}
       <View style={[styles.iconPlate, styles.plateRiver]}>
@@ -70,126 +69,209 @@ function RiverPin({ name, showLabel }: { name: string; showLabel: boolean }) {
   );
 }
 
-/** Нативна карта — собствени иконки вместо червени пинове; имена при достатъчен zoom. */
-export const NativeMapView = forwardRef<LeafletMapHandle, LeafletMapProps>(function NativeMapView(props, ref) {
-  const {
-    spots,
-    dams,
-    rivers,
-    pendingCoord,
-    userCoord,
-    routeLine,
-    mapType,
-    onLongPress,
-    onMarkerPress,
-    onDamPress,
-    onRiverPress,
-  } = props;
-
-  const mapRef = useRef<MapView>(null);
-  const [showWaterLabels, setShowWaterLabels] = useState(false);
-
-  const onRegionChangeComplete = useCallback((region: Region) => {
-    setShowWaterLabels(region.latitudeDelta <= LABEL_LAT_DELTA_THRESHOLD);
-  }, []);
-
-  useImperativeHandle(ref, () => ({
-    flyTo: (lat: number, lng: number, zoom = 13) => {
-      mapRef.current?.animateToRegion(zoomToRegion(lat, lng, zoom), 450);
-    },
-  }));
-
+/**
+ * Android-only hook: returns true for ANDROID_TRACK_MS after `resetKey` changes,
+ * then false. This ensures custom-view markers finish painting before we stop
+ * tracking, which prevents the silent blank-marker bug on Android.
+ */
+function useAndroidTracks(resetKey: string): boolean {
+  const [tracks, setTracks] = useState(Platform.OS === 'android');
   useEffect(() => {
-    if (!routeLine || routeLine.length < 2) return;
-    const t = setTimeout(() => {
-      mapRef.current?.fitToCoordinates(routeLine, {
-        edgePadding: { top: 120, right: 48, bottom: 180, left: 48 },
-        animated: true,
-      });
-    }, 450);
+    if (Platform.OS !== 'android') return;
+    setTracks(true);
+    const t = setTimeout(() => setTracks(false), ANDROID_TRACK_MS);
     return () => clearTimeout(t);
-  }, [routeLine]);
+  }, [resetKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  return tracks;
+}
+
+/** Thin wrapper so each dam/river marker manages its own tracksViewChanges lifecycle. */
+type WaterMarkerProps = {
+  id: string;
+  latitude: number;
+  longitude: number;
+  name: string;
+  showLabel: boolean;
+  type: 'dam' | 'river';
+  onPress: () => void;
+};
+
+const WaterMarker = React.memo(function WaterMarker({
+  id, latitude, longitude, name, showLabel, type, onPress,
+}: WaterMarkerProps) {
+  // Key changes when showLabel changes → triggers remount → hook re-arms tracking.
+  const resetKey = `${id}-${showLabel ? 1 : 0}`;
+  const tracks = useAndroidTracks(resetKey);
 
   return (
-    <MapView
-      ref={mapRef}
-      style={styles.fill}
-      initialRegion={zoomToRegion(42.65, 25.35, 7)}
-      mapType={rnMapType(mapType)}
-      onLongPress={(e) => {
-        const { latitude, longitude } = e.nativeEvent.coordinate;
-        onLongPress(latitude, longitude);
-      }}
-      onRegionChangeComplete={onRegionChangeComplete}
-      rotateEnabled={false}
-      pitchEnabled={false}
-      showsUserLocation={false}
-      showsMyLocationButton={false}
+    <Marker
+      key={resetKey}
+      identifier={id}
+      coordinate={{ latitude, longitude }}
+      anchor={{ x: 0.5, y: 1 }}
+      tracksViewChanges={tracks}
+      onPress={onPress}
     >
-      {spots.map((s) => (
-        <Marker
-          key={`spot-${s.id}`}
-          coordinate={{ latitude: s.latitude, longitude: s.longitude }}
-          anchor={{ x: 0.5, y: 0.5 }}
-          tracksViewChanges={false}
-          onPress={() => onMarkerPress(s.id)}
-        >
-          <SpotPin />
-        </Marker>
-      ))}
-      {dams.map((d) => (
-        <Marker
-          key={`dam-${d.id}`}
-          coordinate={{ latitude: d.latitude, longitude: d.longitude }}
-          anchor={{ x: 0.5, y: 1 }}
-          tracksViewChanges={showWaterLabels}
-          onPress={() => onDamPress(d.id)}
-        >
-          <DamPin name={d.name} showLabel={showWaterLabels} />
-        </Marker>
-      ))}
-      {rivers.map((r) => (
-        <Marker
-          key={`river-${r.id}`}
-          coordinate={{ latitude: r.latitude, longitude: r.longitude }}
-          anchor={{ x: 0.5, y: 1 }}
-          opacity={0.95}
-          tracksViewChanges={showWaterLabels}
-          onPress={() => onRiverPress(r.id)}
-        >
-          <RiverPin name={r.name} showLabel={showWaterLabels} />
-        </Marker>
-      ))}
-      {pendingCoord ? (
-        <Circle
-          center={pendingCoord}
-          radius={100}
-          strokeWidth={3}
-          strokeColor="#D64545"
-          fillColor="rgba(255, 144, 143, 0.95)"
-        />
-      ) : null}
-      {userCoord ? (
-        <Circle
-          center={userCoord}
-          radius={82}
-          strokeWidth={3}
-          strokeColor="#2E9B5A"
-          fillColor="rgba(138, 238, 186, 1)"
-        />
-      ) : null}
-      {routeLine && routeLine.length >= 2 ? (
-        <Polyline
-          coordinates={routeLine}
-          strokeColor="#0E4D64"
-          strokeWidth={6}
-          lineJoin="round"
-          lineCap="round"
-        />
-      ) : null}
-    </MapView>
+      {type === 'dam'
+        ? <DamPin name={name} showLabel={showLabel} />
+        : <RiverPin name={name} showLabel={showLabel} />}
+    </Marker>
   );
 });
+
+export const NativeMapView = forwardRef<LeafletMapHandle, LeafletMapProps>(
+  function NativeMapView(props, ref) {
+    const { spots, dams, rivers, pendingCoord, userCoord, routeLine, mapType, onLongPress, onMarkerPress, onDamPress, onRiverPress } = props;
+
+    const mapRef = useRef<MapView>(null);
+
+    const [region, setRegion] = useState<Region>({
+      latitude: 42.65,
+      longitude: 25.35,
+      latitudeDelta: 6,
+      longitudeDelta: 6,
+    });
+    const [showWaterLabels, setShowWaterLabels] = useState(false);
+
+    // Spot markers always use tracksViewChanges=false (no label changes).
+    // On Android, a one-shot true→false ensures initial paint.
+    const spotResetKey = 'spots-init';
+    const spotTracks = useAndroidTracks(spotResetKey);
+
+    const onRegionChangeComplete = useCallback((r: Region) => {
+      setRegion(r);
+      setShowWaterLabels(r.latitudeDelta <= LABEL_THRESHOLD);
+    }, []);
+
+    useImperativeHandle(ref, () => ({
+      flyTo: (lat: number, lng: number, zoom = 13) => {
+        mapRef.current?.animateToRegion(zoomToRegion(lat, lng, zoom), 450);
+      },
+    }));
+
+    useEffect(() => {
+      if (!routeLine || routeLine.length < 2) return;
+      const t = setTimeout(() => {
+        mapRef.current?.fitToCoordinates(routeLine, {
+          edgePadding: { top: 120, right: 48, bottom: 180, left: 48 },
+          animated: true,
+        });
+      }, 450);
+      return () => clearTimeout(t);
+    }, [routeLine]);
+
+    // Viewport culling: only render markers inside the visible region + buffer.
+    const visibleDams = useMemo(() => {
+      const { latitude: lat, longitude: lng, latitudeDelta: dLat, longitudeDelta: dLng } = region;
+      const minLat = lat - dLat / 2 - CULL_BUFFER;
+      const maxLat = lat + dLat / 2 + CULL_BUFFER;
+      const minLng = lng - dLng / 2 - CULL_BUFFER;
+      const maxLng = lng + dLng / 2 + CULL_BUFFER;
+      return dams.filter(
+        (d) => d.latitude >= minLat && d.latitude <= maxLat && d.longitude >= minLng && d.longitude <= maxLng,
+      );
+    }, [dams, region]);
+
+    const visibleRivers = useMemo(() => {
+      const { latitude: lat, longitude: lng, latitudeDelta: dLat, longitudeDelta: dLng } = region;
+      const minLat = lat - dLat / 2 - CULL_BUFFER;
+      const maxLat = lat + dLat / 2 + CULL_BUFFER;
+      const minLng = lng - dLng / 2 - CULL_BUFFER;
+      const maxLng = lng + dLng / 2 + CULL_BUFFER;
+      return rivers.filter(
+        (r) => r.latitude >= minLat && r.latitude <= maxLat && r.longitude >= minLng && r.longitude <= maxLng,
+      );
+    }, [rivers, region]);
+
+    return (
+      <MapView
+        ref={mapRef}
+        style={styles.fill}
+        initialRegion={zoomToRegion(42.65, 25.35, 7)}
+        mapType={rnMapType(mapType)}
+        onLongPress={(e) => {
+          const { latitude, longitude } = e.nativeEvent.coordinate;
+          onLongPress(latitude, longitude);
+        }}
+        onRegionChangeComplete={onRegionChangeComplete}
+        rotateEnabled={false}
+        pitchEnabled={false}
+        showsUserLocation={false}
+        showsMyLocationButton={false}
+        // Android: move rendering to hardware layer — smoother panning.
+        {...(Platform.OS === 'android' ? { renderToHardwareTextureAndroid: true } : {})}
+      >
+        {spots.map((s) => (
+          <Marker
+            key={`spot-${s.id}`}
+            coordinate={{ latitude: s.latitude, longitude: s.longitude }}
+            anchor={{ x: 0.5, y: 0.5 }}
+            tracksViewChanges={spotTracks}
+            onPress={() => onMarkerPress(s.id)}
+          >
+            <SpotPin />
+          </Marker>
+        ))}
+
+        {visibleDams.map((d) => (
+          <WaterMarker
+            key={`dam-${d.id}`}
+            id={`dam-${d.id}`}
+            latitude={d.latitude}
+            longitude={d.longitude}
+            name={d.name}
+            showLabel={showWaterLabels}
+            type="dam"
+            onPress={() => onDamPress(d.id)}
+          />
+        ))}
+
+        {visibleRivers.map((r) => (
+          <WaterMarker
+            key={`river-${r.id}`}
+            id={`river-${r.id}`}
+            latitude={r.latitude}
+            longitude={r.longitude}
+            name={r.name}
+            showLabel={showWaterLabels}
+            type="river"
+            onPress={() => onRiverPress(r.id)}
+          />
+        ))}
+
+        {pendingCoord ? (
+          <Circle
+            center={pendingCoord}
+            radius={100}
+            strokeWidth={3}
+            strokeColor="#D64545"
+            fillColor="rgba(255,144,143,0.95)"
+          />
+        ) : null}
+
+        {userCoord ? (
+          <Circle
+            center={userCoord}
+            radius={82}
+            strokeWidth={3}
+            strokeColor="#2E9B5A"
+            fillColor="rgba(138,238,186,1)"
+          />
+        ) : null}
+
+        {routeLine && routeLine.length >= 2 ? (
+          <Polyline
+            coordinates={routeLine}
+            strokeColor="#0E4D64"
+            strokeWidth={6}
+            lineJoin="round"
+            lineCap="round"
+          />
+        ) : null}
+      </MapView>
+    );
+  },
+);
 
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: '#DDE8EE' },
