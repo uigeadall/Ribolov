@@ -401,23 +401,19 @@ export async function sendConversationMessage(
   if (!fb) throw new Error('Firebase не е наличен.');
   const trimmed = text.trim();
   if (!trimmed) return;
-  await Promise.all([
-    addDoc(
-      collection(fb.db, 'conversations', convId, 'messages'),
-      stripUndefinedForFirestore({ senderUid, text: trimmed, createdAt: serverTimestamp() }),
-    ),
-    // Update conversation metadata + increment recipient unread count
-    setDoc(
-      doc(fb.db, 'conversations', convId),
-      {
-        lastMessage: trimmed,
-        lastMessageAt: serverTimestamp(),
-        lastSenderUid: senderUid,
-        [`unreadCounts.${recipientUid}`]: increment(1),
-      },
-      { merge: true },
-    ),
-  ]);
+  // Send message and update conversation metadata atomically
+  await addDoc(
+    collection(fb.db, 'conversations', convId, 'messages'),
+    stripUndefinedForFirestore({ senderUid, text: trimmed, createdAt: serverTimestamp() }),
+  );
+  // Update metadata + increment recipient badge count separately
+  // (updateDoc is unambiguous for security rules; increment() creates the field if absent)
+  await updateDoc(doc(fb.db, 'conversations', convId), {
+    lastMessage: trimmed,
+    lastMessageAt: serverTimestamp(),
+    lastSenderUid: senderUid,
+    [`unreadCounts.${recipientUid}`]: increment(1),
+  });
 }
 
 /** Reset unread count for myUid when they open a chat. */

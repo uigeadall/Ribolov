@@ -244,7 +244,14 @@ service cloud.firestore {
         && mutualFollow(request.resource.data.participantIds);
       allow update: if signedIn()
         && request.auth.uid in resource.data.participantIds
-        && request.resource.data.participantIds == resource.data.participantIds;
+        && (
+          // Full update (e.g. add participant names) — participantIds must stay the same
+          request.resource.data.participantIds == resource.data.participantIds
+          ||
+          // Message metadata update (lastMessage, unreadCounts) — only these fields allowed
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['lastMessage', 'lastMessageAt', 'lastSenderUid', 'unreadCounts'])
+        );
       allow delete: if false;
 
       match /messages/{msgId} {
