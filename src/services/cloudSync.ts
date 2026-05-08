@@ -23,6 +23,7 @@ import {
   type DocumentSnapshot,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
 import { ensureFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
 import { deleteAllUserDamFeedPosts } from './damFeed';
@@ -219,11 +220,33 @@ export async function getUserPublicSummary(uid: string): Promise<UserPublicSumma
 export async function uploadProfileAvatar(uid: string, localUri: string): Promise<string> {
   const fb = ensureFirebase();
   if (!fb) throw new Error('Firebase не е наличен.');
-  const storageRef = ref(fb.storage, `profilePhotos/${uid}/avatar.jpg`);
-  const resp = await fetch(localUri);
-  const blob = await resp.blob();
-  await uploadBytes(storageRef, blob, { contentType: 'image/jpeg' });
-  return getDownloadURL(storageRef);
+
+  const token = await fb.auth.currentUser?.getIdToken(true);
+  if (!token) throw new Error('Не е влезено в акаунт.');
+
+  const bucket = 'ribolov-4ef41.firebasestorage.app';
+  const storagePath = `profilePhotos/${uid}/avatar.jpg`;
+
+  // FileSystem.uploadAsync sends raw binary natively — no Blob/ArrayBuffer in JS.
+  const result = await uploadAsync(
+    `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o?uploadType=media&name=${encodeURIComponent(storagePath)}`,
+    localUri,
+    {
+      httpMethod: 'POST',
+      uploadType: FileSystemUploadType.BINARY_CONTENT,
+      headers: {
+        'Content-Type': 'image/jpeg',
+        'Authorization': `Bearer ${token}`,
+      },
+    },
+  );
+
+  if (result.status < 200 || result.status >= 300) {
+    throw new Error(`Качването не бе успешно (${result.status}): ${result.body}`);
+  }
+
+  const meta = JSON.parse(result.body) as { name: string; downloadTokens: string };
+  return `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o/${encodeURIComponent(meta.name)}?alt=media&token=${meta.downloadTokens}`;
 }
 
 /** Възстановява URL на аватара от Storage, ако документът в Firestore няма photoUrl. */
