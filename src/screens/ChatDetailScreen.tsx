@@ -118,8 +118,16 @@ export default function ChatDetailScreen() {
         : `publicCatchPhotos/${user.uid}/chat_${ts}.jpg`;
       const sRef = storageRef(fb.storage, path);
 
-      const resp = await fetch(asset.uri);
-      const blob = await resp.blob();
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.responseType = 'blob';
+        xhr.onload = () => resolve(xhr.response as Blob);
+        xhr.onerror = () => reject(new Error('Неуспешно четене на файла.'));
+        xhr.open('GET', asset.uri, true);
+        xhr.send(null);
+      });
+      if (!blob || blob.size === 0) throw new Error('Файлът е празен или не може да бъде прочетен.');
+      await uploadBytes(sRef, blob, { contentType });
       const url = await getDownloadURL(sRef);
       await sendConversationMessage(convId, user.uid, '', otherUid, url, isVideo ? 'video' : 'photo');
     } catch (e) {
