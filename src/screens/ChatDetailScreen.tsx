@@ -15,7 +15,6 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
-import Constants from 'expo-constants';
 import { Screen } from '../components/Screen';
 import { Button } from '../components/Button';
 import { useTheme } from '../services/themeContext';
@@ -24,7 +23,6 @@ import type { ProfileStackParamList } from '../navigation/types';
 import type { DirectMessage } from '../types';
 import { useAuth } from '../services/authContext';
 import { sendConversationMessage, subscribeConversationMessages, markConversationRead, subscribeUserPresence } from '../services/cloudSync';
-import { ensureFirebase } from '../services/firebase';
 
 type R = RouteProp<ProfileStackParamList, 'ChatDetail'>;
 
@@ -114,56 +112,16 @@ export default function ChatDetailScreen() {
 
     setUploading(true);
     try {
-      const fb = ensureFirebase();
-      if (!fb) throw new Error('Firebase не е наличен.');
-
-      // Get a fresh auth token to pass manually — bypasses Firebase JS SDK Storage
-      // which cannot handle base64→ArrayBuffer→Blob conversion in React Native.
-      const token = await fb.auth.currentUser?.getIdToken(true);
-      if (!token) throw new Error('Не е влезено в акаунт.');
-
-      const ts = Date.now();
-      const extra = (Constants.expoConfig?.extra ?? {}) as Record<string, string>;
-      const bucket = extra.firebaseStorageBucket || 'ribolov-4ef41.firebasestorage.app';
-      const storagePath = `publicCatchPhotos/${user.uid}/chat_${ts}.jpg`;
-
-      // multipart/related body — plain string, no Blob/ArrayBuffer needed.
-      // React Native fetch can send strings natively.
-      // Content-Transfer-Encoding: base64 tells Firebase to decode the base64 data.
-      const boundary = `fb${ts}`;
-      const body =
-        `--${boundary}\r\n` +
-        `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
-        `{"contentType":"image/jpeg","name":"${storagePath}"}\r\n` +
-        `--${boundary}\r\n` +
-        `Content-Type: image/jpeg\r\n` +
-        `Content-Transfer-Encoding: base64\r\n\r\n` +
-        `${asset.base64}\r\n` +
-        `--${boundary}--`;
-
-      const uploadResp = await fetch(
-        `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o?uploadType=multipart`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': `multipart/related; boundary=${boundary}`,
-            'Authorization': `Bearer ${token}`,
-          },
-          body,
-        },
-      );
-
-      if (!uploadResp.ok) {
-        const errText = await uploadResp.text();
-        throw new Error(`Storage ${uploadResp.status}: ${errText}`);
+      // Store image as base64 data URL directly in Firestore message —
+      // no Firebase Storage needed, no Blob/ArrayBuffer conversion.
+      const MAX_B64 = 900_000; // ~675 KB image, safe under Firestore 1 MB doc limit
+      if (asset.base64.length > MAX_B64) {
+        throw new Error('Снимката е твърде голяма. Избери по-малка или използвай по-ниско качество.');
       }
-
-      const meta = await uploadResp.json() as { name: string; downloadTokens: string };
-      const url = `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o/${encodeURIComponent(meta.name)}?alt=media&token=${meta.downloadTokens}`;
-
-      await sendConversationMessage(convId, user.uid, '', otherUid, url, 'photo');
+      const dataUrl = `data:image/jpeg;base64,${asset.base64}`;
+      await sendConversationMessage(convId, user.uid, '', otherUid, dataUrl, 'photo');
     } catch (e) {
-      Alert.alert('Грешка при качване', e instanceof Error ? e.message : String(e));
+      Alert.alert('Грешка', e instanceof Error ? e.message : String(e));
     } finally {
       setUploading(false);
     }
