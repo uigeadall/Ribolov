@@ -16,7 +16,6 @@ import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { useTheme } from '../services/themeContext';
@@ -31,8 +30,16 @@ import {
 } from '../services/classicsContest';
 
 const { width: SW, height: SH } = Dimensions.get('window');
-const CARD_W = SW * 0.68;
-const CARD_H = CARD_W * 1.45;
+const HERO_H = SH * 0.44;
+const RUNNER_W = (SW - spacing.lg * 2 - spacing.sm) / 2;
+const RUNNER_H = RUNNER_W * 1.3;
+
+const BG = '#0b1820';
+const SURFACE = 'rgba(255,255,255,0.07)';
+const BORDER = 'rgba(255,255,255,0.1)';
+const TEXT = '#ffffff';
+const TEXT_MUTED = 'rgba(255,255,255,0.5)';
+const GOLD = '#F5A623';
 
 function daysLeftInWeek(): number {
   const d = new Date().getDay();
@@ -59,119 +66,159 @@ export default function ClassicsScreen() {
   const [fullScreen, setFullScreen] = useState<FullScreenPhoto | null>(null);
 
   const styles = useMemo(() => StyleSheet.create({
+    root: { flex: 1, backgroundColor: BG },
     header: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      zIndex: 10,
       paddingTop: insets.top + spacing.xs,
       paddingBottom: spacing.sm,
       paddingHorizontal: spacing.lg,
-      backgroundColor: colors.background,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: colors.border,
-    },
-    headerRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      marginBottom: spacing.md,
+      gap: spacing.md,
     },
     backBtn: {
       width: 36,
       height: 36,
       borderRadius: 18,
+      backgroundColor: 'rgba(0,0,0,0.4)',
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: colors.surfaceAlt,
     },
-    titleBlock: { flex: 1, marginLeft: spacing.md },
-    headerTitle: { ...typography.h2, color: colors.text, letterSpacing: -0.3 },
-    headerSub: { ...typography.small, color: colors.textMuted, marginTop: 1 },
+    headerTitle: {
+      ...typography.h2,
+      color: TEXT,
+      flex: 1,
+      letterSpacing: -0.3,
+    },
     segmented: {
       flexDirection: 'row',
-      backgroundColor: colors.surfaceAlt,
+      backgroundColor: 'rgba(255,255,255,0.1)',
       borderRadius: radius.md,
       padding: 3,
     },
     segItem: {
-      flex: 1,
-      paddingVertical: 7,
-      alignItems: 'center',
+      paddingVertical: 6,
+      paddingHorizontal: spacing.md,
       borderRadius: radius.md - 2,
+      alignItems: 'center',
     },
-    segActive: {
-      backgroundColor: colors.card,
-      shadowColor: '#000',
-      shadowOpacity: 0.07,
-      shadowRadius: 3,
-      shadowOffset: { width: 0, height: 1 },
-      elevation: 2,
+    segActive: { backgroundColor: 'rgba(255,255,255,0.15)' },
+    segText: { ...typography.small, fontWeight: '700', color: TEXT_MUTED },
+    segTextActive: { color: TEXT },
+    hero: {
+      width: SW,
+      height: HERO_H,
+      backgroundColor: '#1a2a35',
     },
-    segText: { ...typography.small, fontWeight: '700', color: colors.textMuted },
-    segTextActive: { color: colors.text },
-    sectionRow: {
+    heroGradientTop: {
+      position: 'absolute',
+      top: 0, left: 0, right: 0,
+      height: 120,
+      backgroundColor: 'rgba(0,0,0,0.6)',
+    },
+    heroGradientBottom: {
+      position: 'absolute',
+      bottom: 0, left: 0, right: 0,
+      height: 140,
+      backgroundColor: 'rgba(0,0,0,0.72)',
+    },
+    heroTopBadge: {
+      position: 'absolute',
+      bottom: spacing.md + 56,
+      left: spacing.lg,
       flexDirection: 'row',
       alignItems: 'center',
+      gap: 6,
+    },
+    goldDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: GOLD,
+    },
+    heroLabel: {
+      fontSize: 10,
+      fontWeight: '800',
+      color: GOLD,
+      letterSpacing: 2,
+    },
+    heroInfoRow: {
+      position: 'absolute',
+      bottom: spacing.md,
+      left: spacing.lg,
+      right: spacing.lg,
+      flexDirection: 'row',
+      alignItems: 'flex-end',
       justifyContent: 'space-between',
+    },
+    heroName: { ...typography.small, color: TEXT_MUTED, fontWeight: '600' },
+    heroTitle: { ...typography.h3, color: TEXT, marginTop: 2, letterSpacing: -0.3 },
+    heroLikesBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      backgroundColor: 'rgba(255,255,255,0.12)',
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 5,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.15)',
+    },
+    heroLikesText: { ...typography.bodyBold, color: TEXT, fontSize: 13 },
+    body: { flex: 1, backgroundColor: BG },
+    runnersLabel: {
+      ...typography.overline,
+      color: TEXT_MUTED,
+      letterSpacing: 1.5,
       paddingHorizontal: spacing.lg,
       paddingTop: spacing.lg,
       paddingBottom: spacing.sm,
     },
-    sectionLabel: {
-      ...typography.overline,
-      color: colors.textMuted,
-      letterSpacing: 1.2,
+    runnersRow: {
+      flexDirection: 'row',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.lg,
     },
-    storyScroll: {
-      paddingLeft: spacing.lg,
-      paddingRight: spacing.md,
-      paddingBottom: spacing.sm,
-    },
-    storyCard: {
-      width: CARD_W,
-      height: CARD_H,
-      borderRadius: radius.xl,
+    runnerCard: {
+      width: RUNNER_W,
+      height: RUNNER_H,
+      borderRadius: radius.lg,
       overflow: 'hidden',
-      marginRight: spacing.md,
-      backgroundColor: colors.primarySurface,
+      backgroundColor: SURFACE,
+      borderWidth: 1,
+      borderColor: BORDER,
     },
-    storyOverlay: {
+    runnerOverlay: {
       position: 'absolute',
       inset: 0,
       justifyContent: 'space-between',
-      padding: spacing.md,
+      padding: spacing.sm,
     },
-    storyTopRow: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'flex-start',
-    },
-    medalBadge: {
-      width: 42,
-      height: 42,
-      borderRadius: 21,
-      backgroundColor: 'rgba(0,0,0,0.45)',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    medalText: { fontSize: 20 },
-    likesBadge: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-      backgroundColor: 'rgba(0,0,0,0.45)',
-      paddingHorizontal: 10,
-      paddingVertical: 5,
+    runnerMedal: {
+      alignSelf: 'flex-start',
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      paddingHorizontal: 8,
+      paddingVertical: 4,
       borderRadius: radius.pill,
     },
-    likesText: { ...typography.small, color: '#fff', fontWeight: '700' },
-    storyBottom: {
-      gap: 3,
+    runnerMedalText: { fontSize: 16 },
+    runnerBottom: { gap: 2 },
+    runnerName: { ...typography.small, color: TEXT, fontWeight: '700', fontSize: 12 },
+    runnerLikes: { ...typography.small, color: TEXT_MUTED, fontSize: 11 },
+    divRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.lg,
+      paddingBottom: spacing.xs,
     },
-    storyAuthor: { ...typography.small, color: 'rgba(255,255,255,0.7)', fontWeight: '600' },
-    storyTitle: { ...typography.bodyBold, color: '#fff', fontSize: 15 },
-    divLine: {
-      height: StyleSheet.hairlineWidth,
-      backgroundColor: colors.border,
-      marginHorizontal: spacing.lg,
-      marginTop: spacing.sm,
-    },
+    divLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: BORDER },
+    divLabel: { ...typography.overline, color: TEXT_MUTED, letterSpacing: 1.5, fontSize: 10 },
     rankRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -179,39 +226,48 @@ export default function ClassicsScreen() {
       paddingVertical: spacing.sm + 2,
       gap: spacing.md,
       borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: colors.border,
+      borderBottomColor: BORDER,
     },
-    rankNumWrap: { width: 24, alignItems: 'center' },
-    rankNum: { ...typography.bodyBold, color: colors.textMuted, fontSize: 13 },
+    rankNum: {
+      width: 24,
+      alignItems: 'center',
+    },
+    rankNumText: {
+      ...typography.bodyBold,
+      color: TEXT_MUTED,
+      fontSize: 13,
+    },
     rankThumb: {
-      width: 52,
-      height: 52,
+      width: 50,
+      height: 50,
       borderRadius: radius.md,
       overflow: 'hidden',
-      backgroundColor: colors.primarySurface,
+      backgroundColor: SURFACE,
+      borderWidth: 1,
+      borderColor: BORDER,
     },
     rankInfo: { flex: 1 },
-    rankName: { ...typography.bodyBold, color: colors.text, fontSize: 14 },
-    rankSub: { ...typography.small, color: colors.textMuted, marginTop: 2 },
-    rankLikesRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-    rankLikesNum: { ...typography.bodyBold, color: colors.text, fontSize: 13 },
+    rankName: { ...typography.bodyBold, color: TEXT, fontSize: 14 },
+    rankSub: { ...typography.small, color: TEXT_MUTED, marginTop: 2 },
+    rankLikes: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    rankLikesNum: { ...typography.bodyBold, color: TEXT, fontSize: 13 },
     emptyWrap: {
       flex: 1,
+      backgroundColor: BG,
       alignItems: 'center',
       justifyContent: 'center',
       padding: spacing.xl,
-      gap: spacing.md,
+      gap: spacing.lg,
     },
-    emptyTrophy: { fontSize: 56 },
-    emptyTitle: { ...typography.h2, color: colors.text, textAlign: 'center' },
-    emptyBody: { ...typography.body, color: colors.textMuted, textAlign: 'center', lineHeight: 22 },
+    emptyTitle: { ...typography.h2, color: TEXT, textAlign: 'center' },
+    emptyBody: { ...typography.body, color: TEXT_MUTED, textAlign: 'center', lineHeight: 22 },
     stepsCard: {
       width: '100%',
       borderRadius: radius.lg,
       overflow: 'hidden',
-      backgroundColor: colors.card,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
+      backgroundColor: SURFACE,
+      borderWidth: 1,
+      borderColor: BORDER,
     },
     stepRow: {
       flexDirection: 'row',
@@ -219,7 +275,7 @@ export default function ClassicsScreen() {
       gap: spacing.md,
       padding: spacing.md,
       borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: colors.border,
+      borderBottomColor: BORDER,
     },
     stepDot: {
       width: 28,
@@ -230,12 +286,8 @@ export default function ClassicsScreen() {
       justifyContent: 'center',
     },
     stepDotText: { fontSize: 12, fontWeight: '800', color: '#fff' },
-    stepText: { ...typography.body, color: colors.text, flex: 1, fontSize: 13 },
-    // Full screen viewer
-    fsOverlay: {
-      flex: 1,
-      backgroundColor: '#000',
-    },
+    stepText: { ...typography.body, color: TEXT, flex: 1, fontSize: 13 },
+    fsOverlay: { flex: 1, backgroundColor: '#000' },
     fsClose: {
       position: 'absolute',
       top: insets.top + 12,
@@ -253,16 +305,11 @@ export default function ClassicsScreen() {
       bottom: insets.bottom + spacing.lg,
       left: spacing.lg,
       right: spacing.lg,
-      gap: 4,
+      gap: 3,
     },
-    fsAuthor: { ...typography.small, color: 'rgba(255,255,255,0.65)', fontWeight: '600' },
+    fsAuthor: { ...typography.small, color: 'rgba(255,255,255,0.6)', fontWeight: '600' },
     fsTitle: { ...typography.h3, color: '#fff' },
-    fsLikes: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 5,
-      marginTop: 4,
-    },
+    fsLikes: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
     fsLikesText: { ...typography.bodyBold, color: '#fff' },
   }), [colors, insets]);
 
@@ -286,6 +333,7 @@ export default function ClassicsScreen() {
   }, [load, user, configured]);
 
   const daysLeft = period === 'week' ? daysLeftInWeek() : daysLeftInMonth();
+  const [first, second, third, ...rest] = rows;
 
   const openPhoto = (row: RankedClassicPhoto) => {
     if (!row.item.photoUri) return;
@@ -297,23 +345,12 @@ export default function ClassicsScreen() {
     });
   };
 
-  const medals: Record<number, string> = { 1: '🥇', 2: '🥈', 3: '🥉' };
-
   const Header = (
     <View style={styles.header}>
-      <View style={styles.headerRow}>
-        <Pressable onPress={() => navigation.goBack()} style={styles.backBtn} hitSlop={8}>
-          <Ionicons name="chevron-back" size={20} color={colors.text} />
-        </Pressable>
-        <View style={styles.titleBlock}>
-          <Text style={styles.headerTitle}>Класики 🏆</Text>
-          <Text style={styles.headerSub}>
-            {daysLeft === 0
-              ? 'Последен ден от периода'
-              : `${daysLeft} ${daysLeft === 1 ? 'ден' : 'дни'} до края`}
-          </Text>
-        </View>
-      </View>
+      <Pressable onPress={() => navigation.goBack()} style={styles.backBtn} hitSlop={8}>
+        <Ionicons name="chevron-back" size={20} color={TEXT} />
+      </Pressable>
+      <Text style={styles.headerTitle}>🏆 Класики</Text>
       <View style={styles.segmented}>
         {(['week', 'month'] as ClassicPeriod[]).map((p) => (
           <Pressable key={p} style={[styles.segItem, period === p && styles.segActive]} onPress={() => setPeriod(p)}>
@@ -339,33 +376,32 @@ export default function ClassicsScreen() {
 
   if (!configured || !user) {
     return (
-      <Screen padded={false}>
+      <View style={styles.root}>
+        <StatusBar barStyle="light-content" />
         {Header}
-        <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg }}>
+        <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg, paddingTop: insets.top + 60 }}>
           <Card>
             <Text style={{ ...typography.h3, color: colors.text }}>Нужен е акаунт</Text>
             <Text style={{ ...typography.body, color: colors.textMuted, marginTop: spacing.sm }}>
-              Влез, за да виждаш класацията и да гласуваш с харесвания.
+              Влез, за да виждаш класацията.
             </Text>
             <Button title="Вход / Регистрация" onPress={() => navigation.navigate('Auth')} style={{ marginTop: spacing.md }} />
           </Card>
         </View>
-      </Screen>
+      </View>
     );
   }
 
   return (
-    <Screen padded={false}>
+    <View style={styles.root}>
+      <StatusBar barStyle="light-content" />
+
       {/* Full screen photo viewer */}
       <Modal visible={!!fullScreen} transparent={false} animationType="fade" statusBarTranslucent>
         <StatusBar hidden />
         <View style={styles.fsOverlay}>
           {fullScreen ? (
-            <Image
-              source={{ uri: fullScreen.uri }}
-              style={{ width: SW, height: SH }}
-              contentFit="contain"
-            />
+            <Image source={{ uri: fullScreen.uri }} style={{ width: SW, height: SH }} contentFit="contain" />
           ) : null}
           <Pressable style={styles.fsClose} onPress={() => setFullScreen(null)} hitSlop={8}>
             <Ionicons name="close" size={22} color="#fff" />
@@ -383,34 +419,45 @@ export default function ClassicsScreen() {
         </View>
       </Modal>
 
-      {Header}
-
       {loading && rows.length === 0 ? (
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', gap: spacing.md }}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={{ ...typography.body, color: colors.textMuted }}>Броим харесванията…</Text>
-        </View>
-      ) : error ? (
-        <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg }}>
-          <Card>
-            <Text style={{ ...typography.h3, color: colors.text }}>Грешка при зареждане</Text>
-            <Button title="Опитай отново" onPress={load} style={{ marginTop: spacing.md }} />
-          </Card>
-        </View>
-      ) : rows.length === 0 ? (
-        <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
-          <View style={styles.emptyWrap}>
-            <Text style={styles.emptyTrophy}>🏆</Text>
-            <Text style={styles.emptyTitle}>Все още няма снимки</Text>
-            <Text style={styles.emptyBody}>
-              Бъди първият! Сподели улов с именувана снимка в Лентата.
-            </Text>
-            {StepsCard}
+        <>
+          {Header}
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', gap: spacing.md }}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={{ ...typography.body, color: TEXT_MUTED }}>Броим харесванията…</Text>
           </View>
-        </ScrollView>
+        </>
+      ) : error ? (
+        <>
+          {Header}
+          <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg }}>
+            <View style={[styles.stepsCard, { padding: spacing.md }]}>
+              <Text style={{ ...typography.h3, color: TEXT }}>Грешка при зареждане</Text>
+              <Button title="Опитай отново" onPress={load} style={{ marginTop: spacing.md }} />
+            </View>
+          </View>
+        </>
+      ) : rows.length === 0 ? (
+        <>
+          {Header}
+          <ScrollView
+            contentContainerStyle={{ flexGrow: 1 }}
+            showsVerticalScrollIndicator={false}
+            style={{ paddingTop: insets.top + 56 }}
+          >
+            <View style={styles.emptyWrap}>
+              <Text style={{ fontSize: 56 }}>🏆</Text>
+              <Text style={styles.emptyTitle}>Все още няма снимки</Text>
+              <Text style={styles.emptyBody}>
+                Бъди първият! Сподели улов с именувана снимка в Лентата.
+              </Text>
+              {StepsCard}
+            </View>
+          </ScrollView>
+        </>
       ) : (
         <FlatList
-          data={rows}
+          data={rest}
           keyExtractor={(item) => item.item.id}
           showsVerticalScrollIndicator={false}
           refreshControl={
@@ -423,90 +470,110 @@ export default function ClassicsScreen() {
           contentContainerStyle={{ paddingBottom: spacing.xxl }}
           ListHeaderComponent={
             <>
-              {/* Top 3 horizontal story cards */}
-              {rows.slice(0, 3).length > 0 ? (
-                <>
-                  <View style={styles.sectionRow}>
-                    <Text style={styles.sectionLabel}>ТОП 3</Text>
-                  </View>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.storyScroll}
-                  >
-                    {rows.slice(0, 3).map((row, idx) => (
-                      <Pressable
-                        key={row.item.id}
-                        style={styles.storyCard}
-                        onPress={() => openPhoto(row)}
-                      >
-                        {row.item.photoUri ? (
-                          <Image
-                            source={{ uri: row.item.photoUri }}
-                            style={{ width: CARD_W, height: CARD_H }}
-                            contentFit="cover"
-                            recyclingKey={row.item.id}
-                          />
-                        ) : (
-                          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                            <Ionicons name="fish-outline" size={56} color={colors.primary} />
-                          </View>
-                        )}
-                        <View style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.25)' }} />
-                        <View style={styles.storyOverlay}>
-                          <View style={styles.storyTopRow}>
-                            <View style={styles.medalBadge}>
-                              <Text style={styles.medalText}>{medals[idx + 1]}</Text>
-                            </View>
-                            <View style={styles.likesBadge}>
-                              <Ionicons name="heart" size={12} color="#ff6b6b" />
-                              <Text style={styles.likesText}>{row.likes}</Text>
-                            </View>
-                          </View>
-                          <View style={styles.storyBottom}>
-                            <Text style={styles.storyAuthor} numberOfLines={1}>
-                              {row.item.ownerName ?? 'Рибар'}
-                            </Text>
-                            <Text style={styles.storyTitle} numberOfLines={2}>
-                              {row.item.photoTitle ?? row.item.speciesName}
-                            </Text>
-                          </View>
+              {/* Hero — #1 full-bleed photo */}
+              <Pressable onPress={() => first && openPhoto(first)}>
+                <View style={styles.hero}>
+                  {first?.item.photoUri ? (
+                    <Image
+                      source={{ uri: first.item.photoUri }}
+                      style={{ width: SW, height: HERO_H }}
+                      contentFit="cover"
+                    />
+                  ) : (
+                    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                      <Ionicons name="fish-outline" size={64} color="rgba(255,255,255,0.2)" />
+                    </View>
+                  )}
+                  <View style={styles.heroGradientTop} />
+                  <View style={styles.heroGradientBottom} />
+
+                  {/* Floating header over hero */}
+                  {Header}
+
+                  {first ? (
+                    <>
+                      <View style={styles.heroTopBadge}>
+                        <View style={styles.goldDot} />
+                        <Text style={styles.heroLabel}>КЛАСИК НА {period === 'week' ? 'СЕДМИЦАТА' : 'МЕСЕЦА'}</Text>
+                      </View>
+                      <View style={styles.heroInfoRow}>
+                        <View style={{ flex: 1, gap: 2 }}>
+                          <Text style={styles.heroName}>{first.item.ownerName ?? 'Рибар'}</Text>
+                          <Text style={styles.heroTitle} numberOfLines={1}>
+                            {first.item.photoTitle ?? first.item.speciesName}
+                          </Text>
                         </View>
-                      </Pressable>
-                    ))}
-                  </ScrollView>
+                        <View style={styles.heroLikesBadge}>
+                          <Ionicons name="heart" size={13} color="#ff6b6b" />
+                          <Text style={styles.heroLikesText}>{first.likes}</Text>
+                        </View>
+                      </View>
+                    </>
+                  ) : null}
+                </View>
+              </Pressable>
+
+              {/* #2 and #3 runner-up cards */}
+              {(second || third) ? (
+                <>
+                  <Text style={styles.runnersLabel}>ПРЕСЛЕДВАЧИ</Text>
+                  <View style={styles.runnersRow}>
+                    {[second, third].map((row, idx) =>
+                      row ? (
+                        <Pressable key={row.item.id} style={styles.runnerCard} onPress={() => openPhoto(row)}>
+                          {row.item.photoUri ? (
+                            <Image
+                              source={{ uri: row.item.photoUri }}
+                              style={{ width: RUNNER_W, height: RUNNER_H }}
+                              contentFit="cover"
+                            />
+                          ) : (
+                            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                              <Ionicons name="fish-outline" size={36} color="rgba(255,255,255,0.25)" />
+                            </View>
+                          )}
+                          <View style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)' }} />
+                          <View style={styles.runnerOverlay}>
+                            <View style={styles.runnerMedal}>
+                              <Text style={styles.runnerMedalText}>{idx === 0 ? '🥈' : '🥉'}</Text>
+                            </View>
+                            <View style={styles.runnerBottom}>
+                              <Text style={styles.runnerName} numberOfLines={1}>{row.item.ownerName ?? 'Рибар'}</Text>
+                              <Text style={styles.runnerLikes}>❤️ {row.likes}</Text>
+                            </View>
+                          </View>
+                        </Pressable>
+                      ) : <View key={idx} style={{ width: RUNNER_W }} />
+                    )}
+                  </View>
                 </>
               ) : null}
 
-              {rows.length > 3 ? (
-                <>
+              {rest.length > 0 ? (
+                <View style={styles.divRow}>
                   <View style={styles.divLine} />
-                  <View style={styles.sectionRow}>
-                    <Text style={styles.sectionLabel}>КЛАСАЦИЯ</Text>
-                  </View>
-                </>
+                  <Text style={styles.divLabel}>ОСТАНАЛИ</Text>
+                  <View style={styles.divLine} />
+                </View>
               ) : null}
             </>
           }
           renderItem={({ item: row, index }) => (
-            <Pressable
-              style={styles.rankRow}
-              onPress={() => openPhoto(row)}
-            >
-              <View style={styles.rankNumWrap}>
-                <Text style={styles.rankNum}>#{index + 1}</Text>
+            <Pressable style={styles.rankRow} onPress={() => openPhoto(row)}>
+              <View style={styles.rankNum}>
+                <Text style={styles.rankNumText}>#{index + 4}</Text>
               </View>
-              <Pressable onPress={() => openPhoto(row)} style={styles.rankThumb}>
+              <Pressable style={styles.rankThumb} onPress={() => openPhoto(row)}>
                 {row.item.photoUri ? (
                   <Image
                     source={{ uri: row.item.photoUri }}
-                    style={{ width: 52, height: 52 }}
+                    style={{ width: 50, height: 50 }}
                     contentFit="cover"
-                    recyclingKey={`list-${row.item.id}`}
+                    recyclingKey={row.item.id}
                   />
                 ) : (
                   <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                    <Ionicons name="fish-outline" size={20} color={colors.primary} />
+                    <Ionicons name="fish-outline" size={20} color="rgba(255,255,255,0.3)" />
                   </View>
                 )}
               </Pressable>
@@ -514,7 +581,7 @@ export default function ClassicsScreen() {
                 <Text style={styles.rankName} numberOfLines={1}>{row.item.ownerName ?? 'Рибар'}</Text>
                 <Text style={styles.rankSub} numberOfLines={1}>{row.item.photoTitle ?? row.item.speciesName}</Text>
               </View>
-              <View style={styles.rankLikesRow}>
+              <View style={styles.rankLikes}>
                 <Ionicons name="heart" size={13} color="#ff6b6b" />
                 <Text style={styles.rankLikesNum}>{row.likes}</Text>
               </View>
@@ -522,6 +589,6 @@ export default function ClassicsScreen() {
           )}
         />
       )}
-    </Screen>
+    </View>
   );
 }
