@@ -244,8 +244,7 @@ export async function getFollowerCount(targetUid: string): Promise<number> {
   const fb = ensureFirebase();
   if (!fb || !targetUid) return 0;
   try {
-    const q = query(collectionGroup(fb.db, 'following'), where(documentId(), '==', targetUid));
-    const agg = await getCountFromServer(q);
+    const agg = await getCountFromServer(collection(fb.db, 'users', targetUid, 'followers'));
     return agg.data().count;
   } catch {
     return 0;
@@ -273,20 +272,27 @@ export async function isFollowingUser(myUid: string, targetUid: string): Promise
 export async function followUser(myUid: string, targetUid: string, targetName?: string) {
   const fb = ensureFirebase();
   if (!fb) return;
-  await setDoc(
+  const batch = writeBatch(fb.db);
+  // myUid's following list
+  batch.set(
     doc(fb.db, 'users', myUid, 'following', targetUid),
-    stripUndefinedForFirestore({
-      uid: targetUid,
-      displayName: targetName ?? '',
-      createdAt: serverTimestamp(),
-    })
+    stripUndefinedForFirestore({ uid: targetUid, displayName: targetName ?? '', createdAt: serverTimestamp() }),
   );
+  // targetUid's followers list (mirror) — used for follower count
+  batch.set(
+    doc(fb.db, 'users', targetUid, 'followers', myUid),
+    stripUndefinedForFirestore({ uid: myUid, createdAt: serverTimestamp() }),
+  );
+  await batch.commit();
 }
 
 export async function unfollowUser(myUid: string, targetUid: string) {
   const fb = ensureFirebase();
   if (!fb) return;
-  await deleteDoc(doc(fb.db, 'users', myUid, 'following', targetUid));
+  const batch = writeBatch(fb.db);
+  batch.delete(doc(fb.db, 'users', myUid, 'following', targetUid));
+  batch.delete(doc(fb.db, 'users', targetUid, 'followers', myUid));
+  await batch.commit();
 }
 
 export async function getFollowing(myUid: string) {

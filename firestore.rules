@@ -36,6 +36,11 @@ service cloud.firestore {
         allow read: if signedIn();
         allow write: if isSelf(userId);
       }
+      /** Огледало на following — за броене на последователи без collectionGroup. */
+      match /followers/{followerUid} {
+        allow read: if signedIn();
+        allow write: if signedIn() && request.auth.uid == followerUid;
+      }
       match /joinedTournaments/{tid} {
         allow read, write: if isSelf(userId);
       }
