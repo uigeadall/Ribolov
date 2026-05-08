@@ -18,7 +18,7 @@ import {
 } from 'firebase/auth';
 import { ensureFirebase } from './firebase';
 import { isFirebaseConfigured } from './firebaseConfig';
-import { deleteAllUserCloudData } from './cloudSync';
+import { deleteAllUserCloudData, updateUserPresence } from './cloudSync';
 import { wipeAllLocalAppData } from '../storage/storage';
 import { clearCatchSyncQueue, flushPendingCatchSync } from './catchSyncQueue';
 import { registerForPushNotifications } from './pushNotifications';
@@ -47,13 +47,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
-      if (next !== 'active') return;
       const fb = ensureFirebase();
       const u = fb?.auth.currentUser;
-      if (u)
-        void flushPendingCatchSync({
-          user: { uid: u.uid, displayName: u.displayName, email: u.email },
-        });
+      if (next === 'active') {
+        if (u) {
+          void flushPendingCatchSync({
+            user: { uid: u.uid, displayName: u.displayName, email: u.email },
+          });
+          void updateUserPresence(u.uid, true);
+        }
+      } else if (next === 'background' || next === 'inactive') {
+        if (u) void updateUserPresence(u.uid, false);
+      }
     });
     return () => sub.remove();
   }, []);
@@ -79,6 +84,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             user: { uid: u.uid, displayName: u.displayName, email: u.email },
           }).catch(() => undefined);
           registerForPushNotifications(u.uid).catch(() => undefined);
+          updateUserPresence(u.uid, true).catch(() => undefined);
         } else {
           await AsyncStorage.removeItem(LAST_UID_KEY).catch(() => undefined);
         }
@@ -126,6 +132,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = useCallback(async () => {
     const fb = ensureFirebase();
+    const u = fb?.auth.currentUser;
+    if (u) await updateUserPresence(u.uid, false).catch(() => undefined);
     await wipeAllLocalAppData().catch(() => undefined);
     await clearCatchSyncQueue().catch(() => undefined);
     await AsyncStorage.removeItem(LAST_UID_KEY).catch(() => undefined);

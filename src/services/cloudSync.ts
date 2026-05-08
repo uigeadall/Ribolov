@@ -395,8 +395,8 @@ export function subscribeConversationMessages(
     (snap) => {
       onNext(
         snap.docs.map((d) => {
-          const data = d.data() as { senderUid: string; text: string; createdAt?: unknown };
-          return { id: d.id, senderUid: data.senderUid, text: data.text, createdAt: data.createdAt };
+          const data = d.data() as { senderUid: string; text: string; createdAt?: unknown; mediaUrl?: string; mediaType?: 'photo' | 'video' };
+          return { id: d.id, senderUid: data.senderUid, text: data.text, createdAt: data.createdAt, mediaUrl: data.mediaUrl, mediaType: data.mediaType };
         })
       );
     },
@@ -409,20 +409,22 @@ export async function sendConversationMessage(
   senderUid: string,
   text: string,
   recipientUid: string,
+  mediaUrl?: string,
+  mediaType?: 'photo' | 'video',
 ): Promise<void> {
   const fb = ensureFirebase();
   if (!fb) throw new Error('Firebase не е наличен.');
   const trimmed = text.trim();
-  if (!trimmed) return;
+  if (!trimmed && !mediaUrl) return;
   // Send message and update conversation metadata atomically
   await addDoc(
     collection(fb.db, 'conversations', convId, 'messages'),
-    stripUndefinedForFirestore({ senderUid, text: trimmed, createdAt: serverTimestamp() }),
+    stripUndefinedForFirestore({ senderUid, text: trimmed, createdAt: serverTimestamp(), mediaUrl, mediaType }),
   );
   // Update metadata + increment recipient badge count separately
   // (updateDoc is unambiguous for security rules; increment() creates the field if absent)
   await updateDoc(doc(fb.db, 'conversations', convId), {
-    lastMessage: trimmed,
+    lastMessage: mediaUrl ? (mediaType === 'video' ? '📹 Видео' : '📷 Снимка') : trimmed,
     lastMessageAt: serverTimestamp(),
     lastSenderUid: senderUid,
     [`unreadCounts.${recipientUid}`]: increment(1),
@@ -482,6 +484,31 @@ export async function joinTournament(tournamentId: string, uid: string, displayN
     stripUndefinedForFirestore({ uid, displayName, joinedAt: serverTimestamp() }),
     { merge: true }
   );
+}
+
+export async function updateUserPresence(uid: string, online: boolean): Promise<void> {
+  const fb = ensureFirebase();
+  if (!fb) return;
+  await updateDoc(doc(fb.db, 'users', uid), {
+    online,
+    lastSeen: serverTimestamp(),
+  }).catch(() => {});
+}
+
+export function subscribeUserPresence(
+  uid: string,
+  onNext: (presence: { online: boolean; lastSeen?: number }) => void,
+): () => void {
+  const fb = ensureFirebase();
+  if (!fb) return () => {};
+  return onSnapshot(doc(fb.db, 'users', uid), (snap) => {
+    if (!snap.exists()) { onNext({ online: false }); return; }
+    const d = snap.data() as { online?: boolean; lastSeen?: { toMillis?: () => number } };
+    onNext({
+      online: !!d.online,
+      lastSeen: d.lastSeen?.toMillis?.() ?? undefined,
+    });
+  }, () => onNext({ online: false }));
 }
 
 export async function deleteAllUserCloudData(uid: string): Promise<void> {

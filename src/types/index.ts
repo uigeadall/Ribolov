@@ -111,6 +111,8 @@ export type DirectMessage = {
   id: string;
   senderUid: string;
   text: string;
+  mediaUrl?: string;
+  mediaType?: 'photo' | 'video';
   createdAt?: unknown;
 };
 
