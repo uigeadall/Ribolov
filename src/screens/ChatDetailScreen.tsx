@@ -15,7 +15,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
-import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref as storageRef, uploadString, getDownloadURL } from 'firebase/storage';
 import { Screen } from '../components/Screen';
 import { Button } from '../components/Button';
 import { useTheme } from '../services/themeContext';
@@ -96,40 +96,35 @@ export default function ChatDetailScreen() {
     const perm = source === 'camera'
       ? await ImagePicker.requestCameraPermissionsAsync()
       : await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (perm.status !== 'granted') { Alert.alert('Няма достъп', 'Разреши достъп до медиите.'); return; }
+    if (perm.status !== 'granted') { Alert.alert('Няма достъп', 'Разреши достъп до камерата/галерията.'); return; }
+
+    // Request base64 directly from ImagePicker — avoids all fetch/XHR/blob issues
+    const opts: ImagePicker.ImagePickerOptions = {
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.6,
+      base64: true,
+    };
     const result = source === 'camera'
-      ? await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.All, quality: 0.7 })
-      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.All, quality: 0.7 });
+      ? await ImagePicker.launchCameraAsync(opts)
+      : await ImagePicker.launchImageLibraryAsync(opts);
     if (result.canceled || !result.assets?.[0]) return;
+
     const asset = result.assets[0];
-    const isVideo = asset.type === 'video';
+    if (!asset.base64) { Alert.alert('Грешка', 'Не може да се прочете снимката.'); return; }
+
     setUploading(true);
     try {
       const fb = ensureFirebase();
       if (!fb) throw new Error('Firebase не е наличен.');
 
       const ts = Date.now();
-      const contentType = isVideo ? 'video/mp4' : 'image/jpeg';
-      // Use paths already covered by existing deployed Storage rules:
-      //   images → publicCatchPhotos/{uid}/chat_{ts}.jpg  (isImage + 10MB rule applies)
-      //   videos → stories/{uid}/chat_{ts}.mp4             (image|video + 100MB rule applies)
-      const path = isVideo
-        ? `stories/${user.uid}/chat_${ts}.mp4`
-        : `publicCatchPhotos/${user.uid}/chat_${ts}.jpg`;
+      const path = `publicCatchPhotos/${user.uid}/chat_${ts}.jpg`;
       const sRef = storageRef(fb.storage, path);
 
-      const blob = await new Promise<Blob>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.responseType = 'blob';
-        xhr.onload = () => resolve(xhr.response as Blob);
-        xhr.onerror = () => reject(new Error('Неуспешно четене на файла.'));
-        xhr.open('GET', asset.uri, true);
-        xhr.send(null);
-      });
-      if (!blob || blob.size === 0) throw new Error('Файлът е празен или не може да бъде прочетен.');
-      await uploadBytes(sRef, blob, { contentType });
+      // uploadString with base64 is the most reliable method in React Native
+      await uploadString(sRef, asset.base64, 'base64', { contentType: 'image/jpeg' });
       const url = await getDownloadURL(sRef);
-      await sendConversationMessage(convId, user.uid, '', otherUid, url, isVideo ? 'video' : 'photo');
+      await sendConversationMessage(convId, user.uid, '', otherUid, url, 'photo');
     } catch (e) {
       Alert.alert('Грешка при качване', e instanceof Error ? e.message : String(e));
     } finally {
