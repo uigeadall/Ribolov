@@ -1,33 +1,97 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Text, StyleSheet } from 'react-native';
-import { useRoute, RouteProp } from '@react-navigation/native';
+import { View, Text, TextInput, StyleSheet, Pressable, Alert, Platform } from 'react-native';
+import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
+import { Button } from '../components/Button';
 import { tripsStore } from '../storage/storage';
 import type { ProfileStackParamList } from '../navigation/types';
 import type { TripPlan } from '../types';
 import { useTheme } from '../services/themeContext';
-import { spacing, typography } from '../theme/typography';
+import { radius, spacing, typography } from '../theme/typography';
 
 type R = RouteProp<ProfileStackParamList, 'TripDetail'>;
 
 export default function TripDetailScreen() {
   const route = useRoute<R>();
+  const navigation = useNavigation<any>();
   const { colors } = useTheme();
   const [trip, setTrip] = useState<TripPlan | null | undefined>(undefined);
+  const [editing, setEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDate, setEditDate] = useState(new Date());
+  const [editNotes, setEditNotes] = useState('');
+  const [showPicker, setShowPicker] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    tripsStore.get(route.params.id).then(setTrip);
+    tripsStore.get(route.params.id).then((t) => {
+      setTrip(t ?? null);
+      if (t) {
+        setEditTitle(t.title);
+        setEditDate(new Date(t.dateIso));
+        setEditNotes(t.notes ?? '');
+      }
+    });
   }, [route.params.id]);
 
-  const styles = useMemo(
-    () =>
-      StyleSheet.create({
-        title: { ...typography.h2, color: colors.text },
-        body: { ...typography.body, color: colors.text, marginTop: spacing.md, lineHeight: 22 },
-      }),
-    [colors]
-  );
+  const styles = useMemo(() => StyleSheet.create({
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.md,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    title: { ...typography.h2, color: colors.text },
+    date: { ...typography.caption, color: colors.textMuted, marginTop: 4 },
+    input: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      padding: spacing.md,
+      color: colors.text,
+      backgroundColor: colors.background,
+      ...typography.body,
+      marginTop: spacing.sm,
+    },
+  }), [colors]);
+
+  const save = async () => {
+    if (!trip || !editTitle.trim()) return;
+    setSaving(true);
+    try {
+      const updated: TripPlan = {
+        ...trip,
+        title: editTitle.trim(),
+        dateIso: editDate.toISOString().slice(0, 10),
+        notes: editNotes.trim() || undefined,
+      };
+      await tripsStore.save(updated);
+      setTrip(updated);
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const confirmDelete = () => {
+    Alert.alert('Изтриване', `Изтриване на „${trip?.title}"?`, [
+      { text: 'Отказ', style: 'cancel' },
+      {
+        text: 'Изтрий',
+        style: 'destructive',
+        onPress: async () => {
+          await tripsStore.remove(route.params.id);
+          navigation.goBack();
+        },
+      },
+    ]);
+  };
 
   if (trip === undefined) {
     return (
@@ -45,13 +109,95 @@ export default function TripDetailScreen() {
     );
   }
 
+  const dateLabel = new Date(trip.dateIso).toLocaleDateString('bg-BG', {
+    day: 'numeric', month: 'long', year: 'numeric',
+  });
+
   return (
     <Screen scroll>
-      <Text style={styles.title}>{trip.title}</Text>
-      <Text style={{ ...typography.caption, color: colors.textMuted }}>{trip.dateIso}</Text>
-      <Card style={{ marginTop: spacing.lg }}>
-        <Text style={styles.body}>{trip.notes?.trim() ? trip.notes : 'Няма бележки за този излет.'}</Text>
-      </Card>
+      <View style={styles.header}>
+        <Pressable onPress={() => navigation.goBack()} hitSlop={8}>
+          <Ionicons name="chevron-back" size={28} color={colors.primary} />
+        </Pressable>
+        <Text style={[styles.title, { flex: 1 }]} numberOfLines={1}>{trip.title}</Text>
+        {!editing && (
+          <>
+            <Pressable onPress={() => setEditing(true)} hitSlop={8} style={{ marginRight: spacing.sm }}>
+              <Ionicons name="pencil-outline" size={22} color={colors.primary} />
+            </Pressable>
+            <Pressable onPress={confirmDelete} hitSlop={8}>
+              <Ionicons name="trash-outline" size={22} color={colors.danger} />
+            </Pressable>
+          </>
+        )}
+      </View>
+
+      <View style={{ padding: spacing.lg }}>
+        {editing ? (
+          <Card>
+            <Text style={{ ...typography.h3, color: colors.text, marginBottom: spacing.xs }}>Редактиране</Text>
+            <TextInput
+              style={styles.input}
+              value={editTitle}
+              onChangeText={setEditTitle}
+              placeholder="Заглавие"
+              placeholderTextColor={colors.textMuted}
+              autoFocus
+            />
+
+            <Pressable
+              onPress={() => setShowPicker(true)}
+              style={[styles.input, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
+            >
+              <Text style={{ color: colors.text }}>
+                {editDate.toLocaleDateString('bg-BG', { day: 'numeric', month: 'long', year: 'numeric' })}
+              </Text>
+              <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+            </Pressable>
+
+            {showPicker && (
+              <DateTimePicker
+                value={editDate}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={(_, d) => {
+                  if (d) setEditDate(d);
+                  if (Platform.OS !== 'ios') setShowPicker(false);
+                }}
+                maximumDate={new Date()}
+              />
+            )}
+            {Platform.OS === 'ios' && showPicker && (
+              <Button title="Готово" variant="secondary" compact onPress={() => setShowPicker(false)} style={{ marginTop: spacing.sm }} />
+            )}
+
+            <TextInput
+              style={[styles.input, { minHeight: 96, textAlignVertical: 'top' }]}
+              value={editNotes}
+              onChangeText={setEditNotes}
+              placeholder="Бележки"
+              placeholderTextColor={colors.textMuted}
+              multiline
+            />
+            <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
+              <Button title="Запази" onPress={save} loading={saving} style={{ flex: 1 }} />
+              <Button title="Отказ" variant="secondary" onPress={() => setEditing(false)} style={{ flex: 1 }} />
+            </View>
+          </Card>
+        ) : (
+          <>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md }}>
+              <Ionicons name="calendar-outline" size={16} color={colors.textMuted} />
+              <Text style={styles.date}>{dateLabel}</Text>
+            </View>
+            <Card>
+              <Text style={{ ...typography.body, color: trip.notes?.trim() ? colors.text : colors.textMuted, lineHeight: 22 }}>
+                {trip.notes?.trim() || 'Няма бележки за този излет.'}
+              </Text>
+            </Card>
+          </>
+        )}
+      </View>
     </Screen>
   );
 }

@@ -6,9 +6,11 @@ import {
   Pressable,
   TextInput,
   Alert,
+  Platform,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
@@ -16,145 +18,167 @@ import { EmptyState } from '../components/EmptyState';
 import { tripsStore, newId } from '../storage/storage';
 import type { TripPlan } from '../types';
 import { useTheme } from '../services/themeContext';
-import { spacing, typography } from '../theme/typography';
+import { radius, spacing, typography } from '../theme/typography';
 
 export default function TripsScreen() {
   const navigation = useNavigation<any>();
   const { colors } = useTheme();
   const [items, setItems] = useState<TripPlan[]>([]);
   const [title, setTitle] = useState('');
-  const [dateIso, setDateIso] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(new Date());
+  const [showPicker, setShowPicker] = useState(false);
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(() => {
-    tripsStore.list().then(setItems);
+    tripsStore.list().then((list) =>
+      setItems([...list].sort((a, b) => b.dateIso.localeCompare(a.dateIso)))
+    );
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load])
-  );
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const inputStyle = {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+    fontSize: 16,
+    color: colors.text,
+    backgroundColor: colors.background,
+  } as const;
 
   const addTrip = async () => {
-    const t = title.trim();
-    if (!t) {
-      Alert.alert('Заглавие', 'Въведи име на излета.');
+    if (!title.trim()) {
+      Alert.alert('Заглавие', 'Въведи ime на излета.');
       return;
     }
     setSaving(true);
     try {
       await tripsStore.save({
         id: newId(),
-        title: t,
-        dateIso: dateIso.trim() || new Date().toISOString().slice(0, 10),
+        title: title.trim(),
+        dateIso: date.toISOString().slice(0, 10),
         notes: notes.trim() || undefined,
       });
       setTitle('');
       setNotes('');
-      setDateIso(new Date().toISOString().slice(0, 10));
-      await load();
+      setDate(new Date());
+      load();
     } finally {
       setSaving(false);
     }
   };
 
+  const confirmDelete = (item: TripPlan) => {
+    Alert.alert('Изтриване', `Изтриване на „${item.title}"?`, [
+      { text: 'Отказ', style: 'cancel' },
+      {
+        text: 'Изтрий',
+        style: 'destructive',
+        onPress: async () => {
+          await tripsStore.remove(item.id);
+          load();
+        },
+      },
+    ]);
+  };
+
+  const dateLabel = date.toLocaleDateString('bg-BG', { day: 'numeric', month: 'long', year: 'numeric' });
+
   return (
     <Screen padded={false}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', padding: spacing.lg, gap: spacing.sm }}>
-          <Text style={{ ...typography.h2, color: colors.text, flex: 1 }}>Излети</Text>
-        </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', padding: spacing.lg, gap: spacing.sm }}>
+        <Text style={{ ...typography.h2, color: colors.text, flex: 1 }}>Излети</Text>
+      </View>
 
-        <View style={{ paddingHorizontal: spacing.lg, marginBottom: spacing.md }}>
-          <Card>
-            <Text style={{ ...typography.h3, color: colors.text }}>Нов излет</Text>
-            <Text style={{ ...typography.caption, color: colors.textMuted, marginTop: 4 }}>
-              Локални планове — напомняния по имейл предстоят.
-            </Text>
-            <TextInput
-              style={{
-                borderWidth: 1,
-                borderColor: colors.border,
-                borderRadius: 12,
-                padding: spacing.md,
-                marginTop: spacing.md,
-                fontSize: 16,
-                color: colors.text,
-                backgroundColor: colors.background,
-              }}
-              placeholder="Заглавие (напр. Искър сутрин)"
-              placeholderTextColor={colors.textMuted}
-              value={title}
-              onChangeText={setTitle}
-            />
-            <TextInput
-              style={{
-                borderWidth: 1,
-                borderColor: colors.border,
-                borderRadius: 12,
-                padding: spacing.md,
-                marginTop: spacing.sm,
-                fontSize: 16,
-                color: colors.text,
-                backgroundColor: colors.background,
-              }}
-              placeholder="Дата YYYY-MM-DD"
-              placeholderTextColor={colors.textMuted}
-              value={dateIso}
-              onChangeText={setDateIso}
-              autoCapitalize="none"
-            />
-            <TextInput
-              style={{
-                borderWidth: 1,
-                borderColor: colors.border,
-                borderRadius: 12,
-                padding: spacing.md,
-                marginTop: spacing.sm,
-                minHeight: 64,
-                fontSize: 16,
-                color: colors.text,
-                textAlignVertical: 'top',
-                backgroundColor: colors.background,
-              }}
-              placeholder="Бележки (опционално)"
-              placeholderTextColor={colors.textMuted}
-              value={notes}
-              onChangeText={setNotes}
-              multiline
-            />
-            <Button title="Добави излет" onPress={addTrip} loading={saving} style={{ marginTop: spacing.md }} />
-          </Card>
-        </View>
+      <View style={{ paddingHorizontal: spacing.lg, marginBottom: spacing.md }}>
+        <Card>
+          <Text style={{ ...typography.h3, color: colors.text }}>Нов излет</Text>
+          <TextInput
+            style={inputStyle}
+            placeholder="Заглавие (напр. Искър сутрин)"
+            placeholderTextColor={colors.textMuted}
+            value={title}
+            onChangeText={setTitle}
+          />
 
-        <FlatList
-          style={{ flex: 1 }}
-          data={items}
-          keyExtractor={(t) => t.id}
-          contentContainerStyle={{ padding: spacing.lg, paddingTop: 0, flexGrow: 1 }}
-          ListEmptyComponent={
-            <EmptyState
-              icon="calendar-outline"
-              title="Още няма записани излети"
-              subtitle="Попълни формата горе или добави бележка след риболов."
+          {/* Date picker */}
+          <Pressable
+            onPress={() => setShowPicker(true)}
+            style={[inputStyle, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
+          >
+            <Text style={{ color: colors.text, fontSize: 16 }}>{dateLabel}</Text>
+            <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+          </Pressable>
+
+          {showPicker && (
+            <DateTimePicker
+              value={date}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              onChange={(_, selected) => {
+                setShowPicker(Platform.OS === 'ios');
+                if (selected) setDate(selected);
+                if (Platform.OS !== 'ios') setShowPicker(false);
+              }}
+              maximumDate={new Date()}
             />
-          }
-          renderItem={({ item }) => (
-            <Pressable onPress={() => navigation.navigate('TripDetail', { id: item.id })}>
-              <Card style={{ marginBottom: spacing.sm }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-                  <Ionicons name="boat-outline" size={22} color={colors.primary} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ ...typography.bodyBold, color: colors.text }}>{item.title}</Text>
-                    <Text style={{ ...typography.caption, color: colors.textMuted }}>{item.dateIso}</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-                </View>
-              </Card>
-            </Pressable>
           )}
-        />
-      </Screen>
+          {Platform.OS === 'ios' && showPicker && (
+            <Button title="Готово" variant="secondary" compact onPress={() => setShowPicker(false)} style={{ marginTop: spacing.sm }} />
+          )}
+
+          <TextInput
+            style={[inputStyle, { minHeight: 64, textAlignVertical: 'top' }]}
+            placeholder="Бележки (опционално)"
+            placeholderTextColor={colors.textMuted}
+            value={notes}
+            onChangeText={setNotes}
+            multiline
+          />
+          <Button title="Добави излет" onPress={addTrip} loading={saving} style={{ marginTop: spacing.md }} />
+        </Card>
+      </View>
+
+      <FlatList
+        style={{ flex: 1 }}
+        data={items}
+        keyExtractor={(t) => t.id}
+        contentContainerStyle={{ padding: spacing.lg, paddingTop: 0, flexGrow: 1 }}
+        ListEmptyComponent={
+          <EmptyState
+            icon="calendar-outline"
+            title="Още няма записани излети"
+            subtitle="Попълни формата горе или добави бележка след риболов."
+          />
+        }
+        ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
+        renderItem={({ item }) => (
+          <Pressable onPress={() => navigation.navigate('TripDetail', { id: item.id })}>
+            <Card>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+                <Ionicons name="boat-outline" size={22} color={colors.primary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ ...typography.bodyBold, color: colors.text }}>{item.title}</Text>
+                  <Text style={{ ...typography.caption, color: colors.textMuted }}>
+                    {new Date(item.dateIso).toLocaleDateString('bg-BG', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  </Text>
+                </View>
+                <Pressable
+                  hitSlop={8}
+                  onPress={() => confirmDelete(item)}
+                  style={{ padding: spacing.xs }}
+                >
+                  <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                </Pressable>
+                <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+              </View>
+            </Card>
+          </Pressable>
+        )}
+      />
+    </Screen>
   );
 }

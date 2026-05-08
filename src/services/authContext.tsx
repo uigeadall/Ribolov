@@ -23,6 +23,7 @@ import { wipeAllLocalAppData } from '../storage/storage';
 import { clearCatchSyncQueue, flushPendingCatchSync } from './catchSyncQueue';
 import { flushPendingMessages } from './messageSyncQueue';
 import { registerForPushNotifications } from './pushNotifications';
+import { restoreAchievementsFromCloud } from './achievements';
 
 export type AuthContextValue = {
   user: User | null;
@@ -87,6 +88,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }).catch(() => undefined);
           flushPendingMessages().catch(() => undefined);
           registerForPushNotifications(u.uid).catch(() => undefined);
+          restoreAchievementsFromCloud(u.uid).catch(() => undefined);
           updateUserPresence(u.uid, true).catch(() => undefined);
         } else {
           await AsyncStorage.removeItem(LAST_UID_KEY).catch(() => undefined);

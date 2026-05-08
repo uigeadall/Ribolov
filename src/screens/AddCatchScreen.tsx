@@ -396,7 +396,7 @@ export default function AddCatchScreen() {
         Alert.alert('Личен рекорд!', `${item.speciesName} — ${pbMsg}`);
       }
 
-      const achCtx = { firebaseConfigured: configured, userLoggedIn: !!user };
+      const achCtx = { firebaseConfigured: configured, userLoggedIn: !!user, uid: user?.uid };
       const newUnlocks = await checkForNewUnlocks(allCatches, achCtx);
       if (newUnlocks.length > 0) {
         setUnlockedNow(newUnlocks);

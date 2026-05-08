@@ -83,23 +83,32 @@ export default function PersonalBestsScreen() {
           keyExtractor={(b) => b.speciesId}
           contentContainerStyle={{ padding: spacing.lg, gap: spacing.sm }}
           renderItem={({ item, index }) => (
-            <Card>
-              <View style={styles.row}>
-                <View style={styles.iconWrap}>
-                  <Text style={styles.medal}>{medal(index)}</Text>
+            <Pressable
+              onPress={() =>
+                navigation.getParent()?.navigate('LogbookTab', {
+                  screen: 'CatchDetail',
+                  params: { id: item.catchId },
+                })
+              }
+            >
+              <Card>
+                <View style={styles.row}>
+                  <View style={styles.iconWrap}>
+                    <Text style={styles.medal}>{medal(index)}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.species}>{item.speciesName}</Text>
+                    <Text style={styles.stats}>
+                      {item.weightKg > 0 ? `${item.weightKg} кг` : ''}
+                      {item.weightKg > 0 && item.lengthCm > 0 ? ' · ' : ''}
+                      {item.lengthCm > 0 ? `${item.lengthCm} см` : ''}
+                    </Text>
+                    <Text style={styles.date}>{formatCatchDate(item.catchDate)}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.species}>{item.speciesName}</Text>
-                  <Text style={styles.stats}>
-                    {item.weightKg > 0 ? `${item.weightKg} кг` : ''}
-                    {item.weightKg > 0 && item.lengthCm > 0 ? ' · ' : ''}
-                    {item.lengthCm > 0 ? `${item.lengthCm} см` : ''}
-                  </Text>
-                  <Text style={styles.date}>{formatCatchDate(item.catchDate)}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-              </View>
-            </Card>
+              </Card>
+            </Pressable>
           )}
         />
       )}

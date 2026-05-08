@@ -1,7 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { ACHIEVEMENT_DEFS } from '../data/achievements';
 import type { Achievement } from '../types';
 import type { Catch } from '../types';
+import { ensureFirebase } from './firebase';
 
 const UNLOCK_KEY = 'ribolov:achievements:unlocked';
 
@@ -15,6 +17,37 @@ async function loadExtraUnlocked(): Promise<Set<string>> {
     return new Set(Array.isArray(arr) ? arr : []);
   } catch {
     return new Set();
+  }
+}
+
+/** Persist unlocked IDs to both AsyncStorage and Firestore (best-effort). */
+async function persistUnlocked(ids: Set<string>, uid?: string): Promise<void> {
+  const arr = [...ids];
+  await AsyncStorage.setItem(UNLOCK_KEY, JSON.stringify(arr)).catch(() => {});
+  if (!uid) return;
+  const fb = ensureFirebase();
+  if (!fb) return;
+  setDoc(
+    doc(fb.db, 'users', uid, 'achievements', 'unlocked'),
+    { ids: arr },
+    { merge: true }
+  ).catch(() => {});
+}
+
+/** Restore unlocked IDs from Firestore into AsyncStorage on sign-in. */
+export async function restoreAchievementsFromCloud(uid: string): Promise<void> {
+  const fb = ensureFirebase();
+  if (!fb) return;
+  try {
+    const snap = await getDoc(doc(fb.db, 'users', uid, 'achievements', 'unlocked'));
+    if (!snap.exists()) return;
+    const remoteIds = (snap.data().ids ?? []) as string[];
+    if (!Array.isArray(remoteIds) || remoteIds.length === 0) return;
+    const local = await loadExtraUnlocked();
+    const merged = new Set([...local, ...remoteIds]);
+    await AsyncStorage.setItem(UNLOCK_KEY, JSON.stringify([...merged]));
+  } catch {
+    // Best-effort — local state is still valid
   }
 }
 
@@ -48,7 +81,7 @@ export async function computeAchievements(
 
 export async function checkForNewUnlocks(
   catches: Catch[],
-  ctx: { firebaseConfigured: boolean; userLoggedIn: boolean }
+  ctx: { firebaseConfigured: boolean; userLoggedIn: boolean; uid?: string }
 ): Promise<Achievement[]> {
   const prevRaw = await AsyncStorage.getItem(UNLOCK_KEY);
   const prev = new Set<string>(
@@ -58,7 +91,7 @@ export async function checkForNewUnlocks(
   const newly = current.filter((a) => a.unlocked && !prev.has(a.id));
   if (newly.length > 0) {
     const merged = new Set([...prev, ...newly.map((n) => n.id)]);
-    await AsyncStorage.setItem(UNLOCK_KEY, JSON.stringify([...merged]));
+    await persistUnlocked(merged, ctx.uid);
   }
   return newly;
 }
