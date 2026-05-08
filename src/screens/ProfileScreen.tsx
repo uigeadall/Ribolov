@@ -13,6 +13,7 @@ import {
   Keyboard,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -68,11 +69,21 @@ export default function ProfileScreen() {
       return;
     }
     setProfileLoading(true);
+
+    // Show locally-cached photo instantly while Firestore loads
+    const cacheKey = `@ribolov/profilePhoto/${user.uid}`;
+    const cached = await AsyncStorage.getItem(cacheKey).catch(() => null);
+    if (cached) setRemotePhotoUrl(cached);
+
     try {
       const s = await getUserPublicSummary(user.uid);
       let photo = (s?.photoUrl?.trim() || user.photoURL?.trim() || '').trim();
       if (!photo) photo = (await tryGetStoredProfileAvatarUrl(user.uid))?.trim() || '';
-      setRemotePhotoUrl(photo || undefined);
+      if (photo) {
+        setRemotePhotoUrl(photo);
+        // Keep cache in sync with latest Firestore value
+        AsyncStorage.setItem(cacheKey, photo).catch(() => {});
+      }
       const dn =
         s?.displayName?.trim() && s.displayName !== 'Рибар'
           ? s.displayName.trim()
@@ -83,8 +94,8 @@ export default function ProfileScreen() {
     } catch {
       setDisplayName(user.displayName?.trim() || '');
       let photo = user.photoURL?.trim() || '';
-      if (!photo) photo = (await tryGetStoredProfileAvatarUrl(user.uid))?.trim() || '';
-      setRemotePhotoUrl(photo || undefined);
+      if (!photo) photo = cached || (await tryGetStoredProfileAvatarUrl(user.uid))?.trim() || '';
+      if (photo) setRemotePhotoUrl(photo);
     } finally {
       setProfileLoading(false);
     }
@@ -285,7 +296,12 @@ export default function ProfileScreen() {
   const onSignOut = () => {
     Alert.alert('Изход', 'Сигурен ли си?', [
       { text: 'Отказ', style: 'cancel' },
-      { text: 'Изход', style: 'destructive', onPress: () => signOut().catch(() => undefined) },
+      {
+        text: 'Изход', style: 'destructive', onPress: () => {
+          if (user?.uid) AsyncStorage.removeItem(`@ribolov/profilePhoto/${user.uid}`).catch(() => {});
+          signOut().catch(() => undefined);
+        },
+      },
     ]);
   };
 
@@ -318,6 +334,8 @@ export default function ProfileScreen() {
         patch.photoUrl = await uploadProfileAvatar(user.uid, pickedAvatarUri);
         setRemotePhotoUrl(patch.photoUrl);
         setPickedAvatarUri(undefined);
+        // Persist URL locally so it survives app restart regardless of auth/Firestore state
+        AsyncStorage.setItem(`@ribolov/profilePhoto/${user.uid}`, patch.photoUrl).catch(() => {});
       } else if (remotePhotoUrl?.trim()) {
         patch.photoUrl = remotePhotoUrl.trim();
       }
