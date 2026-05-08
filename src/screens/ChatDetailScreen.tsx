@@ -99,7 +99,7 @@ export default function ChatDetailScreen() {
     // Request base64 directly from ImagePicker — avoids all fetch/XHR/blob issues
     const opts: ImagePicker.ImagePickerOptions = {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.6,
+      quality: 0.2,
       base64: true,
     };
     const result = source === 'camera'

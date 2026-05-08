@@ -259,10 +259,17 @@ service cloud.firestore {
           && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participantIds;
         allow create: if signedIn()
           && request.resource.data.senderUid == request.auth.uid
-          && request.resource.data.text is string
-          && request.resource.data.text.size() > 0
-          && request.resource.data.text.size() <= 4000
-          && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participantIds;
+          && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participantIds
+          && (
+            // Text message
+            (request.resource.data.text is string
+              && request.resource.data.text.size() > 0
+              && request.resource.data.text.size() <= 4000)
+            ||
+            // Photo / video message (text may be empty)
+            (request.resource.data.mediaUrl is string
+              && request.resource.data.mediaUrl.size() > 0)
+          );
         allow update, delete: if false;
       }
     }
