@@ -128,7 +128,7 @@ function createHomeStyles(colors: AppColors) {
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
   const { colors } = useTheme();
-  const { user } = useAuth();
+  const { user, configured } = useAuth();
   const firstName = user?.displayName?.trim().split(/\s+/)[0] || 'рибарю';
   const styles = useMemo(() => createHomeStyles(colors), [colors]);
 
@@ -197,15 +197,15 @@ export default function HomeScreen() {
     }, [loadStats, loadWeather])
   );
 
-  // Live badge counts
+  // Live badge counts — wait for Firebase to be configured before subscribing
   useEffect(() => {
-    if (!user) return;
+    if (!user || !configured) return;
     const unsubMsgs = subscribeUnreadMessagesCount(user.uid, setUnreadMsgs);
     const unsubNotifs = subscribeMyNotifications(user.uid, (items) =>
       setUnreadNotifs(items.filter((n) => !n.read).length)
     );
     return () => { unsubMsgs(); unsubNotifs(); };
-  }, [user]);
+  }, [user, configured]);
 
   const onRefresh = async () => {
     setRefreshing(true);
