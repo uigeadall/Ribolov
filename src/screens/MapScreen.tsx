@@ -180,8 +180,11 @@ export default function MapScreen() {
     return list;
   }, [spots, showFavoritesOnly, userCoord]);
 
-  const distanceTo = (s: Spot) =>
-    userCoord ? haversineKm(userCoord, { latitude: s.latitude, longitude: s.longitude }) : null;
+  const distanceTo = useCallback(
+    (s: Spot) =>
+      userCoord ? haversineKm(userCoord, { latitude: s.latitude, longitude: s.longitude }) : null,
+    [userCoord]
+  );
 
   const saveSpot = async () => {
     if (!pendingCoord) return;

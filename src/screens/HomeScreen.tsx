@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Pressable,
+  InteractionManager,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import * as Location from 'expo-location';
@@ -132,6 +133,7 @@ export default function HomeScreen() {
   const firstName = user?.displayName?.trim().split(/\s+/)[0] || 'рибарю';
   const styles = useMemo(() => createHomeStyles(colors), [colors]);
 
+  const lastFetchRef = useRef<number>(0);
   const [weather, setWeather] = useState<WeatherSnapshot | null>(null);
   const [weatherStatus, setWeatherStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const [locLabel, setLocLabel] = useState<string>('София (примерно)');
@@ -192,8 +194,15 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      loadStats();
-      loadWeather();
+      const STALE_MS = 5 * 60 * 1000;
+      const task = InteractionManager.runAfterInteractions(() => {
+        const now = Date.now();
+        if (now - lastFetchRef.current < STALE_MS) return;
+        lastFetchRef.current = now;
+        loadStats();
+        loadWeather();
+      });
+      return () => task.cancel();
     }, [loadStats, loadWeather])
   );
 
@@ -208,6 +217,7 @@ export default function HomeScreen() {
   }, [user, configured]);
 
   const onRefresh = async () => {
+    lastFetchRef.current = 0; // bypass cache on explicit pull-to-refresh
     setRefreshing(true);
     await Promise.all([loadStats(), loadWeather()]);
     setRefreshing(false);

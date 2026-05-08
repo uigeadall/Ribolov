@@ -21,6 +21,7 @@ import { isFirebaseConfigured } from './firebaseConfig';
 import { deleteAllUserCloudData, updateUserPresence } from './cloudSync';
 import { wipeAllLocalAppData } from '../storage/storage';
 import { clearCatchSyncQueue, flushPendingCatchSync } from './catchSyncQueue';
+import { flushPendingMessages } from './messageSyncQueue';
 import { registerForPushNotifications } from './pushNotifications';
 
 export type AuthContextValue = {
@@ -54,6 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           void flushPendingCatchSync({
             user: { uid: u.uid, displayName: u.displayName, email: u.email },
           });
+          void flushPendingMessages();
           void updateUserPresence(u.uid, true);
         }
       } else if (next === 'background' || next === 'inactive') {
@@ -83,6 +85,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           flushPendingCatchSync({
             user: { uid: u.uid, displayName: u.displayName, email: u.email },
           }).catch(() => undefined);
+          flushPendingMessages().catch(() => undefined);
           registerForPushNotifications(u.uid).catch(() => undefined);
           updateUserPresence(u.uid, true).catch(() => undefined);
         } else {

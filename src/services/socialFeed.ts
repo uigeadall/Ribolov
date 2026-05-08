@@ -101,7 +101,7 @@ async function notifyInteraction(opts: {
       body: isLike ? 'Харесва твоя улов 🎣' : `Коментира: ${(opts.preview ?? '').slice(0, 80)}`,
       data: { type: opts.type, catchId: opts.catchId },
     });
-  });
+  }).catch(() => {});
 }
 
 /** Връща true ако след операцията уловът е харесан. */
@@ -260,7 +260,7 @@ export async function sendFollowNotification(
       body: 'Започна да те следва 🎣',
       data: { type: 'follow', actorUid: followerUid },
     });
-  });
+  }).catch(() => {});
 }
 
 export async function fetchCatchLikers(catchId: string): Promise<CatchLiker[]> {

@@ -247,7 +247,10 @@ export default function AddCatchScreen() {
       return;
     }
     const perm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!perm.granted) return;
+    if (!perm.granted) {
+      Alert.alert('Достъп до камерата', 'Разреши достъп до камерата в настройките на телефона.');
+      return;
+    }
     const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
     if (!result.canceled && result.assets[0]) {
       setPhotoUri(result.assets[0].uri);
@@ -276,7 +279,10 @@ export default function AddCatchScreen() {
   const addExtraPhoto = async () => {
     if (extraPhotoUris.length >= 4) return;
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) return;
+    if (!perm.granted) {
+      Alert.alert('Достъп до галерията', 'Разреши достъп до галерията в настройките на телефона.');
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.7,

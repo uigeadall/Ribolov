@@ -1,5 +1,7 @@
+import { collection, getDocs, limit, orderBy, query, startAfter, where, type DocumentSnapshot } from 'firebase/firestore';
 import { DAMS } from '../data/dams';
 import { RIVERS } from '../data/rivers';
+import { ensureFirebase } from './firebase';
 import type { CloudCatch } from './cloudSync';
 
 export type LeaderboardPeriod = 'day' | 'week' | 'month' | 'year';
@@ -144,5 +146,80 @@ export function aggregateLeaderboard(
   rows.forEach((r, i) => {
     r.rank = i + 1;
   });
+  return rows;
+}
+
+const PAGE_SIZE = 500;
+// Hard caps per period to prevent runaway reads
+const PERIOD_MAX: Record<LeaderboardPeriod, number> = {
+  day: 500,
+  week: 1000,
+  month: 2000,
+  year: 4000,
+};
+
+/**
+ * Fetches public catches in pages of 500 and aggregates them incrementally.
+ * Each page is released from memory before the next is fetched, avoiding
+ * loading thousands of documents into a single array.
+ */
+export async function fetchAndAggregateLeaderboard(
+  minDateIso: string,
+  period: LeaderboardPeriod,
+  scope: LeaderboardScope,
+): Promise<LeaderboardRow[]> {
+  const fb = ensureFirebase();
+  if (!fb) return [];
+
+  const maxTotal = PERIOD_MAX[period];
+  const byOwner = new Map<string, { name: string; totalKg: number; count: number; best: number }>();
+  let lastDoc: DocumentSnapshot | null = null;
+  let fetched = 0;
+
+  while (fetched < maxTotal) {
+    const remaining = Math.min(PAGE_SIZE, maxTotal - fetched);
+    const constraints: Parameters<typeof query>[1][] = [
+      where('date', '>=', minDateIso),
+      orderBy('date', 'desc'),
+      limit(remaining),
+    ];
+    if (lastDoc) constraints.push(startAfter(lastDoc));
+
+    const snap = await getDocs(query(collection(fb.db, 'publicCatches'), ...constraints));
+    if (snap.empty) break;
+
+    for (const d of snap.docs) {
+      const c = d.data() as CloudCatch;
+      if (!c.ownerUid || !catchMatchesLeaderboardWater(c, scope)) continue;
+      const w = c.weightKg ?? 0;
+      const name = c.ownerName ?? 'Рибар';
+      const prev = byOwner.get(c.ownerUid);
+      if (!prev) {
+        byOwner.set(c.ownerUid, { name, totalKg: w, count: 1, best: w });
+      } else {
+        prev.totalKg += w;
+        prev.count += 1;
+        prev.best = Math.max(prev.best, w);
+        if (name && name !== 'Рибар') prev.name = name;
+      }
+    }
+
+    fetched += snap.docs.length;
+    if (snap.docs.length < remaining) break;
+    lastDoc = snap.docs[snap.docs.length - 1] ?? null;
+  }
+
+  const rows: LeaderboardRow[] = [...byOwner.entries()]
+    .map(([ownerUid, v]) => ({
+      rank: 0,
+      ownerUid,
+      ownerName: v.name,
+      totalKg: v.totalKg,
+      catchCount: v.count,
+      bestKg: v.best,
+    }))
+    .sort((a, b) => b.totalKg - a.totalKg);
+
+  rows.forEach((r, i) => { r.rank = i + 1; });
   return rows;
 }

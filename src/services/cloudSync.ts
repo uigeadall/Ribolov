@@ -22,7 +22,7 @@ import {
   updateDoc,
   type DocumentSnapshot,
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
 import { ensureFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
@@ -46,12 +46,29 @@ function isRemote(uri?: string) {
   return !!uri && /^https?:\/\//i.test(uri.trim());
 }
 
+async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      if (attempt < maxAttempts - 1) {
+        await new Promise((res) => setTimeout(res, 1000 * 2 ** attempt));
+      }
+    }
+  }
+  throw lastErr;
+}
+
 export async function ensureCatchPhotoUploadedForCloud(c: Catch, ownerUid: string): Promise<Catch> {
   const uri = c.photoUri?.trim();
   if (!uri || isRemote(uri)) return c;
   const cloud = getCloudinaryUploadConfig();
   if (cloud) {
-    const { secureUrl, publicId } = await uploadImageToCloudinary(uri, cloud.cloudName, cloud.uploadPreset);
+    const { secureUrl, publicId } = await withRetry(() =>
+      uploadImageToCloudinary(uri, cloud.cloudName, cloud.uploadPreset)
+    );
     return { ...c, photoUri: secureUrl, photoStoragePath: `${CLOUDINARY_PREFIX}${publicId}` };
   }
   const fb = ensureFirebase();
@@ -61,10 +78,12 @@ export async function ensureCatchPhotoUploadedForCloud(c: Catch, ownerUid: strin
   const contentType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
   const path = `publicCatchPhotos/${ownerUid}/${c.id}/${Date.now()}.${ext}`;
   const storageRef = ref(fb.storage, path);
-  const resp = await fetch(uri);
-  const blob = await resp.blob();
-  await uploadBytes(storageRef, blob, { contentType });
-  const url = await getDownloadURL(storageRef);
+  const url = await withRetry(async () => {
+    const resp = await fetch(uri);
+    const blob = await resp.blob();
+    await uploadBytes(storageRef, blob, { contentType });
+    return getDownloadURL(storageRef);
+  });
   return { ...c, photoUri: url, photoStoragePath: path };
 }
 
@@ -249,6 +268,17 @@ export async function uploadProfileAvatar(uid: string, localUri: string): Promis
   return `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o/${encodeURIComponent(meta.name)}?alt=media&token=${meta.downloadTokens}`;
 }
 
+/** Изтрива аватар от Storage — използва се за почистване при неуспешен запис в Firestore. */
+export async function deleteProfileAvatar(uid: string): Promise<void> {
+  const fb = ensureFirebase();
+  if (!fb) return;
+  try {
+    await deleteObject(ref(fb.storage, `profilePhotos/${uid}/avatar.jpg`));
+  } catch {
+    // Ignore — file may not exist
+  }
+}
+
 /** Възстановява URL на аватара от Storage, ако документът в Firestore няма photoUrl. */
 export async function tryGetStoredProfileAvatarUrl(uid: string): Promise<string | undefined> {
   const fb = ensureFirebase();
@@ -354,18 +384,22 @@ export async function ensureDirectConversation(
   if (!mutual) throw new Error('Чатът е само между потребители, които се следват взаимно.');
   const participantIds = [myUid, otherUid].sort();
   const convId = participantIds.join('_');
+  const convRef = doc(fb.db, 'conversations', convId);
+  const existing = await getDoc(convRef);
   await setDoc(
-    doc(fb.db, 'conversations', convId),
+    convRef,
     stripUndefinedForFirestore({
       participantIds,
       participantNames: { [myUid]: myName, [otherUid]: otherName },
+      // Only set lastMessageAt on creation so it's never null — existing convs keep their value
+      ...(!existing.exists() ? { lastMessageAt: serverTimestamp() } : {}),
     }),
     { merge: true }
   );
   return convId;
 }
 
-export async function listMyConversations(myUid: string): Promise<
+export async function listMyConversations(myUid: string, maxCount = 50): Promise<
   { convId: string; otherUid: string; otherName: string; lastMessage?: string; lastMessageAt?: number; unreadCount: number }[]
 > {
   const fb = ensureFirebase();
@@ -373,6 +407,7 @@ export async function listMyConversations(myUid: string): Promise<
   const q = query(
     collection(fb.db, 'conversations'),
     where('participantIds', 'array-contains', myUid),
+    limit(maxCount),
   );
   const snap = await getDocs(q);
   const rows = snap.docs.map((d) => {

@@ -34,6 +34,7 @@ import {
   pushUserProfilePublic,
   tryGetStoredProfileAvatarUrl,
   uploadProfileAvatar,
+  deleteProfileAvatar,
   refreshOwnerPhotoOnPublicCatches,
 } from '../services/cloudSync';
 
@@ -346,9 +347,15 @@ export default function ProfileScreen() {
         city: city.trim(),
         bio: bio.trim(),
       };
+      let usedStorageUpload = false;
       if (pickedAvatarUri) {
-        // Prefer the pre-resized data URL (no Firebase Storage, always persists)
-        patch.photoUrl = pickedAvatarDataUrl ?? await uploadProfileAvatar(user.uid, pickedAvatarUri);
+        if (pickedAvatarDataUrl) {
+          patch.photoUrl = pickedAvatarDataUrl;
+        } else {
+          // Fallback: upload to Firebase Storage
+          patch.photoUrl = await uploadProfileAvatar(user.uid, pickedAvatarUri);
+          usedStorageUpload = true;
+        }
         setRemotePhotoUrl(patch.photoUrl);
         setPickedAvatarUri(undefined);
         setPickedAvatarDataUrl(null);
@@ -356,7 +363,15 @@ export default function ProfileScreen() {
       } else if (remotePhotoUrl?.trim()) {
         patch.photoUrl = remotePhotoUrl.trim();
       }
-      await pushUserProfilePublic(user.uid, patch);
+      try {
+        await pushUserProfilePublic(user.uid, patch);
+      } catch (writeErr) {
+        // If Storage was used and Firestore write failed, clean up the orphaned file
+        if (usedStorageUpload) {
+          deleteProfileAvatar(user.uid).catch(() => {});
+        }
+        throw writeErr;
+      }
       const urlForAuth = patch.photoUrl?.trim();
       const fb = ensureFirebase();
       // Firebase Auth photoURL has a ~1 KB limit — skip it for base64 data URLs

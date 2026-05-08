@@ -35,15 +35,31 @@ import {
 import { submitContentReport } from '../services/contentReports';
 import { getUserPublicSummary } from '../services/cloudSync';
 
-// Module-level cache — one Firestore read per unique user per app session
-const _avatarCache = new Map<string, string>();
+const AVATAR_TTL_MS = 5 * 60 * 1000;
+const _avatarCache = new Map<string, { url: string; fetchedAt: number }>();
+
+function getCachedAvatar(uid: string): string | undefined {
+  const entry = _avatarCache.get(uid);
+  if (!entry) return undefined;
+  if (Date.now() - entry.fetchedAt > AVATAR_TTL_MS) {
+    _avatarCache.delete(uid);
+    return undefined;
+  }
+  return entry.url;
+}
+
+function setCachedAvatar(uid: string, url: string): void {
+  _avatarCache.set(uid, { url, fetchedAt: Date.now() });
+}
 
 type Props = {
   item: FeedItem;
   myUid?: string;
   myDisplayName: string;
   myPhotoUrl?: string;
+  resolvedAvatarUrl?: string;
   socialEnabled?: boolean;
+  isVisible?: boolean;
   onPressAuthor: (authorUid: string, displayName: string) => void;
 };
 
@@ -151,7 +167,7 @@ function feedStyles(colors: AppColors) {
 
 export type { FeedItem };
 
-export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, socialEnabled, onPressAuthor }: Props) {
+export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarUrl, socialEnabled, isVisible = true, onPressAuthor }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => feedStyles(colors), [colors]);
   const ownerName = item.ownerName || 'Рибар';
@@ -159,20 +175,22 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, socialEnabled
   const isMine = Boolean(myUid && item.ownerUid === myUid);
   // Resolved avatar: live myPhotoUrl for own posts, stored ownerPhotoUrl for others,
   // with a lazy Firestore fallback when the document field is missing.
-  const storedAvatar = item.ownerPhotoUrl?.trim();
-  const [fetchedAvatar, setFetchedAvatar] = useState<string>(_avatarCache.get(item.ownerUid) ?? '');
+  const storedAvatar = resolvedAvatarUrl?.trim() || item.ownerPhotoUrl?.trim();
+  const [fetchedAvatar, setFetchedAvatar] = useState<string>(() => getCachedAvatar(item.ownerUid) ?? '');
 
   useEffect(() => {
-    if (isMine || storedAvatar || fetchedAvatar) return;
-    const cached = _avatarCache.get(item.ownerUid);
+    // Skip per-post fetch when parent already resolved the avatar
+    if (isMine || storedAvatar) return;
+    const cached = getCachedAvatar(item.ownerUid);
     if (cached) { setFetchedAvatar(cached); return; }
+    setFetchedAvatar('');
     getUserPublicSummary(item.ownerUid)
       .then((s) => {
         const p = s?.photoUrl?.trim();
-        if (p) { _avatarCache.set(item.ownerUid, p); setFetchedAvatar(p); }
+        if (p) { setCachedAvatar(item.ownerUid, p); setFetchedAvatar(p); }
       })
       .catch(() => {});
-  }, [item.ownerUid, isMine, storedAvatar, fetchedAvatar]);
+  }, [item.ownerUid, isMine, storedAvatar]);
 
   const avatarUrl = (isMine ? myPhotoUrl?.trim() : undefined) || storedAvatar || fetchedAvatar;
 
@@ -198,34 +216,32 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, socialEnabled
   const catchId = item.id;
 
   useEffect(() => {
-    if (!socialEnabled || !myUid || !catchId) return;
+    if (!socialEnabled || !myUid || !catchId || !isVisible) return;
     let cancelled = false;
     void (async () => {
       const lc = await fetchCatchLikeCount(catchId);
       if (!cancelled) setLikeCount(lc);
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [socialEnabled, myUid, catchId]);
+    return () => { cancelled = true; };
+  }, [socialEnabled, myUid, catchId, isVisible]);
 
   useEffect(() => {
-    if (!socialEnabled || !myUid || !catchId) return () => {};
+    if (!socialEnabled || !myUid || !catchId || !isVisible) return () => {};
     const unsub = subscribeMyLikeOnCatch(catchId, myUid, setLiked);
     return unsub;
-  }, [socialEnabled, myUid, catchId]);
+  }, [socialEnabled, myUid, catchId, isVisible]);
 
   useEffect(() => {
-    if (!socialEnabled || !catchId) return () => {};
+    if (!socialEnabled || !catchId || !isVisible) return () => {};
     const unsub = subscribeCatchComments(catchId, setComments);
     return unsub;
-  }, [socialEnabled, catchId]);
+  }, [socialEnabled, catchId, isVisible]);
 
   useEffect(() => {
-    if (!socialEnabled || !myUid || !catchId) return () => {};
+    if (!socialEnabled || !myUid || !catchId || !isVisible) return () => {};
     const unsub = subscribeCatchSaved(myUid, catchId, setSaved);
     return unsub;
-  }, [socialEnabled, myUid, catchId]);
+  }, [socialEnabled, myUid, catchId, isVisible]);
 
   const openLikers = useCallback(async () => {
     if (likeCount === 0) return;
@@ -335,7 +351,12 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, socialEnabled
         <Pressable onPress={() => onPressAuthor(item.ownerUid, ownerName)} style={styles.header}>
           <View style={styles.avatar}>
             {avatarUrl ? (
-              <Image source={{ uri: avatarUrl }} style={styles.avatarImg} contentFit="cover" />
+              <Image
+                source={{ uri: avatarUrl }}
+                style={[styles.avatarImg, { backgroundColor: colors.primary }]}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+              />
             ) : (
               <Text style={styles.avatarText}>{initials}</Text>
             )}
@@ -359,7 +380,13 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, socialEnabled
         </Text>
         {item.notes ? <Text style={styles.notes}>{item.notes}</Text> : null}
         {item.photoUri ? (
-          <Image source={{ uri: item.photoUri }} style={styles.photo} contentFit="cover" />
+          <Image
+            source={{ uri: item.photoUri }}
+            style={[styles.photo, { backgroundColor: colors.surfaceAlt }]}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            transition={200}
+          />
         ) : null}
         {item.location?.latitude != null && item.location.longitude != null ? (
           <View style={styles.loc}>

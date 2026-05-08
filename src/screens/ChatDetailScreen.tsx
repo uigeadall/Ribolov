@@ -24,6 +24,7 @@ import type { ProfileStackParamList } from '../navigation/types';
 import type { DirectMessage } from '../types';
 import { useAuth } from '../services/authContext';
 import { sendConversationMessage, subscribeConversationMessages, markConversationRead, subscribeUserPresence } from '../services/cloudSync';
+import { enqueueMessage } from '../services/messageSyncQueue';
 import { ensureFirebase } from '../services/firebase';
 
 type R = RouteProp<ProfileStackParamList, 'ChatDetail'>;
@@ -83,9 +84,19 @@ export default function ChatDetailScreen() {
   const send = useCallback(async () => {
     if (!user || !text.trim()) return;
     setSending(true);
+    const trimmed = text.trim();
     try {
-      await sendConversationMessage(convId, user.uid, text, otherUid);
+      await sendConversationMessage(convId, user.uid, trimmed, otherUid);
       setText('');
+    } catch (e) {
+      const code = typeof e === 'object' && e !== null && 'code' in e ? String((e as { code: unknown }).code) : '';
+      if (code === 'unavailable' || code === 'failed-precondition') {
+        await enqueueMessage(convId, user.uid, trimmed, otherUid).catch(() => {});
+        setText('');
+        Alert.alert('Офлайн', 'Съобщението ще бъде изпратено, когато се свържеш с интернет.');
+      } else {
+        Alert.alert('Грешка', e instanceof Error ? e.message : String(e));
+      }
     } finally {
       setSending(false);
     }

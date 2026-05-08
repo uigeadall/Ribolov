@@ -24,12 +24,13 @@ export function allowBurst(key: BucketKey, maxPerWindow: number, windowMs: numbe
   return true;
 }
 
-let lastLikeAt = 0;
+const lastLikeAtByUid = new Map<string, number>();
 
 export function allowLikeToggle(uid: string): boolean {
   const now = Date.now();
-  if (now - lastLikeAt < 220) return false;
-  lastLikeAt = now;
+  const last = lastLikeAtByUid.get(uid) ?? 0;
+  if (now - last < 220) return false;
+  lastLikeAtByUid.set(uid, now);
   return allowBurst(`like:${uid}`, 90, 60_000);
 }
 

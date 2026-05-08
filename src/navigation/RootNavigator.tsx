@@ -63,6 +63,7 @@ const wrap = (label: string, Component: React.ComponentType<any>) => (props: any
     </ErrorBoundary>
   );
 
+const HomeScreenWrapped = wrap('Начало', HomeScreen);
 const MapScreenWrapped = wrap('Карта', MapScreen);
 const AuthScreenWrapped = wrap('Вход', AuthScreen);
 const FeedScreenWrapped = wrap('Feed', FeedScreen);
@@ -82,25 +83,29 @@ const RootStack = createNativeStackNavigator<RootStackParamList>();
 
 function LogbookNavigator() {
   return (
-    <LogbookStack.Navigator screenOptions={{ headerShown: false }}>
-      <LogbookStack.Screen name="LogbookList" component={LogbookScreen} />
-      <LogbookStack.Screen name="AddCatch" component={AddCatchScreen} />
-      <LogbookStack.Screen name="CatchDetail" component={CatchDetailScreen} />
-    </LogbookStack.Navigator>
+    <ErrorBoundary label="Дневник">
+      <LogbookStack.Navigator screenOptions={{ headerShown: false }}>
+        <LogbookStack.Screen name="LogbookList" component={LogbookScreen} />
+        <LogbookStack.Screen name="AddCatch" component={AddCatchScreen} />
+        <LogbookStack.Screen name="CatchDetail" component={CatchDetailScreen} />
+      </LogbookStack.Navigator>
+    </ErrorBoundary>
   );
 }
 
 function SpeciesNavigator() {
   return (
-    <SpeciesStack.Navigator screenOptions={{ headerShown: false }}>
-      <SpeciesStack.Screen name="SpeciesList" component={SpeciesScreen} />
-      <SpeciesStack.Screen name="SpeciesDetail" component={SpeciesDetailScreen} />
-      <SpeciesStack.Screen name="Regulations" component={RegulationsScreen} />
-      <SpeciesStack.Screen name="Gear" component={GearScreen} />
-      <SpeciesStack.Screen name="Knots" component={KnotsScreen} />
-      <SpeciesStack.Screen name="KnotDetail" component={KnotDetailScreen} />
-      <SpeciesStack.Screen name="WeightCalc" component={WeightCalcScreen} />
-    </SpeciesStack.Navigator>
+    <ErrorBoundary label="Видове">
+      <SpeciesStack.Navigator screenOptions={{ headerShown: false }}>
+        <SpeciesStack.Screen name="SpeciesList" component={SpeciesScreen} />
+        <SpeciesStack.Screen name="SpeciesDetail" component={SpeciesDetailScreen} />
+        <SpeciesStack.Screen name="Regulations" component={RegulationsScreen} />
+        <SpeciesStack.Screen name="Gear" component={GearScreen} />
+        <SpeciesStack.Screen name="Knots" component={KnotsScreen} />
+        <SpeciesStack.Screen name="KnotDetail" component={KnotDetailScreen} />
+        <SpeciesStack.Screen name="WeightCalc" component={WeightCalcScreen} />
+      </SpeciesStack.Navigator>
+    </ErrorBoundary>
   );
 }
 
@@ -120,6 +125,7 @@ function FeedNavigator() {
 
 function ProfileNavigator() {
   return (
+    <ErrorBoundary label="Профил">
     <ProfileStack.Navigator screenOptions={{ headerShown: false }}>
       <ProfileStack.Screen name="ProfileMain" component={ProfileScreen} />
       <ProfileStack.Screen name="Notifications" component={NotificationsWrapped} />
@@ -146,6 +152,7 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="GroupDetail" component={GroupDetailScreen} />
       <ProfileStack.Screen name="CreateGroup" component={CreateGroupScreen} />
     </ProfileStack.Navigator>
+    </ErrorBoundary>
   );
 }
 
@@ -211,7 +218,7 @@ function TabNavigator() {
         },
       })}
     >
-      <Tabs.Screen name="HomeTab" component={HomeScreen} options={{ title: 'Начало' }} />
+      <Tabs.Screen name="HomeTab" component={HomeScreenWrapped} options={{ title: 'Начало' }} />
       <Tabs.Screen
         name="LogbookTab"
         component={LogbookNavigator}

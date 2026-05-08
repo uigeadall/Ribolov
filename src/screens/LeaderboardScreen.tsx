@@ -23,9 +23,8 @@ import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
-import { fetchPublicCatchesSince } from '../services/cloudSync';
 import {
-  aggregateLeaderboard,
+  fetchAndAggregateLeaderboard,
   LEADERBOARD_DAM_RADIUS_KM,
   LEADERBOARD_RIVER_RADIUS_KM,
   LeaderboardPeriod,
@@ -228,10 +227,8 @@ export default function LeaderboardScreen() {
     setError(null);
     try {
       const since = periodMinIso(period);
-      const catches = await fetchPublicCatchesSince(since);
-      const filtered = catches.filter((c) => typeof c.ownerUid === 'string' && c.ownerUid.length > 0);
       const lbScope = scopeToLeaderboardScope(scopePick);
-      setRows(aggregateLeaderboard(filtered, period, lbScope));
+      setRows(await fetchAndAggregateLeaderboard(since, period, lbScope));
     } catch (e: unknown) {
       setError(formatFirebaseError(e));
       setRows([]);

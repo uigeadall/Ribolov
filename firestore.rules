@@ -113,7 +113,8 @@ service cloud.firestore {
           && request.resource.data.authorName.size() <= 120
           && request.resource.data.text is string
           && request.resource.data.text.size() > 0
-          && request.resource.data.text.size() <= 2000;
+          && request.resource.data.text.size() <= 2000
+          && request.resource.data.createdAt == request.time;
         allow update, delete: if signedIn()
           && resource.data.authorUid == request.auth.uid;
       }
@@ -199,7 +200,8 @@ service cloud.firestore {
         && request.resource.data.fishingActivity >= 1
         && request.resource.data.fishingActivity <= 5
         && request.resource.data.waterCondition in ['crystal','clear','murky','muddy']
-        && (!('note' in request.resource.data) || request.resource.data.note.size() <= 200);
+        && (!('note' in request.resource.data)
+          || (request.resource.data.note is string && request.resource.data.note.size() <= 200));
       allow delete: if signedIn() && resource.data.reporterUid == request.auth.uid;
       allow update: if false;
     }

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { View, Text, StyleSheet, FlatList, Pressable, RefreshControl, ActivityIndicator, Platform } from 'react-native';
 import { Image } from 'expo-image';
@@ -13,7 +13,7 @@ import { FeedPost, FeedItem } from '../components/FeedPost';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
-import { fetchPublicFeed, getFollowing, type FeedPage } from '../services/cloudSync';
+import { fetchPublicFeed, getFollowing, getUserPublicSummary, type FeedPage } from '../services/cloudSync';
 import type { DocumentSnapshot } from 'firebase/firestore';
 import { getBlockedUids } from '../services/blockUser';
 import { StoriesRow } from '../components/StoriesRow';
@@ -123,6 +123,9 @@ export default function FeedScreen() {
 
   const [items, setItems] = useState<FeedItem[]>([]);
   const [myPhotoUrl, setMyPhotoUrl] = useState<string | undefined>();
+  const [avatarMap, setAvatarMap] = useState<Record<string, string>>({});
+  const visibleIdsRef = useRef<Set<string>>(new Set());
+  const [visibleIds, setVisibleIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -164,6 +167,27 @@ export default function FeedScreen() {
       prefetchBatch(next);
       setLastDoc(page.lastDoc);
       setHasMore(scope === 'all' ? page.hasMore : false);
+      // Batch-fetch avatars for posts that don't carry ownerPhotoUrl,
+      // so FeedPost never needs its own Firestore read.
+      const missingUids = [...new Set(
+        next
+          .filter((i) => !i.ownerPhotoUrl && i.ownerUid && i.ownerUid !== user.uid)
+          .map((i) => i.ownerUid)
+      )];
+      if (missingUids.length > 0) {
+        Promise.all(missingUids.map((uid) => getUserPublicSummary(uid).catch(() => null)))
+          .then((summaries) => {
+            const patch: Record<string, string> = {};
+            summaries.forEach((s, idx) => {
+              const url = s?.photoUrl?.trim();
+              if (url) patch[missingUids[idx]] = url;
+            });
+            if (Object.keys(patch).length > 0) {
+              setAvatarMap((prev) => ({ ...prev, ...patch }));
+            }
+          })
+          .catch(() => {});
+      }
     } catch (e: unknown) {
       setError(formatFirebaseError(e));
     } finally {
@@ -194,10 +218,41 @@ export default function FeedScreen() {
     if (user && configured) load();
   }, [load, user, configured]);
 
-  const onRefresh = () => {
+  const onRefresh = useCallback(() => {
     setRefreshing(true);
     load();
-  };
+  }, [load]);
+
+  const onPressAuthor = useCallback((authorUid: string, name: string) => {
+    navigation.navigate('UserPublicProfile' as never, { uid: authorUid, displayName: name } as never);
+  }, [navigation]);
+
+  const myDisplayName = user?.displayName ?? user?.email ?? 'Аз';
+  const socialEnabled = !!user && !!configured;
+
+  const renderItem = useCallback(({ item }: { item: FeedItem }) => (
+    <FeedPost
+      item={item}
+      myUid={user?.uid}
+      myDisplayName={myDisplayName}
+      myPhotoUrl={myPhotoUrl}
+      resolvedAvatarUrl={avatarMap[item.ownerUid]}
+      socialEnabled={socialEnabled}
+      isVisible={visibleIds.has(item.id)}
+      onPressAuthor={onPressAuthor}
+    />
+  ), [user?.uid, myDisplayName, myPhotoUrl, avatarMap, socialEnabled, visibleIds, onPressAuthor]);
+
+  const ItemSeparator = useCallback(() => <View style={styles.listGap} />, [styles.listGap]);
+
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 40 }).current;
+  const onViewableItemsChanged = useRef(
+    ({ viewableItems }: { viewableItems: Array<{ item: FeedItem }> }) => {
+      const ids = new Set(viewableItems.map((v) => v.item.id));
+      visibleIdsRef.current = ids;
+      setVisibleIds(ids);
+    }
+  ).current;
 
   const Header = () => (
     <View style={styles.header}>
@@ -320,7 +375,7 @@ export default function FeedScreen() {
       <View style={styles.segmentWrap}>
         <View style={styles.segment}>
           <Pressable
-            onPress={() => setScope('all')}
+            onPress={() => { if (scope !== 'all') { setItems([]); setScope('all'); } }}
             style={[styles.segmentBtn, scope === 'all' && styles.segmentBtnActive]}
           >
             <Ionicons
@@ -331,7 +386,7 @@ export default function FeedScreen() {
             <Text style={[styles.segmentText, scope === 'all' && styles.segmentTextActive]}>Всички</Text>
           </Pressable>
           <Pressable
-            onPress={() => setScope('following')}
+            onPress={() => { if (scope !== 'following') { setItems([]); setScope('following'); } }}
             style={[styles.segmentBtn, scope === 'following' && styles.segmentBtnActive]}
           >
             <Ionicons
@@ -382,7 +437,7 @@ export default function FeedScreen() {
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
           }
-          ItemSeparatorComponent={() => <View style={styles.listGap} />}
+          ItemSeparatorComponent={ItemSeparator}
           showsVerticalScrollIndicator={false}
           onEndReached={loadMore}
           onEndReachedThreshold={0.4}
@@ -401,18 +456,9 @@ export default function FeedScreen() {
             ) : null
           }
           {...keyboardAwareScrollProps}
-          renderItem={({ item }) => (
-            <FeedPost
-              item={item}
-              myUid={user?.uid}
-              myDisplayName={user?.displayName ?? user?.email ?? 'Аз'}
-              myPhotoUrl={myPhotoUrl}
-              socialEnabled={!!user && !!configured}
-              onPressAuthor={(authorUid, name) =>
-                navigation.navigate('UserPublicProfile', { uid: authorUid, displayName: name })
-              }
-            />
-          )}
+          renderItem={renderItem}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={viewabilityConfig}
         />
       )}
     </Screen>

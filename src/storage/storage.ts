@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Crypto from 'expo-crypto';
 import { Catch, Spot, GearItem, TripPlan } from '../types';
 
 const KEYS = {
@@ -25,23 +26,37 @@ async function writeJson<T>(key: string, value: T): Promise<void> {
   await AsyncStorage.setItem(key, JSON.stringify(value));
 }
 
+let _catchesCache: Catch[] | null = null;
+
+async function readCatches(): Promise<Catch[]> {
+  if (_catchesCache !== null) return _catchesCache;
+  const list = await readJson<Catch[]>(KEYS.catches, []);
+  _catchesCache = list;
+  return list;
+}
+
+async function writeCatches(items: Catch[]): Promise<void> {
+  _catchesCache = items;
+  await writeJson(KEYS.catches, items);
+}
+
 export const catchesStore = {
-  list: () => readJson<Catch[]>(KEYS.catches, []),
+  list: () => readCatches(),
   replaceAll: async (items: Catch[]) => {
-    await writeJson(KEYS.catches, items);
+    await writeCatches(items);
   },
   save: async (item: Catch) => {
-    const all = await readJson<Catch[]>(KEYS.catches, []);
+    const all = await readCatches();
     const idx = all.findIndex((c) => c.id === item.id);
     if (idx >= 0) all[idx] = item;
     else all.unshift(item);
-    await writeJson(KEYS.catches, all);
+    await writeCatches(all);
     return all;
   },
   remove: async (id: string) => {
-    const all = await readJson<Catch[]>(KEYS.catches, []);
+    const all = await readCatches();
     const next = all.filter((c) => c.id !== id);
-    await writeJson(KEYS.catches, next);
+    await writeCatches(next);
     return next;
   },
 };
@@ -113,9 +128,10 @@ export const tripsStore = {
   },
 };
 
-export const newId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+export const newId = () => Crypto.randomUUID();
 
 export async function wipeAllLocalAppData(): Promise<void> {
+  _catchesCache = null;
   await AsyncStorage.multiRemove([
     KEYS.catches,
     KEYS.spots,
@@ -127,5 +143,6 @@ export async function wipeAllLocalAppData(): Promise<void> {
     'ribolov:notifications:morning',
     'ribolov:notifications:scheduledId',
     'ribolov:notifications:tripScheduleMap',
+    'ribolov:message-sync-queue',
   ]);
 }

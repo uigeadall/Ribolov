@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   View,
   Text,
   StyleSheet,
@@ -256,6 +257,9 @@ export default function LogbookScreen() {
   const insets = useSafeAreaInsets();
   const bottomPad = insets.bottom + spacing.xl;
 
+  const [items, setItems] = useState<Catch[]>([]);
+  const styles = useMemo(() => createLogbookStyles(colors, mode), [colors, mode]);
+
   // Badge shows count of unsynced catches on the tab bar
   useEffect(() => {
     if (!user) return;
@@ -264,16 +268,20 @@ export default function LogbookScreen() {
       tabBarBadge: unsynced > 0 ? unsynced : undefined,
     });
   }, [items, user, navigation]);
-  const styles = useMemo(() => createLogbookStyles(colors, mode), [colors, mode]);
-  const [items, setItems] = useState<Catch[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [speciesId, setSpeciesId] = useState<string | null>(null);
   const [releasedOnly, setReleasedOnly] = useState(false);
   const [dateFrom, setDateFrom] = useState<Date | null>(null);
   const [dateTo, setDateTo] = useState<Date | null>(null);
   const [pickFrom, setPickFrom] = useState(false);
   const [pickTo, setPickTo] = useState(false);
+
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedQuery(searchQuery), 250);
+    return () => clearTimeout(id);
+  }, [searchQuery]);
 
   const load = useCallback(async () => {
     const list = await catchesStore.list();
@@ -293,7 +301,7 @@ export default function LogbookScreen() {
   };
 
   const filtered = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
+    const q = debouncedQuery.trim().toLowerCase();
     return items.filter((c) => {
       if (speciesId && c.speciesId !== speciesId) return false;
       if (releasedOnly && !c.released) return false;
@@ -306,7 +314,7 @@ export default function LogbookScreen() {
       }
       return true;
     });
-  }, [items, searchQuery, speciesId, releasedOnly, dateFrom, dateTo]);
+  }, [items, debouncedQuery, speciesId, releasedOnly, dateFrom, dateTo]);
 
   const totalKg = filtered.reduce((s, i) => s + (i.weightKg ?? 0), 0);
   const personalBests = useMemo(() => computePersonalBests(items), [items]);
@@ -339,6 +347,26 @@ export default function LogbookScreen() {
       },
     ]);
   };
+
+  // Card(60 thumb + 10+10 padding + 1+1 border) + 8 separator
+  const CATCH_ROW_H = 82;
+  const CATCH_SEP_H = spacing.sm;
+  const getCatchItemLayout = useCallback(
+    (_: unknown, index: number) => ({
+      length: CATCH_ROW_H,
+      offset: (CATCH_ROW_H + CATCH_SEP_H) * index,
+      index,
+    }),
+    []
+  );
+
+  const CatchSeparator = useCallback(() => <View style={{ height: CATCH_SEP_H }} />, []);
+
+  const renderCatchItem = useCallback(
+    ({ item }: { item: Catch }) => renderCatchRow(item),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [colors, styles, personalBests, user, navigation, handleSwipeDelete]
+  );
 
   const renderCatchRow = (item: Catch) => (
     <Swipeable
@@ -636,14 +664,15 @@ export default function LogbookScreen() {
               </Text>
             }
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
-            ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
+            ItemSeparatorComponent={CatchSeparator}
             ListFooterComponent={<View style={styles.listFooterPad} />}
             removeClippedSubviews={Platform.OS === 'android'}
             maxToRenderPerBatch={10}
             windowSize={5}
             initialNumToRender={10}
+            getItemLayout={getCatchItemLayout}
             {...keyboardAwareScrollProps}
-            renderItem={({ item }) => renderCatchRow(item)}
+            renderItem={renderCatchItem}
           />
         )}
       </View>
