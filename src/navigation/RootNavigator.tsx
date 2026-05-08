@@ -212,10 +212,31 @@ function TabNavigator() {
       })}
     >
       <Tabs.Screen name="HomeTab" component={HomeScreen} options={{ title: 'Начало' }} />
-      <Tabs.Screen name="LogbookTab" component={LogbookNavigator} options={{ title: 'Дневник' }} />
+      <Tabs.Screen
+        name="LogbookTab"
+        component={LogbookNavigator}
+        options={{ title: 'Дневник' }}
+        listeners={({ navigation }) => ({
+          tabPress: () => navigation.navigate('LogbookTab', { screen: 'LogbookList' }),
+        })}
+      />
       <Tabs.Screen name="MapTab" component={MapScreenWrapped} options={{ title: 'Карта' }} />
-      <Tabs.Screen name="FeedTab" component={FeedNavigator} options={{ title: 'Лента' }} />
-      <Tabs.Screen name="ProfileTab" component={ProfileNavigator} options={{ title: 'Профил' }} />
+      <Tabs.Screen
+        name="FeedTab"
+        component={FeedNavigator}
+        options={{ title: 'Лента' }}
+        listeners={({ navigation }) => ({
+          tabPress: () => navigation.navigate('FeedTab', { screen: 'FeedList' }),
+        })}
+      />
+      <Tabs.Screen
+        name="ProfileTab"
+        component={ProfileNavigator}
+        options={{ title: 'Профил' }}
+        listeners={({ navigation }) => ({
+          tabPress: () => navigation.navigate('ProfileTab', { screen: 'ProfileMain' }),
+        })}
+      />
     </Tabs.Navigator>
   );
 }
