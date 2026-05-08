@@ -34,6 +34,7 @@ import {
   pushUserProfilePublic,
   tryGetStoredProfileAvatarUrl,
   uploadProfileAvatar,
+  refreshOwnerPhotoOnPublicCatches,
 } from '../services/cloudSync';
 
 export default function ProfileScreen() {
@@ -323,11 +324,11 @@ export default function ProfileScreen() {
     });
     if (!res.canceled && res.assets[0]) {
       const picked = res.assets[0];
-      // Resize to 300×300 and compress — keeps base64 under ~30 KB regardless of source size
+      // Resize to 80×80 — ~2-4 KB base64, safe to embed in Firestore catch documents
       const manipulated = await ImageManipulator.manipulateAsync(
         picked.uri,
-        [{ resize: { width: 300, height: 300 } }],
-        { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+        [{ resize: { width: 80, height: 80 } }],
+        { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG, base64: true },
       );
       setPickedAvatarUri(manipulated.uri);        // file URI → shown by expo-image immediately
       setPickedAvatarDataUrl(                      // data URL → stored in Firestore on save
@@ -361,6 +362,10 @@ export default function ProfileScreen() {
       // Firebase Auth photoURL has a ~1 KB limit — skip it for base64 data URLs
       if (urlForAuth && !urlForAuth.startsWith('data:') && fb?.auth.currentUser) {
         await updateProfile(fb.auth.currentUser, { photoURL: urlForAuth });
+      }
+      // Update ownerPhotoUrl on all existing public catches (best-effort, non-blocking)
+      if (urlForAuth) {
+        refreshOwnerPhotoOnPublicCatches(user.uid, urlForAuth).catch(() => {});
       }
       Alert.alert('Готово', 'Профилът е запазен.');
     } catch (e: unknown) {

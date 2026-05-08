@@ -572,3 +572,25 @@ export async function deleteAllUserCloudData(uid: string): Promise<void> {
 
   await deleteDoc(doc(fb.db, 'users', uid)).catch(() => undefined);
 }
+
+/** Update ownerPhotoUrl on all of the user's public catches — called after profile photo change. */
+export async function refreshOwnerPhotoOnPublicCatches(uid: string, photoUrl: string): Promise<void> {
+  const fb = ensureFirebase();
+  if (!fb) return;
+  try {
+    const snap = await getDocs(
+      query(collection(fb.db, 'publicCatches'), where('ownerUid', '==', uid))
+    );
+    if (snap.empty) return;
+    const CHUNK = 400; // Firestore batch limit is 500 ops
+    for (let i = 0; i < snap.docs.length; i += CHUNK) {
+      const b = writeBatch(fb.db);
+      snap.docs.slice(i, i + CHUNK).forEach((d) => {
+        b.update(d.ref, { ownerPhotoUrl: photoUrl });
+      });
+      await b.commit();
+    }
+  } catch {
+    // Best-effort — old posts missing the new photo is acceptable
+  }
+}
