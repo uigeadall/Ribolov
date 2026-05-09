@@ -1,6 +1,7 @@
 import {
   addDoc,
   collection,
+  collectionGroup,
   deleteDoc,
   doc,
   getDoc,
@@ -72,8 +73,9 @@ export async function createGroup(
     memberCount: 1,
     postCount: 0,
   });
-  // Creator becomes admin member
+  // Creator becomes admin member — uid stored explicitly for collectionGroup queries
   await setDoc(doc(fb.db, 'groups', id, 'members', creator.uid), {
+    uid: creator.uid,
     displayName: creator.displayName,
     role: 'admin',
     joinedAt: serverTimestamp(),
@@ -94,20 +96,16 @@ export async function fetchMyGroups(uid: string): Promise<Group[]> {
   const fb = ensureFirebase();
   if (!fb) return [];
   try {
-    // Get groups where user is a member using collectionGroup
+    // Single collectionGroup query instead of scanning every group document
     const memberSnap = await getDocs(
-      query(collection(fb.db, 'groups'), where('createdBy', '==', uid))
+      query(collectionGroup(fb.db, 'members'), where('uid', '==', uid))
     );
-    // Also get groups where user has joined
-    const ids = new Set(memberSnap.docs.map((d) => d.id));
-    const allSnap = await getDocs(collection(fb.db, 'groups'));
-    const joined: Group[] = [];
-    for (const d of allSnap.docs) {
-      if (ids.has(d.id)) continue;
-      const memberDoc = await getDoc(doc(fb.db, 'groups', d.id, 'members', uid));
-      if (memberDoc.exists()) joined.push(docToGroup(d.id, d.data()));
-    }
-    return [...memberSnap.docs.map((d) => docToGroup(d.id, d.data())), ...joined];
+    if (memberSnap.empty) return [];
+    // Each member doc is at groups/{groupId}/members/{uid} — parent path gives us the groupId
+    const groupIds = memberSnap.docs.map((d) => d.ref.parent.parent!.id);
+    const unique = [...new Set(groupIds)];
+    const groups = await Promise.all(unique.map((id) => getGroup(id)));
+    return groups.filter((g): g is Group => g !== null);
   } catch {
     return [];
   }
@@ -125,6 +123,7 @@ export async function joinGroup(groupId: string, user: { uid: string; displayNam
   const fb = ensureFirebase();
   if (!fb) throw new Error('Firebase не е наличен.');
   await setDoc(doc(fb.db, 'groups', groupId, 'members', user.uid), {
+    uid: user.uid,
     displayName: user.displayName,
     role: 'member',
     joinedAt: serverTimestamp(),

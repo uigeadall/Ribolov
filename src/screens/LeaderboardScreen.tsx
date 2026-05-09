@@ -225,13 +225,13 @@ export default function LeaderboardScreen() {
     if (!configured || !user) return;
     setLoading(true);
     setError(null);
+    setRows([]); // clear stale rows immediately so old data never shows under new filters
     try {
       const since = periodMinIso(period);
       const lbScope = scopeToLeaderboardScope(scopePick);
       setRows(await fetchAndAggregateLeaderboard(since, period, lbScope));
     } catch (e: unknown) {
       setError(formatFirebaseError(e));
-      setRows([]);
     } finally {
       setLoading(false);
       setRefreshing(false);

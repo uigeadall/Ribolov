@@ -208,11 +208,14 @@ export default function AuthScreen() {
         <GoogleSignInSection
           disabled={busy || !configured}
           onIdToken={async (idToken) => {
+            setBusy(true);
             try {
               await signInWithGoogleIdToken(idToken);
               navigation.goBack();
             } catch (e: unknown) {
               Alert.alert('Грешка', formatFirebaseError(e));
+            } finally {
+              setBusy(false);
             }
           }}
         />
@@ -220,11 +223,14 @@ export default function AuthScreen() {
         <AppleSignInSection
           disabled={busy || !configured}
           onAppleTokens={async (idToken, rawNonce) => {
+            setBusy(true);
             try {
               await signInWithApple(idToken, rawNonce);
               navigation.goBack();
             } catch (e: unknown) {
               Alert.alert('Грешка', formatFirebaseError(e));
+            } finally {
+              setBusy(false);
             }
           }}
         />
