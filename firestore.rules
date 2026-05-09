@@ -211,7 +211,13 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create: if signedIn() && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.name is string && request.resource.data.name.size() <= 60;
-      allow update: if signedIn() && resource.data.createdBy == request.auth.uid;
+      allow update: if signedIn() && (
+        // Creator can change anything
+        resource.data.createdBy == request.auth.uid
+        ||
+        // Any signed-in user can only touch memberCount / postCount (join, leave, post)
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberCount', 'postCount'])
+      );
       allow delete: if signedIn() && resource.data.createdBy == request.auth.uid;
 
       match /members/{uid} {

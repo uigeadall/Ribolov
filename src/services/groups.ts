@@ -123,20 +123,22 @@ export async function getGroup(groupId: string): Promise<Group | null> {
 
 export async function joinGroup(groupId: string, user: { uid: string; displayName: string }): Promise<void> {
   const fb = ensureFirebase();
-  if (!fb) return;
+  if (!fb) throw new Error('Firebase не е наличен.');
   await setDoc(doc(fb.db, 'groups', groupId, 'members', user.uid), {
     displayName: user.displayName,
     role: 'member',
     joinedAt: serverTimestamp(),
   });
-  await updateDoc(doc(fb.db, 'groups', groupId), { memberCount: increment(1) });
+  // Best-effort counter — membership write above is the authoritative join
+  await updateDoc(doc(fb.db, 'groups', groupId), { memberCount: increment(1) }).catch(() => {});
 }
 
 export async function leaveGroup(groupId: string, uid: string): Promise<void> {
   const fb = ensureFirebase();
-  if (!fb) return;
+  if (!fb) throw new Error('Firebase не е наличен.');
   await deleteDoc(doc(fb.db, 'groups', groupId, 'members', uid));
-  await updateDoc(doc(fb.db, 'groups', groupId), { memberCount: increment(-1) });
+  // Best-effort counter
+  await updateDoc(doc(fb.db, 'groups', groupId), { memberCount: increment(-1) }).catch(() => {});
 }
 
 export async function isMember(groupId: string, uid: string): Promise<boolean> {
