@@ -1,14 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, TextInput, StyleSheet, Pressable, Alert, Platform, Modal } from 'react-native';
+import { View, Text, TextInput, StyleSheet, Pressable, Alert, Platform, Modal, FlatList } from 'react-native';
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
-import { tripsStore } from '../storage/storage';
+import { tripsStore, catchesStore } from '../storage/storage';
 import type { ProfileStackParamList } from '../navigation/types';
-import type { TripPlan } from '../types';
+import type { TripPlan, Catch } from '../types';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 
@@ -19,6 +19,7 @@ export default function TripDetailScreen() {
   const navigation = useNavigation<any>();
   const { colors } = useTheme();
   const [trip, setTrip] = useState<TripPlan | null | undefined>(undefined);
+  const [tripCatches, setTripCatches] = useState<Catch[]>([]);
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editDate, setEditDate] = useState(new Date());
@@ -27,6 +28,9 @@ export default function TripDetailScreen() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    catchesStore.list().then((all) =>
+      setTripCatches(all.filter((c) => c.tripId === route.params.id))
+    );
     tripsStore.get(route.params.id).then((t) => {
       setTrip(t ?? null);
       if (t) {
@@ -193,6 +197,36 @@ export default function TripDetailScreen() {
                 {trip.notes?.trim() || 'Няма бележки за този излет.'}
               </Text>
             </Card>
+
+            {/* Catches for this trip */}
+            <Text style={{ ...typography.h3, color: colors.text, marginTop: spacing.lg, marginBottom: spacing.sm }}>
+              Улови ({tripCatches.length})
+            </Text>
+            {tripCatches.length === 0 ? (
+              <Text style={{ ...typography.body, color: colors.textMuted }}>
+                Няма улови, свързани с този излет.
+              </Text>
+            ) : (
+              tripCatches.map((c) => (
+                <Pressable
+                  key={c.id}
+                  onPress={() => navigation.navigate('LogbookTab' as never, { screen: 'CatchDetail', params: { id: c.id } } as never)}
+                >
+                  <Card style={{ marginBottom: spacing.sm, flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+                    <Ionicons name="fish-outline" size={20} color={colors.primary} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ ...typography.bodyBold, color: colors.text }}>{c.speciesName}</Text>
+                      <Text style={{ ...typography.caption, color: colors.textMuted }}>
+                        {c.weightKg != null ? `${c.weightKg} кг` : ''}
+                        {c.weightKg != null && c.date ? ' · ' : ''}
+                        {c.date ? new Date(c.date).toLocaleDateString('bg-BG') : ''}
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+                  </Card>
+                </Pressable>
+              ))
+            )}
           </>
         )}
       </View>

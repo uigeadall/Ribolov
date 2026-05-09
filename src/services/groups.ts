@@ -96,13 +96,22 @@ export async function fetchMyGroups(uid: string): Promise<Group[]> {
   const fb = ensureFirebase();
   if (!fb) return [];
   try {
-    // Single collectionGroup query instead of scanning every group document
+    // Fast path: collectionGroup query works for members created after the uid field was added
     const memberSnap = await getDocs(
       query(collectionGroup(fb.db, 'members'), where('uid', '==', uid))
     );
-    if (memberSnap.empty) return [];
-    // Each member doc is at groups/{groupId}/members/{uid} — parent path gives us the groupId
-    const groupIds = memberSnap.docs.map((d) => d.ref.parent.parent!.id);
+    let groupIds = memberSnap.docs.map((d) => d.ref.parent.parent!.id);
+
+    // Fallback for legacy member documents that pre-date the uid field:
+    // check the user's direct member document path across all groups.
+    if (groupIds.length === 0) {
+      const allSnap = await getDocs(collection(fb.db, 'groups'));
+      const checks = await Promise.all(
+        allSnap.docs.map((d) => getDoc(doc(fb.db, 'groups', d.id, 'members', uid)))
+      );
+      groupIds = allSnap.docs.filter((_, i) => checks[i].exists()).map((d) => d.id);
+    }
+
     const unique = [...new Set(groupIds)];
     const groups = await Promise.all(unique.map((id) => getGroup(id)));
     return groups.filter((g): g is Group => g !== null);

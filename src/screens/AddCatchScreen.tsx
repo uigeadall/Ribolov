@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import Toast from 'react-native-toast-message';
 import {
   View,
   Text,
@@ -10,6 +11,8 @@ import {
   Alert,
   ActivityIndicator,
   Linking,
+  Modal,
+  FlatList,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { LogbookStackParamList } from '../navigation/types';
@@ -23,9 +26,9 @@ import { Card } from '../components/Card';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
-import { catchesStore, newId } from '../storage/storage';
+import { catchesStore, tripsStore, newId } from '../storage/storage';
 import { speciesList } from '../data/species';
-import { Achievement, Catch } from '../types';
+import { Achievement, Catch, TripPlan } from '../types';
 import { useAuth } from '../services/authContext';
 import { doc, getDoc } from 'firebase/firestore';
 import { pushCatch, ensureCatchPhotoUploadedForCloud } from '../services/cloudSync';
@@ -132,6 +135,9 @@ export default function AddCatchScreen() {
   const [initialCatch, setInitialCatch] = useState<Catch | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [extraPhotoUris, setExtraPhotoUris] = useState<string[]>([]);
+  const [tripId, setTripId] = useState<string | undefined>();
+  const [trips, setTrips] = useState<TripPlan[]>([]);
+  const [tripPickerOpen, setTripPickerOpen] = useState(false);
   const formDirtyRef = useRef(false);
   // Stable ID for this form instance — never changes between retries so a
   // failed save followed by a retry always writes to the same record,
@@ -140,6 +146,10 @@ export default function AddCatchScreen() {
 
   const selectedSpecies = useMemo(() => speciesList.find((s) => s.id === speciesId)!, [speciesId]);
   const banInfo = useMemo(() => checkBanPeriod(selectedSpecies?.banPeriod), [selectedSpecies]);
+
+  useEffect(() => {
+    tripsStore.list().then(setTrips);
+  }, []);
 
   useEffect(() => {
     if (weight || length || bait || notes || photoUri) formDirtyRef.current = true;
@@ -190,6 +200,7 @@ export default function AddCatchScreen() {
         setLocationCoords(null);
         setLocationName('');
       }
+      if (c.tripId) setTripId(c.tripId);
       setEditLoaded(true);
     });
     return () => {
@@ -358,6 +369,7 @@ export default function AddCatchScreen() {
       location: locationCoords
         ? { latitude: locationCoords.lat, longitude: locationCoords.lon, name: locationName || undefined }
         : undefined,
+      ...(tripId ? { tripId } : {}),
     };
     try {
       await catchesStore.save(item);
@@ -398,6 +410,7 @@ export default function AddCatchScreen() {
 
       const achCtx = { firebaseConfigured: configured, userLoggedIn: !!user, uid: user?.uid };
       const newUnlocks = await checkForNewUnlocks(allCatches, achCtx);
+      Toast.show({ type: 'success', text1: editCatchId ? 'Уловът е обновен' : 'Уловът е записан', visibilityTime: 2000 });
       if (newUnlocks.length > 0) {
         setUnlockedNow(newUnlocks);
       } else {
@@ -588,6 +601,32 @@ export default function AddCatchScreen() {
               style={styles.input}
               placeholderTextColor={colors.textMuted}
             />
+            {/* Inline weight estimator — appears when length entered but weight is empty */}
+            {(() => {
+              const lenVal = parseFloat(length.replace(',', '.'));
+              if (!lenVal || lenVal <= 0 || weight) return null;
+              // Fulton's K for selected species (approximate)
+              const K_MAP: Record<string, number> = {
+                sharan: 3.4, karakuda: 3.0, amur: 2.2, tolstolob: 2.8, lin: 3.2,
+                som: 1.5, shtuka: 0.55, kostur: 2.5, pastrava: 0.9, dagova: 1.0,
+                mryana: 1.6, klen: 1.8,
+              };
+              const K = K_MAP[speciesId] ?? 2.5;
+              const estimated = Math.round((K * lenVal ** 3) / 100_000 * 100) / 100;
+              if (estimated <= 0) return null;
+              return (
+                <Pressable
+                  onPress={() => setWeight(String(estimated))}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}
+                  hitSlop={8}
+                >
+                  <Ionicons name="calculator-outline" size={14} color={colors.primary} />
+                  <Text style={{ ...typography.small, color: colors.primary }}>
+                    ≈ {estimated} кг — добави
+                  </Text>
+                </Pressable>
+              );
+            })()}
           </View>
         </View>
 
@@ -627,6 +666,49 @@ export default function AddCatchScreen() {
           style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
           placeholderTextColor={colors.textMuted}
         />
+
+        {/* Trip picker */}
+        {trips.length > 0 ? (
+          <>
+            <Text style={[styles.label, { marginTop: spacing.md }]}>Излет (по избор)</Text>
+            <Pressable
+              onPress={() => setTripPickerOpen(true)}
+              style={[styles.input, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: undefined, paddingVertical: spacing.sm + 2 }]}
+            >
+              <Text style={{ color: tripId ? colors.text : colors.textMuted, fontSize: 16 }}>
+                {tripId ? (trips.find((t) => t.id === tripId)?.title ?? 'Излет') : 'Не е избран'}
+              </Text>
+              <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
+            </Pressable>
+            <Modal visible={tripPickerOpen} transparent animationType="slide" onRequestClose={() => setTripPickerOpen(false)}>
+              <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' }} onPress={() => setTripPickerOpen(false)} />
+              <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingBottom: 32, maxHeight: '60%' }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.lg, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
+                  <Text style={{ ...typography.h3, color: colors.text }}>Избери излет</Text>
+                  <Pressable onPress={() => setTripPickerOpen(false)} hitSlop={8}>
+                    <Ionicons name="close" size={24} color={colors.textMuted} />
+                  </Pressable>
+                </View>
+                <FlatList
+                  data={[{ id: '', title: 'Без излет', dateIso: '' }, ...trips]}
+                  keyExtractor={(t) => t.id || 'none'}
+                  renderItem={({ item }) => (
+                    <Pressable
+                      onPress={() => { setTripId(item.id || undefined); setTripPickerOpen(false); }}
+                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}
+                    >
+                      <View>
+                        <Text style={{ ...typography.bodyBold, color: colors.text }}>{item.title}</Text>
+                        {item.dateIso ? <Text style={{ ...typography.caption, color: colors.textMuted }}>{new Date(item.dateIso).toLocaleDateString('bg-BG')}</Text> : null}
+                      </View>
+                      {(tripId ?? '') === item.id ? <Ionicons name="checkmark" size={20} color={colors.primary} /> : null}
+                    </Pressable>
+                  )}
+                />
+              </View>
+            </Modal>
+          </>
+        ) : null}
 
         <View style={[styles.row2, { alignItems: 'center', marginTop: spacing.md }]}>
           <View style={{ flex: 1 }}>

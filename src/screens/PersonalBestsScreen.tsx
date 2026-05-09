@@ -1,7 +1,9 @@
-import React, { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, Pressable } from 'react-native';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, Pressable, Share, Alert } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import ViewShot from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { EmptyState } from '../components/EmptyState';
@@ -60,6 +62,23 @@ export default function PersonalBestsScreen() {
 
   const medal = (i: number) => (i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '🏅');
 
+  const cardRefs = useRef<Map<string, ViewShot>>(new Map());
+
+  const shareRecord = async (item: PersonalBest) => {
+    const ref = cardRefs.current.get(item.speciesId);
+    if (!ref) return;
+    try {
+      const uri = await (ref as any).capture();
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { mimeType: 'image/png' });
+      } else {
+        await Share.share({ message: `🏆 Личен рекорд: ${item.speciesName} — ${item.weightKg} кг | Ribolov App` });
+      }
+    } catch {
+      Alert.alert('Грешка', 'Неуспешно споделяне.');
+    }
+  };
+
   return (
     <Screen padded={false}>
       <View style={styles.header}>
@@ -91,23 +110,27 @@ export default function PersonalBestsScreen() {
                 })
               }
             >
-              <Card>
-                <View style={styles.row}>
-                  <View style={styles.iconWrap}>
-                    <Text style={styles.medal}>{medal(index)}</Text>
+              <ViewShot ref={(r) => { if (r) cardRefs.current.set(item.speciesId, r as unknown as ViewShot); }} options={{ format: 'png', quality: 0.95 }}>
+                <Card>
+                  <View style={styles.row}>
+                    <View style={styles.iconWrap}>
+                      <Text style={styles.medal}>{medal(index)}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.species}>{item.speciesName}</Text>
+                      <Text style={styles.stats}>
+                        {item.weightKg > 0 ? `${item.weightKg} кг` : ''}
+                        {item.weightKg > 0 && item.lengthCm > 0 ? ' · ' : ''}
+                        {item.lengthCm > 0 ? `${item.lengthCm} см` : ''}
+                      </Text>
+                      <Text style={styles.date}>{formatCatchDate(item.catchDate)}</Text>
+                    </View>
+                    <Pressable onPress={() => shareRecord(item)} hitSlop={8}>
+                      <Ionicons name="share-outline" size={22} color={colors.primary} />
+                    </Pressable>
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.species}>{item.speciesName}</Text>
-                    <Text style={styles.stats}>
-                      {item.weightKg > 0 ? `${item.weightKg} кг` : ''}
-                      {item.weightKg > 0 && item.lengthCm > 0 ? ' · ' : ''}
-                      {item.lengthCm > 0 ? `${item.lengthCm} см` : ''}
-                    </Text>
-                    <Text style={styles.date}>{formatCatchDate(item.catchDate)}</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-                </View>
-              </Card>
+                </Card>
+              </ViewShot>
             </Pressable>
           )}
         />

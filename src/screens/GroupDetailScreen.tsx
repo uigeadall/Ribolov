@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
+import Toast from 'react-native-toast-message';
 import {
   View, Text, StyleSheet, FlatList, Pressable,
   TextInput, Alert, KeyboardAvoidingView, Platform, RefreshControl,
@@ -104,6 +105,7 @@ export default function GroupDetailScreen() {
     try {
       await postToGroup(groupId, postText, { uid: user.uid, displayName: user.displayName ?? 'Рибар' });
       setPostText('');
+      Toast.show({ type: 'success', text1: 'Публикацията е изпратена', visibilityTime: 2000 });
       await load();
     } catch (e: unknown) {
       Alert.alert('Грешка', e instanceof Error ? e.message : 'Неуспешно изпращане.');

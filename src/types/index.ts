@@ -62,6 +62,7 @@ export type Catch = {
   photoTakenWithAppCamera?: boolean;
   location?: { latitude: number; longitude: number; name?: string };
   syncedToCloud?: boolean;
+  tripId?: string;
 };
 
 export type Spot = {

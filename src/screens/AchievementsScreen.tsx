@@ -10,6 +10,8 @@ import { radius, spacing, typography } from '../theme/typography';
 import { catchesStore } from '../storage/storage';
 import { useAuth } from '../services/authContext';
 import { computeAchievements, TOTAL_ACHIEVEMENTS } from '../services/achievements';
+import { fetchPublicCatchesByOwner } from '../services/cloudSync';
+import type { Catch } from '../types';
 import { CATEGORY_LABELS, RARITY_COLORS } from '../data/achievements';
 import { Achievement, AchievementCategory } from '../types';
 
@@ -94,7 +96,19 @@ export default function AchievementsScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const catches = await catchesStore.list();
+      let catches: Catch[] = await catchesStore.list();
+      // Merge cloud catches so achievements reflect all synced records,
+      // not just what's on this device
+      if (configured && user) {
+        try {
+          const cloud = await fetchPublicCatchesByOwner(user.uid, 200);
+          const localIds = new Set(catches.map((c) => c.id));
+          const onlyCloud = cloud.filter((c) => !localIds.has(c.id)) as unknown as Catch[];
+          catches = [...catches, ...onlyCloud];
+        } catch {
+          // best-effort — local catches still used
+        }
+      }
       const all = await computeAchievements(catches, {
         firebaseConfigured: configured,
         userLoggedIn: !!user,

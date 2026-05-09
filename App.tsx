@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
+import Toast from 'react-native-toast-message';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -44,6 +45,7 @@ export default function App() {
             ) : (
               <OnboardingScreen onDone={handleOnboardingDone} />
             )}
+            <Toast />
           </AuthProvider>
         </ThemeProvider>
       </SafeAreaProvider>

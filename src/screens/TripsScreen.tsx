@@ -1,4 +1,5 @@
 import React, { useCallback, useState } from 'react';
+import Toast from 'react-native-toast-message';
 import {
   View,
   Text,
@@ -66,6 +67,7 @@ export default function TripsScreen() {
       setTitle('');
       setNotes('');
       setDate(new Date());
+      Toast.show({ type: 'success', text1: 'Излетът е добавен', visibilityTime: 2000 });
       load();
     } finally {
       setSaving(false);

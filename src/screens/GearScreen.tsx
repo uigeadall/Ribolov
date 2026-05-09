@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
+import Toast from 'react-native-toast-message';
 import { View, Text, FlatList, TextInput, StyleSheet, Pressable, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
@@ -56,6 +57,7 @@ export default function GearScreen() {
     await gearStore.save({ id: newId(), name: n, notes: notes.trim() || undefined });
     setName('');
     setNotes('');
+    Toast.show({ type: 'success', text1: 'Предметът е добавен', visibilityTime: 2000 });
     load();
   };
 
@@ -69,6 +71,7 @@ export default function GearScreen() {
     if (!editingId || !editName.trim()) return;
     await gearStore.save({ id: editingId, name: editName.trim(), notes: editNotes.trim() || undefined });
     setEditingId(null);
+    Toast.show({ type: 'success', text1: 'Запазено', visibilityTime: 2000 });
     load();
   };
 
