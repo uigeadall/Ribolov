@@ -376,8 +376,6 @@ export async function ensureDirectConversation(
 ): Promise<string> {
   const fb = ensureFirebase();
   if (!fb) throw new Error('Firebase не е конфигуриран');
-  const mutual = await isMutualFollow(myUid, otherUid);
-  if (!mutual) throw new Error('Чатът е само между потребители, които се следват взаимно.');
   const participantIds = [myUid, otherUid].sort();
   const convId = participantIds.join('_');
   const convRef = doc(fb.db, 'conversations', convId);

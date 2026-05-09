@@ -420,15 +420,7 @@ export default function UserPublicProfileScreen() {
         params: { screen: 'ChatDetail', params: { convId, otherUid: uid, otherName: summaryName } },
       });
     } catch (e: unknown) {
-      const code = typeof e === 'object' && e !== null && 'code' in e
-        ? String((e as { code: unknown }).code) : '';
-      const isPermission = code === 'permission-denied' || code === 'PERMISSION_DENIED';
-      Alert.alert(
-        'Чат',
-        isPermission
-          ? 'Чатът е само между потребители, които се следват взаимно.'
-          : e instanceof Error ? e.message : 'Неуспешно отваряне на чат.'
-      );
+      Alert.alert('Чат', e instanceof Error ? e.message : 'Неуспешно отваряне на чат.');
     }
   };
 
