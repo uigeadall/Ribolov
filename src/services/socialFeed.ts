@@ -125,19 +125,21 @@ async function notifyInteraction(opts: {
   reactionEmoji?: string;
 }): Promise<void> {
   if (opts.recipientUid === opts.actorUid) return;
+  if (!opts.recipientUid || !opts.actorUid) return;
   const fb = ensureFirebase();
   if (!fb) return;
+  const safeName = (opts.actorName || 'Рибар').trim().slice(0, 120) || 'Рибар';
   await addDoc(
     collection(fb.db, 'users', opts.recipientUid, 'notifications'),
-    stripUndefinedForFirestore({
+    {
       actorUid: opts.actorUid,
-      actorName: opts.actorName.slice(0, 120),
+      actorName: safeName,
       type: opts.type,
-      catchId: opts.catchId,
+      catchId: opts.catchId ?? '',
       preview: (opts.preview ?? '').slice(0, 200),
       read: false,
       createdAt: serverTimestamp(),
-    })
+    }
   );
   void getUserPushToken(opts.recipientUid).then((token) => {
     if (!token) return;
@@ -183,15 +185,15 @@ export async function toggleCatchReaction(
     })
   );
   if (!snap.exists()) {
-    // Only notify on first reaction, not on reaction change
-    await notifyInteraction({
+    // Only notify on first reaction, not on reaction change — fire-and-forget
+    notifyInteraction({
       recipientUid: catchOwnerUid,
       actorUid: myUid,
-      actorName,
+      actorName: (actorName || 'Рибар').slice(0, 120),
       type: 'like',
       catchId,
       reactionEmoji: REACTIONS[reaction].emoji,
-    });
+    }).catch(() => {});
   }
   return reaction;
 }
@@ -259,20 +261,21 @@ export async function addCatchComment(
     collection(fb.db, 'publicCatches', catchId, 'comments'),
     stripUndefinedForFirestore({
       authorUid,
-      authorName,
+      authorName: authorName || 'Рибар',
       text: trimmed.slice(0, 2000),
       createdAt: serverTimestamp(),
       ...(replyTo ? { replyToId: replyTo.id, replyToName: replyTo.name } : {}),
     })
   );
-  await notifyInteraction({
+  // Notification is fire-and-forget — never block or surface errors to the user
+  notifyInteraction({
     recipientUid: catchOwnerUid,
     actorUid: authorUid,
-    actorName: authorName,
+    actorName: (authorName || 'Рибар').slice(0, 120),
     type: 'comment',
     catchId,
     preview: trimmed.slice(0, 120),
-  });
+  }).catch(() => {});
 }
 
 export function subscribeMyNotifications(myUid: string, onNext: (items: SocialNotification[]) => void): () => void {
