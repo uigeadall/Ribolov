@@ -36,22 +36,27 @@ async function readCatches(): Promise<Catch[]> {
 }
 
 async function writeCatches(items: Catch[]): Promise<void> {
+  // Always store a new array reference so React detects the change via reference equality
   _catchesCache = items;
   await writeJson(KEYS.catches, items);
 }
 
 export const catchesStore = {
-  list: () => readCatches(),
+  // Return a shallow copy so every call gives a new reference — React useMemo will
+  // always see a changed dependency and recompute filtered lists after a save.
+  list: () => readCatches().then((c) => [...c]),
   replaceAll: async (items: Catch[]) => {
-    await writeCatches(items);
+    await writeCatches([...items]);
   },
   save: async (item: Catch) => {
     const all = await readCatches();
     const idx = all.findIndex((c) => c.id === item.id);
-    if (idx >= 0) all[idx] = item;
-    else all.unshift(item);
-    await writeCatches(all);
-    return all;
+    // Build a new array — never mutate the cached reference in-place
+    const next = idx >= 0
+      ? all.map((c, i) => (i === idx ? item : c))
+      : [item, ...all];
+    await writeCatches(next);
+    return next;
   },
   remove: async (id: string) => {
     const all = await readCatches();
