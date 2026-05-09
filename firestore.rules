@@ -106,7 +106,9 @@ service cloud.firestore {
 
       match /likes/{uid} {
         allow read: if signedIn();
-        allow write: if isSelf(uid);
+        allow write: if isSelf(uid)
+          && (!('reaction' in request.resource.data)
+            || request.resource.data.reaction in ['heart','fire','trophy','fish','wow']);
       }
       match /comments/{commentId} {
         allow read: if signedIn();

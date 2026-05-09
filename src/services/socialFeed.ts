@@ -19,12 +19,26 @@ import { stripUndefinedForFirestore } from './firestoreSanitize';
 import { allowComment, allowLikeToggle } from './socialRateLimit';
 import { getUserPushToken, sendPushNotification } from './pushNotifications';
 
+export type ReactionType = 'heart' | 'fire' | 'trophy' | 'fish' | 'wow';
+
+export const REACTIONS: Record<ReactionType, { emoji: string; label: string }> = {
+  heart:  { emoji: '❤️', label: 'Харесвам' },
+  fire:   { emoji: '🔥', label: 'Огън' },
+  trophy: { emoji: '🏆', label: 'Трофей' },
+  fish:   { emoji: '🎣', label: 'Улов' },
+  wow:    { emoji: '😮', label: 'Уау' },
+};
+
+export type ReactionSummaryItem = { type: ReactionType; emoji: string; count: number };
+
 export type FeedComment = {
   id: string;
   authorUid: string;
   authorName: string;
   text: string;
   createdAt?: unknown;
+  replyToId?: string;
+  replyToName?: string;
 };
 
 export type SocialNotification = {
@@ -38,12 +52,26 @@ export type SocialNotification = {
   createdAt?: unknown;
 };
 
-export type CatchLiker = { uid: string; displayName: string };
+export type CatchLiker = { uid: string; displayName: string; reaction?: ReactionType };
 
-export function subscribeMyLikeOnCatch(catchId: string, myUid: string, cb: (liked: boolean) => void): () => void {
+/** Subscribe to the current user's reaction on a catch (null = no reaction). */
+export function subscribeMyReactionOnCatch(
+  catchId: string,
+  myUid: string,
+  cb: (reaction: ReactionType | null) => void
+): () => void {
   const fb = ensureFirebase();
   if (!fb) return () => {};
-  return onSnapshot(doc(fb.db, 'publicCatches', catchId, 'likes', myUid), (snap) => cb(snap.exists()));
+  return onSnapshot(doc(fb.db, 'publicCatches', catchId, 'likes', myUid), (snap) => {
+    if (!snap.exists()) { cb(null); return; }
+    const r = snap.data()?.reaction as ReactionType | undefined;
+    cb(r ?? 'heart');
+  });
+}
+
+/** @deprecated use subscribeMyReactionOnCatch */
+export function subscribeMyLikeOnCatch(catchId: string, myUid: string, cb: (liked: boolean) => void): () => void {
+  return subscribeMyReactionOnCatch(catchId, myUid, (r) => cb(r !== null));
 }
 
 export async function fetchCatchLikeCount(catchId: string): Promise<number> {
@@ -68,6 +96,25 @@ export async function fetchCatchCommentCount(catchId: string): Promise<number> {
   }
 }
 
+/** Returns top reactions with counts, sorted by count descending. */
+export async function fetchReactionSummary(catchId: string): Promise<ReactionSummaryItem[]> {
+  const fb = ensureFirebase();
+  if (!fb) return [];
+  try {
+    const snap = await getDocs(query(collection(fb.db, 'publicCatches', catchId, 'likes'), limit(200)));
+    const counts = new Map<ReactionType, number>();
+    snap.docs.forEach((d) => {
+      const r: ReactionType = (d.data().reaction as ReactionType) ?? 'heart';
+      counts.set(r, (counts.get(r) ?? 0) + 1);
+    });
+    return [...counts.entries()]
+      .map(([type, count]) => ({ type, emoji: REACTIONS[type].emoji, count }))
+      .sort((a, b) => b.count - a.count);
+  } catch {
+    return [];
+  }
+}
+
 async function notifyInteraction(opts: {
   recipientUid: string;
   actorUid: string;
@@ -75,6 +122,7 @@ async function notifyInteraction(opts: {
   type: 'like' | 'comment';
   catchId: string;
   preview?: string;
+  reactionEmoji?: string;
 }): Promise<void> {
   if (opts.recipientUid === opts.actorUid) return;
   const fb = ensureFirebase();
@@ -91,26 +139,29 @@ async function notifyInteraction(opts: {
       createdAt: serverTimestamp(),
     })
   );
-  // Send device push notification (fire-and-forget)
   void getUserPushToken(opts.recipientUid).then((token) => {
     if (!token) return;
     const isLike = opts.type === 'like';
+    const emoji = opts.reactionEmoji ?? '❤️';
     sendPushNotification({
       to: token,
       title: opts.actorName,
-      body: isLike ? 'Харесва твоя улов 🎣' : `Коментира: ${(opts.preview ?? '').slice(0, 80)}`,
+      body: isLike
+        ? `Реагира ${emoji} на твоя улов`
+        : `Коментира: ${(opts.preview ?? '').slice(0, 80)}`,
       data: { type: opts.type, catchId: opts.catchId },
     });
   }).catch(() => {});
 }
 
-/** Връща true ако след операцията уловът е харесан. */
-export async function toggleCatchLike(
+/** Toggle or change a reaction. Pass null to remove. Returns the active reaction or null. */
+export async function toggleCatchReaction(
   catchId: string,
   myUid: string,
   catchOwnerUid: string,
-  actorName: string
-): Promise<boolean> {
+  actorName: string,
+  reaction: ReactionType
+): Promise<ReactionType | null> {
   if (!allowLikeToggle(myUid)) {
     throw new Error('Твърде често — опитай отново след секунда.');
   }
@@ -118,25 +169,42 @@ export async function toggleCatchLike(
   if (!fb) throw new Error('Firebase не е наличен.');
   const refLike = doc(fb.db, 'publicCatches', catchId, 'likes', myUid);
   const snap = await getDoc(refLike);
-  if (snap.exists()) {
+  // If same reaction already active — remove it
+  if (snap.exists() && (snap.data()?.reaction ?? 'heart') === reaction) {
     await deleteDoc(refLike);
-    return false;
+    return null;
   }
   await setDoc(
     refLike,
     stripUndefinedForFirestore({
       createdAt: serverTimestamp(),
       displayName: actorName.slice(0, 120),
+      reaction,
     })
   );
-  await notifyInteraction({
-    recipientUid: catchOwnerUid,
-    actorUid: myUid,
-    actorName,
-    type: 'like',
-    catchId,
-  });
-  return true;
+  if (!snap.exists()) {
+    // Only notify on first reaction, not on reaction change
+    await notifyInteraction({
+      recipientUid: catchOwnerUid,
+      actorUid: myUid,
+      actorName,
+      type: 'like',
+      catchId,
+      reactionEmoji: REACTIONS[reaction].emoji,
+    });
+  }
+  return reaction;
+}
+
+/** @deprecated use toggleCatchReaction */
+export async function toggleCatchLike(
+  catchId: string,
+  myUid: string,
+  catchOwnerUid: string,
+  actorName: string
+): Promise<boolean> {
+  const r = await toggleCatchReaction(catchId, myUid, catchOwnerUid, actorName, 'heart');
+  return r !== null;
 }
 
 export function subscribeCatchComments(catchId: string, onNext: (comments: FeedComment[]) => void): () => void {
@@ -150,8 +218,23 @@ export function subscribeCatchComments(catchId: string, onNext: (comments: FeedC
   return onSnapshot(q, (snap) => {
     onNext(
       snap.docs.map((d) => {
-        const data = d.data() as { authorUid: string; authorName: string; text: string; createdAt?: unknown };
-        return { id: d.id, ...data };
+        const data = d.data() as {
+          authorUid: string;
+          authorName: string;
+          text: string;
+          createdAt?: unknown;
+          replyToId?: string;
+          replyToName?: string;
+        };
+        return {
+          id: d.id,
+          authorUid: data.authorUid,
+          authorName: data.authorName,
+          text: data.text,
+          createdAt: data.createdAt,
+          replyToId: data.replyToId,
+          replyToName: data.replyToName,
+        };
       })
     );
   });
@@ -162,7 +245,8 @@ export async function addCatchComment(
   authorUid: string,
   authorName: string,
   text: string,
-  catchOwnerUid: string
+  catchOwnerUid: string,
+  replyTo?: { id: string; name: string }
 ): Promise<void> {
   if (!allowComment(authorUid)) {
     throw new Error('Твърде много коментари за кратко време. Опитай по-късно.');
@@ -178,6 +262,7 @@ export async function addCatchComment(
       authorName,
       text: trimmed.slice(0, 2000),
       createdAt: serverTimestamp(),
+      ...(replyTo ? { replyToId: replyTo.id, replyToName: replyTo.name } : {}),
     })
   );
   await notifyInteraction({
@@ -231,7 +316,6 @@ export async function markNotificationRead(myUid: string, notifId: string): Prom
   await updateDoc(doc(fb.db, 'users', myUid, 'notifications', notifId), stripUndefinedForFirestore({ read: true }));
 }
 
-/** Известие за нов последовател (получателят е следваният профил). */
 export async function sendFollowNotification(
   followedUid: string,
   followerUid: string,
@@ -269,18 +353,17 @@ export async function fetchCatchLikers(catchId: string): Promise<CatchLiker[]> {
   try {
     const snap = await getDocs(query(collection(fb.db, 'publicCatches', catchId, 'likes'), limit(80)));
     return snap.docs.map((d) => {
-      const data = d.data() as { displayName?: string };
+      const data = d.data() as { displayName?: string; reaction?: ReactionType };
       const name = typeof data.displayName === 'string' && data.displayName.trim()
         ? data.displayName.trim().slice(0, 120)
         : 'Рибар';
-      return { uid: d.id, displayName: name };
+      return { uid: d.id, displayName: name, reaction: data.reaction };
     });
   } catch {
     return [];
   }
 }
 
-/** Връща true ако уловът е запазен след операцията. */
 export async function toggleSaveCatch(myUid: string, catchId: string): Promise<boolean> {
   const fb = ensureFirebase();
   if (!fb) throw new Error('Firebase не е наличен.');
@@ -300,7 +383,6 @@ export function subscribeCatchSaved(myUid: string, catchId: string, cb: (saved: 
   return onSnapshot(doc(fb.db, 'users', myUid, 'savedCatches', catchId), (s) => cb(s.exists()));
 }
 
-/** Ред на catchId по дата на запазване (най-новите отгоре). */
 export function subscribeSavedCatchIdsOrdered(myUid: string, onNext: (ids: string[]) => void): () => void {
   const fb = ensureFirebase();
   if (!fb) return () => {};

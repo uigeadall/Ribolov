@@ -21,14 +21,18 @@ import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
 import { Card } from './Card';
 import {
-  subscribeMyLikeOnCatch,
+  subscribeMyReactionOnCatch,
   fetchCatchLikeCount,
-  toggleCatchLike,
+  fetchReactionSummary,
+  toggleCatchReaction,
   subscribeCatchComments,
   addCatchComment,
   subscribeCatchSaved,
   toggleSaveCatch,
   fetchCatchLikers,
+  REACTIONS,
+  type ReactionType,
+  type ReactionSummaryItem,
   type FeedComment,
   type CatchLiker,
 } from '../services/socialFeed';
@@ -194,11 +198,14 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
 
   const avatarUrl = (isMine ? myPhotoUrl?.trim() : undefined) || storedAvatar || fetchedAvatar;
 
-  const [liked, setLiked] = useState(false);
+  const [myReaction, setMyReaction] = useState<ReactionType | null>(null);
+  const [reactionPickerOpen, setReactionPickerOpen] = useState(false);
+  const [reactionSummary, setReactionSummary] = useState<ReactionSummaryItem[]>([]);
   const [likeBusy, setLikeBusy] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
   const [comments, setComments] = useState<FeedComment[]>([]);
   const [draft, setDraft] = useState('');
+  const [replyingTo, setReplyingTo] = useState<{ id: string; name: string } | null>(null);
   const [sendBusy, setSendBusy] = useState(false);
 
   const [saved, setSaved] = useState(false);
@@ -219,15 +226,18 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
     if (!socialEnabled || !myUid || !catchId || !isVisible) return;
     let cancelled = false;
     void (async () => {
-      const lc = await fetchCatchLikeCount(catchId);
-      if (!cancelled) setLikeCount(lc);
+      const [lc, summary] = await Promise.all([
+        fetchCatchLikeCount(catchId),
+        fetchReactionSummary(catchId),
+      ]);
+      if (!cancelled) { setLikeCount(lc); setReactionSummary(summary); }
     })();
     return () => { cancelled = true; };
   }, [socialEnabled, myUid, catchId, isVisible]);
 
   useEffect(() => {
     if (!socialEnabled || !myUid || !catchId || !isVisible) return () => {};
-    const unsub = subscribeMyLikeOnCatch(catchId, myUid, setLiked);
+    const unsub = subscribeMyReactionOnCatch(catchId, myUid, setMyReaction);
     return unsub;
   }, [socialEnabled, myUid, catchId, isVisible]);
 
@@ -260,20 +270,27 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
     }
   }, [catchId, likeCount]);
 
-  const onToggleLike = useCallback(async () => {
+  const onPickReaction = useCallback(async (reaction: ReactionType) => {
     if (!socialEnabled || !myUid || likeBusyRef.current) return;
+    setReactionPickerOpen(false);
     likeBusyRef.current = true;
     setLikeBusy(true);
+    const prev = myReaction;
     try {
-      const next = await toggleCatchLike(catchId, myUid, item.ownerUid, myDisplayName);
-      setLikeCount((n) => Math.max(0, n + (next ? 1 : -1)));
+      const next = await toggleCatchReaction(catchId, myUid, item.ownerUid, myDisplayName, reaction);
+      // Update count: +1 if new reaction, -1 if removed, 0 if changed
+      if (!prev && next) setLikeCount((n) => n + 1);
+      else if (prev && !next) setLikeCount((n) => Math.max(0, n - 1));
+      // Refresh summary
+      const summary = await fetchReactionSummary(catchId);
+      setReactionSummary(summary);
     } catch (e) {
-      Alert.alert('Харесване', e instanceof Error ? e.message : 'Неуспешно действие.');
+      Alert.alert('Реакция', e instanceof Error ? e.message : 'Неуспешно действие.');
     } finally {
       likeBusyRef.current = false;
       setLikeBusy(false);
     }
-  }, [socialEnabled, myUid, catchId, item.ownerUid, myDisplayName]);
+  }, [socialEnabled, myUid, catchId, item.ownerUid, myDisplayName, myReaction]);
 
   const onToggleSave = useCallback(async () => {
     if (!socialEnabled || !myUid || saveBusyRef.current) return;
@@ -334,9 +351,11 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
     if (!t) return;
     sendBusyRef.current = true;
     setSendBusy(true);
+    const reply = replyingTo;
     try {
-      await addCatchComment(catchId, myUid, myDisplayName, t, item.ownerUid);
+      await addCatchComment(catchId, myUid, myDisplayName, t, item.ownerUid, reply ?? undefined);
       setDraft('');
+      setReplyingTo(null);
     } catch (e) {
       Alert.alert('Коментар', e instanceof Error ? e.message : 'Неуспешно изпращане.');
     } finally {
@@ -399,17 +418,47 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
 
         {socialEnabled ? (
           <>
+            {/* ── Reaction picker popup ── */}
+            <Modal visible={reactionPickerOpen} transparent animationType="fade" onRequestClose={() => setReactionPickerOpen(false)}>
+              <Pressable style={{ flex: 1 }} onPress={() => setReactionPickerOpen(false)}>
+                <View style={{ position: 'absolute', bottom: 120, left: spacing.lg, right: spacing.lg, backgroundColor: colors.card, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, flexDirection: 'row', justifyContent: 'space-around', padding: spacing.sm, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 8 }}>
+                  {(Object.entries(REACTIONS) as [ReactionType, { emoji: string; label: string }][]).map(([type, r]) => (
+                    <Pressable key={type} onPress={() => onPickReaction(type)} style={{ alignItems: 'center', padding: spacing.sm, borderRadius: radius.md, backgroundColor: myReaction === type ? colors.primarySurface : 'transparent' }}>
+                      <Text style={{ fontSize: 28 }}>{r.emoji}</Text>
+                      <Text style={{ ...typography.caption, color: colors.textMuted, marginTop: 2, fontSize: 10 }}>{r.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </Pressable>
+            </Modal>
+
             <View style={styles.socialRow}>
-              <Pressable onPress={onToggleLike} disabled={likeBusy} style={styles.socialBtn} hitSlop={8}>
+              {/* Reaction button — tap to toggle current/default, long-press for picker */}
+              <Pressable
+                onPress={() => myReaction ? onPickReaction(myReaction) : setReactionPickerOpen(true)}
+                onLongPress={() => setReactionPickerOpen(true)}
+                disabled={likeBusy}
+                style={styles.socialBtn}
+                hitSlop={8}
+                delayLongPress={300}
+              >
                 {likeBusy ? (
                   <ActivityIndicator size="small" color={colors.primary} />
                 ) : (
-                  <Ionicons name={liked ? 'heart' : 'heart-outline'} size={22} color={liked ? colors.danger : colors.textMuted} />
+                  <Text style={{ fontSize: 22 }}>{myReaction ? REACTIONS[myReaction].emoji : '🤍'}</Text>
                 )}
               </Pressable>
-              <Pressable onPress={openLikers} disabled={likeCount === 0} hitSlop={8} style={styles.socialBtn}>
-                <Text style={liked ? styles.likedLbl : styles.socialLbl}>{likeCount}</Text>
+
+              {/* Reaction summary — top 3 emojis + total count */}
+              <Pressable onPress={openLikers} disabled={likeCount === 0} hitSlop={8} style={[styles.socialBtn, { gap: 2 }]}>
+                {reactionSummary.slice(0, 3).map((r) => (
+                  <Text key={r.type} style={{ fontSize: 14 }}>{r.emoji}</Text>
+                ))}
+                {likeCount > 0 && (
+                  <Text style={[myReaction ? styles.likedLbl : styles.socialLbl, { marginLeft: 2 }]}>{likeCount}</Text>
+                )}
               </Pressable>
+
               <Pressable onPress={onReportCatch} style={styles.socialBtn} hitSlop={8} accessibilityLabel="Докладвай публикацията">
                 <Ionicons name="flag-outline" size={20} color={colors.textMuted} />
               </Pressable>
@@ -430,16 +479,49 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
             </View>
 
             <View style={styles.commentsWrap}>
-              {comments.map((c) => (
-                <View key={c.id} style={styles.commentRow}>
-                  <Text style={styles.commentAuthor}>{c.authorName}</Text>
-                  <Text style={styles.commentText}>{c.text}</Text>
+              {comments.map((c) => {
+                const isReply = !!c.replyToId;
+                return (
+                  <View key={c.id} style={[styles.commentRow, isReply && { marginLeft: spacing.xl }]}>
+                    {isReply && (
+                      <Text style={{ ...typography.caption, color: colors.textMuted, marginBottom: 2 }}>
+                        ↩ відповідь {c.replyToName}
+                      </Text>
+                    )}
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.commentAuthor}>{c.authorName}</Text>
+                        <Text style={styles.commentText}>{c.text}</Text>
+                      </View>
+                      {myUid && (
+                        <Pressable
+                          onPress={() => { setReplyingTo({ id: c.id, name: c.authorName }); }}
+                          hitSlop={8}
+                          style={{ paddingLeft: spacing.sm, paddingTop: 2 }}
+                        >
+                          <Text style={{ ...typography.caption, color: colors.primary }}>Отговори</Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  </View>
+                );
+              })}
+
+              {/* Reply-to badge */}
+              {replyingTo && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.primarySurface, borderRadius: radius.sm, paddingHorizontal: spacing.sm, paddingVertical: 4, marginBottom: spacing.xs, gap: spacing.sm }}>
+                  <Ionicons name="return-down-forward-outline" size={14} color={colors.primary} />
+                  <Text style={{ ...typography.caption, color: colors.primary, flex: 1 }}>Отговор на {replyingTo.name}</Text>
+                  <Pressable onPress={() => setReplyingTo(null)} hitSlop={8}>
+                    <Ionicons name="close-circle" size={16} color={colors.textMuted} />
+                  </Pressable>
                 </View>
-              ))}
+              )}
+
               <View style={styles.composer}>
                 <TextInput
                   style={styles.input}
-                  placeholder="Коментар…"
+                  placeholder={replyingTo ? `Отговор на ${replyingTo.name}…` : 'Коментар…'}
                   placeholderTextColor={colors.textMuted}
                   value={draft}
                   onChangeText={setDraft}
