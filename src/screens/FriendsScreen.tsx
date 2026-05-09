@@ -18,7 +18,7 @@ import { EmptyState } from '../components/EmptyState';
 import { useTheme } from '../services/themeContext';
 import { spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
-import { followUser, getFollowing, unfollowUser } from '../services/cloudSync';
+import { followUser, getFollowing, unfollowUser, getUserPublicSummary } from '../services/cloudSync';
 import { sendFollowNotification } from '../services/socialFeed';
 import { formatFirebaseError } from '../services/firebaseErrors';
 
@@ -34,7 +34,19 @@ export default function FriendsScreen() {
     if (!user) return;
     setRefreshing(true);
     try {
-      setRows(await getFollowing(user.uid));
+      const all = await getFollowing(user.uid);
+      // Check each followed user still exists; silently unfollow deleted accounts
+      const summaries = await Promise.all(
+        all.map((r) => getUserPublicSummary(r.uid).catch(() => null))
+      );
+      const staleUids: string[] = [];
+      const active = all.filter((r, i) => {
+        if (summaries[i] == null) { staleUids.push(r.uid); return false; }
+        return true;
+      });
+      // Clean up stale follows in the background — don't block the UI
+      staleUids.forEach((uid) => unfollowUser(user.uid, uid).catch(() => {}));
+      setRows(active);
     } catch (e: unknown) {
       Alert.alert('Грешка', formatFirebaseError(e));
     } finally {

@@ -572,7 +572,24 @@ export async function deleteAllUserCloudData(uid: string): Promise<void> {
   if (!fb) return;
   await deleteAllUserDamFeedPosts(uid);
 
-  const subs = ['catches', 'spots', 'following', 'joinedTournaments', 'notifications', 'savedCatches'] as const;
+  // Remove this user from every follower's "following" list before deleting the followers mirror
+  const followersSnap = await getDocs(collection(fb.db, 'users', uid, 'followers')).catch(() => null);
+  if (followersSnap && !followersSnap.empty) {
+    let backlinkBatch = writeBatch(fb.db);
+    let bn = 0;
+    for (const d of followersSnap.docs) {
+      backlinkBatch.delete(doc(fb.db, 'users', d.id, 'following', uid));
+      bn++;
+      if (bn >= 400) {
+        await backlinkBatch.commit();
+        backlinkBatch = writeBatch(fb.db);
+        bn = 0;
+      }
+    }
+    if (bn > 0) await backlinkBatch.commit();
+  }
+
+  const subs = ['catches', 'spots', 'following', 'followers', 'joinedTournaments', 'notifications', 'savedCatches'] as const;
   for (const sub of subs) {
     const snap = await getDocs(collection(fb.db, 'users', uid, sub));
     let batch = writeBatch(fb.db);
