@@ -361,15 +361,11 @@ export async function getFollowing(myUid: string) {
 export async function isMutualFollow(myUid: string, otherUid: string): Promise<boolean> {
   const fb = ensureFirebase();
   if (!fb || !myUid || !otherUid || myUid === otherUid) return false;
-  try {
-    const [mine, theirs] = await Promise.all([
-      getDoc(doc(fb.db, 'users', myUid, 'following', otherUid)),
-      getDoc(doc(fb.db, 'users', otherUid, 'following', myUid)),
-    ]);
-    return mine.exists() && theirs.exists();
-  } catch {
-    return false;
-  }
+  const [mine, theirs] = await Promise.all([
+    getDoc(doc(fb.db, 'users', myUid, 'following', otherUid)),
+    getDoc(doc(fb.db, 'users', otherUid, 'following', myUid)),
+  ]);
+  return mine.exists() && theirs.exists();
 }
 
 export async function ensureDirectConversation(
@@ -385,14 +381,16 @@ export async function ensureDirectConversation(
   const participantIds = [myUid, otherUid].sort();
   const convId = participantIds.join('_');
   const convRef = doc(fb.db, 'conversations', convId);
-  const existing = await getDoc(convRef);
+  // Read first to avoid overwriting lastMessageAt on re-open.
+  // The rule now allows reading non-existent docs (resource == null), so this is safe.
+  const existing = await getDoc(convRef).catch(() => null);
+  const isNew = !existing?.exists();
   await setDoc(
     convRef,
     stripUndefinedForFirestore({
       participantIds,
       participantNames: { [myUid]: myName, [otherUid]: otherName },
-      // Only set lastMessageAt on creation so it's never null — existing convs keep their value
-      ...(!existing.exists() ? { lastMessageAt: serverTimestamp() } : {}),
+      ...(isNew ? { lastMessageAt: serverTimestamp() } : {}),
     }),
     { merge: true }
   );
