@@ -67,11 +67,16 @@ export default function CatchDetailScreen() {
     [colors]
   );
 
+  const safeGoBack = () => {
+    if (navigation.canGoBack()) navigation.goBack();
+    else navigation.navigate('LogbookList');
+  };
+
   if (!item) {
     return (
       <Screen>
         <Text style={{ ...typography.body, color: colors.textMuted }}>Уловът не е намерен.</Text>
-        <Button title="Назад" variant="secondary" onPress={() => navigation.goBack()} style={{ marginTop: spacing.lg }} />
+        <Button title="Назад" variant="secondary" onPress={safeGoBack} style={{ marginTop: spacing.lg }} />
       </Screen>
     );
   }
@@ -84,7 +89,7 @@ export default function CatchDetailScreen() {
         style: 'destructive',
         onPress: async () => {
           await catchesStore.remove(item.id);
-          navigation.goBack();
+          safeGoBack();
         },
       },
     ]);

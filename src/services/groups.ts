@@ -181,6 +181,13 @@ export async function postToGroup(
   await updateDoc(doc(fb.db, 'groups', groupId), { postCount: increment(1) });
 }
 
+export async function deleteGroupPost(groupId: string, postId: string): Promise<void> {
+  const fb = ensureFirebase();
+  if (!fb) throw new Error('Firebase не е наличен.');
+  await deleteDoc(doc(fb.db, 'groups', groupId, 'posts', postId));
+  await updateDoc(doc(fb.db, 'groups', groupId), { postCount: increment(-1) }).catch(() => {});
+}
+
 export async function getGroupPosts(groupId: string, maxCount = 40): Promise<GroupPost[]> {
   const fb = ensureFirebase();
   if (!fb) return [];

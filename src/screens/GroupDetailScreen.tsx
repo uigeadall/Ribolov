@@ -14,7 +14,7 @@ import { radius, spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
 import {
   getGroup, getGroupPosts, getMembers, isMember,
-  joinGroup, leaveGroup, postToGroup,
+  joinGroup, leaveGroup, postToGroup, deleteGroupPost,
   type Group, type GroupPost,
 } from '../services/groups';
 import type { ProfileStackParamList } from '../navigation/types';
@@ -112,6 +112,26 @@ export default function GroupDetailScreen() {
     }
   };
 
+  const isAdmin = group?.createdBy === user?.uid;
+
+  const handleDeletePost = (post: GroupPost) => {
+    Alert.alert('Изтриване', 'Да се изтрие публикацията?', [
+      { text: 'Отказ', style: 'cancel' },
+      {
+        text: 'Изтрий',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteGroupPost(groupId, post.id);
+            setPosts((prev) => prev.filter((p) => p.id !== post.id));
+          } catch (e: unknown) {
+            Alert.alert('Грешка', e instanceof Error ? e.message : 'Неуспешно изтриване.');
+          }
+        },
+      },
+    ]);
+  };
+
   const formatTime = (iso: string) => {
     try { return new Date(iso).toLocaleString('bg-BG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); }
     catch { return ''; }
@@ -162,8 +182,17 @@ export default function GroupDetailScreen() {
           }
           renderItem={({ item }) => (
             <Card style={styles.postRow}>
-              <Text style={styles.postAuthor}>{item.ownerName}</Text>
-              {item.createdAt ? <Text style={styles.postTime}>{formatTime(item.createdAt)}</Text> : null}
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.postAuthor}>{item.ownerName}</Text>
+                  {item.createdAt ? <Text style={styles.postTime}>{formatTime(item.createdAt)}</Text> : null}
+                </View>
+                {(user && (item.ownerUid === user.uid || isAdmin)) ? (
+                  <Pressable onPress={() => handleDeletePost(item)} hitSlop={8}>
+                    <Ionicons name="trash-outline" size={16} color={colors.danger} />
+                  </Pressable>
+                ) : null}
+              </View>
               <Text style={styles.postText}>{item.text}</Text>
             </Card>
           )}

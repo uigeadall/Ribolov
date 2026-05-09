@@ -69,10 +69,14 @@ export default function NotificationsScreen() {
   }, [configured, user?.uid]);
 
   const onOpen = useCallback(
-    async (n: SocialNotification) => {
+    (n: SocialNotification) => {
       if (!user?.uid) return;
       if (!n.read) {
-        await markNotificationRead(user.uid, n.id).catch(() => undefined);
+        // Optimistically mark as read in local state immediately — Firestore write is best-effort.
+        // The realtime subscription will confirm once online; if offline the dot reappears on reconnect
+        // which is acceptable vs. the current bug where it always stays unread.
+        setItems((prev) => prev.map((item) => item.id === n.id ? { ...item, read: true } : item));
+        markNotificationRead(user.uid, n.id).catch(() => {});
       }
       navigation.navigate('UserPublicProfile', { uid: n.actorUid, displayName: n.actorName });
     },

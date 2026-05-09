@@ -98,7 +98,10 @@ service cloud.firestore {
             && request.resource.data.notes.size() <= 2000))
         && (!('bait' in request.resource.data)
           || (request.resource.data.bait is string
-            && request.resource.data.bait.size() <= 300));
+            && request.resource.data.bait.size() <= 300))
+        && (!('extraPhotoUris' in request.resource.data)
+          || (request.resource.data.extraPhotoUris is list
+            && request.resource.data.extraPhotoUris.size() <= 5));
       allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
 
       match /likes/{uid} {
