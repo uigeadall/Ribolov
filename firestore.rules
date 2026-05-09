@@ -10,15 +10,6 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == uid;
     }
 
-    /** Двете страни следват взаимно — нужно за чат. */
-    function mutualFollow(participantIds) {
-      let other = participantIds[0] == request.auth.uid
-        ? participantIds[1]
-        : participantIds[0];
-      return exists(/databases/$(database)/documents/users/$(request.auth.uid)/following/$(other))
-        && exists(/databases/$(database)/documents/users/$(other)/following/$(request.auth.uid));
-    }
-
     /** Профил и лични подколекции — само собственикът пише. */
     match /users/{userId} {
       allow read: if signedIn();
