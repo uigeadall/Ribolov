@@ -202,6 +202,27 @@ service cloud.firestore {
         && (!('mediaUrl' in request.resource.data) || request.resource.data.mediaUrl is string);
       allow delete: if signedIn() && resource.data.uid == request.auth.uid;
       allow update: if false;
+
+      match /reactions/{uid} {
+        allow read: if signedIn();
+        allow write: if isSelf(uid)
+          && (!('reaction' in request.resource.data)
+            || request.resource.data.reaction in ['heart','fire','trophy','fish','wow']);
+      }
+
+      match /comments/{commentId} {
+        allow read: if signedIn();
+        allow create: if signedIn()
+          && request.resource.data.authorUid == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 500;
+        allow delete: if signedIn() && (
+          resource.data.authorUid == request.auth.uid
+          || get(/databases/$(database)/documents/stories/$(storyId)).data.uid == request.auth.uid
+        );
+        allow update: if false;
+      }
     }
 
     /** Рибарски рапорти за водоеми — всеки логнат може да пише/чете; само авторът изтрива. */

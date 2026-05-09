@@ -3,10 +3,13 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
+  onSnapshot,
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   where,
   limit,
 } from 'firebase/firestore';
@@ -29,6 +32,26 @@ export type Story = {
   mediaType?: 'photo' | 'video';
   createdAt: string;
   expiresAt: number;
+};
+
+export type StoryReactionType = 'heart' | 'fire' | 'trophy' | 'fish' | 'wow';
+
+export const STORY_REACTIONS: Record<StoryReactionType, { emoji: string; label: string }> = {
+  heart:  { emoji: '❤️', label: 'Харесвам' },
+  fire:   { emoji: '🔥', label: 'Огън' },
+  trophy: { emoji: '🏆', label: 'Трофей' },
+  fish:   { emoji: '🎣', label: 'Улов' },
+  wow:    { emoji: '😮', label: 'Уау' },
+};
+
+export type StoryReactionSummary = { type: StoryReactionType; emoji: string; count: number };
+
+export type StoryComment = {
+  id: string;
+  authorUid: string;
+  authorName: string;
+  text: string;
+  createdAt?: unknown;
 };
 
 /** Качва снимка или видео в Firebase Storage под stories/{uid}/. */
@@ -105,6 +128,104 @@ export async function deleteStory(storyId: string): Promise<void> {
   const fb = ensureFirebase();
   if (!fb) return;
   await deleteDoc(doc(fb.db, 'stories', storyId));
+}
+
+/* ── Story Reactions ─────────────────────────────────────── */
+
+export function subscribeMyStoryReaction(
+  storyId: string,
+  uid: string,
+  cb: (reaction: StoryReactionType | null) => void
+): () => void {
+  const fb = ensureFirebase();
+  if (!fb) return () => {};
+  return onSnapshot(doc(fb.db, 'stories', storyId, 'reactions', uid), (snap) => {
+    if (!snap.exists()) { cb(null); return; }
+    cb((snap.data()?.reaction as StoryReactionType) ?? 'heart');
+  });
+}
+
+export async function toggleStoryReaction(
+  storyId: string,
+  uid: string,
+  displayName: string,
+  reaction: StoryReactionType
+): Promise<StoryReactionType | null> {
+  const fb = ensureFirebase();
+  if (!fb) throw new Error('Firebase не е наличен.');
+  const ref2 = doc(fb.db, 'stories', storyId, 'reactions', uid);
+  const snap = await getDoc(ref2);
+  if (snap.exists() && (snap.data()?.reaction ?? 'heart') === reaction) {
+    await deleteDoc(ref2);
+    return null;
+  }
+  await setDoc(ref2, { reaction, displayName: (displayName || 'Рибар').slice(0, 120), createdAt: serverTimestamp() });
+  return reaction;
+}
+
+export async function getStoryReactionSummary(storyId: string): Promise<StoryReactionSummary[]> {
+  const fb = ensureFirebase();
+  if (!fb) return [];
+  try {
+    const snap = await getDocs(collection(fb.db, 'stories', storyId, 'reactions'));
+    const counts = new Map<StoryReactionType, number>();
+    snap.docs.forEach((d) => {
+      const r: StoryReactionType = (d.data().reaction as StoryReactionType) ?? 'heart';
+      counts.set(r, (counts.get(r) ?? 0) + 1);
+    });
+    return [...counts.entries()]
+      .map(([type, count]) => ({ type, emoji: STORY_REACTIONS[type].emoji, count }))
+      .sort((a, b) => b.count - a.count);
+  } catch {
+    return [];
+  }
+}
+
+/* ── Story Comments ──────────────────────────────────────── */
+
+export function subscribeStoryComments(
+  storyId: string,
+  onNext: (comments: StoryComment[]) => void
+): () => void {
+  const fb = ensureFirebase();
+  if (!fb) return () => {};
+  const q = query(
+    collection(fb.db, 'stories', storyId, 'comments'),
+    orderBy('createdAt', 'asc'),
+    limit(50)
+  );
+  return onSnapshot(q, (snap) => {
+    onNext(
+      snap.docs.map((d) => {
+        const data = d.data() as { authorUid: string; authorName: string; text: string; createdAt?: unknown };
+        return { id: d.id, authorUid: data.authorUid, authorName: data.authorName, text: data.text, createdAt: data.createdAt };
+      })
+    );
+  });
+}
+
+export async function addStoryComment(
+  storyId: string,
+  authorUid: string,
+  authorName: string,
+  text: string
+): Promise<void> {
+  const fb = ensureFirebase();
+  if (!fb) throw new Error('Firebase не е наличен.');
+  const trimmed = text.trim();
+  if (!trimmed) return;
+  await addDoc(collection(fb.db, 'stories', storyId, 'comments'), {
+    authorUid,
+    authorName: (authorName || 'Рибар').slice(0, 120),
+    text: trimmed.slice(0, 500),
+    createdAt: serverTimestamp(),
+  });
+}
+
+export async function deleteStoryComment(storyId: string, commentId: string): Promise<void> {
+  const fb = ensureFirebase();
+  if (!fb) return;
+  await deleteDoc(doc(fb.db, 'stories', storyId, 'comments', commentId));
 }
 
 export function timeAgo(iso: string): string {
