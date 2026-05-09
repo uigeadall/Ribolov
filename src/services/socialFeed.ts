@@ -37,6 +37,7 @@ export type FeedComment = {
   authorName: string;
   text: string;
   createdAt?: unknown;
+  editedAt?: unknown;
   replyToId?: string;
   replyToName?: string;
 };
@@ -234,6 +235,7 @@ export function subscribeCatchComments(catchId: string, onNext: (comments: FeedC
           authorName: data.authorName,
           text: data.text,
           createdAt: data.createdAt,
+          editedAt: (data as { editedAt?: unknown }).editedAt,
           replyToId: data.replyToId,
           replyToName: data.replyToName,
         };
@@ -276,6 +278,23 @@ export async function addCatchComment(
     catchId,
     preview: trimmed.slice(0, 120),
   }).catch(() => {});
+}
+
+export async function editCatchComment(catchId: string, commentId: string, newText: string): Promise<void> {
+  const fb = ensureFirebase();
+  if (!fb) throw new Error('Firebase не е наличен.');
+  const trimmed = newText.trim();
+  if (!trimmed) throw new Error('Текстът не може да е празен.');
+  await updateDoc(doc(fb.db, 'publicCatches', catchId, 'comments', commentId), {
+    text: trimmed.slice(0, 2000),
+    editedAt: serverTimestamp(),
+  });
+}
+
+export async function deleteCatchComment(catchId: string, commentId: string): Promise<void> {
+  const fb = ensureFirebase();
+  if (!fb) throw new Error('Firebase не е наличен.');
+  await deleteDoc(doc(fb.db, 'publicCatches', catchId, 'comments', commentId));
 }
 
 export function subscribeMyNotifications(myUid: string, onNext: (items: SocialNotification[]) => void): () => void {

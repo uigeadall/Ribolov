@@ -120,8 +120,16 @@ service cloud.firestore {
           && request.resource.data.text.size() > 0
           && request.resource.data.text.size() <= 2000
           && request.resource.data.createdAt == request.time;
-        allow update, delete: if signedIn()
-          && resource.data.authorUid == request.auth.uid;
+        allow update: if signedIn()
+          && resource.data.authorUid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 2000;
+        allow delete: if signedIn() && (
+          resource.data.authorUid == request.auth.uid
+          || get(/databases/$(database)/documents/publicCatches/$(catchId)).data.ownerUid == request.auth.uid
+        );
       }
     }
 

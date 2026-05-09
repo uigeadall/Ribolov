@@ -27,6 +27,8 @@ import {
   toggleCatchReaction,
   subscribeCatchComments,
   addCatchComment,
+  editCatchComment,
+  deleteCatchComment,
   subscribeCatchSaved,
   toggleSaveCatch,
   fetchCatchLikers,
@@ -207,6 +209,8 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
   const [draft, setDraft] = useState('');
   const [replyingTo, setReplyingTo] = useState<{ id: string; name: string } | null>(null);
   const [sendBusy, setSendBusy] = useState(false);
+  const [editingComment, setEditingComment] = useState<{ id: string; text: string } | null>(null);
+  const [editBusy, setEditBusy] = useState(false);
 
   const [saved, setSaved] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
@@ -345,6 +349,38 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
     ]);
   }, [socialEnabled, myUid, catchId]);
 
+  const onSaveEdit = useCallback(async () => {
+    if (!editingComment || editBusy) return;
+    const trimmed = editingComment.text.trim();
+    if (!trimmed) return;
+    setEditBusy(true);
+    try {
+      await editCatchComment(catchId, editingComment.id, trimmed);
+      setEditingComment(null);
+    } catch (e) {
+      Alert.alert('Грешка', e instanceof Error ? e.message : 'Неуспешно редактиране.');
+    } finally {
+      setEditBusy(false);
+    }
+  }, [catchId, editingComment, editBusy]);
+
+  const onDeleteComment = useCallback((commentId: string) => {
+    Alert.alert('Изтриване', 'Изтриване на коментара?', [
+      { text: 'Отказ', style: 'cancel' },
+      {
+        text: 'Изтрий',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteCatchComment(catchId, commentId);
+          } catch (e) {
+            Alert.alert('Грешка', e instanceof Error ? e.message : 'Неуспешно изтриване.');
+          }
+        },
+      },
+    ]);
+  }, [catchId]);
+
   const onSendComment = useCallback(async () => {
     if (!socialEnabled || !myUid || sendBusyRef.current) return;
     const t = draft.trim();
@@ -481,28 +517,80 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
             <View style={styles.commentsWrap}>
               {comments.map((c) => {
                 const isReply = !!c.replyToId;
+                const isMyComment = myUid === c.authorUid;
+                const canDelete = isMyComment || isMine;
+                const isEditing = editingComment?.id === c.id;
+
                 return (
                   <View key={c.id} style={[styles.commentRow, isReply && { marginLeft: spacing.xl }]}>
                     {isReply && (
                       <Text style={{ ...typography.caption, color: colors.textMuted, marginBottom: 2 }}>
-                        ↩ відповідь {c.replyToName}
+                        ↩ отговор на {c.replyToName}
                       </Text>
                     )}
-                    <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.commentAuthor}>{c.authorName}</Text>
-                        <Text style={styles.commentText}>{c.text}</Text>
+
+                    {isEditing ? (
+                      /* ── Inline edit mode ── */
+                      <View style={{ gap: spacing.xs }}>
+                        <TextInput
+                          value={editingComment.text}
+                          onChangeText={(t) => setEditingComment({ id: c.id, text: t })}
+                          style={[styles.input, { flex: undefined }]}
+                          autoFocus
+                          multiline
+                          maxLength={2000}
+                          editable={!editBusy}
+                        />
+                        <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                          <Pressable
+                            onPress={onSaveEdit}
+                            disabled={editBusy || !editingComment.text.trim()}
+                            style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                          >
+                            {editBusy
+                              ? <ActivityIndicator size="small" color={colors.primary} />
+                              : <Ionicons name="checkmark-circle" size={18} color={colors.primary} />}
+                            <Text style={{ ...typography.caption, color: colors.primary, fontWeight: '700' }}>Запази</Text>
+                          </Pressable>
+                          <Pressable onPress={() => setEditingComment(null)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            <Ionicons name="close-circle-outline" size={18} color={colors.textMuted} />
+                            <Text style={{ ...typography.caption, color: colors.textMuted }}>Отказ</Text>
+                          </Pressable>
+                        </View>
                       </View>
-                      {myUid && (
-                        <Pressable
-                          onPress={() => { setReplyingTo({ id: c.id, name: c.authorName }); }}
-                          hitSlop={8}
-                          style={{ paddingLeft: spacing.sm, paddingTop: 2 }}
-                        >
-                          <Text style={{ ...typography.caption, color: colors.primary }}>Отговори</Text>
-                        </Pressable>
-                      )}
-                    </View>
+                    ) : (
+                      /* ── Normal display ── */
+                      <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+                        <View style={{ flex: 1 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            <Text style={styles.commentAuthor}>{c.authorName}</Text>
+                            {c.editedAt ? (
+                              <Text style={{ ...typography.caption, color: colors.textMuted, fontSize: 10 }}>(редактиран)</Text>
+                            ) : null}
+                          </View>
+                          <Text style={styles.commentText}>{c.text}</Text>
+                        </View>
+
+                        {/* Action buttons */}
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingLeft: spacing.sm, paddingTop: 2 }}>
+                          {myUid && (
+                            <Pressable onPress={() => setReplyingTo({ id: c.id, name: c.authorName })} hitSlop={8}>
+                              <Text style={{ ...typography.caption, color: colors.primary }}>Отговори</Text>
+                            </Pressable>
+                          )}
+                          {isMyComment && (
+                            <Pressable onPress={() => setEditingComment({ id: c.id, text: c.text })} hitSlop={8}>
+                              <Ionicons name="pencil-outline" size={14} color={colors.textMuted} />
+                            </Pressable>
+                          )}
+                          {canDelete && (
+                            <Pressable onPress={() => onDeleteComment(c.id)} hitSlop={8}>
+                              <Ionicons name="trash-outline" size={14} color={colors.danger} />
+                            </Pressable>
+                          )}
+                        </View>
+                      </View>
+                    )}
                   </View>
                 );
               })}
