@@ -14,6 +14,8 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
+  writeBatch,
 } from 'firebase/firestore';
 import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
@@ -99,7 +101,7 @@ export async function fetchCatchCommentCount(catchId: string): Promise<number> {
 export async function fetchReactionSummary(catchId: string): Promise<ReactionSummaryItem[]> {
   const fb = requireFirebase();
   try {
-    const snap = await getDocs(query(collection(fb.db, 'publicCatches', catchId, 'likes'), limit(200)));
+    const snap = await getDocs(query(collection(fb.db, 'publicCatches', catchId, 'likes'), limit(50)));
     const counts = new Map<ReactionType, number>();
     snap.docs.forEach((d) => {
       const r: ReactionType = (d.data().reaction as ReactionType) ?? 'heart';
@@ -323,6 +325,17 @@ export function subscribeMyNotifications(myUid: string, onNext: (items: SocialNo
       })
     );
   });
+}
+
+export async function markAllNotificationsRead(myUid: string): Promise<void> {
+  const fb = requireFirebase();
+  const snap = await getDocs(
+    query(collection(fb.db, 'users', myUid, 'notifications'), where('read', '==', false), limit(100))
+  );
+  if (snap.empty) return;
+  const batch = writeBatch(fb.db);
+  snap.docs.forEach((d) => batch.update(d.ref, { read: true }));
+  await batch.commit();
 }
 
 export async function markNotificationRead(myUid: string, notifId: string): Promise<void> {

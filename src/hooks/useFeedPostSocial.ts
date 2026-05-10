@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Alert, Share } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import {
   subscribeMyReactionOnCatch,
   fetchCatchLikeCount,
@@ -138,6 +139,7 @@ export function useFeedPostSocial({
   const onPickReaction = useCallback(async (reaction: ReactionType) => {
     if (!socialEnabled || !myUid || likeBusyRef.current) return;
     setReactionPickerOpen(false);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     likeBusyRef.current = true;
     setLikeBusy(true);
     const prev = myReaction;
@@ -157,6 +159,7 @@ export function useFeedPostSocial({
 
   const onToggleSave = useCallback(async () => {
     if (!socialEnabled || !myUid || saveBusyRef.current) return;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     saveBusyRef.current = true;
     setSaveBusy(true);
     try {
@@ -239,6 +242,7 @@ export function useFeedPostSocial({
     if (!socialEnabled || !myUid || sendBusyRef.current) return;
     const t = draft.trim();
     if (!t) return;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     sendBusyRef.current = true;
     setSendBusy(true);
     const reply = replyingTo;

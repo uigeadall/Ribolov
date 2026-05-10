@@ -87,13 +87,13 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
   const reactionEntries = Object.entries(STORY_REACTIONS) as [StoryReactionType, { emoji: string; label: string }][];
 
   const styles = useMemo(() => StyleSheet.create({
-    row: { paddingVertical: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
-    bubble: { alignItems: 'center', marginHorizontal: spacing.xs, width: 68 },
+    rowWrapper: { paddingVertical: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+    bubble: { alignItems: 'center', marginHorizontal: spacing.xs, width: 72 },
     ring: { width: 58, height: 58, borderRadius: 29, borderWidth: 2.5, borderColor: colors.primary, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primarySurface, overflow: 'hidden' },
     addRing: { borderColor: colors.border, backgroundColor: colors.card },
     emojiText: { fontSize: 26 },
     name: { ...typography.small, color: colors.text, marginTop: 4, textAlign: 'center', fontWeight: '600' },
-    time: { ...typography.small, color: colors.textMuted, fontSize: 10, textAlign: 'center' },
+    time: { fontSize: 11, lineHeight: 14, color: colors.textMuted, textAlign: 'center', marginTop: 1 },
     viewerBg: { flex: 1, backgroundColor: '#000' },
     viewerMedia: { width: SW, height: SH },
     viewerOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0 },
@@ -129,7 +129,8 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
 
   return (
     <>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={[styles.row, { paddingHorizontal: spacing.md }]}>
+      <View style={styles.rowWrapper}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing.md }}>
         {user && configured ? (
           <Pressable style={styles.bubble} onPress={() => setAddOpen(true)}>
             <View style={[styles.ring, styles.addRing]}>
@@ -154,6 +155,7 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
           </Pressable>
         ))}
       </ScrollView>
+      </View>
 
       {/* ── Full-screen story viewer ── */}
       <Modal visible={!!viewing} transparent={false} animationType="fade" onRequestClose={closeViewer}>

@@ -13,8 +13,8 @@ import {
 } from 'react-native';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useRoute } from '@react-navigation/native';
-import type { NavigationProp, RouteProp } from '@react-navigation/native';
+import { useRoute } from '@react-navigation/native';
+import type { RouteProp } from '@react-navigation/native';
 import { Screen } from '../components/Screen';
 import { Button } from '../components/Button';
 import { LeafletMap, LeafletMapHandle, LeafletMapType } from '../components/LeafletMap';
@@ -42,6 +42,7 @@ import { BiteForecast } from '../components/BiteForecast';
 import { getWaterReports, addWaterReport, CONDITION_LABELS, type WaterCondition, type WaterReport } from '../services/fishingReports';
 import { getDamLevel, type DamLevel } from '../services/damLevels';
 import { handleError } from '../utils/handleError';
+import { useAppNavigation } from '../navigation/useAppNavigation';
 
 type SelectedWater = { kind: 'dam'; item: Dam } | { kind: 'river'; item: River };
 
@@ -74,7 +75,7 @@ export default function MapScreen() {
   const waterTypeColor = (t: Spot['waterType']) => WATER_TYPES.find((x) => x.id === t)?.color ?? colors.primary;
 
   const mapRef = useRef<LeafletMapHandle>(null);
-  const navigation = useNavigation<NavigationProp<TabsParamList>>();
+  const navigation = useAppNavigation();
   const route = useRoute<RouteProp<TabsParamList, 'MapTab'>>();
   const focusDamId = route.params?.focusDamId;
   const focusRiverId = route.params?.focusRiverId;

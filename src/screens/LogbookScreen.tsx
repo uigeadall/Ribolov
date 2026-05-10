@@ -12,12 +12,12 @@ import {
   Switch,
   Platform,
 } from 'react-native';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useAuth } from '../services/authContext';
 import { computePersonalBests, isPersonalBestCatch } from '../services/personalBests';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useAppNavigation } from '../navigation/useAppNavigation';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Image } from 'expo-image';
@@ -32,11 +32,8 @@ import { radius, spacing, typography } from '../theme/typography';
 import { shadowButton } from '../theme/shadows';
 import { catchesStore } from '../storage/storage';
 import { Catch } from '../types';
-import { LogbookStackParamList } from '../navigation/types';
 import { speciesList } from '../data/species';
 import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
-
-type Nav = NativeStackNavigationProp<LogbookStackParamList, 'LogbookList'>;
 
 function startOfDay(d: Date): number {
   const x = new Date(d);
@@ -251,7 +248,7 @@ function SpeciesChip({ label, selected, onPress, colors, styles }: SpeciesChipPr
 }
 
 export default function LogbookScreen() {
-  const navigation = useNavigation<Nav>();
+  const navigation = useAppNavigation();
   const { colors, mode } = useTheme();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();

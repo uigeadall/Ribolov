@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -84,11 +84,14 @@ type Props = {
   socialEnabled?: boolean;
   isVisible?: boolean;
   onPressAuthor: (authorUid: string, displayName: string) => void;
+  onPressCatch?: (item: FeedItem) => void;
 };
 
-export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarUrl, socialEnabled, isVisible = true, onPressAuthor }: Props) {
+export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarUrl, socialEnabled, isVisible = true, onPressAuthor, onPressCatch }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => feedStyles(colors), [colors]);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const hasExtra = !!(item.bait || (item as Record<string, unknown>).technique || (item as Record<string, unknown>).spotName);
 
   const ownerName = item.ownerName || 'Рибар';
   const initials = ownerName.slice(0, 1).toUpperCase();
@@ -128,7 +131,9 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
         </Text>
         {item.notes ? <Text style={styles.notes}>{item.notes}</Text> : null}
         {item.photoUri ? (
-          <Image source={{ uri: item.photoUri }} style={[styles.photo, { backgroundColor: colors.surfaceAlt }]} contentFit="cover" cachePolicy="memory-disk" transition={200} />
+          <Pressable onPress={() => onPressCatch?.(item)} disabled={!onPressCatch}>
+            <Image source={{ uri: item.photoUri }} style={[styles.photo, { backgroundColor: colors.surfaceAlt }]} contentFit="cover" cachePolicy="memory-disk" transition={200} />
+          </Pressable>
         ) : null}
         {item.location?.latitude != null && item.location.longitude != null ? (
           <View style={styles.loc}>
@@ -137,6 +142,22 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
               {item.location.latitude.toFixed(4)}, {item.location.longitude.toFixed(4)}
             </Text>
           </View>
+        ) : null}
+
+        {hasExtra ? (
+          <>
+            <Pressable onPress={() => setDetailsOpen((v) => !v)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.xs }} hitSlop={8}>
+              <Ionicons name={detailsOpen ? 'chevron-up' : 'chevron-down'} size={13} color={colors.primary} />
+              <Text style={{ ...typography.caption, color: colors.primary }}>{detailsOpen ? 'По-малко' : 'Повече детайли'}</Text>
+            </Pressable>
+            {detailsOpen ? (
+              <View style={{ marginTop: spacing.xs, gap: 4 }}>
+                {item.bait ? <Text style={{ ...typography.caption, color: colors.textMuted }}>🪱 Примамка: <Text style={{ color: colors.text }}>{item.bait}</Text></Text> : null}
+                {(item as Record<string, unknown>).technique ? <Text style={{ ...typography.caption, color: colors.textMuted }}>🎣 Техника: <Text style={{ color: colors.text }}>{String((item as Record<string, unknown>).technique)}</Text></Text> : null}
+                {(item as Record<string, unknown>).spotName ? <Text style={{ ...typography.caption, color: colors.textMuted }}>📍 Спот: <Text style={{ color: colors.text }}>{String((item as Record<string, unknown>).spotName)}</Text></Text> : null}
+              </View>
+            ) : null}
+          </>
         ) : null}
 
         {socialEnabled ? (

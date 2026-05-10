@@ -141,6 +141,8 @@ export default function HomeScreen() {
   const [totalCatches, setTotalCatches] = useState(0);
   const [weekCatches, setWeekCatches] = useState(0);
   const [lastCatch, setLastCatch] = useState<Catch | null>(null);
+  const [bestThisMonth, setBestThisMonth] = useState<Catch | null>(null);
+  const [daysSinceCatch, setDaysSinceCatch] = useState<number | null>(null);
   const [topClassic, setTopClassic] = useState<RankedClassicPhoto | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [unreadMsgs, setUnreadMsgs] = useState(0);
@@ -156,7 +158,26 @@ export default function HomeScreen() {
     }).length;
     setWeekCatches(n);
     const sorted = [...list].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
-    setLastCatch(sorted[0] ?? null);
+    const latest = sorted[0] ?? null;
+    setLastCatch(latest);
+    if (latest) {
+      const ms = Date.parse(latest.date);
+      setDaysSinceCatch(isNaN(ms) ? null : Math.floor((Date.now() - ms) / 86_400_000));
+    } else {
+      setDaysSinceCatch(null);
+    }
+    // Personal best this calendar month
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const monthCatches = list.filter((c) => {
+      const t = Date.parse(c.date);
+      return !isNaN(t) && t >= monthStart;
+    });
+    const best = monthCatches.reduce<Catch | null>(
+      (m, c) => (!m || (c.weightKg ?? 0) > (m.weightKg ?? 0) ? c : m),
+      null
+    );
+    setBestThisMonth(best);
     // Load top classic in background (best-effort)
     fetchRankedClassicPhotos(periodStartIso('week'), { maxCandidates: 20, resultLimit: 1 })
       .then((r) => setTopClassic(r[0] ?? null))
@@ -456,21 +477,53 @@ export default function HomeScreen() {
         )}
       </Pressable>
 
-      <SectionHeader hint="НАВИГАЦИЯ" title="Бързи връзки" subtitle="Един докос за най-използваните функции." />
+      {/* ── Personal best this month ── */}
+      {bestThisMonth ? (
+        <>
+          <SectionHeader hint="ЛИЧЕН РЕКОРД" title="Най-голям улов този месец" />
+          <Card style={{ marginBottom: spacing.xl, flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+            <View style={{ width: 48, height: 48, borderRadius: radius.md, backgroundColor: colors.primarySurface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 24 }}>🏆</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ ...typography.bodyBold, color: colors.text }}>{bestThisMonth.speciesName}</Text>
+              <Text style={{ ...typography.body, color: colors.textMuted, marginTop: 2 }}>
+                {bestThisMonth.weightKg != null ? `${bestThisMonth.weightKg} кг` : '—'}
+                {bestThisMonth.lengthCm != null ? ` · ${bestThisMonth.lengthCm} см` : ''}
+                {' · '}{new Date(bestThisMonth.date).toLocaleDateString('bg-BG', { day: 'numeric', month: 'short' })}
+              </Text>
+            </View>
+            <Pressable onPress={() => navigation.navigate('LogbookTab', { screen: 'LogbookList' })} hitSlop={8}>
+              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+            </Pressable>
+          </Card>
+        </>
+      ) : null}
 
-      <ListRow
-        icon="book-outline"
-        title="Дневник на улова"
-        subtitle="Записвай риба, снимки и бележки"
-        onPress={() => navigation.navigate('LogbookTab', { screen: 'LogbookList' })}
-      />
-      <ListRow
-        icon="map-outline"
-        iconTint={colors.primaryLight}
-        title="Карта и водоеми"
-        subtitle="Язовири, реки, спотове и прогноза"
-        onPress={() => navigation.navigate('MapTab')}
-      />
+      {/* ── Activity prompt ── */}
+      {daysSinceCatch !== null && daysSinceCatch > 2 ? (
+        <>
+          <SectionHeader hint="АКТИВНОСТ" title={daysSinceCatch === 0 ? 'Улов днес!' : `${daysSinceCatch} ${daysSinceCatch === 1 ? 'ден' : 'дни'} без улов`} />
+          <Card style={{ marginBottom: spacing.xl }}>
+            <Text style={{ ...typography.body, color: colors.textMuted, lineHeight: 22 }}>
+              {daysSinceCatch < 7
+                ? 'Готов ли си за следващия излет? Провери прогнозата в картата.'
+                : daysSinceCatch < 30
+                ? 'Мина доста — може би е ред за риболов. Лентата чака твоя улов!'
+                : 'Над месец без запис. Скочи на водата и запиши следващия улов.'}
+            </Text>
+            <Button
+              title="Виж прогнозата"
+              variant="secondary"
+              compact
+              onPress={() => navigation.navigate('MapTab')}
+              style={{ marginTop: spacing.md, alignSelf: 'flex-start' }}
+            />
+          </Card>
+        </>
+      ) : null}
+
+      <SectionHeader hint="НАВИГАЦИЯ" title="Полезни секции" subtitle="Директни връзки към основните функции." />
       <ListRow
         icon="podium-outline"
         iconTint={colors.accent}
@@ -480,31 +533,10 @@ export default function HomeScreen() {
       />
       <ListRow
         icon="fish-outline"
-        iconTint={colors.accent}
-        title="Видове риби"
-        subtitle="Описания, сезони и съвети"
-        onPress={() => navigation.navigate('ProfileTab', { screen: 'Species', params: { screen: 'SpeciesList' } })}
-      />
-      <ListRow
-        icon="scale-outline"
         iconTint={colors.primary}
-        title="Калкулатор за размер"
-        subtitle="Дължина ↔ тегло по вид риба"
-        onPress={() => navigation.navigate('ProfileTab', { screen: 'Species', params: { screen: 'WeightCalc' } })}
-      />
-      <ListRow
-        icon="newspaper-outline"
-        iconTint={colors.warning}
-        title="Лента"
-        subtitle="Споделени улови от общността"
-        onPress={() => navigation.navigate('FeedTab', { screen: 'FeedList' })}
-      />
-      <ListRow
-        icon="person-outline"
-        iconTint={colors.textMuted}
-        title="Профил и настройки"
-        subtitle="Акаунт, приятели, постижения и още"
-        onPress={() => navigation.navigate('ProfileTab', { screen: 'ProfileMain' })}
+        title="Видове риби"
+        subtitle="Описания, сезони, съвети и въжени възли"
+        onPress={() => navigation.navigate('ProfileTab', { screen: 'Species', params: { screen: 'SpeciesList' } })}
       />
 
       <View style={{ height: spacing.md }} />

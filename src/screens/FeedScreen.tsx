@@ -17,11 +17,13 @@ import { fetchPublicFeed, getFollowing, getUserPublicSummary, type FeedPage } fr
 import type { DocumentSnapshot } from 'firebase/firestore';
 import { getBlockedUids } from '../services/blockUser';
 import { StoriesRow } from '../components/StoriesRow';
+import { FeedSkeleton } from '../components/FeedSkeleton';
 import { useAuth } from '../services/authContext';
 import { formatFirebaseError } from '../services/firebaseErrors';
 import { captureException } from '../services/observability';
 import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
 import { useAppNavigation } from '../navigation/useAppNavigation';
+import * as Haptics from 'expo-haptics';
 
 type FeedScope = 'all' | 'following';
 
@@ -80,7 +82,7 @@ function createStyles(colors: AppColors) {
     },
     segmentWrap: {
       marginHorizontal: spacing.lg,
-      marginTop: spacing.lg,
+      marginTop: spacing.xl,
       marginBottom: spacing.sm,
     },
     segment: {
@@ -230,12 +232,21 @@ export default function FeedScreen() {
     navigation.navigate('UserPublicProfile', { uid: authorUid, displayName: name });
   }, [navigation]);
 
+  const onPressCatch = useCallback((catchItem: FeedItem) => {
+    navigation.navigate('UserPublicProfile', {
+      uid: catchItem.ownerUid,
+      displayName: catchItem.ownerName ?? 'Рибар',
+      photoUrlHint: catchItem.ownerPhotoUrl,
+    });
+  }, [navigation]);
+
   const myDisplayName = user?.displayName ?? user?.email ?? 'Аз';
   const socialEnabled = !!user && !!configured;
 
   const renderItem = useCallback(({ item }: { item: FeedItem }) => (
     <FeedPost
       item={item}
+      onPressCatch={onPressCatch}
       myUid={user?.uid}
       myDisplayName={myDisplayName}
       myPhotoUrl={myPhotoUrl}
@@ -244,7 +255,7 @@ export default function FeedScreen() {
       isVisible={visibleIds.has(item.id)}
       onPressAuthor={onPressAuthor}
     />
-  ), [user?.uid, myDisplayName, myPhotoUrl, avatarMap, socialEnabled, visibleIds, onPressAuthor]);
+  ), [user?.uid, myDisplayName, myPhotoUrl, avatarMap, socialEnabled, visibleIds, onPressAuthor, onPressCatch]);
 
   const ItemSeparator = useCallback(() => <View style={styles.listGap} />, [styles.listGap]);
 
@@ -378,7 +389,7 @@ export default function FeedScreen() {
       <View style={styles.segmentWrap}>
         <View style={styles.segment}>
           <Pressable
-            onPress={() => { if (scope !== 'all') { setItems([]); setScope('all'); } }}
+            onPress={() => { if (scope !== 'all') { setItems([]); setScope('all'); void Haptics.selectionAsync(); } }}
             style={[styles.segmentBtn, scope === 'all' && styles.segmentBtnActive]}
           >
             <Ionicons
@@ -389,7 +400,7 @@ export default function FeedScreen() {
             <Text style={[styles.segmentText, scope === 'all' && styles.segmentTextActive]}>Всички</Text>
           </Pressable>
           <Pressable
-            onPress={() => { if (scope !== 'following') { setItems([]); setScope('following'); } }}
+            onPress={() => { if (scope !== 'following') { setItems([]); setScope('following'); void Haptics.selectionAsync(); } }}
             style={[styles.segmentBtn, scope === 'following' && styles.segmentBtnActive]}
           >
             <Ionicons
@@ -403,10 +414,7 @@ export default function FeedScreen() {
       </View>
 
       {loading && items.length === 0 ? (
-        <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg }}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.centerMsg}>Зареждане на улова…</Text>
-        </View>
+        <FeedSkeleton />
       ) : error && items.length === 0 ? (
         <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg }}>
           <Card>

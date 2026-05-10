@@ -43,6 +43,42 @@ export async function ensureDirectConversation(
   return convId;
 }
 
+export function subscribeMyConversations(
+  myUid: string,
+  onNext: (convs: ConversationPreview[]) => void,
+  onError?: (e: Error) => void,
+): () => void {
+  const fb = requireFirebase();
+  const q = query(
+    collection(fb.db, 'conversations'),
+    where('participantIds', 'array-contains', myUid),
+    limit(50),
+  );
+  return onSnapshot(q, (snap) => {
+    const rows: ConversationPreview[] = snap.docs.map((d) => {
+      const data = d.data() as {
+        participantIds: string[];
+        participantNames?: Record<string, string>;
+        lastMessage?: string;
+        lastMessageAt?: { toMillis?: () => number } | number;
+        unreadCounts?: Record<string, number>;
+      };
+      const other = data.participantIds.find((id) => id !== myUid) ?? '';
+      const ts = data.lastMessageAt;
+      const lastMessageAt = ts ? (typeof ts === 'number' ? ts : ts.toMillis?.() ?? 0) : 0;
+      return {
+        convId: d.id,
+        otherUid: other,
+        otherName: data.participantNames?.[other] ?? 'Рибар',
+        lastMessage: data.lastMessage,
+        lastMessageAt,
+        unreadCount: data.unreadCounts?.[myUid] ?? 0,
+      };
+    });
+    onNext(rows.sort((a, b) => (b.lastMessageAt ?? 0) - (a.lastMessageAt ?? 0)));
+  }, (err) => onError?.(err as Error));
+}
+
 export async function listMyConversations(myUid: string, maxCount = 50): Promise<ConversationPreview[]> {
   const fb = requireFirebase();
   const q = query(
@@ -85,7 +121,7 @@ export function subscribeConversationMessages(
   const q = query(
     collection(fb.db, 'conversations', convId, 'messages'),
     orderBy('createdAt', 'asc'),
-    limit(300)
+    limit(100)
   );
   return onSnapshot(
     q,
