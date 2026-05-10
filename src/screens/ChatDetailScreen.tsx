@@ -11,7 +11,8 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useRoute, RouteProp } from '@react-navigation/native';
+import { useAppNavigation } from '../navigation/useAppNavigation';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
@@ -26,6 +27,7 @@ import { useAuth } from '../services/authContext';
 import { sendConversationMessage, subscribeConversationMessages, markConversationRead, subscribeUserPresence } from '../services/cloudSync';
 import { enqueueMessage } from '../services/messageSyncQueue';
 import { ensureFirebase } from '../services/firebase';
+import { handleError } from '../utils/handleError';
 
 type R = RouteProp<ProfileStackParamList, 'ChatDetail'>;
 
@@ -51,7 +53,7 @@ function formatMsgTime(createdAt: unknown): string {
 
 export default function ChatDetailScreen() {
   const route = useRoute<R>();
-  const navigation = useNavigation();
+  const navigation = useAppNavigation();
   const { colors } = useTheme();
   const { user, configured } = useAuth();
   const { convId, otherName } = route.params;
@@ -95,7 +97,7 @@ export default function ChatDetailScreen() {
         setText('');
         Alert.alert('Офлайн', 'Съобщението ще бъде изпратено, когато се свържеш с интернет.');
       } else {
-        Alert.alert('Грешка', e instanceof Error ? e.message : String(e));
+        handleError(e);
       }
     } finally {
       setSending(false);
@@ -154,7 +156,7 @@ export default function ChatDetailScreen() {
       const url = `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o/${encodeURIComponent(meta.name)}?alt=media&token=${meta.downloadTokens}`;
       await sendConversationMessage(convId, user.uid, '', otherUid, url, 'photo');
     } catch (e) {
-      Alert.alert('Грешка', e instanceof Error ? e.message : String(e));
+      handleError(e);
     } finally {
       setUploading(false);
     }

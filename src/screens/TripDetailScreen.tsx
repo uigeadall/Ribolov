@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, TextInput, StyleSheet, Pressable, Alert, Platform, Modal, FlatList } from 'react-native';
-import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
+import { useRoute, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Screen } from '../components/Screen';
@@ -11,12 +11,13 @@ import type { ProfileStackParamList } from '../navigation/types';
 import type { TripPlan, Catch } from '../types';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
+import { useAppNavigation } from '../navigation/useAppNavigation';
 
 type R = RouteProp<ProfileStackParamList, 'TripDetail'>;
 
 export default function TripDetailScreen() {
   const route = useRoute<R>();
-  const navigation = useNavigation<any>();
+  const navigation = useAppNavigation();
   const { colors } = useTheme();
   const [trip, setTrip] = useState<TripPlan | null | undefined>(undefined);
   const [tripCatches, setTripCatches] = useState<Catch[]>([]);
@@ -210,7 +211,7 @@ export default function TripDetailScreen() {
               tripCatches.map((c) => (
                 <Pressable
                   key={c.id}
-                  onPress={() => navigation.navigate('LogbookTab' as never, { screen: 'CatchDetail', params: { id: c.id } } as never)}
+                  onPress={() => navigation.navigate('LogbookTab', { screen: 'CatchDetail', params: { id: c.id } })}
                 >
                   <Card style={{ marginBottom: spacing.sm, flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
                     <Ionicons name="fish-outline" size={20} color={colors.primary} />

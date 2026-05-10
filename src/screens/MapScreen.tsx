@@ -41,6 +41,7 @@ import { openDrivingDirections } from '../utils/openDrivingDirections';
 import { BiteForecast } from '../components/BiteForecast';
 import { getWaterReports, addWaterReport, CONDITION_LABELS, type WaterCondition, type WaterReport } from '../services/fishingReports';
 import { getDamLevel, type DamLevel } from '../services/damLevels';
+import { handleError } from '../utils/handleError';
 
 type SelectedWater = { kind: 'dam'; item: Dam } | { kind: 'river'; item: River };
 
@@ -847,7 +848,7 @@ export default function MapScreen() {
                           setWaterReports(fresh);
                           setReportSheetOpen(false);
                           setReportNote('');
-                        } catch { Alert.alert('Грешка', 'Неуспешно изпращане.'); }
+                        } catch (e) { handleError(e); }
                         finally { setReportSaving(false); }
                       }} style={{ flex: 1 }} />
                     </View>

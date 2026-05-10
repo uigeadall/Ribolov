@@ -10,7 +10,7 @@ import {
   Platform,
 } from 'react-native';
 import type { DocumentSnapshot } from 'firebase/firestore';
-import { useNavigation } from '@react-navigation/native';
+
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../services/themeContext';
@@ -21,6 +21,7 @@ import { speciesList } from '../data/species';
 import { collection, getDocs, limit, orderBy, query, startAt, endAt, startAfter } from 'firebase/firestore';
 import { ensureFirebase } from '../services/firebase';
 import { useAuth } from '../services/authContext';
+import { useAppNavigation } from '../navigation/useAppNavigation';
 
 type Tab = 'users' | 'waters' | 'species';
 type UserResult = { uid: string; displayName: string; city?: string; photoUrl?: string };
@@ -30,7 +31,7 @@ const PREFIX_END = '';
 const PAGE_SIZE = 20;
 
 export default function SearchScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useAppNavigation();
   const { colors } = useTheme();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();

@@ -6,167 +6,252 @@ import {
   FlatList,
   TextInput,
   Pressable,
-  RefreshControl,
-  Alert,
+  ActivityIndicator,
+  Platform,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { EmptyState } from '../components/EmptyState';
 import { useTheme } from '../services/themeContext';
-import { spacing, typography } from '../theme/typography';
+import { radius, spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
 import { followUser, getFollowing, unfollowUser, getUserPublicSummary } from '../services/cloudSync';
+import { searchUsersByName, type SearchUserResult } from '../services/userProfile';
 import { sendFollowNotification } from '../services/socialFeed';
-import { formatFirebaseError } from '../services/firebaseErrors';
+import { useAsync } from '../hooks/useAsync';
+import { useAppNavigation } from '../navigation/useAppNavigation';
+
+type FollowedRow = { uid: string; displayName: string; photoUrl?: string };
 
 export default function FriendsScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useAppNavigation();
   const { colors } = useTheme();
   const { user, configured } = useAuth();
-  const [rows, setRows] = useState<{ uid: string; displayName: string }[]>([]);
-  const [uidInput, setUidInput] = useState('');
-  const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async () => {
-    if (!user) return;
-    setRefreshing(true);
-    try {
+  const [search, setSearch] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchUserResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [followBusy, setFollowBusy] = useState<Set<string>>(new Set());
+
+  const { data: followedRows, loading: followsLoading, reload: reloadFollows } = useAsync(
+    async () => {
+      if (!user) return [] as FollowedRow[];
       const all = await getFollowing(user.uid);
-      // Check each followed user still exists; silently unfollow deleted accounts
       const summaries = await Promise.all(
-        all.map((r) => getUserPublicSummary(r.uid).catch(() => null))
+        all.map((r) => getUserPublicSummary(r.uid).catch(() => null)),
       );
       const staleUids: string[] = [];
-      const active = all.filter((r, i) => {
-        if (summaries[i] == null) { staleUids.push(r.uid); return false; }
-        return true;
+      const active: FollowedRow[] = [];
+      all.forEach((r, i) => {
+        if (summaries[i] == null) { staleUids.push(r.uid); }
+        else { active.push({ uid: r.uid, displayName: r.displayName, photoUrl: summaries[i]?.photoUrl }); }
       });
-      // Clean up stale follows in the background — don't block the UI
       staleUids.forEach((uid) => unfollowUser(user.uid, uid).catch(() => {}));
-      setRows(active);
-    } catch (e: unknown) {
-      Alert.alert('Грешка', formatFirebaseError(e));
-    } finally {
-      setRefreshing(false);
-    }
-  }, [user]);
-
-  React.useEffect(() => {
-    load();
-  }, [load]);
-
-  const styles = useMemo(
-    () =>
-      StyleSheet.create({
-        header: {
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingHorizontal: spacing.lg,
-          paddingTop: spacing.md,
-          paddingBottom: spacing.sm,
-        },
-        title: { ...typography.h2, color: colors.text },
-        input: {
-          marginHorizontal: spacing.lg,
-          borderWidth: 1,
-          borderColor: colors.border,
-          borderRadius: 12,
-          paddingHorizontal: spacing.md,
-          paddingVertical: spacing.sm,
-          color: colors.text,
-          marginBottom: spacing.sm,
-        },
-      }),
-    [colors]
+      return active;
+    },
+    [user?.uid],
   );
 
-  const follow = async () => {
-    if (!user || !uidInput.trim()) return;
+  useFocusEffect(useCallback(() => { reloadFollows(true); }, [reloadFollows]));
+
+  const followedUids = useMemo(
+    () => new Set((followedRows ?? []).map((r) => r.uid)),
+    [followedRows],
+  );
+
+  const styles = useMemo(() => StyleSheet.create({
+    header: {
+      flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+      paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+      borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
+    },
+    title: { ...typography.h2, color: colors.text, flex: 1 },
+    searchWrap: {
+      flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+      backgroundColor: colors.surfaceAlt, borderRadius: radius.lg,
+      borderWidth: 1, borderColor: colors.border,
+      paddingHorizontal: spacing.md, marginHorizontal: spacing.lg, marginVertical: spacing.sm,
+    },
+    searchInput: {
+      flex: 1,
+      paddingVertical: Platform.OS === 'ios' ? spacing.sm + 2 : spacing.sm,
+      fontSize: 15, color: colors.text,
+    },
+    sectionLabel: {
+      ...typography.overline, color: colors.textMuted,
+      paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xs,
+      letterSpacing: 0.8,
+    },
+    row: {
+      flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+      paddingHorizontal: spacing.lg, paddingVertical: spacing.sm + 2,
+      borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
+    },
+    avatar: {
+      width: 44, height: 44, borderRadius: 22,
+      backgroundColor: colors.primarySurface, alignItems: 'center', justifyContent: 'center',
+      overflow: 'hidden',
+    },
+    name: { ...typography.bodyBold, color: colors.text },
+    city: { ...typography.small, color: colors.textMuted, marginTop: 1 },
+  }), [colors]);
+
+  const doSearch = useCallback(async (q: string) => {
+    if (!configured) return;
+    if (q.trim().length < 2) { setSearchResults([]); return; }
+    setSearching(true);
     try {
-      const target = uidInput.trim();
-      await followUser(user.uid, target);
-      await sendFollowNotification(target, user.uid, user.displayName ?? user.email ?? 'Рибар');
-      setUidInput('');
-      await load();
-    } catch (e: unknown) {
-      Alert.alert('Последване', formatFirebaseError(e));
+      const results = await searchUsersByName(q, { excludeUid: user?.uid });
+      setSearchResults(results);
+    } catch {
+      setSearchResults([]);
+    } finally {
+      setSearching(false);
     }
+  }, [configured, user?.uid]);
+
+  const handleSearchChange = (text: string) => {
+    setSearch(text);
+    void doSearch(text);
   };
 
-  const unfollow = async (targetUid: string) => {
+  const toggleFollow = useCallback(async (uid: string, displayName: string) => {
     if (!user) return;
+    setFollowBusy((prev) => new Set([...prev, uid]));
     try {
-      await unfollowUser(user.uid, targetUid);
-      await load();
-    } catch (e: unknown) {
-      Alert.alert('Грешка', formatFirebaseError(e));
+      if (followedUids.has(uid)) {
+        await unfollowUser(user.uid, uid);
+      } else {
+        await followUser(user.uid, uid);
+        await sendFollowNotification(uid, user.uid, user.displayName ?? 'Рибар');
+      }
+      await reloadFollows(true);
+    } finally {
+      setFollowBusy((prev) => { const s = new Set(prev); s.delete(uid); return s; });
     }
+  }, [user, followedUids, reloadFollows]);
+
+  const renderUserRow = (uid: string, displayName: string, photoUrl?: string, city?: string) => {
+    const busy = followBusy.has(uid);
+    const isFollowing = followedUids.has(uid);
+    return (
+      <Pressable
+        style={styles.row}
+        onPress={() => navigation.navigate('UserPublicProfile', { uid, displayName, photoUrlHint: photoUrl })}
+      >
+        <View style={styles.avatar}>
+          {photoUrl ? (
+            <Image source={{ uri: photoUrl }} style={{ width: 44, height: 44 }} contentFit="cover" />
+          ) : (
+            <Ionicons name="person-outline" size={22} color={colors.primary} />
+          )}
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.name} numberOfLines={1}>{displayName}</Text>
+          {city ? <Text style={styles.city}>{city}</Text> : null}
+        </View>
+        <Button
+          title={isFollowing ? 'Следван' : 'Следвай'}
+          variant={isFollowing ? 'secondary' : 'primary'}
+          compact
+          loading={busy}
+          onPress={() => toggleFollow(uid, displayName)}
+        />
+      </Pressable>
+    );
   };
 
   if (!configured || !user) {
     return (
-      <Screen>
-        <Text style={{ ...typography.body, color: colors.textMuted }}>
-          Влез и конфигурирай Firebase, за да управляваш приятели.
-        </Text>
+      <Screen padded={false}>
+        <View style={styles.header}>
+          <Pressable onPress={() => navigation.goBack()} hitSlop={8}>
+            <Ionicons name="chevron-back" size={28} color={colors.primary} />
+          </Pressable>
+          <Text style={styles.title}>Приятели</Text>
+          <View style={{ width: 28 }} />
+        </View>
+        <EmptyState
+          icon="people-outline"
+          title="Влез в акаунта"
+          subtitle="Следването на рибари изисква вход и Firebase."
+        />
       </Screen>
     );
   }
 
+  const isSearching = search.trim().length >= 2;
+
   return (
     <Screen padded={false}>
       <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()}>
+        <Pressable onPress={() => navigation.goBack()} hitSlop={8}>
           <Ionicons name="chevron-back" size={28} color={colors.primary} />
         </Pressable>
         <Text style={styles.title}>Приятели</Text>
         <View style={{ width: 28 }} />
       </View>
 
-      <TextInput
-        style={styles.input}
-        placeholder="UID на потребител за следване"
-        placeholderTextColor={colors.textMuted}
-        autoCapitalize="none"
-        value={uidInput}
-        onChangeText={setUidInput}
-      />
-      <View style={{ paddingHorizontal: spacing.lg, marginBottom: spacing.md }}>
-        <Button title="Следвай" onPress={follow} />
+      <View style={styles.searchWrap}>
+        <Ionicons name="search-outline" size={16} color={colors.textMuted} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Търси рибар по име…"
+          placeholderTextColor={colors.textMuted}
+          value={search}
+          onChangeText={handleSearchChange}
+          autoCapitalize="none"
+          autoCorrect={false}
+          clearButtonMode="while-editing"
+          returnKeyType="search"
+        />
+        {searching && <ActivityIndicator size="small" color={colors.primary} />}
       </View>
 
-      <FlatList
-        data={rows}
-        keyExtractor={(r) => r.uid}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={colors.primary} />}
-        contentContainerStyle={{ padding: spacing.lg, flexGrow: 1 }}
-        ListEmptyComponent={
-          <EmptyState icon="people-outline" title="Още никого не следваш" subtitle="Добави UID или отвори профил от лентата." />
-        }
-        renderItem={({ item }) => (
-          <Card style={{ marginBottom: spacing.sm }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-              <Pressable
-                style={{ flex: 1 }}
-                onPress={() =>
-                  navigation.navigate('UserPublicProfile', {
-                    uid: item.uid,
-                    displayName: item.displayName,
-                  })
-                }
-              >
-                <Text style={{ ...typography.bodyBold, color: colors.text }}>{item.displayName || item.uid}</Text>
-                <Text style={{ ...typography.caption, color: colors.textMuted }}>{item.uid}</Text>
-              </Pressable>
-              <Button title="Отписване" variant="secondary" onPress={() => unfollow(item.uid)} />
+      {isSearching ? (
+        <>
+          <Text style={styles.sectionLabel}>РЕЗУЛТАТИ</Text>
+          {searching && searchResults.length === 0 ? (
+            <View style={{ paddingVertical: spacing.xxl, alignItems: 'center' }}>
+              <ActivityIndicator color={colors.primary} />
             </View>
-          </Card>
-        )}
-      />
+          ) : searchResults.length === 0 ? (
+            <EmptyState icon="person-outline" title="Няма резултати" subtitle="Опитай с различно или по-пълно име." />
+          ) : (
+            searchResults.map((r) => (
+              <React.Fragment key={r.uid}>
+                {renderUserRow(r.uid, r.displayName, r.photoUrl, r.city)}
+              </React.Fragment>
+            ))
+          )}
+        </>
+      ) : (
+        <>
+          <Text style={styles.sectionLabel}>СЛЕДВАНИ</Text>
+          {followsLoading ? (
+            <View style={{ paddingVertical: spacing.xxl, alignItems: 'center' }}>
+              <ActivityIndicator color={colors.primary} />
+            </View>
+          ) : (followedRows ?? []).length === 0 ? (
+            <EmptyState
+              icon="people-outline"
+              title="Още никого не следваш"
+              subtitle="Търси рибар по-горе или отвори профил от лентата."
+            />
+          ) : (
+            <FlatList
+              data={followedRows ?? []}
+              keyExtractor={(r) => r.uid}
+              renderItem={({ item }) => renderUserRow(item.uid, item.displayName, item.photoUrl)}
+              keyboardShouldPersistTaps="handled"
+            />
+          )}
+        </>
+      )}
     </Screen>
   );
 }

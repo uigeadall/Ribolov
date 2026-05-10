@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, Pressable, Share, Alert } from 'react-native';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import ViewShot from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
@@ -12,9 +12,11 @@ import { radius, spacing, typography } from '../theme/typography';
 import { catchesStore } from '../storage/storage';
 import { computePersonalBests, type PersonalBest } from '../services/personalBests';
 import { formatCatchDate } from '../utils/formatCatchDate';
+import { useAppNavigation } from '../navigation/useAppNavigation';
+import { handleError } from '../utils/handleError';
 
 export default function PersonalBestsScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useAppNavigation();
   const { colors } = useTheme();
   const [bests, setBests] = useState<PersonalBest[]>([]);
 
@@ -74,8 +76,8 @@ export default function PersonalBestsScreen() {
       } else {
         await Share.share({ message: `🏆 Личен рекорд: ${item.speciesName} — ${item.weightKg} кг | Ribolov App` });
       }
-    } catch {
-      Alert.alert('Грешка', 'Неуспешно споделяне.');
+    } catch (e) {
+      handleError(e);
     }
   };
 

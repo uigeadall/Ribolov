@@ -10,7 +10,7 @@ import {
   Platform,
   Modal,
 } from 'react-native';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Screen } from '../components/Screen';
@@ -21,9 +21,10 @@ import { tripsStore, newId } from '../storage/storage';
 import type { TripPlan } from '../types';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
+import { useAppNavigation } from '../navigation/useAppNavigation';
 
 export default function TripsScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useAppNavigation();
   const { colors } = useTheme();
   const [items, setItems] = useState<TripPlan[]>([]);
   const [title, setTitle] = useState('');

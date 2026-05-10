@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Alert, ScrollView } from 'react-native';
-import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
+import { useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { Image } from 'expo-image';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
@@ -11,12 +11,13 @@ import { catchesStore } from '../storage/storage';
 import type { Catch } from '../types';
 import type { LogbookStackParamList } from '../navigation/types';
 import { formatCatchDate } from '../utils/formatCatchDate';
+import { useAppNavigation } from '../navigation/useAppNavigation';
 
 type R = RouteProp<LogbookStackParamList, 'CatchDetail'>;
 
 export default function CatchDetailScreen() {
   const route = useRoute<R>();
-  const navigation = useNavigation<any>();
+  const navigation = useAppNavigation();
   const { colors } = useTheme();
   const [item, setItem] = useState<Catch | null>(null);
 

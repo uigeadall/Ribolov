@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
-import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
+import { useRoute, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { Screen } from '../components/Screen';
@@ -14,6 +14,7 @@ import type { SpeciesStackParamList } from '../navigation/types';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
+import { useAppNavigation } from '../navigation/useAppNavigation';
 
 type R = RouteProp<SpeciesStackParamList, 'SpeciesDetail'>;
 
@@ -128,7 +129,7 @@ function ArticleSection({ title, subtitle, children, styles }: SectionProps) {
 
 export default function SpeciesDetailScreen() {
   const route = useRoute<R>();
-  const navigation = useNavigation<any>();
+  const navigation = useAppNavigation();
   const { colors, mode } = useTheme();
   const styles = useMemo(() => createDetailStyles(colors, mode), [colors, mode]);
   const sp = speciesList.find((x) => x.id === route.params.id);

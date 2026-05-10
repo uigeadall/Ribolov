@@ -1,6 +1,6 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator } from 'react-native';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
@@ -11,6 +11,8 @@ import { radius, spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
 import { listMyConversations } from '../services/cloudSync';
 import { ConversationPreview } from '../types';
+import { useAsync } from '../hooks/useAsync';
+import { useAppNavigation } from '../navigation/useAppNavigation';
 
 function formatTime(ms: number): string {
   if (!ms) return '';
@@ -59,26 +61,15 @@ function createChatsStyles(colors: AppColors) {
 export default function ChatsScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => createChatsStyles(colors), [colors]);
-  const navigation = useNavigation<any>();
+  const navigation = useAppNavigation();
   const { user, configured } = useAuth();
-  const [items, setItems] = useState<ConversationPreview[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const load = useCallback(async () => {
-    if (!user) return;
-    setLoading(true);
-    try {
-      setItems(await listMyConversations(user.uid));
-    } finally {
-      setLoading(false);
-    }
-  }, [user]);
-
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load])
+  const { data, loading, reload } = useAsync(
+    () => (user ? listMyConversations(user.uid) : Promise.resolve([])),
+    [user?.uid],
   );
+  const items: ConversationPreview[] = data ?? [];
+
+  useFocusEffect(useCallback(() => { reload(); }, [reload]));
 
   function Header({ onBack }: { onBack: () => void }) {
     return (

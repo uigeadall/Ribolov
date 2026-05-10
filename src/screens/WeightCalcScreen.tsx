@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import {
   View, Text, TextInput, StyleSheet, ScrollView, Pressable,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useAppNavigation } from '../navigation/useAppNavigation';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../services/themeContext';
@@ -34,7 +34,7 @@ function weightToLength(K: number, kg: number): number {
 }
 
 export default function WeightCalcScreen() {
-  const navigation = useNavigation();
+  const navigation = useAppNavigation();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const [selectedId, setSelectedId] = useState<string>('sharan');

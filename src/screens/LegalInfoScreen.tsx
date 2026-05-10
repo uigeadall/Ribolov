@@ -1,12 +1,13 @@
 import React, { useMemo } from 'react';
-import { Text, ScrollView, StyleSheet, View, Pressable, Linking, Alert } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { Text, ScrollView, StyleSheet, View, Pressable, Linking } from 'react-native';
+import { useAppNavigation } from '../navigation/useAppNavigation';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
+import { handleError } from '../utils/handleError';
 
 /**
  * ← Замени тези URL-и с реалните адреси на документите.
@@ -17,12 +18,10 @@ const TERMS_URL = 'https://your-domain.com/terms';
 const CONTACT_EMAIL = 'support@ribolov.app';
 
 const openUrl = (url: string) =>
-  Linking.openURL(url).catch(() =>
-    Alert.alert('Грешка', 'Неуспешно отваряне на страницата.')
-  );
+  Linking.openURL(url).catch((e) => handleError(e));
 
 export default function LegalInfoScreen() {
-  const navigation = useNavigation();
+  const navigation = useAppNavigation();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
 

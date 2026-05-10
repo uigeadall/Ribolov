@@ -1,5 +1,5 @@
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import { ensureFirebase } from './firebase';
+import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
 import { captureException } from './observability';
 
@@ -13,8 +13,7 @@ export async function submitContentReport(opts: {
   commentId?: string;
   reason: string;
 }): Promise<void> {
-  const fb = ensureFirebase();
-  if (!fb) throw new Error('Firebase не е наличен.');
+  const fb = requireFirebase();
   const reason = opts.reason.trim().slice(0, 500);
   if (reason.length < 3) throw new Error('Посочи поне няколко думи за причината.');
 

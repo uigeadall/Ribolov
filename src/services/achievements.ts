@@ -3,7 +3,7 @@ import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { ACHIEVEMENT_DEFS } from '../data/achievements';
 import type { Achievement } from '../types';
 import type { Catch } from '../types';
-import { ensureFirebase } from './firebase';
+import { requireFirebase } from './firebase';
 
 const UNLOCK_KEY = 'ribolov:achievements:unlocked';
 
@@ -25,8 +25,7 @@ async function persistUnlocked(ids: Set<string>, uid?: string): Promise<void> {
   const arr = [...ids];
   await AsyncStorage.setItem(UNLOCK_KEY, JSON.stringify(arr)).catch(() => {});
   if (!uid) return;
-  const fb = ensureFirebase();
-  if (!fb) return;
+  const fb = requireFirebase();
   setDoc(
     doc(fb.db, 'users', uid, 'achievements', 'unlocked'),
     { ids: arr },
@@ -36,8 +35,7 @@ async function persistUnlocked(ids: Set<string>, uid?: string): Promise<void> {
 
 /** Restore unlocked IDs from Firestore into AsyncStorage on sign-in. */
 export async function restoreAchievementsFromCloud(uid: string): Promise<void> {
-  const fb = ensureFirebase();
-  if (!fb) return;
+  const fb = requireFirebase();
   try {
     const snap = await getDoc(doc(fb.db, 'users', uid, 'achievements', 'unlocked'));
     if (!snap.exists()) return;

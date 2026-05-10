@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,6 @@ import {
   Modal,
   StatusBar,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
@@ -20,13 +19,14 @@ import { Button } from '../components/Button';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
-import { formatFirebaseError } from '../services/firebaseErrors';
 import {
   fetchRankedClassicPhotos,
   periodStartIso,
   type ClassicPeriod,
   type RankedClassicPhoto,
 } from '../services/classicsContest';
+import { useAsync } from '../hooks/useAsync';
+import { useAppNavigation } from '../navigation/useAppNavigation';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 
@@ -52,27 +52,20 @@ function daysLeft(period: ClassicPeriod): number {
 type FullScreen = { uri: string; author: string; title: string; likes: number };
 
 export default function ClassicsScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useAppNavigation();
   const insets = useSafeAreaInsets();
   const { user, configured } = useAuth();
   const { colors } = useTheme();
 
-  const [period, setPeriod]     = useState<ClassicPeriod>('week');
-  const [rows, setRows]         = useState<RankedClassicPhoto[]>([]);
-  const [loading, setLoading]   = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError]       = useState<string | null>(null);
+  const [period, setPeriod] = useState<ClassicPeriod>('week');
   const [fullScreen, setFullScreen] = useState<FullScreen | null>(null);
 
-  const load = useCallback(async () => {
-    if (!configured || !user) return;
-    setLoading(true); setError(null);
-    try { setRows(await fetchRankedClassicPhotos(periodStartIso(period))); }
-    catch (e: unknown) { setError(formatFirebaseError(e)); setRows([]); }
-    finally { setLoading(false); setRefreshing(false); }
+  const { data, loading, refreshing, error, reload } = useAsync(async () => {
+    if (!configured || !user) return [];
+    return fetchRankedClassicPhotos(periodStartIso(period));
   }, [configured, user, period]);
 
-  useEffect(() => { if (user && configured) load(); }, [load, user, configured]);
+  const rows: RankedClassicPhoto[] = data ?? [];
 
   const left = daysLeft(period);
   const [first, second, third, ...rest] = rows;
@@ -386,7 +379,7 @@ export default function ClassicsScreen() {
           </View>
           <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg }}>
             <Text style={{ ...typography.h3, color: colors.text }}>Грешка при зареждане</Text>
-            <Button title="Опитай отново" onPress={load} style={{ marginTop: spacing.md }} />
+            <Button title="Опитай отново" onPress={() => reload()} style={{ marginTop: spacing.md }} />
           </View>
         </>
       ) : rows.length === 0 ? (
@@ -411,7 +404,7 @@ export default function ClassicsScreen() {
           keyExtractor={(item) => item.item.id}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.primary} />
+            <RefreshControl refreshing={refreshing} onRefresh={() => reload(true)} tintColor={colors.primary} />
           }
           contentContainerStyle={{ paddingBottom: spacing.xxl }}
           ListHeaderComponent={

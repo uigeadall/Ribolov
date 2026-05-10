@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, FlatList, Pressable,
   TextInput, RefreshControl, Platform,
 } from 'react-native';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Screen } from '../components/Screen';
@@ -14,20 +14,18 @@ import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
 import { fetchGroups, fetchMyGroups, type Group, CATEGORY_LABELS } from '../services/groups';
+import { useAsync } from '../hooks/useAsync';
+import { useAppNavigation } from '../navigation/useAppNavigation';
 
 type Tab = 'discover' | 'mine';
 
 export default function GroupsScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useAppNavigation();
   const { colors } = useTheme();
   const { user, configured } = useAuth();
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<Tab>('discover');
-  const [groups, setGroups] = useState<Group[]>([]);
-  const [myGroups, setMyGroups] = useState<Group[]>([]);
   const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
 
   const styles = useMemo(() => StyleSheet.create({
     header: {
@@ -54,23 +52,19 @@ export default function GroupsScreen() {
     groupMeta: { ...typography.small, color: colors.textMuted, marginTop: 2 },
   }), [colors]);
 
-  const load = useCallback(async () => {
-    if (!configured) return;
-    setLoading(true);
-    try {
-      const [all, mine] = await Promise.all([
-        fetchGroups(),
-        user ? fetchMyGroups(user.uid) : Promise.resolve([]),
-      ]);
-      setGroups(all);
-      setMyGroups(mine);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+  const { data, loading, refreshing, reload } = useAsync(async () => {
+    if (!configured) return { groups: [] as Group[], myGroups: [] as Group[] };
+    const [all, mine] = await Promise.all([
+      fetchGroups(),
+      user ? fetchMyGroups(user.uid) : Promise.resolve([] as Group[]),
+    ]);
+    return { groups: all, myGroups: mine };
   }, [configured, user]);
 
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+  const groups = data?.groups ?? [];
+  const myGroups = data?.myGroups ?? [];
+
+  useFocusEffect(useCallback(() => { reload(); }, [reload]));
 
   const displayed = (tab === 'mine' ? myGroups : groups).filter((g) =>
     !search.trim() || g.name.toLowerCase().includes(search.trim().toLowerCase())
@@ -115,7 +109,7 @@ export default function GroupsScreen() {
       <FlatList
         data={displayed}
         keyExtractor={(g) => g.id}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.primary} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => reload(true)} tintColor={colors.primary} />}
         contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: insets.bottom + spacing.xl, gap: spacing.sm }}
         ListEmptyComponent={
           !loading ? (

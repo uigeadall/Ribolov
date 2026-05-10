@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Text, View, StyleSheet, Pressable } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
@@ -8,9 +8,10 @@ import { Button } from '../components/Button';
 import { EmptyState } from '../components/EmptyState';
 import { useTheme } from '../services/themeContext';
 import { spacing, typography } from '../theme/typography';
+import { useAppNavigation } from '../navigation/useAppNavigation';
 
 export default function TournamentsScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useAppNavigation();
   const { colors } = useTheme();
   const styles = useMemo(
     () =>

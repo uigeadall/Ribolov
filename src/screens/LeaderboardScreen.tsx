@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
   TextInput,
 } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -32,10 +32,11 @@ import {
   LeaderboardScope,
   periodMinIso,
 } from '../services/leaderboards';
-import { formatFirebaseError } from '../services/firebaseErrors';
 import { DAMS } from '../data/dams';
 import { RIVERS } from '../data/rivers';
 import type { ProfileStackParamList } from '../navigation/types';
+import { useAsync } from '../hooks/useAsync';
+import { useAppNavigation } from '../navigation/useAppNavigation';
 
 type ScopePick =
   | { mode: 'all' }
@@ -190,7 +191,7 @@ function createStyles(colors: AppColors, mode: 'light' | 'dark') {
 type WaterModalTab = 'all' | 'dams' | 'rivers';
 
 export default function LeaderboardScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useAppNavigation();
   const route = useRoute<RouteProp<ProfileStackParamList, 'Leaderboard'>>();
   const insets = useSafeAreaInsets();
   const { colors, mode } = useTheme();
@@ -202,10 +203,6 @@ export default function LeaderboardScreen() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [waterModalTab, setWaterModalTab] = useState<WaterModalTab>('all');
   const [waterSearch, setWaterSearch] = useState('');
-  const [rows, setRows] = useState<LeaderboardRow[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const damId = route.params?.damId;
@@ -221,31 +218,14 @@ export default function LeaderboardScreen() {
     }
   }, [route.params?.damId, route.params?.riverId]);
 
-  const load = useCallback(async () => {
-    if (!configured || !user) return;
-    setLoading(true);
-    setError(null);
-    setRows([]); // clear stale rows immediately so old data never shows under new filters
-    try {
-      const since = periodMinIso(period);
-      const lbScope = scopeToLeaderboardScope(scopePick);
-      setRows(await fetchAndAggregateLeaderboard(since, period, lbScope));
-    } catch (e: unknown) {
-      setError(formatFirebaseError(e));
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+  const { data, loading, refreshing, error, reload } = useAsync(async () => {
+    if (!configured || !user) return [] as LeaderboardRow[];
+    const since = periodMinIso(period);
+    const lbScope = scopeToLeaderboardScope(scopePick);
+    return fetchAndAggregateLeaderboard(since, period, lbScope);
   }, [configured, user, period, scopePick]);
 
-  useEffect(() => {
-    if (user && configured) load();
-  }, [load, user, configured]);
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    load();
-  };
+  const rows: LeaderboardRow[] = data ?? [];
 
   const heroTopStyle = useMemo(() => ({ paddingTop: Math.max(insets.top, spacing.md) }), [insets.top]);
 
@@ -393,7 +373,7 @@ export default function LeaderboardScreen() {
         {error ? (
           <Card style={{ marginTop: spacing.md, borderColor: colors.danger }}>
             <Text style={{ ...typography.body, color: colors.danger }}>{error}</Text>
-            <Button title="Опитай отново" variant="secondary" onPress={load} style={{ marginTop: spacing.sm }} />
+            <Button title="Опитай отново" variant="secondary" onPress={() => reload()} style={{ marginTop: spacing.sm }} />
           </Card>
         ) : null}
       </View>
@@ -419,7 +399,7 @@ export default function LeaderboardScreen() {
           data={rows}
           keyExtractor={(item) => item.ownerUid}
           contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => reload(true)} tintColor={colors.primary} />}
           renderItem={({ item }) => (
             <Pressable
               onPress={() =>

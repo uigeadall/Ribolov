@@ -42,3 +42,9 @@ export function ensureFirebase(): FirebaseBundle | null {
   }
   return bundle;
 }
+
+export function requireFirebase(): FirebaseBundle {
+  const fb = ensureFirebase();
+  if (!fb) throw new Error('Firebase не е конфигуриран.');
+  return fb;
+}

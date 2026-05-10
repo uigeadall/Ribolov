@@ -1,8 +1,8 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl,
 } from 'react-native';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,21 +11,18 @@ import { Card } from '../components/Card';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
-import { fetchPublicFeed, getUserPublicSummary } from '../services/cloudSync';
-import { fetchCatchLikeCount } from '../services/socialFeed';
+import { fetchPublicFeed } from '../services/cloudSync';
 import type { FeedItem } from '../components/FeedPost';
+import { useAsync } from '../hooks/useAsync';
+import { useAppNavigation } from '../navigation/useAppNavigation';
 
 type TrendingCatch = FeedItem & { likeCount: number };
 
 export default function ExploreScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useAppNavigation();
   const { colors } = useTheme();
-  const { user, configured } = useAuth();
+  const { configured } = useAuth();
   const insets = useSafeAreaInsets();
-  const [trending, setTrending] = useState<TrendingCatch[]>([]);
-  const [topAnglers, setTopAnglers] = useState<{ uid: string; name: string; count: number; photo?: string }[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
 
   const styles = useMemo(() => StyleSheet.create({
     header: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
@@ -42,39 +39,29 @@ export default function ExploreScreen() {
     anglerSub: { ...typography.small, color: colors.textMuted },
   }), [colors]);
 
-  const load = useCallback(async () => {
-    if (!configured) return;
-    setLoading(true);
-    try {
-      const oneWeekAgo = new Date(Date.now() - 7 * 86400000).toISOString();
-      const { items: all } = await fetchPublicFeed(100);
-      const recent = all.filter((c) => c.date >= oneWeekAgo);
-
-      // Get like counts for recent catches (batch, max 20)
-      const withLikes: TrendingCatch[] = await Promise.all(
-        recent.slice(0, 20).map(async (c) => ({
-          ...c,
-          likeCount: await fetchCatchLikeCount(c.id).catch(() => 0),
-        }))
-      );
-      const sorted = withLikes.sort((a, b) => b.likeCount - a.likeCount).slice(0, 12);
-      setTrending(sorted);
-
-      // Top anglers by catch count this week
-      const byCatcher = new Map<string, { uid: string; name: string; count: number; photo?: string }>();
-      for (const c of recent) {
-        const e = byCatcher.get(c.ownerUid);
-        if (e) { e.count++; } else { byCatcher.set(c.ownerUid, { uid: c.ownerUid, name: c.ownerName ?? 'Рибар', count: 1, photo: c.ownerPhotoUrl }); }
-      }
-      const anglers = Array.from(byCatcher.values()).sort((a, b) => b.count - a.count).slice(0, 5);
-      setTopAnglers(anglers);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+  const { data, loading, refreshing, reload } = useAsync(async () => {
+    if (!configured) return { trending: [] as TrendingCatch[], topAnglers: [] as { uid: string; name: string; count: number; photo?: string }[] };
+    const oneWeekAgo = new Date(Date.now() - 7 * 86400000).toISOString();
+    const { items: all } = await fetchPublicFeed(100);
+    const recent = all.filter((c) => c.date >= oneWeekAgo);
+    const withLikes: TrendingCatch[] = recent.slice(0, 20).map((c) => ({
+      ...c,
+      likeCount: c.likeCount ?? 0,
+    }));
+    const trending = withLikes.sort((a, b) => b.likeCount - a.likeCount).slice(0, 12);
+    const byCatcher = new Map<string, { uid: string; name: string; count: number; photo?: string }>();
+    for (const c of recent) {
+      const e = byCatcher.get(c.ownerUid);
+      if (e) { e.count++; } else { byCatcher.set(c.ownerUid, { uid: c.ownerUid, name: c.ownerName ?? 'Рибар', count: 1, photo: c.ownerPhotoUrl }); }
     }
+    const topAnglers = Array.from(byCatcher.values()).sort((a, b) => b.count - a.count).slice(0, 5);
+    return { trending, topAnglers };
   }, [configured]);
 
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+  const trending = data?.trending ?? [];
+  const topAnglers = data?.topAnglers ?? [];
+
+  useFocusEffect(useCallback(() => { reload(); }, [reload]));
 
   return (
     <Screen padded={false}>
@@ -93,7 +80,7 @@ export default function ExploreScreen() {
         <FlatList
           data={[]}
           keyExtractor={() => 'placeholder'}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.primary} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => reload(true)} tintColor={colors.primary} />}
           ListHeaderComponent={
             <View style={{ padding: spacing.lg }}>
               <Text style={styles.sectionTitle}>🔥 Trending тази седмица</Text>

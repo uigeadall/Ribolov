@@ -1,7 +1,7 @@
 import { collection, getDocs, limit, orderBy, query, startAfter, where, type DocumentSnapshot } from 'firebase/firestore';
 import { DAMS } from '../data/dams';
 import { RIVERS } from '../data/rivers';
-import { ensureFirebase } from './firebase';
+import { requireFirebase } from './firebase';
 import type { CloudCatch } from './cloudSync';
 
 export type LeaderboardPeriod = 'day' | 'week' | 'month' | 'year';
@@ -168,8 +168,7 @@ export async function fetchAndAggregateLeaderboard(
   period: LeaderboardPeriod,
   scope: LeaderboardScope,
 ): Promise<LeaderboardRow[]> {
-  const fb = ensureFirebase();
-  if (!fb) return [];
+  const fb = requireFirebase();
 
   const maxTotal = PERIOD_MAX[period];
   const byOwner = new Map<string, { name: string; totalKg: number; count: number; best: number }>();

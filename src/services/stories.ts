@@ -14,7 +14,7 @@ import {
   limit,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { ensureFirebase } from './firebase';
+import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
 
 const TTL_MS = 24 * 60 * 60 * 1000;
@@ -60,8 +60,7 @@ export async function uploadStoryMedia(
   uid: string,
   type: 'photo' | 'video'
 ): Promise<string> {
-  const fb = ensureFirebase();
-  if (!fb) throw new Error('Firebase не е наличен.');
+  const fb = requireFirebase();
   const ext = type === 'video' ? 'mp4' : 'jpg';
   const contentType = type === 'video' ? 'video/mp4' : 'image/jpeg';
   const path = `stories/${uid}/${Date.now()}.${ext}`;
@@ -73,8 +72,7 @@ export async function uploadStoryMedia(
 }
 
 export async function addStory(s: Omit<Story, 'id' | 'createdAt' | 'expiresAt'>): Promise<void> {
-  const fb = ensureFirebase();
-  if (!fb) throw new Error('Firebase не е наличен.');
+  const fb = requireFirebase();
   await addDoc(
     collection(fb.db, 'stories'),
     stripUndefinedForFirestore({
@@ -87,8 +85,7 @@ export async function addStory(s: Omit<Story, 'id' | 'createdAt' | 'expiresAt'>)
 }
 
 export async function getStories(): Promise<Story[]> {
-  const fb = ensureFirebase();
-  if (!fb) return [];
+  const fb = requireFirebase();
   try {
     const now = Date.now();
     const snap = await getDocs(
@@ -125,8 +122,7 @@ export async function getStories(): Promise<Story[]> {
 }
 
 export async function deleteStory(storyId: string): Promise<void> {
-  const fb = ensureFirebase();
-  if (!fb) return;
+  const fb = requireFirebase();
   await deleteDoc(doc(fb.db, 'stories', storyId));
 }
 
@@ -137,8 +133,7 @@ export function subscribeMyStoryReaction(
   uid: string,
   cb: (reaction: StoryReactionType | null) => void
 ): () => void {
-  const fb = ensureFirebase();
-  if (!fb) return () => {};
+  const fb = requireFirebase();
   return onSnapshot(doc(fb.db, 'stories', storyId, 'reactions', uid), (snap) => {
     if (!snap.exists()) { cb(null); return; }
     cb((snap.data()?.reaction as StoryReactionType) ?? 'heart');
@@ -151,8 +146,7 @@ export async function toggleStoryReaction(
   displayName: string,
   reaction: StoryReactionType
 ): Promise<StoryReactionType | null> {
-  const fb = ensureFirebase();
-  if (!fb) throw new Error('Firebase не е наличен.');
+  const fb = requireFirebase();
   const ref2 = doc(fb.db, 'stories', storyId, 'reactions', uid);
   const snap = await getDoc(ref2);
   if (snap.exists() && (snap.data()?.reaction ?? 'heart') === reaction) {
@@ -164,8 +158,7 @@ export async function toggleStoryReaction(
 }
 
 export async function getStoryReactionSummary(storyId: string): Promise<StoryReactionSummary[]> {
-  const fb = ensureFirebase();
-  if (!fb) return [];
+  const fb = requireFirebase();
   try {
     const snap = await getDocs(collection(fb.db, 'stories', storyId, 'reactions'));
     const counts = new Map<StoryReactionType, number>();
@@ -187,8 +180,7 @@ export function subscribeStoryComments(
   storyId: string,
   onNext: (comments: StoryComment[]) => void
 ): () => void {
-  const fb = ensureFirebase();
-  if (!fb) return () => {};
+  const fb = requireFirebase();
   const q = query(
     collection(fb.db, 'stories', storyId, 'comments'),
     orderBy('createdAt', 'asc'),
@@ -210,8 +202,7 @@ export async function addStoryComment(
   authorName: string,
   text: string
 ): Promise<void> {
-  const fb = ensureFirebase();
-  if (!fb) throw new Error('Firebase не е наличен.');
+  const fb = requireFirebase();
   const trimmed = text.trim();
   if (!trimmed) return;
   await addDoc(collection(fb.db, 'stories', storyId, 'comments'), {
@@ -223,8 +214,7 @@ export async function addStoryComment(
 }
 
 export async function deleteStoryComment(storyId: string, commentId: string): Promise<void> {
-  const fb = ensureFirebase();
-  if (!fb) return;
+  const fb = requireFirebase();
   await deleteDoc(doc(fb.db, 'stories', storyId, 'comments', commentId));
 }
 

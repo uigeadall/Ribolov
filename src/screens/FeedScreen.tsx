@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { View, Text, StyleSheet, FlatList, Pressable, RefreshControl, ActivityIndicator, Platform } from 'react-native';
 import { Image } from 'expo-image';
-import { useNavigation } from '@react-navigation/native';
+
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
@@ -19,7 +19,9 @@ import { getBlockedUids } from '../services/blockUser';
 import { StoriesRow } from '../components/StoriesRow';
 import { useAuth } from '../services/authContext';
 import { formatFirebaseError } from '../services/firebaseErrors';
+import { captureException } from '../services/observability';
 import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
+import { useAppNavigation } from '../navigation/useAppNavigation';
 
 type FeedScope = 'all' | 'following';
 
@@ -110,7 +112,7 @@ function createStyles(colors: AppColors) {
 }
 
 export default function FeedScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useAppNavigation();
   const insets = useSafeAreaInsets();
   const { user, configured } = useAuth();
   const { colors } = useTheme();
@@ -189,6 +191,7 @@ export default function FeedScreen() {
           .catch(() => {});
       }
     } catch (e: unknown) {
+      captureException(e);
       setError(formatFirebaseError(e));
     } finally {
       setLoading(false);
@@ -224,7 +227,7 @@ export default function FeedScreen() {
   }, [load]);
 
   const onPressAuthor = useCallback((authorUid: string, name: string) => {
-    navigation.navigate('UserPublicProfile' as never, { uid: authorUid, displayName: name } as never);
+    navigation.navigate('UserPublicProfile', { uid: authorUid, displayName: name });
   }, [navigation]);
 
   const myDisplayName = user?.displayName ?? user?.email ?? 'Аз';

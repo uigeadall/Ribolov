@@ -47,8 +47,14 @@ service firebase.storage {
     }
 
     match /chatMedia/{convId}/{fileName} {
-      allow read: if signedIn();
-      allow write: if signedIn() && request.resource.size < 50 * 1024 * 1024;
+      // convId is always sorted(uid1, uid2).join('_') — sender must be one of the two participants
+      allow read: if signedIn()
+        && (convId.split('_')[0] == request.auth.uid
+          || convId.split('_')[1] == request.auth.uid);
+      allow write: if signedIn()
+        && (convId.split('_')[0] == request.auth.uid
+          || convId.split('_')[1] == request.auth.uid)
+        && request.resource.size < 50 * 1024 * 1024;
     }
   }
 }

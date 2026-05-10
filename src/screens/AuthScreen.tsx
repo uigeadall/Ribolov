@@ -1,19 +1,19 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TextInput, KeyboardAvoidingView, Platform, Alert, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useAppNavigation } from '../navigation/useAppNavigation';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
-import { formatFirebaseError } from '../services/firebaseErrors';
+import { handleError } from '../utils/handleError';
 import { GoogleSignInSection } from '../components/GoogleSignInButton';
 import { AppleSignInSection } from '../components/AppleSignInSection';
 
 export default function AuthScreen() {
-  const navigation = useNavigation();
+  const navigation = useAppNavigation();
   const { colors } = useTheme();
   const { signIn, signUp, signInWithGoogleIdToken, signInWithApple, resetPassword, configured, loading } = useAuth();
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -86,7 +86,7 @@ export default function AuthScreen() {
       else await signUp(email, password, name);
       navigation.goBack();
     } catch (e: unknown) {
-      Alert.alert('Грешка', formatFirebaseError(e));
+      handleError(e);
     } finally {
       setBusy(false);
     }
@@ -184,7 +184,7 @@ export default function AuthScreen() {
                           await resetPassword(target);
                           Alert.alert('Изпратено', 'Провери пощата си за линк за нулиране на паролата.');
                         } catch (e: unknown) {
-                          Alert.alert('Грешка', formatFirebaseError(e));
+                          handleError(e);
                         }
                       },
                     },
@@ -213,7 +213,7 @@ export default function AuthScreen() {
               await signInWithGoogleIdToken(idToken);
               navigation.goBack();
             } catch (e: unknown) {
-              Alert.alert('Грешка', formatFirebaseError(e));
+              handleError(e);
             } finally {
               setBusy(false);
             }
@@ -228,7 +228,7 @@ export default function AuthScreen() {
               await signInWithApple(idToken, rawNonce);
               navigation.goBack();
             } catch (e: unknown) {
-              Alert.alert('Грешка', formatFirebaseError(e));
+              handleError(e);
             } finally {
               setBusy(false);
             }

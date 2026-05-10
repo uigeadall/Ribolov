@@ -14,7 +14,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import { ensureFirebase } from './firebase';
+import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
 
 export type DamFeedPostDoc = {
@@ -30,8 +30,8 @@ export type DamFeedPostDoc = {
 
 /** Изтриване на всички dam feed постове на потребителя (при изтриване на акаунт). Изисква collection group индекс за `feedPosts` + `ownerUid`. */
 export async function deleteAllUserDamFeedPosts(ownerUid: string): Promise<void> {
-  const fb = ensureFirebase();
-  if (!fb || !ownerUid.trim()) return;
+  const fb = requireFirebase();
+  if (!ownerUid.trim()) return;
   try {
     const q = query(collectionGroup(fb.db, 'feedPosts'), where('ownerUid', '==', ownerUid), limit(500));
     for (;;) {
@@ -72,8 +72,7 @@ export function subscribeDamFeedPosts(
   onNext: (posts: DamFeedPostDoc[]) => void,
   onError?: (e: Error) => void
 ): () => void {
-  const fb = ensureFirebase();
-  if (!fb) return () => {};
+  const fb = requireFirebase();
   const q = query(
     collection(fb.db, 'damFeeds', damId, 'feedPosts'),
     orderBy('createdAt', 'desc'),
@@ -100,8 +99,7 @@ export async function createDamFeedPost(opts: {
   localImageUri: string;
   caption?: string;
 }): Promise<void> {
-  const fb = ensureFirebase();
-  if (!fb) throw new Error('Firebase не е наличен.');
+  const fb = requireFirebase();
   const postId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   const path = `damFeeds/${opts.damId}/${opts.ownerUid}/${postId}.jpg`;
   const storageRef = ref(fb.storage, path);
@@ -124,8 +122,7 @@ export async function createDamFeedPost(opts: {
 }
 
 export async function deleteDamFeedPost(damId: string, postId: string, storagePath: string): Promise<void> {
-  const fb = ensureFirebase();
-  if (!fb) throw new Error('Firebase не е наличен.');
+  const fb = requireFirebase();
   await deleteDoc(doc(fb.db, 'damFeeds', damId, 'feedPosts', postId));
   try {
     await deleteObject(ref(fb.storage, storagePath));

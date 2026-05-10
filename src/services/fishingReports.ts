@@ -8,7 +8,7 @@ import {
   where,
   serverTimestamp,
 } from 'firebase/firestore';
-import { ensureFirebase } from './firebase';
+import { requireFirebase } from './firebase';
 
 export type WaterCondition = 'crystal' | 'clear' | 'murky' | 'muddy';
 
@@ -37,8 +37,7 @@ const TTL_MS = 24 * 60 * 60 * 1000;
 export async function addWaterReport(
   r: Omit<WaterReport, 'id' | 'createdAt'>
 ): Promise<void> {
-  const fb = ensureFirebase();
-  if (!fb) throw new Error('Firebase не е наличен.');
+  const fb = requireFirebase();
   await addDoc(collection(fb.db, 'waterReports'), {
     ...r,
     createdAt: serverTimestamp(),
@@ -47,8 +46,7 @@ export async function addWaterReport(
 }
 
 export async function getWaterReports(waterBodyId: string): Promise<WaterReport[]> {
-  const fb = ensureFirebase();
-  if (!fb) return [];
+  const fb = requireFirebase();
   try {
     const snap = await getDocs(
       query(

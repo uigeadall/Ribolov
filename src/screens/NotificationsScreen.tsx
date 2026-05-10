@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
@@ -10,6 +10,8 @@ import type { AppColors } from '../theme/palette';
 import { spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
 import { subscribeMyNotifications, markNotificationRead, type SocialNotification } from '../services/socialFeed';
+import { useFirestoreSubscription } from '../hooks/useFirestoreSubscription';
+import { useAppNavigation } from '../navigation/useAppNavigation';
 
 function createStyles(colors: AppColors) {
   return StyleSheet.create({
@@ -48,25 +50,19 @@ function createStyles(colors: AppColors) {
 }
 
 export default function NotificationsScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useAppNavigation();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const { user, configured } = useAuth();
 
-  const [items, setItems] = useState<SocialNotification[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!configured || !user?.uid) {
-      setLoading(false);
-      return () => {};
-    }
-    const unsub = subscribeMyNotifications(user.uid, (next) => {
-      setItems(next);
-      setLoading(false);
-    });
-    return unsub;
-  }, [configured, user?.uid]);
+  const { data, loading, setData } = useFirestoreSubscription<SocialNotification[]>(
+    (cb) => {
+      if (!configured || !user?.uid) { cb([]); return () => {}; }
+      return subscribeMyNotifications(user.uid, cb);
+    },
+    [configured, user?.uid],
+  );
+  const items = data ?? [];
 
   const onOpen = useCallback(
     (n: SocialNotification) => {
@@ -75,7 +71,7 @@ export default function NotificationsScreen() {
         // Optimistically mark as read in local state immediately — Firestore write is best-effort.
         // The realtime subscription will confirm once online; if offline the dot reappears on reconnect
         // which is acceptable vs. the current bug where it always stays unread.
-        setItems((prev) => prev.map((item) => item.id === n.id ? { ...item, read: true } : item));
+        setData((prev) => prev ? prev.map((item) => item.id === n.id ? { ...item, read: true } : item) : prev);
         markNotificationRead(user.uid, n.id).catch(() => {});
       }
       navigation.navigate('UserPublicProfile', { uid: n.actorUid, displayName: n.actorName });

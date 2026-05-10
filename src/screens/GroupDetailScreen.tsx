@@ -4,7 +4,7 @@ import {
   View, Text, StyleSheet, FlatList, Pressable,
   TextInput, Alert, KeyboardAvoidingView, Platform, RefreshControl,
 } from 'react-native';
-import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
+import { useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Screen } from '../components/Screen';
@@ -19,11 +19,13 @@ import {
   type Group, type GroupPost,
 } from '../services/groups';
 import type { ProfileStackParamList } from '../navigation/types';
+import { useAppNavigation } from '../navigation/useAppNavigation';
+import { handleError } from '../utils/handleError';
 
 type R = RouteProp<ProfileStackParamList, 'GroupDetail'>;
 
 export default function GroupDetailScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useAppNavigation();
   const route = useRoute<R>();
   const { groupId, groupName } = route.params;
   const { colors } = useTheme();
@@ -93,7 +95,7 @@ export default function GroupDetailScreen() {
         setMemberCount((n) => n + 1);
       }
     } catch (e: unknown) {
-      Alert.alert('Грешка', e instanceof Error ? e.message : 'Неуспешно действие.');
+      handleError(e);
     } finally {
       setJoining(false);
     }
@@ -108,7 +110,7 @@ export default function GroupDetailScreen() {
       Toast.show({ type: 'success', text1: 'Публикацията е изпратена', visibilityTime: 2000 });
       await load();
     } catch (e: unknown) {
-      Alert.alert('Грешка', e instanceof Error ? e.message : 'Неуспешно изпращане.');
+      handleError(e);
     } finally {
       setPosting(false);
     }
@@ -127,7 +129,7 @@ export default function GroupDetailScreen() {
             await deleteGroupPost(groupId, post.id);
             setPosts((prev) => prev.filter((p) => p.id !== post.id));
           } catch (e: unknown) {
-            Alert.alert('Грешка', e instanceof Error ? e.message : 'Неуспешно изтриване.');
+            handleError(e);
           }
         },
       },

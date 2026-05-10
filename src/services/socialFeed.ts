@@ -6,6 +6,7 @@ import {
   getDoc,
   getDocs,
   getCountFromServer,
+  increment,
   limit,
   onSnapshot,
   orderBy,
@@ -14,7 +15,7 @@ import {
   setDoc,
   updateDoc,
 } from 'firebase/firestore';
-import { ensureFirebase } from './firebase';
+import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
 import { allowComment, allowLikeToggle } from './socialRateLimit';
 import { getUserPushToken, sendPushNotification } from './pushNotifications';
@@ -61,8 +62,7 @@ export function subscribeMyReactionOnCatch(
   myUid: string,
   cb: (reaction: ReactionType | null) => void
 ): () => void {
-  const fb = ensureFirebase();
-  if (!fb) return () => {};
+  const fb = requireFirebase();
   return onSnapshot(doc(fb.db, 'publicCatches', catchId, 'likes', myUid), (snap) => {
     if (!snap.exists()) { cb(null); return; }
     const r = snap.data()?.reaction as ReactionType | undefined;
@@ -76,8 +76,7 @@ export function subscribeMyLikeOnCatch(catchId: string, myUid: string, cb: (like
 }
 
 export async function fetchCatchLikeCount(catchId: string): Promise<number> {
-  const fb = ensureFirebase();
-  if (!fb) return 0;
+  const fb = requireFirebase();
   try {
     const agg = await getCountFromServer(collection(fb.db, 'publicCatches', catchId, 'likes'));
     return agg.data().count;
@@ -87,8 +86,7 @@ export async function fetchCatchLikeCount(catchId: string): Promise<number> {
 }
 
 export async function fetchCatchCommentCount(catchId: string): Promise<number> {
-  const fb = ensureFirebase();
-  if (!fb) return 0;
+  const fb = requireFirebase();
   try {
     const agg = await getCountFromServer(collection(fb.db, 'publicCatches', catchId, 'comments'));
     return agg.data().count;
@@ -99,8 +97,7 @@ export async function fetchCatchCommentCount(catchId: string): Promise<number> {
 
 /** Returns top reactions with counts, sorted by count descending. */
 export async function fetchReactionSummary(catchId: string): Promise<ReactionSummaryItem[]> {
-  const fb = ensureFirebase();
-  if (!fb) return [];
+  const fb = requireFirebase();
   try {
     const snap = await getDocs(query(collection(fb.db, 'publicCatches', catchId, 'likes'), limit(200)));
     const counts = new Map<ReactionType, number>();
@@ -127,8 +124,7 @@ async function notifyInteraction(opts: {
 }): Promise<void> {
   if (opts.recipientUid === opts.actorUid) return;
   if (!opts.recipientUid || !opts.actorUid) return;
-  const fb = ensureFirebase();
-  if (!fb) return;
+  const fb = requireFirebase();
   const safeName = (opts.actorName || 'Рибар').trim().slice(0, 120) || 'Рибар';
   await addDoc(
     collection(fb.db, 'users', opts.recipientUid, 'notifications'),
@@ -168,13 +164,14 @@ export async function toggleCatchReaction(
   if (!allowLikeToggle(myUid)) {
     throw new Error('Твърде често — опитай отново след секунда.');
   }
-  const fb = ensureFirebase();
-  if (!fb) throw new Error('Firebase не е наличен.');
+  const fb = requireFirebase();
   const refLike = doc(fb.db, 'publicCatches', catchId, 'likes', myUid);
   const snap = await getDoc(refLike);
+  const catchRef = doc(fb.db, 'publicCatches', catchId);
   // If same reaction already active — remove it
   if (snap.exists() && (snap.data()?.reaction ?? 'heart') === reaction) {
     await deleteDoc(refLike);
+    updateDoc(catchRef, { likeCount: increment(-1) }).catch(() => {});
     return null;
   }
   await setDoc(
@@ -186,6 +183,7 @@ export async function toggleCatchReaction(
     })
   );
   if (!snap.exists()) {
+    updateDoc(catchRef, { likeCount: increment(1) }).catch(() => {});
     // Only notify on first reaction, not on reaction change — fire-and-forget
     notifyInteraction({
       recipientUid: catchOwnerUid,
@@ -211,8 +209,7 @@ export async function toggleCatchLike(
 }
 
 export function subscribeCatchComments(catchId: string, onNext: (comments: FeedComment[]) => void): () => void {
-  const fb = ensureFirebase();
-  if (!fb) return () => {};
+  const fb = requireFirebase();
   const q = query(
     collection(fb.db, 'publicCatches', catchId, 'comments'),
     orderBy('createdAt', 'asc'),
@@ -255,8 +252,7 @@ export async function addCatchComment(
   if (!allowComment(authorUid)) {
     throw new Error('Твърде много коментари за кратко време. Опитай по-късно.');
   }
-  const fb = ensureFirebase();
-  if (!fb) throw new Error('Firebase не е наличен.');
+  const fb = requireFirebase();
   const trimmed = text.trim();
   if (!trimmed) return;
   await addDoc(
@@ -281,8 +277,7 @@ export async function addCatchComment(
 }
 
 export async function editCatchComment(catchId: string, commentId: string, newText: string): Promise<void> {
-  const fb = ensureFirebase();
-  if (!fb) throw new Error('Firebase не е наличен.');
+  const fb = requireFirebase();
   const trimmed = newText.trim();
   if (!trimmed) throw new Error('Текстът не може да е празен.');
   await updateDoc(doc(fb.db, 'publicCatches', catchId, 'comments', commentId), {
@@ -292,14 +287,12 @@ export async function editCatchComment(catchId: string, commentId: string, newTe
 }
 
 export async function deleteCatchComment(catchId: string, commentId: string): Promise<void> {
-  const fb = ensureFirebase();
-  if (!fb) throw new Error('Firebase не е наличен.');
+  const fb = requireFirebase();
   await deleteDoc(doc(fb.db, 'publicCatches', catchId, 'comments', commentId));
 }
 
 export function subscribeMyNotifications(myUid: string, onNext: (items: SocialNotification[]) => void): () => void {
-  const fb = ensureFirebase();
-  if (!fb) return () => {};
+  const fb = requireFirebase();
   const q = query(
     collection(fb.db, 'users', myUid, 'notifications'),
     orderBy('createdAt', 'desc'),
@@ -333,8 +326,7 @@ export function subscribeMyNotifications(myUid: string, onNext: (items: SocialNo
 }
 
 export async function markNotificationRead(myUid: string, notifId: string): Promise<void> {
-  const fb = ensureFirebase();
-  if (!fb) return;
+  const fb = requireFirebase();
   await updateDoc(doc(fb.db, 'users', myUid, 'notifications', notifId), stripUndefinedForFirestore({ read: true }));
 }
 
@@ -344,8 +336,7 @@ export async function sendFollowNotification(
   followerDisplayName: string
 ): Promise<void> {
   if (!followedUid || followedUid === followerUid) return;
-  const fb = ensureFirebase();
-  if (!fb) return;
+  const fb = requireFirebase();
   await addDoc(
     collection(fb.db, 'users', followedUid, 'notifications'),
     stripUndefinedForFirestore({
@@ -370,8 +361,7 @@ export async function sendFollowNotification(
 }
 
 export async function fetchCatchLikers(catchId: string): Promise<CatchLiker[]> {
-  const fb = ensureFirebase();
-  if (!fb) return [];
+  const fb = requireFirebase();
   try {
     const snap = await getDocs(query(collection(fb.db, 'publicCatches', catchId, 'likes'), limit(80)));
     return snap.docs.map((d) => {
@@ -387,8 +377,7 @@ export async function fetchCatchLikers(catchId: string): Promise<CatchLiker[]> {
 }
 
 export async function toggleSaveCatch(myUid: string, catchId: string): Promise<boolean> {
-  const fb = ensureFirebase();
-  if (!fb) throw new Error('Firebase не е наличен.');
+  const fb = requireFirebase();
   const refDoc = doc(fb.db, 'users', myUid, 'savedCatches', catchId);
   const snap = await getDoc(refDoc);
   if (snap.exists()) {
@@ -400,14 +389,12 @@ export async function toggleSaveCatch(myUid: string, catchId: string): Promise<b
 }
 
 export function subscribeCatchSaved(myUid: string, catchId: string, cb: (saved: boolean) => void): () => void {
-  const fb = ensureFirebase();
-  if (!fb) return () => {};
+  const fb = requireFirebase();
   return onSnapshot(doc(fb.db, 'users', myUid, 'savedCatches', catchId), (s) => cb(s.exists()));
 }
 
 export function subscribeSavedCatchIdsOrdered(myUid: string, onNext: (ids: string[]) => void): () => void {
-  const fb = ensureFirebase();
-  if (!fb) return () => {};
+  const fb = requireFirebase();
   const q = query(
     collection(fb.db, 'users', myUid, 'savedCatches'),
     orderBy('savedAt', 'desc'),

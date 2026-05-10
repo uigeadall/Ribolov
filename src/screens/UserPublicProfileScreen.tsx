@@ -9,7 +9,7 @@ import {
   Alert,
   FlatList,
 } from 'react-native';
-import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
+import { useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -34,9 +34,10 @@ import {
   getFollowingCount,
 } from '../services/cloudSync';
 import { sendFollowNotification } from '../services/socialFeed';
-import { formatFirebaseError } from '../services/firebaseErrors';
+import { handleError } from '../utils/handleError';
 import { blockUser } from '../services/blockUser';
 import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
+import { useAppNavigation } from '../navigation/useAppNavigation';
 
 function createStyles(colors: AppColors) {
   return StyleSheet.create({
@@ -272,7 +273,7 @@ function createStyles(colors: AppColors) {
 }
 
 export default function UserPublicProfileScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useAppNavigation();
   const route = useRoute<RouteProp<RootStackParamList, 'UserPublicProfile'>>();
   const { uid, displayName: routeName, photoUrlHint } = route.params;
   const { user, configured } = useAuth();
@@ -372,7 +373,7 @@ export default function UserPublicProfileScreen() {
       setFollowerCount(fc);
       setFollowingCount(fwc);
     } catch (e: unknown) {
-      setError(formatFirebaseError(e));
+      handleError(e);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -404,7 +405,7 @@ export default function UserPublicProfileScreen() {
         setFollowerCount((n) => n + 1);
       }
     } catch (e: unknown) {
-      Alert.alert('Грешка', e instanceof Error ? e.message : String(e));
+      handleError(e);
     } finally {
       setFollowBusy(false);
     }
@@ -420,7 +421,7 @@ export default function UserPublicProfileScreen() {
         params: { screen: 'ChatDetail', params: { convId, otherUid: uid, otherName: summaryName } },
       });
     } catch (e: unknown) {
-      Alert.alert('Чат', e instanceof Error ? e.message : 'Неуспешно отваряне на чат.');
+      handleError(e, 'Чат');
     }
   };
 

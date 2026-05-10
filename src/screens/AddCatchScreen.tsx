@@ -14,7 +14,8 @@ import {
   Modal,
   FlatList,
 } from 'react-native';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useRoute, RouteProp } from '@react-navigation/native';
+import { useAppNavigation } from '../navigation/useAppNavigation';
 import { LogbookStackParamList } from '../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -41,6 +42,7 @@ import { AchievementUnlockModal } from '../components/AchievementUnlockModal';
 import { SpeciesPicker } from '../components/SpeciesPicker';
 import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
 import { isRemoteImageUri } from '../utils/formatCatchDate';
+import { handleError } from '../utils/handleError';
 
 function createAddCatchStyles(colors: AppColors) {
   return StyleSheet.create({
@@ -107,7 +109,7 @@ function createAddCatchStyles(colors: AppColors) {
 }
 
 export default function AddCatchScreen() {
-  const navigation = useNavigation();
+  const navigation = useAppNavigation();
   const route = useRoute<RouteProp<LogbookStackParamList, 'AddCatch'>>();
   const prefill = route.params?.prefillLocation;
   const editCatchId = route.params?.editCatchId;
@@ -417,8 +419,7 @@ export default function AddCatchScreen() {
         navigation.goBack();
       }
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      Alert.alert('Грешка', msg || 'Записът не бе успешен.');
+      handleError(e);
     } finally {
       setSaving(false);
     }

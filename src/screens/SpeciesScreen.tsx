@@ -8,7 +8,7 @@ import {
   TextInput,
   Platform,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { Screen } from '../components/Screen';
@@ -23,6 +23,7 @@ import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
 import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
+import { useAppNavigation } from '../navigation/useAppNavigation';
 
 function createSpeciesListStyles(colors: AppColors) {
   return StyleSheet.create({
@@ -114,7 +115,7 @@ function createSpeciesListStyles(colors: AppColors) {
 }
 
 export default function SpeciesScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useAppNavigation();
   const { colors } = useTheme();
   const styles = useMemo(() => createSpeciesListStyles(colors), [colors]);
   const [q, setQ] = useState('');

@@ -10,7 +10,7 @@ import {
   Switch,
   Platform,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Screen } from '../components/Screen';
@@ -25,6 +25,8 @@ import { newId } from '../storage/storage';
 import { Tournament, TournamentCategory } from '../types';
 import { speciesList } from '../data/species';
 import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
+import { useAppNavigation } from '../navigation/useAppNavigation';
+import { handleError } from '../utils/handleError';
 
 const CATEGORIES: { id: TournamentCategory; label: string; icon: keyof typeof Ionicons.glyphMap; hint: string }[] = [
   { id: 'weight', label: 'Общо тегло', icon: 'scale-outline', hint: 'Сборът от теглата на всички улови' },
@@ -104,7 +106,7 @@ function createCreateTournamentStyles(colors: AppColors) {
 }
 
 export default function CreateTournamentScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useAppNavigation();
   const { colors } = useTheme();
   const styles = useMemo(() => createCreateTournamentStyles(colors), [colors]);
   const { user } = useAuth();
@@ -173,7 +175,7 @@ export default function CreateTournamentScreen() {
       await joinTournament(t.id, user.uid, t.hostName);
       navigation.replace('TournamentDetail', { id: t.id });
     } catch (e: any) {
-      Alert.alert('Грешка', e?.message ?? 'Неуспешно създаване.');
+      handleError(e);
     } finally {
       setSaving(false);
     }

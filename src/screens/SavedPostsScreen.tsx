@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,6 @@ import {
   RefreshControl,
   ActivityIndicator,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { FeedPost, FeedItem } from '../components/FeedPost';
@@ -19,8 +18,10 @@ import { spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
 import { subscribeSavedCatchIdsOrdered } from '../services/socialFeed';
 import { fetchPublicCatchesByIds } from '../services/cloudSync';
-import { formatFirebaseError } from '../services/firebaseErrors';
 import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
+import { useFirestoreSubscription } from '../hooks/useFirestoreSubscription';
+import { useAsync } from '../hooks/useAsync';
+import { useAppNavigation } from '../navigation/useAppNavigation';
 
 function createStyles(colors: AppColors) {
   return StyleSheet.create({
@@ -39,53 +40,29 @@ function createStyles(colors: AppColors) {
 }
 
 export default function SavedPostsScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useAppNavigation();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const { user, configured } = useAuth();
 
-  const [items, setItems] = useState<FeedItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const savedIdsRef = useRef<string[]>([]);
+  const { data: savedIds, loading: idsLoading } = useFirestoreSubscription<string[]>(
+    (cb) => {
+      if (!configured || !user?.uid) { cb([]); return () => {}; }
+      return subscribeSavedCatchIdsOrdered(user.uid, cb);
+    },
+    [configured, user?.uid],
+  );
 
-  const loadIds = useCallback(async (ids: string[]) => {
-    if (!ids.length) {
-      setItems([]);
-      setLoading(false);
-      setRefreshing(false);
-      return;
-    }
-    setError(null);
-    try {
-      const rows = await fetchPublicCatchesByIds(ids);
-      setItems(rows as FeedItem[]);
-    } catch (e: unknown) {
-      setError(formatFirebaseError(e));
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+  const { data: items, loading: postsLoading, refreshing, error, reload } = useAsync<FeedItem[]>(
+    async () => {
+      if (!savedIds?.length) return [];
+      return fetchPublicCatchesByIds(savedIds) as Promise<FeedItem[]>;
+    },
+    [savedIds],
+  );
 
-  useEffect(() => {
-    if (!configured || !user?.uid) {
-      setLoading(false);
-      return () => {};
-    }
-    const unsub = subscribeSavedCatchIdsOrdered(user.uid, (ids) => {
-      savedIdsRef.current = ids;
-      void loadIds(ids);
-    });
-    return unsub;
-  }, [configured, user?.uid, loadIds]);
-
-  const onRefresh = () => {
-    if (!user?.uid) return;
-    setRefreshing(true);
-    void loadIds(savedIdsRef.current);
-  };
+  const loading = idsLoading || postsLoading;
+  const itemList: FeedItem[] = items ?? [];
 
   if (!configured || !user) {
     return (
@@ -110,16 +87,16 @@ export default function SavedPostsScreen() {
         <Text style={styles.title}>Запазени</Text>
       </View>
 
-      {loading && items.length === 0 ? (
+      {loading && itemList.length === 0 ? (
         <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg }}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.centerMsg}>Зареждане…</Text>
         </View>
-      ) : error && items.length === 0 ? (
+      ) : error && itemList.length === 0 ? (
         <View style={{ padding: spacing.lg }}>
           <Text style={{ ...typography.body, color: colors.danger }}>{error}</Text>
         </View>
-      ) : items.length === 0 ? (
+      ) : itemList.length === 0 ? (
         <EmptyState
           icon="bookmark-outline"
           title="Няма запазени"
@@ -127,11 +104,11 @@ export default function SavedPostsScreen() {
         />
       ) : (
         <FlatList
-          data={items}
+          data={itemList}
           keyExtractor={(it) => it.id}
           contentContainerStyle={styles.listContent}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+            <RefreshControl refreshing={refreshing} onRefresh={() => reload(true)} tintColor={colors.primary} />
           }
           ItemSeparatorComponent={() => <View style={styles.gap} />}
           {...keyboardAwareScrollProps}

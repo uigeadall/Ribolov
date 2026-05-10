@@ -1,6 +1,5 @@
 import type { FeedItem } from './cloudSync';
 import { fetchPublicCatchesSince } from './cloudSync';
-import { fetchCatchLikeCount } from './socialFeed';
 
 export type ClassicPeriod = 'week' | 'month';
 
@@ -26,11 +25,9 @@ export function periodStartIso(period: ClassicPeriod, now = new Date()): string 
 
 export type RankedClassicPhoto = { item: FeedItem; likes: number };
 
-const BATCH = 14;
-
 /**
  * Публични постове със снимка след подадена дата, подредени по брой лайкове.
- * Броенето е клиентско (ограничен брой постове), без Cloud Functions.
+ * Uses denormalized likeCount field on each publicCatches document — no extra reads.
  */
 export async function fetchRankedClassicPhotos(
   sinceIso: string,
@@ -45,16 +42,9 @@ export async function fetchRankedClassicPhotos(
     (c) => c.photoTakenWithAppCamera === true &&
            typeof c.photoUri === 'string' && c.photoUri.trim().length > 0
   );
-  const capped = withPhoto.slice(0, maxCandidates);
-
-  const scored: RankedClassicPhoto[] = [];
-  for (let i = 0; i < capped.length; i += BATCH) {
-    const chunk = capped.slice(i, i + BATCH);
-    const counts = await Promise.all(chunk.map((c) => fetchCatchLikeCount(c.id)));
-    for (let j = 0; j < chunk.length; j += 1) {
-      scored.push({ item: chunk[j], likes: counts[j] ?? 0 });
-    }
-  }
+  const scored: RankedClassicPhoto[] = withPhoto
+    .slice(0, maxCandidates)
+    .map((c) => ({ item: c, likes: c.likeCount ?? 0 }));
 
   scored.sort((a, b) => {
     if (b.likes !== a.likes) return b.likes - a.likes;

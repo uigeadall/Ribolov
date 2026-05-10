@@ -8,7 +8,7 @@ import {
   Pressable,
   InteractionManager,
 } from 'react-native';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
@@ -30,6 +30,7 @@ import { subscribeMyNotifications } from '../services/socialFeed';
 import { BadgeIcon } from '../components/BadgeIcon';
 import { Image } from 'expo-image';
 import type { Catch } from '../types/index';
+import { useAppNavigation } from '../navigation/useAppNavigation';
 
 const FALLBACK_COORD = { latitude: 42.6977, longitude: 23.3219 };
 
@@ -127,7 +128,7 @@ function createHomeStyles(colors: AppColors) {
 }
 
 export default function HomeScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useAppNavigation();
   const { colors } = useTheme();
   const { user, configured } = useAuth();
   const firstName = user?.displayName?.trim().split(/\s+/)[0] || 'рибарю';
@@ -406,7 +407,7 @@ export default function HomeScreen() {
           title="Дневник — всички улови"
           variant="secondary"
           compact
-          onPress={() => navigation.navigate('LogbookTab')}
+          onPress={() => navigation.navigate('LogbookTab', { screen: 'LogbookList' })}
           style={{ marginTop: spacing.md }}
         />
       </Card>
@@ -461,7 +462,7 @@ export default function HomeScreen() {
         icon="book-outline"
         title="Дневник на улова"
         subtitle="Записвай риба, снимки и бележки"
-        onPress={() => navigation.navigate('LogbookTab')}
+        onPress={() => navigation.navigate('LogbookTab', { screen: 'LogbookList' })}
       />
       <ListRow
         icon="map-outline"
@@ -496,7 +497,7 @@ export default function HomeScreen() {
         iconTint={colors.warning}
         title="Лента"
         subtitle="Споделени улови от общността"
-        onPress={() => navigation.navigate('FeedTab')}
+        onPress={() => navigation.navigate('FeedTab', { screen: 'FeedList' })}
       />
       <ListRow
         icon="person-outline"

@@ -1,6 +1,6 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from 'react-native';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
@@ -14,6 +14,8 @@ import { fetchPublicCatchesByOwner } from '../services/cloudSync';
 import type { Catch } from '../types';
 import { CATEGORY_LABELS, RARITY_COLORS } from '../data/achievements';
 import { Achievement, AchievementCategory } from '../types';
+import { useAsync } from '../hooks/useAsync';
+import { useAppNavigation } from '../navigation/useAppNavigation';
 
 const CATEGORY_ORDER: AchievementCategory[] = [
   'quantity',
@@ -88,41 +90,33 @@ function createAchievementsStyles(colors: AppColors) {
 export default function AchievementsScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => createAchievementsStyles(colors), [colors]);
-  const navigation = useNavigation<any>();
+  const navigation = useAppNavigation();
   const { user, configured } = useAuth();
-  const [items, setItems] = useState<Achievement[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      let catches: Catch[] = await catchesStore.list();
-      // Merge cloud catches so achievements reflect all synced records,
-      // not just what's on this device
-      if (configured && user) {
-        try {
-          const cloud = await fetchPublicCatchesByOwner(user.uid, 200);
-          const localIds = new Set(catches.map((c) => c.id));
-          const onlyCloud = cloud.filter((c) => !localIds.has(c.id)) as unknown as Catch[];
-          catches = [...catches, ...onlyCloud];
-        } catch {
-          // best-effort — local catches still used
-        }
+  const { data, loading, reload } = useAsync(async () => {
+    let catches: Catch[] = await catchesStore.list();
+    if (configured && user) {
+      try {
+        const cloud = await fetchPublicCatchesByOwner(user.uid, 200);
+        const localIds = new Set(catches.map((c) => c.id));
+        const onlyCloud = cloud.filter((c) => !localIds.has(c.id)) as unknown as Catch[];
+        catches = [...catches, ...onlyCloud];
+      } catch {
+        // best-effort — local catches still used
       }
-      const all = await computeAchievements(catches, {
-        firebaseConfigured: configured,
-        userLoggedIn: !!user,
-      });
-      setItems(all);
-    } finally {
-      setLoading(false);
     }
+    return computeAchievements(catches, {
+      firebaseConfigured: configured,
+      userLoggedIn: !!user,
+    });
   }, [configured, user]);
+
+  const items: Achievement[] = data ?? [];
 
   useFocusEffect(
     useCallback(() => {
-      load();
-    }, [load])
+      reload();
+    }, [reload])
   );
 
   function BadgeCard({ achievement }: { achievement: Achievement }) {

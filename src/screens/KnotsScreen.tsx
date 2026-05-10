@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, Pressable, TextInput } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
@@ -10,6 +10,7 @@ import { radius, spacing, typography } from '../theme/typography';
 import { KNOTS, USE_CASE_LABELS, KnotUseCase } from '../data/knots';
 import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
 import { StarRatingBar } from '../components/StarRatingBar';
+import { useAppNavigation } from '../navigation/useAppNavigation';
 
 const FILTERS: { id: 'all' | KnotUseCase; label: string }[] = [
   { id: 'all', label: 'Всички' },
@@ -82,7 +83,7 @@ function createKnotsStyles(colors: AppColors) {
 export default function KnotsScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => createKnotsStyles(colors), [colors]);
-  const navigation = useNavigation<any>();
+  const navigation = useAppNavigation();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<'all' | KnotUseCase>('all');
 

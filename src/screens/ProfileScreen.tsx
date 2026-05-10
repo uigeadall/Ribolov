@@ -12,7 +12,7 @@ import {
   Modal,
   Keyboard,
 } from 'react-native';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -27,8 +27,9 @@ import { radius, spacing, typography } from '../theme/typography';
 import { shadowCard } from '../theme/shadows';
 import { useAuth } from '../services/authContext';
 import { updateProfile } from 'firebase/auth';
-import { formatFirebaseError } from '../services/firebaseErrors';
+import { handleError } from '../utils/handleError';
 import { ensureFirebase } from '../services/firebase';
+import { useAppNavigation } from '../navigation/useAppNavigation';
 import {
   getUserPublicSummary,
   pushUserProfilePublic,
@@ -39,7 +40,7 @@ import {
 } from '../services/cloudSync';
 
 export default function ProfileScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useAppNavigation();
   const { colors, mode, toggleMode } = useTheme();
   const { user, configured, loading: authLoading, signOut, deleteAccount } = useAuth();
 
@@ -384,7 +385,7 @@ export default function ProfileScreen() {
       }
       Alert.alert('Готово', 'Профилът е запазен.');
     } catch (e: unknown) {
-      Alert.alert('Грешка', formatFirebaseError(e));
+      handleError(e);
     } finally {
       setProfileSaving(false);
     }
@@ -411,7 +412,7 @@ export default function ProfileScreen() {
             await deleteAccount(delPassword);
             closeDeleteModal();
           } catch (e: unknown) {
-            Alert.alert('Грешка', formatFirebaseError(e));
+            handleError(e);
           }
         },
       },

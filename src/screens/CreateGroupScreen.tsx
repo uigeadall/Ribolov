@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, Alert, Platform } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { Button } from '../components/Button';
@@ -8,11 +8,13 @@ import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
 import { createGroup, CATEGORY_LABELS, type GroupCategory } from '../services/groups';
+import { useAppNavigation } from '../navigation/useAppNavigation';
+import { handleError } from '../utils/handleError';
 
 const CATEGORIES: GroupCategory[] = ['club', 'water', 'species', 'general'];
 
 export default function CreateGroupScreen() {
-  const navigation = useNavigation<any>();
+  const navigation = useAppNavigation();
   const { colors } = useTheme();
   const { user, configured } = useAuth();
   const [name, setName] = useState('');
@@ -43,7 +45,7 @@ export default function CreateGroupScreen() {
       );
       navigation.replace('GroupDetail', { groupId: id, groupName: name.trim() });
     } catch (e: unknown) {
-      Alert.alert('Грешка', e instanceof Error ? e.message : 'Неуспешно създаване.');
+      handleError(e);
     } finally {
       setSaving(false);
     }

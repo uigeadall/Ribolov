@@ -15,7 +15,7 @@ import {
   where,
   increment,
 } from 'firebase/firestore';
-import { ensureFirebase } from './firebase';
+import { requireFirebase } from './firebase';
 import { newId } from '../storage/storage';
 
 export type GroupCategory = 'club' | 'water' | 'species' | 'general';
@@ -60,8 +60,7 @@ export async function createGroup(
   g: Pick<Group, 'name' | 'description' | 'category'>,
   creator: { uid: string; displayName: string }
 ): Promise<string> {
-  const fb = ensureFirebase();
-  if (!fb) throw new Error('Firebase не е наличен.');
+  const fb = requireFirebase();
   const id = newId();
   await setDoc(doc(fb.db, 'groups', id), {
     name: g.name.trim(),
@@ -84,8 +83,7 @@ export async function createGroup(
 }
 
 export async function fetchGroups(maxCount = 30): Promise<Group[]> {
-  const fb = ensureFirebase();
-  if (!fb) return [];
+  const fb = requireFirebase();
   const snap = await getDocs(
     query(collection(fb.db, 'groups'), orderBy('memberCount', 'desc'), limit(maxCount))
   );
@@ -93,8 +91,7 @@ export async function fetchGroups(maxCount = 30): Promise<Group[]> {
 }
 
 export async function fetchMyGroups(uid: string): Promise<Group[]> {
-  const fb = ensureFirebase();
-  if (!fb) return [];
+  const fb = requireFirebase();
   try {
     // Fast path: collectionGroup query works for members created after the uid field was added
     const memberSnap = await getDocs(
@@ -121,16 +118,14 @@ export async function fetchMyGroups(uid: string): Promise<Group[]> {
 }
 
 export async function getGroup(groupId: string): Promise<Group | null> {
-  const fb = ensureFirebase();
-  if (!fb) return null;
+  const fb = requireFirebase();
   const snap = await getDoc(doc(fb.db, 'groups', groupId));
   if (!snap.exists()) return null;
   return docToGroup(snap.id, snap.data());
 }
 
 export async function joinGroup(groupId: string, user: { uid: string; displayName: string }): Promise<void> {
-  const fb = ensureFirebase();
-  if (!fb) throw new Error('Firebase не е наличен.');
+  const fb = requireFirebase();
   await setDoc(doc(fb.db, 'groups', groupId, 'members', user.uid), {
     uid: user.uid,
     displayName: user.displayName,
@@ -142,23 +137,20 @@ export async function joinGroup(groupId: string, user: { uid: string; displayNam
 }
 
 export async function leaveGroup(groupId: string, uid: string): Promise<void> {
-  const fb = ensureFirebase();
-  if (!fb) throw new Error('Firebase не е наличен.');
+  const fb = requireFirebase();
   await deleteDoc(doc(fb.db, 'groups', groupId, 'members', uid));
   // Best-effort counter
   await updateDoc(doc(fb.db, 'groups', groupId), { memberCount: increment(-1) }).catch(() => {});
 }
 
 export async function isMember(groupId: string, uid: string): Promise<boolean> {
-  const fb = ensureFirebase();
-  if (!fb) return false;
+  const fb = requireFirebase();
   const snap = await getDoc(doc(fb.db, 'groups', groupId, 'members', uid));
   return snap.exists();
 }
 
 export async function getMembers(groupId: string): Promise<GroupMember[]> {
-  const fb = ensureFirebase();
-  if (!fb) return [];
+  const fb = requireFirebase();
   const snap = await getDocs(collection(fb.db, 'groups', groupId, 'members'));
   return snap.docs.map((d) => {
     const data = d.data() as { displayName?: string; role?: string; joinedAt?: { toMillis?: () => number } };
@@ -178,8 +170,7 @@ export async function postToGroup(
   text: string,
   author: { uid: string; displayName: string }
 ): Promise<void> {
-  const fb = ensureFirebase();
-  if (!fb) throw new Error('Firebase не е наличен.');
+  const fb = requireFirebase();
   await addDoc(collection(fb.db, 'groups', groupId, 'posts'), {
     text: text.trim().slice(0, 2000),
     ownerUid: author.uid,
@@ -190,15 +181,13 @@ export async function postToGroup(
 }
 
 export async function deleteGroupPost(groupId: string, postId: string): Promise<void> {
-  const fb = ensureFirebase();
-  if (!fb) throw new Error('Firebase не е наличен.');
+  const fb = requireFirebase();
   await deleteDoc(doc(fb.db, 'groups', groupId, 'posts', postId));
   await updateDoc(doc(fb.db, 'groups', groupId), { postCount: increment(-1) }).catch(() => {});
 }
 
 export async function getGroupPosts(groupId: string, maxCount = 40): Promise<GroupPost[]> {
-  const fb = ensureFirebase();
-  if (!fb) return [];
+  const fb = requireFirebase();
   const snap = await getDocs(
     query(collection(fb.db, 'groups', groupId, 'posts'), orderBy('createdAt', 'desc'), limit(maxCount))
   );
