@@ -278,7 +278,7 @@ export default function FeedScreen() {
         onPress={() => navigation.navigate('Classics')}
         hitSlop={8}
         style={styles.backBtn}
-        accessibilityLabel="Класики и награди"
+        accessibilityLabel="Седмични и месечни класации"
       >
         <Ionicons name="trophy-outline" size={22} color={colors.primary} />
       </Pressable>

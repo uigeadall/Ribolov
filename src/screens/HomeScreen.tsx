@@ -525,11 +525,11 @@ export default function HomeScreen() {
 
       <SectionHeader hint="НАВИГАЦИЯ" title="Полезни секции" subtitle="Директни връзки към основните функции." />
       <ListRow
-        icon="podium-outline"
+        icon="images-outline"
         iconTint={colors.accent}
-        title="Класирания"
-        subtitle="Резултати от общността и по водоем"
-        onPress={() => navigation.navigate('ProfileTab', { screen: 'Leaderboard' })}
+        title="Седмични и месечни класации"
+        subtitle="Класики, награди и снимка на седмицата"
+        onPress={() => navigation.navigate('ProfileTab', { screen: 'Classics' })}
       />
       <ListRow
         icon="fish-outline"

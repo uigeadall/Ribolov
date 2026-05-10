@@ -588,7 +588,7 @@ export default function ProfileScreen() {
             <MenuRow dense icon="trophy-outline" title="Лични рекорди" onPress={() => navigation.navigate('PersonalBests')} showDivider />
             <MenuRow dense icon="people-outline" title="Клубове" onPress={() => navigation.navigate('Groups')} showDivider />
             <MenuRow dense icon="newspaper-outline" title="Лента" onPress={() => navigation.navigate('Feed')} showDivider />
-            <MenuRow dense icon="images-outline" title="Класики и награди" onPress={() => navigation.navigate('Classics')} showDivider />
+            <MenuRow dense icon="images-outline" title="Седмични и месечни класации" onPress={() => navigation.navigate('Classics')} showDivider />
             <MenuRow dense icon="bookmark-outline" title="Запазени" onPress={() => navigation.navigate('SavedPosts')} showDivider />
             <MenuRow dense icon="notifications-outline" title="Известия" onPress={() => navigation.navigate('Notifications')} showDivider />
             <MenuRow dense icon="people-outline" title="Приятели" onPress={() => navigation.navigate('Friends')} showDivider />
