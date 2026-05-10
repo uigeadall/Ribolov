@@ -1,6 +1,11 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { StyleSheet } from 'react-native';
-import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
+import {
+  NavigationContainer,
+  DefaultTheme,
+  useNavigationContainerRef,
+  type LinkingOptions,
+} from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { PlatformPressable } from '@react-navigation/elements';
@@ -15,6 +20,7 @@ import {
   SpeciesStackParamList,
   TabsParamList,
 } from './types';
+import { useNotificationNavigation } from '../hooks/useNotificationNavigation';
 
 import HomeScreen from '../screens/HomeScreen';
 import LogbookScreen from '../screens/LogbookScreen';
@@ -248,8 +254,31 @@ function TabNavigator() {
   );
 }
 
+const linking: LinkingOptions<RootStackParamList> = {
+  prefixes: ['ribolov-app://'],
+  config: {
+    screens: {
+      Main: {
+        screens: {
+          ProfileTab: {
+            screens: {
+              Notifications: 'notifications',
+            },
+          },
+        },
+      },
+      UserPublicProfile: 'user/:uid',
+    },
+  },
+};
+
 export function RootNavigator() {
   const { colors, mode } = useTheme();
+  const navigationRef = useNavigationContainerRef<RootStackParamList>();
+  const [navReady, setNavReady] = useState(false);
+
+  useNotificationNavigation(navigationRef, navReady);
+
   const navTheme = useMemo(
     () => ({
       ...DefaultTheme,
@@ -267,7 +296,12 @@ export function RootNavigator() {
   );
 
   return (
-    <NavigationContainer theme={navTheme}>
+    <NavigationContainer
+      ref={navigationRef}
+      theme={navTheme}
+      linking={linking}
+      onReady={() => setNavReady(true)}
+    >
       <RootStack.Navigator screenOptions={{ headerShown: false }}>
         <RootStack.Screen name="Main" component={TabNavigator} />
         <RootStack.Screen name="UserPublicProfile" component={UserPublicProfileWrapped} />
