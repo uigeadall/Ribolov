@@ -21,6 +21,7 @@ export default function AuthScreen() {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [errors, setErrors] = useState<{ name?: string; email?: string; password?: string }>({});
 
   const styles = useMemo(
     () =>
@@ -52,7 +53,16 @@ export default function AuthScreen() {
           fontSize: 16,
           color: colors.text,
           backgroundColor: colors.surfaceAlt,
+          marginBottom: spacing.xs,
+        },
+        inputError: {
+          borderColor: colors.danger,
+        },
+        fieldError: {
+          ...typography.small,
+          color: colors.danger,
           marginBottom: spacing.sm,
+          marginTop: 2,
         },
         fieldLabel: {
           ...typography.small,
@@ -75,11 +85,27 @@ export default function AuthScreen() {
     [colors]
   );
 
+  const validate = (): boolean => {
+    const next: typeof errors = {};
+    if (mode === 'register' && !name.trim()) {
+      next.name = 'Въведи показвано пред другите.';
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      next.email = 'Въведи валиден имейл адрес.';
+    }
+    if (password.length < 6) {
+      next.password = 'Паролата трябва да е поне 6 символа.';
+    }
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  };
+
   const submit = async () => {
     if (!configured) {
       Alert.alert('Firebase', 'Добави ключове в app.json extra или EXPO_PUBLIC_FIREBASE_*.');
       return;
     }
+    if (!validate()) return;
     setBusy(true);
     try {
       if (mode === 'login') await signIn(email, password);
@@ -90,6 +116,11 @@ export default function AuthScreen() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const switchMode = (next: 'login' | 'register') => {
+    setMode(next);
+    setErrors({});
   };
 
   if (loading) {
@@ -115,13 +146,13 @@ export default function AuthScreen() {
           <Button
             title="Вход"
             variant={mode === 'login' ? 'primary' : 'secondary'}
-            onPress={() => setMode('login')}
+            onPress={() => switchMode('login')}
             style={{ flex: 1 }}
           />
           <Button
             title="Регистрация"
             variant={mode === 'register' ? 'primary' : 'secondary'}
-            onPress={() => setMode('register')}
+            onPress={() => switchMode('register')}
             style={{ flex: 1 }}
           />
         </View>
@@ -131,12 +162,13 @@ export default function AuthScreen() {
             <>
               <Text style={styles.fieldLabel}>ИМЕ</Text>
               <TextInput
-                placeholder="Показвано ime"
+                placeholder="Показвано пред другите"
                 placeholderTextColor={colors.textMuted}
                 value={name}
-                onChangeText={setName}
-                style={styles.input}
+                onChangeText={(v) => { setName(v); if (errors.name) setErrors((p) => ({ ...p, name: undefined })); }}
+                style={[styles.input, errors.name && styles.inputError]}
               />
+              {errors.name ? <Text style={styles.fieldError}>{errors.name}</Text> : null}
             </>
           ) : null}
           <Text style={styles.fieldLabel}>ИМЕЙЛ</Text>
@@ -146,18 +178,20 @@ export default function AuthScreen() {
             autoCapitalize="none"
             keyboardType="email-address"
             value={email}
-            onChangeText={setEmail}
-            style={styles.input}
+            onChangeText={(v) => { setEmail(v); if (errors.email) setErrors((p) => ({ ...p, email: undefined })); }}
+            style={[styles.input, errors.email && styles.inputError]}
           />
+          {errors.email ? <Text style={styles.fieldError}>{errors.email}</Text> : null}
           <Text style={styles.fieldLabel}>ПАРОЛА</Text>
           <TextInput
             placeholder="••••••••"
             placeholderTextColor={colors.textMuted}
             secureTextEntry
             value={password}
-            onChangeText={setPassword}
-            style={styles.input}
+            onChangeText={(v) => { setPassword(v); if (errors.password) setErrors((p) => ({ ...p, password: undefined })); }}
+            style={[styles.input, errors.password && styles.inputError]}
           />
+          {errors.password ? <Text style={styles.fieldError}>{errors.password}</Text> : null}
           <Button
             title={mode === 'login' ? 'Влез' : 'Създай акаунт'}
             onPress={submit}
