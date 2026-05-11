@@ -148,6 +148,7 @@ export async function wipeAllLocalAppData(): Promise<void> {
     'ribolov:notifications:morning',
     'ribolov:notifications:scheduledId',
     'ribolov:notifications:tripScheduleMap',
+    'ribolov:catch-sync-queue',
     'ribolov:message-sync-queue',
   ]);
 }

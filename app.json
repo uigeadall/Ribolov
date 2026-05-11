@@ -105,9 +105,10 @@
       "firebaseMessagingSenderId": "966535631632",
       "firebaseAppId": "1:966535631632:web:8c5143b449175381ec8b95",
       "firebaseMeasurementId": "G-YV1SVQFTGF",
-      "googleWebClientId": "",
-      "googleIosClientId": "",
+      "googleWebClientId": "966535631632-kchh8ds3rlckvod0uopckps6fe9an865.apps.googleusercontent.com",
+      "googleIosClientId": "966535631632-1gdn9h1fvfal4uhf1u6b8lmjb2hu522g.apps.googleusercontent.com",
       "googleAndroidClientId": "",
+      "facebookAppId": "",
       "firebaseAppCheckEnabled": "false",
       "firebaseAppCheckDebugToken": "",
       "sentryDsn": ""

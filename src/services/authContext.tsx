@@ -12,6 +12,7 @@ import {
   deleteUser,
   EmailAuthProvider,
   GoogleAuthProvider,
+  FacebookAuthProvider,
   OAuthProvider,
   reauthenticateWithCredential,
   sendPasswordResetEmail,
@@ -33,10 +34,16 @@ export type AuthContextValue = {
   signUp: (email: string, password: string, displayName?: string) => Promise<void>;
   signInWithGoogleIdToken: (idToken: string) => Promise<void>;
   signInWithApple: (idToken: string, rawNonce: string) => Promise<void>;
+  signInWithFacebook: (accessToken: string) => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
-  deleteAccount: (password: string) => Promise<void>;
+  deleteAccount: (credential: DeleteAccountCredential) => Promise<void>;
 };
+
+export type DeleteAccountCredential =
+  | { provider: 'password'; password: string }
+  | { provider: 'google'; idToken: string }
+  | { provider: 'apple'; idToken: string; rawNonce: string };
 
 const LAST_UID_KEY = '@ribolov/lastUid';
 
@@ -135,6 +142,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await signInWithCredential(fb.auth, cred);
   }, []);
 
+  const signInWithFacebook = useCallback(async (accessToken: string) => {
+    const fb = ensureFirebase();
+    if (!fb) throw new Error('Firebase не е конфигуриран.');
+    const cred = FacebookAuthProvider.credential(accessToken);
+    await signInWithCredential(fb.auth, cred);
+  }, []);
+
   const signOut = useCallback(async () => {
     const fb = ensureFirebase();
     const u = fb?.auth.currentUser;
@@ -152,12 +166,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await sendPasswordResetEmail(fb.auth, email.trim());
   }, []);
 
-  const deleteAccount = useCallback(async (password: string) => {
+  const deleteAccount = useCallback(async (credential: DeleteAccountCredential) => {
     const fb = ensureFirebase();
     const u = fb?.auth.currentUser;
-    if (!fb || !u?.email) throw new Error('Няма активен акаунт с парола.');
-    const cred = EmailAuthProvider.credential(u.email, password);
-    await reauthenticateWithCredential(u, cred);
+    if (!fb || !u) throw new Error('Няма активен акаунт.');
+    let authCred;
+    if (credential.provider === 'google') {
+      authCred = GoogleAuthProvider.credential(credential.idToken);
+    } else if (credential.provider === 'apple') {
+      const appleProvider = new OAuthProvider('apple.com');
+      authCred = appleProvider.credential({ idToken: credential.idToken, rawNonce: credential.rawNonce });
+    } else {
+      if (!u.email) throw new Error('Акаунтът няма имейл за потвърждение.');
+      authCred = EmailAuthProvider.credential(u.email, credential.password);
+    }
+    await reauthenticateWithCredential(u, authCred);
     const uid = u.uid;
     await deleteAllUserCloudData(uid);
     await wipeAllLocalAppData();
@@ -174,6 +197,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signUp,
       signInWithGoogleIdToken,
       signInWithApple,
+      signInWithFacebook,
       signOut,
       resetPassword,
       deleteAccount,
@@ -186,6 +210,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signUp,
       signInWithGoogleIdToken,
       signInWithApple,
+      signInWithFacebook,
       signOut,
       resetPassword,
       deleteAccount,

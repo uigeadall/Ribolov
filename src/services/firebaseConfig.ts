@@ -42,6 +42,15 @@ export function isGoogleSignInConfigured(): boolean {
   return webClientId.length > 12;
 }
 
+export function getFacebookAppId(): string {
+  const e = extra();
+  return trimStr(e.facebookAppId) || trimStr(process.env.EXPO_PUBLIC_FACEBOOK_APP_ID) || '';
+}
+
+export function isFacebookSignInConfigured(): boolean {
+  return getFacebookAppId().length > 4;
+}
+
 export function isFirebaseConfigured(): boolean {
   const e = extra();
   const key =

@@ -26,7 +26,9 @@ import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
 import { shadowCard } from '../theme/shadows';
-import { useAuth } from '../services/authContext';
+import { useAuth, type DeleteAccountCredential } from '../services/authContext';
+import { GoogleSignInSection } from '../components/GoogleSignInButton';
+import { AppleSignInSection } from '../components/AppleSignInSection';
 import { updateProfile } from 'firebase/auth';
 import { handleError } from '../utils/handleError';
 import { ensureFirebase } from '../services/firebase';
@@ -95,17 +97,21 @@ const ProfileTopBar = React.memo(function ProfileTopBar({
 
 type DeleteAccountModalProps = {
   visible: boolean;
+  provider: string;
+  configured: boolean;
   delPassword: string;
   colors: AppColors;
   styles: { modalBackdrop: object; modalCard: object; modalTitle: object; modalHint: object; modalInput: object; modalActions: object };
   onChangePassword: (v: string) => void;
   onClose: () => void;
   onSubmit: () => void;
+  onSocialCredential: (cred: DeleteAccountCredential) => void;
 };
 
 const DeleteAccountModal = React.memo(function DeleteAccountModal({
-  visible, delPassword, colors, styles, onChangePassword, onClose, onSubmit,
+  visible, provider, configured, delPassword, colors, styles, onChangePassword, onClose, onSubmit, onSocialCredential,
 }: DeleteAccountModalProps) {
+  const isSocial = provider === 'google.com' || provider === 'apple.com';
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.modalBackdrop}>
@@ -113,20 +119,36 @@ const DeleteAccountModal = React.memo(function DeleteAccountModal({
         <View style={styles.modalCard}>
           <Text style={styles.modalTitle}>Изтриване на акаунта</Text>
           <Text style={styles.modalHint}>
-            Необратимо изчиства облака и локалните данни. Въведи паролата си:
+            {isSocial
+              ? 'Необратимо изчиства облака и локалните данни. Потвърди самоличността си, за да продължиш.'
+              : 'Необратимо изчиства облака и локалните данни. Въведи паролата си:'}
           </Text>
-          <TextInput
-            style={styles.modalInput}
-            placeholder="Парола"
-            placeholderTextColor={colors.textMuted}
-            secureTextEntry
-            value={delPassword}
-            onChangeText={onChangePassword}
-            autoCapitalize="none"
-          />
+          {provider === 'google.com' ? (
+            <GoogleSignInSection
+              disabled={!configured}
+              onIdToken={async (idToken) => onSocialCredential({ provider: 'google', idToken })}
+            />
+          ) : provider === 'apple.com' ? (
+            <AppleSignInSection
+              disabled={!configured}
+              onAppleTokens={async (idToken, rawNonce) => onSocialCredential({ provider: 'apple', idToken, rawNonce })}
+            />
+          ) : (
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Парола"
+              placeholderTextColor={colors.textMuted}
+              secureTextEntry
+              value={delPassword}
+              onChangeText={onChangePassword}
+              autoCapitalize="none"
+            />
+          )}
           <View style={styles.modalActions}>
             <Button title="Отказ" variant="ghost" onPress={onClose} style={{ flex: 1 }} compact />
-            <Button title="Изтрий" variant="danger" compact onPress={onSubmit} style={{ flex: 1 }} />
+            {!isSocial ? (
+              <Button title="Изтрий" variant="danger" compact onPress={onSubmit} style={{ flex: 1 }} />
+            ) : null}
           </View>
         </View>
       </View>
@@ -492,11 +514,7 @@ export default function ProfileScreen() {
     setDelPassword('');
   };
 
-  const submitDeleteAccount = () => {
-    if (!delPassword.trim()) {
-      Alert.alert('Парола', 'Въведи текущата парола за потвърждение.');
-      return;
-    }
+  const confirmAndDelete = useCallback((cred: DeleteAccountCredential) => {
     Alert.alert('Изтриване на акаунт', 'Това изтрива облачни данни и локалния дневник. Необратимо.', [
       { text: 'Отказ', style: 'cancel' },
       {
@@ -504,7 +522,7 @@ export default function ProfileScreen() {
         style: 'destructive',
         onPress: async () => {
           try {
-            await deleteAccount(delPassword);
+            await deleteAccount(cred);
             closeDeleteModal();
           } catch (e: unknown) {
             handleError(e);
@@ -512,6 +530,14 @@ export default function ProfileScreen() {
         },
       },
     ]);
+  }, [deleteAccount, closeDeleteModal]);
+
+  const submitDeleteAccount = () => {
+    if (!delPassword.trim()) {
+      Alert.alert('Парола', 'Въведи текущата парола за потвърждение.');
+      return;
+    }
+    confirmAndDelete({ provider: 'password', password: delPassword });
   };
 
   const openPublicPreview = () => {
@@ -685,12 +711,15 @@ export default function ProfileScreen() {
       {user ? (
         <DeleteAccountModal
           visible={deleteModalVisible}
+          provider={user.providerData[0]?.providerId ?? 'password'}
+          configured={configured}
           delPassword={delPassword}
           colors={colors}
           styles={styles}
           onChangePassword={setDelPassword}
           onClose={closeDeleteModal}
           onSubmit={submitDeleteAccount}
+          onSocialCredential={confirmAndDelete}
         />
       ) : null}
     </Screen>

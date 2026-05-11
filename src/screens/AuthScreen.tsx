@@ -11,11 +11,12 @@ import { useAuth } from '../services/authContext';
 import { handleError } from '../utils/handleError';
 import { GoogleSignInSection } from '../components/GoogleSignInButton';
 import { AppleSignInSection } from '../components/AppleSignInSection';
+import { FacebookSignInSection } from '../components/FacebookSignInButton';
 
 export default function AuthScreen() {
   const navigation = useAppNavigation();
   const { colors } = useTheme();
-  const { signIn, signUp, signInWithGoogleIdToken, signInWithApple, resetPassword, configured, loading } = useAuth();
+  const { signIn, signUp, signInWithGoogleIdToken, signInWithApple, signInWithFacebook, resetPassword, configured, loading } = useAuth();
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -260,6 +261,21 @@ export default function AuthScreen() {
             setBusy(true);
             try {
               await signInWithApple(idToken, rawNonce);
+              navigation.goBack();
+            } catch (e: unknown) {
+              handleError(e);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        />
+
+        <FacebookSignInSection
+          disabled={busy || !configured}
+          onAccessToken={async (accessToken) => {
+            setBusy(true);
+            try {
+              await signInWithFacebook(accessToken);
               navigation.goBack();
             } catch (e: unknown) {
               handleError(e);

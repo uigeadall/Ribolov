@@ -16,6 +16,7 @@ import {
 } from 'firebase/firestore';
 import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
+import { getUserPushToken, sendPushNotification } from './pushNotifications';
 import type { DirectMessage, ConversationPreview } from '../types';
 
 export async function ensureDirectConversation(
@@ -155,6 +156,7 @@ export async function sendConversationMessage(
   senderUid: string,
   text: string,
   recipientUid: string,
+  senderName?: string,
   mediaUrl?: string,
   mediaType?: 'photo' | 'video',
 ): Promise<void> {
@@ -165,12 +167,22 @@ export async function sendConversationMessage(
     collection(fb.db, 'conversations', convId, 'messages'),
     stripUndefinedForFirestore({ senderUid, text: trimmed, createdAt: serverTimestamp(), mediaUrl, mediaType }),
   );
+  const preview = mediaUrl ? (mediaType === 'video' ? '📹 Видео' : '📷 Снимка') : trimmed;
   await updateDoc(doc(fb.db, 'conversations', convId), {
-    lastMessage: mediaUrl ? (mediaType === 'video' ? '📹 Видео' : '📷 Снимка') : trimmed,
+    lastMessage: preview,
     lastMessageAt: serverTimestamp(),
     lastSenderUid: senderUid,
     [`unreadCounts.${recipientUid}`]: increment(1),
   });
+  void getUserPushToken(recipientUid).then((token) => {
+    if (!token) return;
+    sendPushNotification({
+      to: token,
+      title: senderName ?? 'Ново съобщение',
+      body: preview.slice(0, 120),
+      data: { type: 'message', convId, senderUid, senderName: senderName ?? '' },
+    });
+  }).catch(() => {});
 }
 
 export async function markConversationRead(convId: string, myUid: string): Promise<void> {

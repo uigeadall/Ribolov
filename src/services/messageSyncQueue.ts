@@ -7,6 +7,7 @@ const QUEUE_KEY = 'ribolov:message-sync-queue';
 type Entry = {
   convId: string;
   senderUid: string;
+  senderName?: string;
   text: string;
   recipientUid: string;
   mediaUrl?: string;
@@ -33,6 +34,7 @@ function normalizeEntries(raw: unknown): Entry[] {
     out.push({
       convId: o.convId,
       senderUid: o.senderUid,
+      senderName: typeof o.senderName === 'string' ? o.senderName : undefined,
       text: typeof o.text === 'string' ? o.text : '',
       recipientUid: typeof o.recipientUid === 'string' ? o.recipientUid : '',
       mediaUrl: typeof o.mediaUrl === 'string' ? o.mediaUrl : undefined,
@@ -55,11 +57,12 @@ export async function enqueueMessage(
   senderUid: string,
   text: string,
   recipientUid: string,
+  senderName?: string,
   mediaUrl?: string,
   mediaType?: 'photo' | 'video',
 ): Promise<void> {
   const q = await readQ();
-  q.push({ convId, senderUid, text, recipientUid, mediaUrl, mediaType, attempts: 0 });
+  q.push({ convId, senderUid, senderName, text, recipientUid, mediaUrl, mediaType, attempts: 0 });
   await writeQ(q);
   addBreadcrumb('sync', 'message_enqueue', { convId, senderUid });
 }
@@ -88,6 +91,7 @@ export async function flushPendingMessages(): Promise<void> {
         entry.senderUid,
         entry.text,
         entry.recipientUid,
+        entry.senderName,
         entry.mediaUrl,
         entry.mediaType,
       );

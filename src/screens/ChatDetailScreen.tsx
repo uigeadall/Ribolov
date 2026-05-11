@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -62,6 +62,7 @@ export default function ChatDetailScreen() {
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [otherPresence, setOtherPresence] = useState<{ online: boolean; lastSeen?: number }>({ online: false });
+  const flatRef = useRef<FlatList<DirectMessage>>(null);
 
   const { otherUid } = route.params;
 
@@ -71,8 +72,8 @@ export default function ChatDetailScreen() {
     markConversationRead(convId, user.uid).catch(() => {});
     const unsub = subscribeConversationMessages(convId, (next) => {
       setMsgs(next);
-      // Mark as read whenever new messages arrive while screen is open
       markConversationRead(convId, user.uid).catch(() => {});
+      flatRef.current?.scrollToEnd({ animated: true });
     });
     return unsub;
   }, [convId, configured, user]);
@@ -88,12 +89,14 @@ export default function ChatDetailScreen() {
     setSending(true);
     const trimmed = text.trim();
     try {
-      await sendConversationMessage(convId, user.uid, trimmed, otherUid);
+      const myName = user.displayName ?? user.email ?? 'Рибар';
+      await sendConversationMessage(convId, user.uid, trimmed, otherUid, myName);
       setText('');
     } catch (e) {
       const code = typeof e === 'object' && e !== null && 'code' in e ? String((e as { code: unknown }).code) : '';
       if (code === 'unavailable' || code === 'failed-precondition') {
-        await enqueueMessage(convId, user.uid, trimmed, otherUid).catch(() => {});
+        const myName = user.displayName ?? user.email ?? 'Рибар';
+        await enqueueMessage(convId, user.uid, trimmed, otherUid, myName).catch(() => {});
         setText('');
         Alert.alert('Офлайн', 'Съобщението ще бъде изпратено, когато се свържеш с интернет.');
       } else {
@@ -130,7 +133,8 @@ export default function ChatDetailScreen() {
       const token = await fb.auth.currentUser?.getIdToken(true);
       if (!token) throw new Error('Не е влезено в акаунт.');
 
-      const bucket = 'ribolov-4ef41.firebasestorage.app';
+      const bucket = fb.auth.app.options.storageBucket;
+      if (!bucket) throw new Error('Firebase Storage не е конфигуриран.');
       const ts = Date.now();
       const storagePath = `publicCatchPhotos/${user.uid}/chat_${ts}.jpg`;
 
@@ -154,7 +158,8 @@ export default function ChatDetailScreen() {
 
       const meta = JSON.parse(uploadResult.body) as { name: string; downloadTokens: string };
       const url = `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o/${encodeURIComponent(meta.name)}?alt=media&token=${meta.downloadTokens}`;
-      await sendConversationMessage(convId, user.uid, '', otherUid, url, 'photo');
+      const myName = user.displayName ?? user.email ?? 'Рибар';
+      await sendConversationMessage(convId, user.uid, '', otherUid, myName, url, 'photo');
     } catch (e) {
       handleError(e);
     } finally {
@@ -244,9 +249,11 @@ export default function ChatDetailScreen() {
         </View>
 
         <FlatList
+          ref={flatRef}
           data={msgs}
           keyExtractor={(m) => m.id}
           contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.md }}
+          onContentSizeChange={() => flatRef.current?.scrollToEnd({ animated: false })}
           renderItem={({ item }) => {
             const mine = item.senderUid === user.uid;
             return (
@@ -296,6 +303,7 @@ export default function ChatDetailScreen() {
             value={text}
             onChangeText={setText}
             multiline
+            maxLength={2000}
           />
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             {uploading ? (

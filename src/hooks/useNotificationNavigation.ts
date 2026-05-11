@@ -17,11 +17,24 @@ function routeNotification(
       uid: data.actorUid,
       displayName: typeof data.actorName === 'string' ? data.actorName : 'Рибар',
     });
-  } else if (type === 'like' || type === 'comment') {
+  } else if ((type === 'like' || type === 'comment') && typeof data.actorUid === 'string') {
+    // Navigate to the actor's profile — from there the user can see the catch that was reacted on
+    ref.navigate('UserPublicProfile', {
+      uid: data.actorUid,
+      displayName: typeof data.actorName === 'string' ? data.actorName : 'Рибар',
+    });
+  } else if (type === 'message' && typeof data.convId === 'string' && typeof data.senderUid === 'string') {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (ref.navigate as any)('Main', {
       screen: 'ProfileTab',
-      params: { screen: 'Notifications' },
+      params: {
+        screen: 'ChatDetail',
+        params: {
+          convId: data.convId,
+          otherUid: data.senderUid,
+          otherName: typeof data.senderName === 'string' ? data.senderName : 'Рибар',
+        },
+      },
     });
   }
 }

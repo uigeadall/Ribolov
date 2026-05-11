@@ -74,7 +74,7 @@ function NotifRow({ item, myUid, onOpen, styles, colors }: NotifRowProps) {
 
   const verb =
     item.type === 'like'
-      ? 'хареса твой улов'
+      ? `реагира ${item.reactionEmoji ?? '❤️'} на твой улов`
       : item.type === 'comment'
         ? 'коментира твой улов'
         : 'те последва';

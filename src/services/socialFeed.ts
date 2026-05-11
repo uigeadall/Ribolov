@@ -52,6 +52,7 @@ export type SocialNotification = {
   type: 'like' | 'comment' | 'follow';
   catchId: string;
   preview?: string;
+  reactionEmoji?: string;
   read: boolean;
   createdAt?: unknown;
 };
@@ -136,6 +137,7 @@ async function notifyInteraction(opts: {
       type: opts.type,
       catchId: opts.catchId ?? '',
       preview: (opts.preview ?? '').slice(0, 200),
+      ...(opts.reactionEmoji ? { reactionEmoji: opts.reactionEmoji } : {}),
       read: false,
       createdAt: serverTimestamp(),
     }
@@ -309,6 +311,7 @@ export function subscribeMyNotifications(myUid: string, onNext: (items: SocialNo
           type: 'like' | 'comment' | 'follow';
           catchId: string;
           preview?: string;
+          reactionEmoji?: string;
           read?: boolean;
           createdAt?: unknown;
         };
@@ -319,6 +322,7 @@ export function subscribeMyNotifications(myUid: string, onNext: (items: SocialNo
           type: data.type,
           catchId: data.catchId,
           preview: data.preview,
+          reactionEmoji: data.reactionEmoji,
           read: !!data.read,
           createdAt: data.createdAt,
         };
