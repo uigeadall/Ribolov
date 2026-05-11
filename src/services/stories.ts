@@ -13,7 +13,7 @@ import {
   where,
   limit,
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
 import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
 
@@ -61,14 +61,31 @@ export async function uploadStoryMedia(
   type: 'photo' | 'video'
 ): Promise<string> {
   const fb = requireFirebase();
+  const token = await fb.auth.currentUser?.getIdToken(true);
+  if (!token) throw new Error('Не е влязло в акаунт.');
+  const bucket = fb.auth.app.options.storageBucket;
+  if (!bucket) throw new Error('Firebase Storage не е конфигуриран.');
+
   const ext = type === 'video' ? 'mp4' : 'jpg';
   const contentType = type === 'video' ? 'video/mp4' : 'image/jpeg';
-  const path = `stories/${uid}/${Date.now()}.${ext}`;
-  const storageRef = ref(fb.storage, path);
-  const resp = await fetch(localUri);
-  const blob = await resp.blob();
-  await uploadBytes(storageRef, blob, { contentType });
-  return getDownloadURL(storageRef);
+  const storagePath = `stories/${uid}/${Date.now()}.${ext}`;
+
+  const result = await uploadAsync(
+    `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o?uploadType=media&name=${encodeURIComponent(storagePath)}`,
+    localUri,
+    {
+      httpMethod: 'POST',
+      uploadType: FileSystemUploadType.BINARY_CONTENT,
+      headers: { 'Content-Type': contentType, 'Authorization': `Bearer ${token}` },
+    }
+  );
+
+  if (result.status < 200 || result.status >= 300) {
+    throw new Error(`Качването неуспешно (${result.status})`);
+  }
+
+  const meta = JSON.parse(result.body) as { name: string; downloadTokens: string };
+  return `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o/${encodeURIComponent(meta.name)}?alt=media&token=${meta.downloadTokens}`;
 }
 
 export async function addStory(s: Omit<Story, 'id' | 'createdAt' | 'expiresAt'>): Promise<void> {

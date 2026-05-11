@@ -63,6 +63,7 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
   const [stories, setStories] = useState<Story[]>([]);
   const [viewing, setViewing] = useState<Story | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [imageError, setImageError] = useState(false);
 
   const viewer = useStoryViewer(viewing, user);
   const addStory = useAddStory(user, () => loadStories(), () => setAddOpen(false));
@@ -79,6 +80,7 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
   const openViewer = (s: Story) => {
     viewer.setCommentsOpen(false);
     viewer.setCommentDraft('');
+    setImageError(false);
     setViewing(s);
   };
 
@@ -162,8 +164,17 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
         {viewing ? (
           <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
             <View style={styles.viewerBg}>
-              {viewing.mediaUrl && viewing.mediaType === 'photo' ? (
-                <Image source={{ uri: viewing.mediaUrl }} style={styles.viewerMedia} contentFit="contain" />
+              {viewing.mediaUrl && viewing.mediaType === 'photo' && !imageError ? (
+                <Image
+                  source={{ uri: viewing.mediaUrl }}
+                  style={styles.viewerMedia}
+                  contentFit="contain"
+                  onError={() => setImageError(true)}
+                />
+              ) : viewing.mediaUrl && viewing.mediaType === 'photo' && imageError ? (
+                <View style={[styles.viewerMedia, { alignItems: 'center', justifyContent: 'center' }]}>
+                  <Text style={{ fontSize: 72 }}>{viewing.emoji ?? '🎣'}</Text>
+                </View>
               ) : viewing.mediaUrl && viewing.mediaType === 'video' ? (
                 <View style={[styles.viewerMedia, { alignItems: 'center', justifyContent: 'center' }]}>
                   <Ionicons name="videocam" size={64} color="rgba(255,255,255,0.4)" />
