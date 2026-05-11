@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Alert, ScrollView } from 'react-native';
 import { useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
+import { doc, getDoc } from 'firebase/firestore';
 import { Image } from 'expo-image';
 import ViewShot from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
@@ -10,6 +11,8 @@ import { Button } from '../components/Button';
 import { useTheme } from '../services/themeContext';
 import { spacing, typography } from '../theme/typography';
 import { catchesStore } from '../storage/storage';
+import { requireFirebase } from '../services/firebase';
+import { useAuth } from '../services/authContext';
 import type { Catch } from '../types';
 import type { LogbookStackParamList } from '../navigation/types';
 import { formatCatchDate } from '../utils/formatCatchDate';
@@ -21,14 +24,37 @@ export default function CatchDetailScreen() {
   const route = useRoute<R>();
   const navigation = useAppNavigation();
   const { colors } = useTheme();
+  const { user } = useAuth();
   const [item, setItem] = useState<Catch | null>(null);
+  const [isOwn, setIsOwn] = useState(false);
   const [sharing, setSharing] = useState(false);
   const cardRef = useRef<ViewShot>(null);
 
   const reload = useCallback(async () => {
+    const id = route.params.id;
+    // Try local storage first (own catches)
     const list = await catchesStore.list();
-    setItem(list.find((c) => c.id === route.params.id) ?? null);
-  }, [route.params.id]);
+    const local = list.find((c) => c.id === id);
+    if (local) {
+      setItem(local);
+      setIsOwn(true);
+      return;
+    }
+    // Fall back to publicCatches in Firestore (other users' catches from the feed)
+    try {
+      const fb = requireFirebase();
+      const snap = await getDoc(doc(fb.db, 'publicCatches', id));
+      if (snap.exists()) {
+        const data = snap.data() as Catch & { ownerUid?: string };
+        setItem(data);
+        setIsOwn(!!user?.uid && data.ownerUid === user.uid);
+      } else {
+        setItem(null);
+      }
+    } catch {
+      setItem(null);
+    }
+  }, [route.params.id, user?.uid]);
 
   useFocusEffect(
     useCallback(() => {
@@ -197,8 +223,12 @@ export default function CatchDetailScreen() {
 
         <Card style={styles.actions}>
           <Button title="Сподели като снимка" variant="secondary" onPress={shareCard} loading={sharing} />
-          <Button title="Редактирай" variant="secondary" onPress={() => navigation.navigate('AddCatch', { editCatchId: item.id })} />
-          <Button title="Изтрий записа" variant="danger" onPress={remove} />
+          {isOwn && (
+            <>
+              <Button title="Редактирай" variant="secondary" onPress={() => navigation.navigate('AddCatch', { editCatchId: item.id })} />
+              <Button title="Изтрий записа" variant="danger" onPress={remove} />
+            </>
+          )}
         </Card>
       </ScrollView>
     </Screen>
