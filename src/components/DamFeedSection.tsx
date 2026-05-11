@@ -70,7 +70,7 @@ export function DamFeedSection({ damId, damName, user, firebaseConfigured }: Pro
       return;
     }
     const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ImagePicker.MediaType.Images,
       quality: 0.85,
     });
     if (res.canceled || !res.assets[0]?.uri) return;

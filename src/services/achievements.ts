@@ -82,8 +82,10 @@ export async function checkForNewUnlocks(
   ctx: { firebaseConfigured: boolean; userLoggedIn: boolean; uid?: string }
 ): Promise<Achievement[]> {
   const prevRaw = await AsyncStorage.getItem(UNLOCK_KEY);
+  let parsedPrev: unknown;
+  try { parsedPrev = prevRaw ? JSON.parse(prevRaw) : []; } catch { parsedPrev = []; }
   const prev = new Set<string>(
-    prevRaw ? (JSON.parse(prevRaw) as string[])?.filter((x) => typeof x === 'string') : []
+    Array.isArray(parsedPrev) ? parsedPrev.filter((x) => typeof x === 'string') : []
   );
   const current = await computeAchievements(catches, ctx);
   const newly = current.filter((a) => a.unlocked && !prev.has(a.id));
