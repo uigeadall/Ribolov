@@ -1,7 +1,9 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Alert, ScrollView } from 'react-native';
 import { useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { Image } from 'expo-image';
+import ViewShot from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
@@ -20,6 +22,8 @@ export default function CatchDetailScreen() {
   const navigation = useAppNavigation();
   const { colors } = useTheme();
   const [item, setItem] = useState<Catch | null>(null);
+  const [sharing, setSharing] = useState(false);
+  const cardRef = useRef<ViewShot>(null);
 
   const reload = useCallback(async () => {
     const list = await catchesStore.list();
@@ -63,6 +67,20 @@ export default function CatchDetailScreen() {
           marginTop: spacing.md,
           backgroundColor: colors.surfaceAlt,
         },
+        extraPhoto: {
+          width: 200,
+          height: 150,
+          borderRadius: 10,
+          marginTop: spacing.md,
+          marginRight: spacing.sm,
+          backgroundColor: colors.surfaceAlt,
+        },
+        watermark: {
+          ...typography.caption,
+          color: colors.textMuted,
+          marginTop: spacing.md,
+          textAlign: 'right',
+        },
         actions: { marginTop: spacing.lg, gap: spacing.sm },
       }),
     [colors]
@@ -81,6 +99,21 @@ export default function CatchDetailScreen() {
       </Screen>
     );
   }
+
+  const shareCard = async () => {
+    if (!cardRef.current) return;
+    setSharing(true);
+    try {
+      const uri = await (cardRef.current as any).capture();
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { mimeType: 'image/png' });
+      }
+    } catch {
+      Alert.alert('Грешка', 'Споделянето не успя.');
+    } finally {
+      setSharing(false);
+    }
+  };
 
   const remove = () => {
     Alert.alert('Изтриване', 'Да се изтрие записът?', [
@@ -106,40 +139,68 @@ export default function CatchDetailScreen() {
     .join(' · ');
 
   return (
-    <Screen scroll>
-      <Text style={styles.title}>{item.speciesName}</Text>
-      <Text style={styles.meta}>{metaLine}</Text>
-      {item.location?.name ? <Text style={styles.meta}>{item.location.name}</Text> : null}
-      {item.bait ? <Text style={styles.meta}>Стръв: {item.bait}</Text> : null}
+    <Screen padded={false}>
+      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}>
 
-      <View style={styles.chipRow}>
-        {item.syncedToCloud ? (
-          <View style={styles.chip}>
-            <Text style={styles.chipText}>Синхронизиран</Text>
+        {/* ── Shareable card ── ViewShot captures this flat View only (no nested ScrollView) */}
+        <ViewShot ref={cardRef} options={{ format: 'png', quality: 0.95 }}>
+          <View style={{ backgroundColor: colors.background }}>
+            <Text style={styles.title}>{item.speciesName}</Text>
+            <Text style={styles.meta}>{metaLine}</Text>
+            {item.location?.name ? <Text style={styles.meta}>{item.location.name}</Text> : null}
+            {item.bait ? <Text style={styles.meta}>Стръв: {item.bait}</Text> : null}
+
+            <View style={styles.chipRow}>
+              {item.syncedToCloud ? (
+                <View style={styles.chip}><Text style={styles.chipText}>Синхронизиран</Text></View>
+              ) : null}
+              {item.conditions?.fishingRating != null ? (
+                <View style={styles.chip}>
+                  <Text style={styles.chipText}>{'⭐'.repeat(item.conditions.fishingRating)} риболов</Text>
+                </View>
+              ) : null}
+              {item.conditions?.temperatureC != null ? (
+                <View style={styles.chip}><Text style={styles.chipText}>{item.conditions.temperatureC}°C</Text></View>
+              ) : null}
+              {item.conditions?.windKmh != null ? (
+                <View style={styles.chip}><Text style={styles.chipText}>💨 {item.conditions.windKmh} км/ч</Text></View>
+              ) : null}
+              {item.conditions?.pressureHpa != null ? (
+                <View style={styles.chip}><Text style={styles.chipText}>⏱ {item.conditions.pressureHpa} hPa</Text></View>
+              ) : null}
+              {item.conditions?.moonPhaseName ? (
+                <View style={styles.chip}><Text style={styles.chipText}>{item.conditions.moonPhaseName}</Text></View>
+              ) : null}
+            </View>
+
+            {/* First photo only — flat Image, capturable by ViewShot */}
+            {item.photoUri ? (
+              <Image source={{ uri: item.photoUri }} style={styles.photo} contentFit="cover" />
+            ) : null}
+
+            {item.photoTitle ? <Text style={styles.photoTitle}>{item.photoTitle}</Text> : null}
+
+            <Text style={styles.watermark}>🎣 Риболов</Text>
           </View>
+        </ViewShot>
+
+        {/* Extra photos — outside ViewShot, horizontal scroll */}
+        {(item.extraPhotoUris?.length ?? 0) > 0 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {item.extraPhotoUris!.map((uri, i) => (
+              <Image key={i} source={{ uri }} style={styles.extraPhoto} contentFit="cover" />
+            ))}
+          </ScrollView>
         ) : null}
-      </View>
 
-      {item.photoUri ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: spacing.md }}>
-          {[item.photoUri, ...(item.extraPhotoUris ?? [])].map((uri, i) => (
-            <Image
-              key={i}
-              source={{ uri }}
-              style={[styles.photo, { marginTop: 0, marginRight: spacing.sm }]}
-              contentFit="cover"
-            />
-          ))}
-        </ScrollView>
-      ) : null}
+        {item.notes ? <Text style={styles.notes}>{item.notes}</Text> : null}
 
-      {item.photoTitle ? <Text style={styles.photoTitle}>{item.photoTitle}</Text> : null}
-      {item.notes ? <Text style={styles.notes}>{item.notes}</Text> : null}
-
-      <Card style={styles.actions}>
-        <Button title="Редактирай" variant="secondary" onPress={() => navigation.navigate('AddCatch', { editCatchId: item.id })} />
-        <Button title="Изтрий записа" variant="danger" onPress={remove} />
-      </Card>
+        <Card style={styles.actions}>
+          <Button title="Сподели като снимка" variant="secondary" onPress={shareCard} loading={sharing} />
+          <Button title="Редактирай" variant="secondary" onPress={() => navigation.navigate('AddCatch', { editCatchId: item.id })} />
+          <Button title="Изтрий записа" variant="danger" onPress={remove} />
+        </Card>
+      </ScrollView>
     </Screen>
   );
 }

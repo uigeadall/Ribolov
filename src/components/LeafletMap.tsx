@@ -12,10 +12,19 @@ export type LeafletMapHandle = {
   flyTo: (lat: number, lng: number, zoom?: number) => void;
 };
 
+export type CatchMapMarker = {
+  id: string;
+  latitude: number;
+  longitude: number;
+  speciesName: string;
+  weightKg?: number;
+};
+
 type Props = {
   spots: Spot[];
   dams: Dam[];
   rivers: River[];
+  catchMarkers?: CatchMapMarker[];
   pendingCoord: { latitude: number; longitude: number } | null;
   userCoord: { latitude: number; longitude: number } | null;
   /** Полилиния по пътища (lng/lat точки от OSRM и др.), или null за скриване */
@@ -73,9 +82,17 @@ html,body,#map{margin:0;padding:0;height:100%;width:100%;}
     iconAnchor:[15,15]
   });}
 
+  function catchPin(){ return L.divIcon({
+    className:'wt-div-icon',
+    html:'<svg width="26" height="26" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg"><circle cx="13" cy="13" r="11" fill="#E85D04" stroke="#fff" stroke-width="2.5" opacity="0.9"/><text x="13" y="17" text-anchor="middle" font-size="12" fill="#fff">🎣</text></svg>',
+    iconSize:[26,26],
+    iconAnchor:[13,13]
+  });}
+
   var spotMarkers = [];
   var damMarkers = [];
   var riverMarkers = [];
+  var catchLayerMarkers = [];
   var pendMarker = null;
   var userMarker = null;
   var lpTimer = null;
@@ -130,6 +147,15 @@ html,body,#map{margin:0;padding:0;height:100%;width:100%;}
       riverMarkers.push(m);
     });
 
+    clearArr(catchLayerMarkers);
+    (payload.catchMarkers||[]).forEach(function(c){
+      var label = c.speciesName + (c.weightKg ? ' ' + c.weightKg + ' кг' : '');
+      var m = L.circleMarker([c.latitude,c.longitude],{radius:9,color:'#E85D04',fillColor:'#FF8533',fillOpacity:0.88,weight:2.5})
+        .addTo(map)
+        .bindTooltip(label, { permanent: false, direction:'top', offset:[0,-6] });
+      catchLayerMarkers.push(m);
+    });
+
     if(pendMarker){ map.removeLayer(pendMarker); pendMarker=null; }
     if(payload.pending){
       pendMarker = L.circleMarker([payload.pending.latitude,payload.pending.longitude],{radius:11,color:'#D64545',fillColor:'#FF908F',fillOpacity:0.95,weight:3}).addTo(map);
@@ -178,6 +204,7 @@ export const LeafletMap = forwardRef<LeafletMapHandle, Props>(function LeafletMa
     spots,
     dams,
     rivers,
+    catchMarkers,
     pendingCoord,
     userCoord,
     routeLine,
@@ -197,13 +224,14 @@ export const LeafletMap = forwardRef<LeafletMapHandle, Props>(function LeafletMa
         spots,
         dams,
         rivers,
+        catchMarkers: catchMarkers ?? [],
         pending: pendingCoord,
         user: userCoord,
         route: routeLine ?? null,
         mapType,
         zoom: webZoom,
       }),
-    [spots, dams, rivers, pendingCoord, userCoord, routeLine, mapType, webZoom]
+    [spots, dams, rivers, catchMarkers, pendingCoord, userCoord, routeLine, mapType, webZoom]
   );
 
   const injectRefresh = useCallback(() => {

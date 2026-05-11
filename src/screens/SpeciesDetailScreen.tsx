@@ -246,6 +246,13 @@ export default function SpeciesDetailScreen() {
         <ArticleSection styles={styles} title="Сезонност">
           {sp.bestSeason}
         </ArticleSection>
+
+        <Button
+          title="🎯 Таргетирай тази риба"
+          variant="secondary"
+          onPress={() => navigation.navigate('SpeciesTarget', { speciesId: sp.id })}
+          style={{ marginTop: spacing.lg }}
+        />
       </ScrollView>
     </Screen>
   );

@@ -61,6 +61,7 @@ import GroupsScreen from '../screens/GroupsScreen';
 import GroupDetailScreen from '../screens/GroupDetailScreen';
 import CreateGroupScreen from '../screens/CreateGroupScreen';
 import ExploreScreen from '../screens/ExploreScreen';
+import SpeciesTargetScreen from '../screens/SpeciesTargetScreen';
 
 const wrap = (label: string, Component: React.ComponentType<any>) => (props: any) =>
   (
@@ -105,6 +106,7 @@ function SpeciesNavigator() {
       <SpeciesStack.Navigator screenOptions={{ headerShown: false }}>
         <SpeciesStack.Screen name="SpeciesList" component={SpeciesScreen} />
         <SpeciesStack.Screen name="SpeciesDetail" component={SpeciesDetailScreen} />
+        <SpeciesStack.Screen name="SpeciesTarget" component={SpeciesTargetScreen} />
         <SpeciesStack.Screen name="Regulations" component={RegulationsScreen} />
         <SpeciesStack.Screen name="Gear" component={GearScreen} />
         <SpeciesStack.Screen name="Knots" component={KnotsScreen} />

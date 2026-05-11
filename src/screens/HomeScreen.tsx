@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Pressable,
+  ScrollView,
   InteractionManager,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -22,7 +23,7 @@ import { ListRow } from '../components/ListRow';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
-import { fetchWeather, windDirectionLabel, type WeatherSnapshot } from '../services/weather';
+import { fetchWeather, fetchForecast, windDirectionLabel, type WeatherSnapshot, type ForecastDay } from '../services/weather';
 import { catchesStore } from '../storage/storage';
 import { fetchRankedClassicPhotos, periodStartIso, type RankedClassicPhoto } from '../services/classicsContest';
 import { subscribeUnreadMessagesCount } from '../services/cloudSync';
@@ -110,6 +111,24 @@ function createHomeStyles(colors: AppColors) {
       marginBottom: spacing.sm,
     },
     lastCatchText: { ...typography.caption, color: colors.textMuted, flex: 1 },
+    forecastDayCard: {
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.sm + 2,
+      borderRadius: radius.md,
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.border,
+      alignItems: 'center',
+      minWidth: 62,
+      gap: 4,
+    },
+    forecastDayCardBest: {
+      backgroundColor: colors.primarySurface,
+      borderColor: colors.primary,
+    },
+    forecastDayLabel: { ...typography.caption, color: colors.textMuted, fontWeight: '600' },
+    forecastDayLabelBest: { color: colors.primary },
+    forecastDayTemp: { ...typography.caption, color: colors.text, fontWeight: '600' },
     feedCard: {
       marginBottom: spacing.xl,
       flexDirection: 'row',
@@ -144,6 +163,7 @@ export default function HomeScreen() {
   const [bestThisMonth, setBestThisMonth] = useState<Catch | null>(null);
   const [daysSinceCatch, setDaysSinceCatch] = useState<number | null>(null);
   const [topClassic, setTopClassic] = useState<RankedClassicPhoto | null>(null);
+  const [forecast, setForecast] = useState<ForecastDay[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [unreadMsgs, setUnreadMsgs] = useState(0);
   const [unreadNotifs, setUnreadNotifs] = useState(0);
@@ -205,8 +225,12 @@ export default function HomeScreen() {
     setLocLabel(label);
 
     try {
-      const w = await fetchWeather(lat, lng);
+      const [w, days] = await Promise.all([
+        fetchWeather(lat, lng),
+        fetchForecast(lat, lng).catch(() => [] as ForecastDay[]),
+      ]);
       setWeather(w);
+      setForecast(days);
       setWeatherStatus('idle');
     } catch {
       setWeather(null);
@@ -409,6 +433,45 @@ export default function HomeScreen() {
           </>
         )}
       </Card>
+
+      {forecast.length > 0 ? (
+        <>
+          <SectionHeader hint="ПРОГНОЗА" title="Следващите 7 дни" subtitle="Дни с по-висок индекс са по-добри за риболов." />
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.sm, paddingBottom: spacing.xl }}
+          >
+            {forecast.map((day) => {
+              const isBest = day.fishingRating >= 4;
+              const dateLabel = new Date(day.dateIso).toLocaleDateString('bg-BG', { day: 'numeric', month: 'short' });
+              return (
+                <View
+                  key={day.dateIso}
+                  style={[styles.forecastDayCard, isBest && styles.forecastDayCardBest]}
+                >
+                  <Text style={[styles.forecastDayLabel, isBest && styles.forecastDayLabelBest]}>
+                    {day.dayLabel}
+                  </Text>
+                  <Text style={{ ...typography.caption, color: colors.textMuted, fontSize: 9 }}>
+                    {dateLabel}
+                  </Text>
+                  <Text style={{ fontSize: 18 }}>
+                    {day.fishingRating >= 4 ? '🎣' : day.precipProbability > 60 ? '🌧' : day.fishingRating <= 2 ? '😐' : '🐟'}
+                  </Text>
+                  <Text style={{ ...typography.small, color: isBest ? colors.primary : colors.text, fontWeight: '700' }}>
+                    {'★'.repeat(day.fishingRating)}{'☆'.repeat(5 - day.fishingRating)}
+                  </Text>
+                  <Text style={styles.forecastDayTemp}>{day.maxTempC}°</Text>
+                  {day.precipProbability > 20 ? (
+                    <Text style={{ ...typography.caption, color: colors.textMuted }}>{day.precipProbability}%💧</Text>
+                  ) : null}
+                </View>
+              );
+            })}
+          </ScrollView>
+        </>
+      ) : null}
 
       <SectionHeader hint="ДНЕВНИК" title="Твоите улови" subtitle="Брой записи на устройството — синхронизацията е от профила, ако си влязъл." />
       <Card style={{ marginBottom: spacing.xl }}>

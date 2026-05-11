@@ -43,6 +43,7 @@ import { SpeciesPicker } from '../components/SpeciesPicker';
 import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
 import { isRemoteImageUri } from '../utils/formatCatchDate';
 import { handleError } from '../utils/handleError';
+import { fetchWeather } from '../services/weather';
 
 function createAddCatchStyles(colors: AppColors) {
   return StyleSheet.create({
@@ -141,6 +142,7 @@ export default function AddCatchScreen() {
   const [trips, setTrips] = useState<TripPlan[]>([]);
   const [tripPickerOpen, setTripPickerOpen] = useState(false);
   const formDirtyRef = useRef(false);
+  const conditionsRef = useRef<Catch['conditions'] | null>(null);
   // Stable ID for this form instance — never changes between retries so a
   // failed save followed by a retry always writes to the same record,
   // preventing duplicate entries.
@@ -203,12 +205,30 @@ export default function AddCatchScreen() {
         setLocationName('');
       }
       if (c.tripId) setTripId(c.tripId);
+      if (c.conditions) conditionsRef.current = c.conditions;
       setEditLoaded(true);
     });
     return () => {
       alive = false;
     };
   }, [editCatchId, navigation]);
+
+  useEffect(() => {
+    if (!locationCoords) return;
+    let cancelled = false;
+    fetchWeather(locationCoords.lat, locationCoords.lon).then((snap) => {
+      if (cancelled) return;
+      conditionsRef.current = {
+        temperatureC: snap.temperatureC,
+        pressureHpa: snap.pressureHpa,
+        windKmh: snap.windKmh,
+        moonPhase: snap.moonPhase,
+        moonPhaseName: snap.moonPhaseName,
+        fishingRating: snap.fishingRating,
+      };
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [locationCoords]);
 
   useEffect(() => {
     if (!editCatchId || !configured || !user) return;
@@ -372,6 +392,7 @@ export default function AddCatchScreen() {
         ? { latitude: locationCoords.lat, longitude: locationCoords.lon, name: locationName || undefined }
         : undefined,
       ...(tripId ? { tripId } : {}),
+      conditions: conditionsRef.current ?? initialCatch?.conditions ?? undefined,
     };
     try {
       await catchesStore.save(item);

@@ -24,8 +24,9 @@ import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { spotsStore, newId } from '../storage/storage';
+import { spotsStore, catchesStore, newId } from '../storage/storage';
 import { Spot } from '../types';
+import type { CatchMapMarker } from '../components/LeafletMap';
 import { DAMS, Dam } from '../data/dams';
 import { RIVERS, River } from '../data/rivers';
 import { fetchWeather, windDirectionLabel, WeatherSnapshot } from '../services/weather';
@@ -110,6 +111,8 @@ export default function MapScreen() {
   const [damLevel, setDamLevel] = useState<DamLevel | null>(null);
   const [spotWeather, setSpotWeather] = useState<WeatherSnapshot | null>(null);
   const [spotWeatherLoading, setSpotWeatherLoading] = useState(false);
+  const [catchMarkers, setCatchMarkers] = useState<CatchMapMarker[]>([]);
+  const [showCatchMarkers, setShowCatchMarkers] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setHintVisible(false), 5000);
@@ -126,10 +129,29 @@ export default function MapScreen() {
         setTimeout(() => mapRef.current?.flyTo(pos.lat, pos.lng, pos.zoom), 600);
       } catch { /* ignore bad data */ }
     });
+    AsyncStorage.getItem('@ribolov/catchMarkersOn').then((v) => {
+      if (v === 'true') setShowCatchMarkers(true);
+    });
   }, []);
+
+  // Persist catch heatmap toggle
+  useEffect(() => {
+    AsyncStorage.setItem('@ribolov/catchMarkersOn', showCatchMarkers ? 'true' : 'false').catch(() => {});
+  }, [showCatchMarkers]);
 
   const load = useCallback(async () => {
     setSpots(await spotsStore.list());
+    const catches = await catchesStore.list();
+    const markers: CatchMapMarker[] = catches
+      .filter((c) => c.location?.latitude != null && c.location?.longitude != null)
+      .map((c) => ({
+        id: c.id,
+        latitude: c.location!.latitude,
+        longitude: c.location!.longitude,
+        speciesName: c.speciesName,
+        weightKg: c.weightKg,
+      }));
+    setCatchMarkers(markers);
   }, []);
 
   useEffect(() => {
@@ -448,6 +470,7 @@ export default function MapScreen() {
             spots={sortedSpots}
             dams={!showFavoritesOnly && showDams ? DAMS : []}
             rivers={!showFavoritesOnly && showRivers ? RIVERS : []}
+            catchMarkers={showCatchMarkers ? catchMarkers : []}
             pendingCoord={pendingCoord}
             userCoord={userCoord}
             routeLine={routeLine}
@@ -463,6 +486,7 @@ export default function MapScreen() {
             spots={sortedSpots}
             dams={!showFavoritesOnly && showDams ? DAMS : []}
             rivers={!showFavoritesOnly && showRivers ? RIVERS : []}
+            catchMarkers={showCatchMarkers ? catchMarkers : []}
             pendingCoord={pendingCoord}
             userCoord={userCoord}
             routeLine={routeLine}
@@ -517,6 +541,16 @@ export default function MapScreen() {
               <Ionicons name="star" size={13} color={showFavoritesOnly ? colors.white : '#C49A00'} />
               <Text style={[styles.damToggleText, showFavoritesOnly && styles.damToggleTextActive]}>Любими</Text>
             </Pressable>
+            {catchMarkers.length > 0 ? (
+              <Pressable
+                onPress={() => setShowCatchMarkers((v) => !v)}
+                style={[styles.damToggle, showCatchMarkers && { backgroundColor: '#E85D04', borderColor: '#E85D04' }]}
+                hitSlop={6}
+              >
+                <Text style={{ fontSize: 11 }}>🎣</Text>
+                <Text style={[styles.damToggleText, showCatchMarkers && styles.damToggleTextActive]}>Мои улови</Text>
+              </Pressable>
+            ) : null}
           </View>
           {hintVisible ? (
             <Pressable style={styles.hintBox} onPress={() => setHintVisible(false)} hitSlop={4}>

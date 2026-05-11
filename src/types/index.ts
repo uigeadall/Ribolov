@@ -63,6 +63,14 @@ export type Catch = {
   location?: { latitude: number; longitude: number; name?: string };
   syncedToCloud?: boolean;
   tripId?: string;
+  conditions?: {
+    temperatureC?: number;
+    pressureHpa?: number;
+    windKmh?: number;
+    moonPhase?: number;
+    moonPhaseName?: string;
+    fishingRating?: number;
+  };
 };
 
 export type Spot = {

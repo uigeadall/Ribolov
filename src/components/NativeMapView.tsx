@@ -10,7 +10,7 @@ import React, {
 import { Platform, StyleSheet, View, Text } from 'react-native';
 import MapView, { Circle, Marker, Polyline, type Region } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
-import type { LeafletMapHandle, LeafletMapProps, LeafletMapType } from './LeafletMap';
+import type { LeafletMapHandle, LeafletMapProps, LeafletMapType, CatchMapMarker } from './LeafletMap';
 
 const LABEL_THRESHOLD = 0.11;
 // Degrees of extra padding beyond the visible region when culling markers.
@@ -121,7 +121,7 @@ const WaterMarker = React.memo(function WaterMarker({
 
 export const NativeMapView = forwardRef<LeafletMapHandle, LeafletMapProps>(
   function NativeMapView(props, ref) {
-    const { spots, dams, rivers, pendingCoord, userCoord, routeLine, mapType, onLongPress, onMarkerPress, onDamPress, onRiverPress } = props;
+    const { spots, dams, rivers, catchMarkers, pendingCoord, userCoord, routeLine, mapType, onLongPress, onMarkerPress, onDamPress, onRiverPress } = props;
 
     const mapRef = useRef<MapView>(null);
 
@@ -236,6 +236,17 @@ export const NativeMapView = forwardRef<LeafletMapHandle, LeafletMapProps>(
             showLabel={showWaterLabels}
             type="river"
             onPress={() => onRiverPress(r.id)}
+          />
+        ))}
+
+        {(catchMarkers ?? []).map((c) => (
+          <Circle
+            key={`catch-${c.id}`}
+            center={{ latitude: c.latitude, longitude: c.longitude }}
+            radius={120}
+            strokeWidth={2.5}
+            strokeColor="#E85D04"
+            fillColor="rgba(255,133,51,0.75)"
           />
         ))}
 

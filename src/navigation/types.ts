@@ -14,6 +14,7 @@ export type LogbookStackParamList = {
 export type SpeciesStackParamList = {
   SpeciesList: undefined;
   SpeciesDetail: { id: string };
+  SpeciesTarget: { speciesId: string };
   Regulations: undefined;
   Gear: undefined;
   Knots: undefined;

@@ -174,3 +174,58 @@ export function windDirectionLabel(deg: number): string {
   const i = Math.round(deg / 45) % 8;
   return WIND_LABELS[i] ?? '';
 }
+
+export type ForecastDay = {
+  dateIso: string;
+  dayLabel: string;
+  fishingRating: number;
+  maxTempC: number;
+  precipProbability: number;
+  weatherCode: number;
+  moonPhaseName: string;
+};
+
+const DAY_NAMES_BG = ['Нд', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+
+export async function fetchForecast(latitude: number, longitude: number): Promise<ForecastDay[]> {
+  const url =
+    `https://api.open-meteo.com/v1/forecast` +
+    `?latitude=${latitude}&longitude=${longitude}` +
+    `&daily=weather_code,temperature_2m_max,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max,cloud_cover_mean` +
+    `&forecast_days=7&timezone=auto`;
+
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Прогноза: HTTP ${res.status}`);
+  const json = await res.json();
+
+  const dates: string[] = json.daily?.time ?? [];
+  return dates.map((dateStr, i) => {
+    const date = new Date(dateStr);
+    const moon = calcMoonPhase(date);
+    const code: number = json.daily.weather_code[i] ?? 0;
+    const windKmh: number = Math.round((json.daily.wind_speed_10m_max[i] ?? 0) * 10) / 10;
+    const precipProb: number = json.daily.precipitation_probability_max[i] ?? 0;
+    const cloudCover: number = json.daily.cloud_cover_mean[i] ?? 50;
+
+    const rating = fishRating({
+      code,
+      windKmh,
+      windGustKmh: json.daily.wind_gusts_10m_max[i] ?? windKmh,
+      pressureHpa: 1013,
+      cloudCover,
+      uvIndex: 0,
+      moonPhase: moon.phase,
+      precipProbability: precipProb,
+    });
+
+    return {
+      dateIso: dateStr,
+      dayLabel: i === 0 ? 'Днес' : i === 1 ? 'Утре' : DAY_NAMES_BG[date.getDay()] ?? '',
+      fishingRating: rating,
+      maxTempC: Math.round(json.daily.temperature_2m_max[i] ?? 0),
+      precipProbability: Math.round(precipProb),
+      weatherCode: code,
+      moonPhaseName: moon.name,
+    };
+  });
+}
