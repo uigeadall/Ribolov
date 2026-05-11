@@ -19,7 +19,7 @@ type ThemeContextValue = {
   toggleMode: () => void;
 };
 
-const ThemeContext = createContext<ThemeContextValue | null>(null);
+export const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [mode, setModeState] = useState<'light' | 'dark'>('light');

@@ -1,11 +1,12 @@
 import React, { Component, ReactNode } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
-import { lightColorsLegacy } from '../theme/palette';
+import { lightColors } from '../theme/palette';
+import type { AppColors } from '../theme/palette';
 import { spacing, typography } from '../theme/typography';
 import { captureException } from '../services/observability';
+import { ThemeContext } from '../services/themeContext';
 
 type Props = { children: ReactNode; label?: string };
-
 type State = { error: Error | null; info: string | null };
 
 export class ErrorBoundary extends Component<Props, State> {
@@ -26,31 +27,58 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   render() {
-    if (this.state.error) {
-      return (
-        <View style={styles.wrap}>
-          <Text style={styles.title}>Грешка в екрана{this.props.label ? ` „${this.props.label}"` : ''}</Text>
-          <Text style={styles.msg}>{this.state.error.message || String(this.state.error)}</Text>
-          <ScrollView style={styles.stackBox} contentContainerStyle={{ padding: spacing.md }}>
-            <Text style={styles.stack}>{this.state.error.stack}</Text>
-            {this.state.info ? <Text style={styles.stack}>{this.state.info}</Text> : null}
-          </ScrollView>
-        </View>
-      );
-    }
-    return this.props.children as any;
+    if (!this.state.error) return this.props.children as any;
+    const { error, info } = this.state;
+    const { label } = this.props;
+    return (
+      <ThemeContext.Consumer>
+        {(theme) => (
+          <ErrorUI
+            error={error}
+            info={info}
+            label={label}
+            colors={theme?.colors ?? lightColors}
+          />
+        )}
+      </ThemeContext.Consumer>
+    );
   }
 }
 
-const styles = StyleSheet.create({
-  wrap: { flex: 1, backgroundColor: lightColorsLegacy.background, padding: spacing.lg },
-  title: { ...typography.h2, color: lightColorsLegacy.danger, marginTop: spacing.xl },
-  msg: { ...typography.body, color: lightColorsLegacy.text, marginTop: spacing.md },
-  stackBox: {
-    flex: 1,
-    backgroundColor: '#0E2230',
-    borderRadius: 8,
-    marginTop: spacing.lg,
-  },
-  stack: { color: '#9DD0E0', fontFamily: 'Courier', fontSize: 11, lineHeight: 16 },
-});
+function ErrorUI({
+  error,
+  info,
+  label,
+  colors,
+}: {
+  error: Error;
+  info: string | null;
+  label?: string;
+  colors: AppColors;
+}) {
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
+  return (
+    <View style={styles.wrap}>
+      <Text style={styles.title}>
+        Грешка{label ? ` в „${label}"` : ''}
+      </Text>
+      <Text style={styles.msg}>{error.message || String(error)}</Text>
+      {__DEV__ ? (
+        <ScrollView style={styles.stackBox} contentContainerStyle={{ padding: spacing.md }}>
+          <Text style={styles.stack}>{error.stack}</Text>
+          {info ? <Text style={styles.stack}>{info}</Text> : null}
+        </ScrollView>
+      ) : null}
+    </View>
+  );
+}
+
+function createStyles(colors: AppColors) {
+  return StyleSheet.create({
+    wrap: { flex: 1, backgroundColor: colors.background, padding: spacing.lg },
+    title: { ...typography.h2, color: colors.danger, marginTop: spacing.xl },
+    msg: { ...typography.body, color: colors.text, marginTop: spacing.md },
+    stackBox: { flex: 1, backgroundColor: '#0E2230', borderRadius: 8, marginTop: spacing.lg },
+    stack: { color: '#9DD0E0', fontFamily: 'Courier', fontSize: 11, lineHeight: 16 },
+  });
+}
