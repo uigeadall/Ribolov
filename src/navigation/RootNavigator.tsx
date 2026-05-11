@@ -124,6 +124,7 @@ function FeedNavigator() {
   return (
     <FeedStack.Navigator screenOptions={{ headerShown: false }}>
       <FeedStack.Screen name="FeedList" component={FeedScreenWrapped} />
+      <FeedStack.Screen name="CatchDetail" component={CatchDetailScreen} />
       <FeedStack.Screen name="Classics" component={ClassicsScreenWrapped} />
       <FeedStack.Screen name="SavedPosts" component={SavedPostsWrapped} />
       <FeedStack.Screen name="Notifications" component={NotificationsWrapped} />
@@ -171,13 +172,11 @@ function ProfileNavigator() {
 function TabNavigator() {
   const { colors, mode } = useTheme();
   const insets = useSafeAreaInsets();
-  /** По-малък ред за икона+етикет от стандартните ~49px; отделно се добавя само долният inset. */
   const tabRowInner = 34;
   const tabPadTop = 2;
-  /** По-малко от пълния insets.bottom (~34px) — по-близо до долния ръб без двойно приложен inset от навигатора */
-  const rawBottom = insets.bottom;
-  const bottomPad =
-    rawBottom <= 0 ? 6 : Math.max(7, Math.min(12, Math.round(rawBottom * 0.28 + 5)));
+  // Use the full bottom inset so the tab icons clear the Android system navigation bar.
+  // With edgeToEdgeEnabled the nav bar sits ON TOP of the app — a capped value hides the icons.
+  const bottomPad = Math.max(6, insets.bottom);
 
   const tabBarStyle = useMemo(
     () => ({

@@ -12,7 +12,6 @@ import {
   ActivityIndicator,
   Linking,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoute, RouteProp } from '@react-navigation/native';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 import { LogbookStackParamList } from '../navigation/types';
@@ -127,8 +126,7 @@ export default function AddCatchScreen() {
   const prefill = route.params?.prefillLocation;
   const editCatchId = route.params?.editCatchId;
   const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
-  const styles = useMemo(() => createAddCatchStyles(colors, insets.bottom), [colors, insets.bottom]);
+  const styles = useMemo(() => createAddCatchStyles(colors), [colors]);
   const { user, configured } = useAuth();
 
   const [form, dispatch] = useReducer(formReducer, {
@@ -928,9 +926,9 @@ function WeightEstimator({ length, weight, speciesId, colors, onAccept }: Weight
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-function createAddCatchStyles(colors: AppColors, bottomInset: number) {
+function createAddCatchStyles(colors: AppColors) {
   return StyleSheet.create({
-    content: { padding: spacing.lg, paddingBottom: spacing.xxl + bottomInset + 16 },
+    content: { padding: spacing.lg, paddingBottom: spacing.xxl + 16 },
     header: {
       flexDirection: 'row',
       justifyContent: 'space-between',

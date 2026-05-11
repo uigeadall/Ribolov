@@ -233,11 +233,7 @@ export default function FeedScreen() {
   }, [navigation]);
 
   const onPressCatch = useCallback((catchItem: FeedItem) => {
-    navigation.navigate('UserPublicProfile', {
-      uid: catchItem.ownerUid,
-      displayName: catchItem.ownerName ?? 'Рибар',
-      photoUrlHint: catchItem.ownerPhotoUrl,
-    });
+    navigation.navigate('CatchDetail', { id: catchItem.id });
   }, [navigation]);
 
   const myDisplayName = user?.displayName ?? user?.email ?? 'Аз';

@@ -53,6 +53,7 @@ export type ProfileStackParamList = {
 
 export type FeedStackParamList = {
   FeedList: undefined;
+  CatchDetail: { id: string };
   Classics: undefined;
   SavedPosts: undefined;
   Notifications: undefined;
