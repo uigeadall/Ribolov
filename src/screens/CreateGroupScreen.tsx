@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useReducer, useState } from 'react';
 import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, Alert, Platform } from 'react-native';
 
 import { Ionicons } from '@expo/vector-icons';
@@ -13,13 +13,27 @@ import { handleError } from '../utils/handleError';
 
 const CATEGORIES: GroupCategory[] = ['club', 'water', 'species', 'general'];
 
+type FormState = { name: string; description: string; category: GroupCategory };
+type FormAction =
+  | { type: 'SET_NAME'; value: string }
+  | { type: 'SET_DESCRIPTION'; value: string }
+  | { type: 'SET_CATEGORY'; value: GroupCategory };
+
+function formReducer(state: FormState, action: FormAction): FormState {
+  switch (action.type) {
+    case 'SET_NAME': return { ...state, name: action.value };
+    case 'SET_DESCRIPTION': return { ...state, description: action.value };
+    case 'SET_CATEGORY': return { ...state, category: action.value };
+    default: return state;
+  }
+}
+
 export default function CreateGroupScreen() {
   const navigation = useAppNavigation();
   const { colors } = useTheme();
   const { user, configured } = useAuth();
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [category, setCategory] = useState<GroupCategory>('club');
+  const [form, dispatch] = useReducer(formReducer, { name: '', description: '', category: 'club' });
+  const { name, description, category } = form;
   const [saving, setSaving] = useState(false);
 
   const styles = useMemo(() => StyleSheet.create({
@@ -66,7 +80,7 @@ export default function CreateGroupScreen() {
           placeholder="напр. Шаранджии Пловдив"
           placeholderTextColor={colors.textMuted}
           value={name}
-          onChangeText={setName}
+          onChangeText={(v) => dispatch({ type: 'SET_NAME', value: v })}
           style={styles.input}
           maxLength={60}
           returnKeyType="next"
@@ -77,7 +91,7 @@ export default function CreateGroupScreen() {
           placeholder="Накратко за какво е клубът…"
           placeholderTextColor={colors.textMuted}
           value={description}
-          onChangeText={setDescription}
+          onChangeText={(v) => dispatch({ type: 'SET_DESCRIPTION', value: v })}
           style={[styles.input, { minHeight: 80, textAlignVertical: 'top', paddingTop: spacing.sm }]}
           multiline
           maxLength={300}
@@ -86,7 +100,7 @@ export default function CreateGroupScreen() {
         <Text style={styles.label}>Категория</Text>
         <View style={styles.chips}>
           {CATEGORIES.map((c) => (
-            <Pressable key={c} style={[styles.chip, category === c && styles.chipActive]} onPress={() => setCategory(c)}>
+            <Pressable key={c} style={[styles.chip, category === c && styles.chipActive]} onPress={() => dispatch({ type: 'SET_CATEGORY', value: c })}>
               <Text style={[styles.chipText, category === c && styles.chipTextActive]}>{CATEGORY_LABELS[c]}</Text>
             </Pressable>
           ))}

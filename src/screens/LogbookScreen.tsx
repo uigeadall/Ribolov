@@ -228,6 +228,95 @@ type SpeciesChipProps = {
   styles: ReturnType<typeof createLogbookStyles>;
 };
 
+type CatchListRowProps = {
+  item: Catch;
+  colors: AppColors;
+  styles: ReturnType<typeof createLogbookStyles>;
+  personalBests: ReturnType<typeof computePersonalBests>;
+  user: { uid: string } | null;
+  onPress: (item: Catch) => void;
+  onDelete: (item: Catch) => void;
+};
+
+const CatchListRow = React.memo(function CatchListRow({
+  item, colors, styles, personalBests, user, onPress, onDelete,
+}: CatchListRowProps) {
+  return (
+    <Swipeable
+      renderRightActions={() => (
+        <Pressable
+          onPress={() => onDelete(item)}
+          style={{ backgroundColor: colors.danger, justifyContent: 'center', alignItems: 'center', width: 76, borderRadius: radius.md, marginBottom: spacing.sm }}
+        >
+          <Ionicons name="trash-outline" size={22} color={colors.white} />
+          <Text style={{ color: colors.white, fontSize: 11, fontWeight: '700', marginTop: 2 }}>Изтрий</Text>
+        </Pressable>
+      )}
+      overshootRight={false}
+    >
+      <Pressable
+        onPress={() => onPress(item)}
+        android_ripple={{ color: `${colors.primary}18` }}
+        style={({ pressed }) => (pressed && Platform.OS === 'ios' ? { opacity: 0.92 } : undefined)}
+      >
+        <Card style={{ padding: spacing.sm + 2 }}>
+          <View style={styles.row}>
+            <View>
+              {item.photoUri ? (
+                <Image source={{ uri: item.photoUri }} style={styles.thumb} contentFit="cover" />
+              ) : (
+                <View style={[styles.thumb, styles.thumbPlaceholder]}>
+                  <Ionicons name="fish-outline" size={30} color={colors.primary} />
+                </View>
+              )}
+              {(item.extraPhotoUris?.length ?? 0) > 0 ? (
+                <View style={{ position: 'absolute', bottom: 4, right: 4, backgroundColor: 'rgba(0,0,0,0.62)', borderRadius: 8, paddingHorizontal: 5, paddingVertical: 2 }}>
+                  <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>+{item.extraPhotoUris!.length}</Text>
+                </View>
+              ) : null}
+            </View>
+            <View style={styles.itemBody}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={styles.itemTitle} numberOfLines={1}>{item.speciesName}</Text>
+                {isPersonalBestCatch(item, personalBests) ? <Text style={{ fontSize: 14 }}>🏆</Text> : null}
+              </View>
+              {item.photoTitle ? (
+                <Text style={styles.photoTitleLine} numberOfLines={1}>
+                  „{item.photoTitle}"
+                </Text>
+              ) : null}
+              <Text style={styles.itemMeta}>
+                {new Date(item.date).toLocaleDateString('bg-BG')}
+                {item.weightKg != null ? ` · ${item.weightKg} кг` : ''}
+                {item.lengthCm != null ? ` · ${item.lengthCm} см` : ''}
+              </Text>
+              {item.location?.name ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                  <Ionicons name="location-outline" size={14} color={colors.textMuted} />
+                  <Text style={styles.itemMeta} numberOfLines={1}>
+                    {item.location.name}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+            <View style={styles.rowTrail}>
+              {item.released ? (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>Пуснат</Text>
+                </View>
+              ) : null}
+              {user && !item.syncedToCloud ? (
+                <Ionicons name="cloud-upload-outline" size={16} color={colors.textMuted} />
+              ) : null}
+              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+            </View>
+          </View>
+        </Card>
+      </Pressable>
+    </Swipeable>
+  );
+});
+
 function SpeciesChip({ label, selected, onPress, colors, styles }: SpeciesChipProps) {
   return (
     <Pressable
@@ -360,84 +449,18 @@ export default function LogbookScreen() {
   const CatchSeparator = useCallback(() => <View style={{ height: CATCH_SEP_H }} />, []);
 
   const renderCatchItem = useCallback(
-    ({ item }: { item: Catch }) => renderCatchRow(item),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    ({ item }: { item: Catch }) => (
+      <CatchListRow
+        item={item}
+        colors={colors}
+        styles={styles}
+        personalBests={personalBests}
+        user={user}
+        onPress={(c) => navigation.navigate('CatchDetail', { id: c.id })}
+        onDelete={handleSwipeDelete}
+      />
+    ),
     [colors, styles, personalBests, user, navigation, handleSwipeDelete]
-  );
-
-  const renderCatchRow = (item: Catch) => (
-    <Swipeable
-      renderRightActions={() => (
-        <Pressable
-          onPress={() => handleSwipeDelete(item)}
-          style={{ backgroundColor: colors.danger, justifyContent: 'center', alignItems: 'center', width: 76, borderRadius: radius.md, marginBottom: spacing.sm }}
-        >
-          <Ionicons name="trash-outline" size={22} color={colors.white} />
-          <Text style={{ color: colors.white, fontSize: 11, fontWeight: '700', marginTop: 2 }}>Изтрий</Text>
-        </Pressable>
-      )}
-      overshootRight={false}
-    >
-    <Pressable
-      onPress={() => navigation.navigate('CatchDetail', { id: item.id })}
-      android_ripple={{ color: `${colors.primary}18` }}
-      style={({ pressed }) => (pressed && Platform.OS === 'ios' ? { opacity: 0.92 } : undefined)}
-    >
-      <Card style={{ padding: spacing.sm + 2 }}>
-        <View style={styles.row}>
-          <View>
-            {item.photoUri ? (
-              <Image source={{ uri: item.photoUri }} style={styles.thumb} contentFit="cover" />
-            ) : (
-              <View style={[styles.thumb, styles.thumbPlaceholder]}>
-                <Ionicons name="fish-outline" size={30} color={colors.primary} />
-              </View>
-            )}
-            {(item.extraPhotoUris?.length ?? 0) > 0 ? (
-              <View style={{ position: 'absolute', bottom: 4, right: 4, backgroundColor: 'rgba(0,0,0,0.62)', borderRadius: 8, paddingHorizontal: 5, paddingVertical: 2 }}>
-                <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>+{item.extraPhotoUris!.length}</Text>
-              </View>
-            ) : null}
-          </View>
-          <View style={styles.itemBody}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Text style={styles.itemTitle} numberOfLines={1}>{item.speciesName}</Text>
-              {isPersonalBestCatch(item, personalBests) ? <Text style={{ fontSize: 14 }}>🏆</Text> : null}
-            </View>
-            {item.photoTitle ? (
-              <Text style={styles.photoTitleLine} numberOfLines={1}>
-                „{item.photoTitle}“
-              </Text>
-            ) : null}
-            <Text style={styles.itemMeta}>
-              {new Date(item.date).toLocaleDateString('bg-BG')}
-              {item.weightKg != null ? ` · ${item.weightKg} кг` : ''}
-              {item.lengthCm != null ? ` · ${item.lengthCm} см` : ''}
-            </Text>
-            {item.location?.name ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
-                <Ionicons name="location-outline" size={14} color={colors.textMuted} />
-                <Text style={styles.itemMeta} numberOfLines={1}>
-                  {item.location.name}
-                </Text>
-              </View>
-            ) : null}
-          </View>
-          <View style={styles.rowTrail}>
-            {item.released ? (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>Пуснат</Text>
-              </View>
-            ) : null}
-            {user && !item.syncedToCloud ? (
-              <Ionicons name="cloud-upload-outline" size={16} color={colors.textMuted} />
-            ) : null}
-            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-          </View>
-        </View>
-      </Card>
-    </Pressable>
-    </Swipeable>
   );
 
   const filtersCard = (

@@ -23,6 +23,7 @@ import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { MenuRow } from '../components/MenuRow';
 import { useTheme } from '../services/themeContext';
+import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
 import { shadowCard } from '../theme/shadows';
 import { useAuth } from '../services/authContext';
@@ -38,6 +39,100 @@ import {
   deleteProfileAvatar,
   refreshOwnerPhotoOnPublicCatches,
 } from '../services/cloudSync';
+
+type ProfileTopBarProps = {
+  mode: 'light' | 'dark';
+  user: { uid?: string } | null;
+  styles: { topBar: object; topBarTitle: object; topBarRight: object; themeToggle: object; themeIconHit: object; topBarSignOut: object; topBarSignOutText: object };
+  onToggleMode: () => void;
+  onSignOut: () => void;
+};
+
+const ProfileTopBar = React.memo(function ProfileTopBar({
+  mode, user, styles, onToggleMode, onSignOut,
+}: ProfileTopBarProps) {
+  return (
+    <View style={styles.topBar}>
+      <Text style={styles.topBarTitle}>Профил</Text>
+      <View style={styles.topBarRight}>
+        <View style={styles.themeToggle}>
+          <Pressable
+            style={styles.themeIconHit}
+            onPress={() => mode === 'dark' && onToggleMode()}
+            accessibilityRole="button"
+            accessibilityLabel="Светла тема"
+            hitSlop={8}
+          >
+            <Ionicons
+              name="sunny-outline"
+              size={22}
+              color={mode === 'light' ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.45)'}
+            />
+          </Pressable>
+          <Pressable
+            style={styles.themeIconHit}
+            onPress={() => mode === 'light' && onToggleMode()}
+            accessibilityRole="button"
+            accessibilityLabel="Тъмна тема"
+            hitSlop={8}
+          >
+            <Ionicons
+              name="moon-outline"
+              size={21}
+              color={mode === 'dark' ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.45)'}
+            />
+          </Pressable>
+        </View>
+        {user ? (
+          <Pressable style={styles.topBarSignOut} onPress={onSignOut} hitSlop={12}>
+            <Text style={styles.topBarSignOutText}>Изход</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    </View>
+  );
+});
+
+type DeleteAccountModalProps = {
+  visible: boolean;
+  delPassword: string;
+  colors: AppColors;
+  styles: { modalBackdrop: object; modalCard: object; modalTitle: object; modalHint: object; modalInput: object; modalActions: object };
+  onChangePassword: (v: string) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+};
+
+const DeleteAccountModal = React.memo(function DeleteAccountModal({
+  visible, delPassword, colors, styles, onChangePassword, onClose, onSubmit,
+}: DeleteAccountModalProps) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <Pressable style={StyleSheet.absoluteFillObject} onPress={onClose} accessibilityLabel="Затвори" />
+        <View style={styles.modalCard}>
+          <Text style={styles.modalTitle}>Изтриване на акаунта</Text>
+          <Text style={styles.modalHint}>
+            Необратимо изчиства облака и локалните данни. Въведи паролата си:
+          </Text>
+          <TextInput
+            style={styles.modalInput}
+            placeholder="Парола"
+            placeholderTextColor={colors.textMuted}
+            secureTextEntry
+            value={delPassword}
+            onChangeText={onChangePassword}
+            autoCapitalize="none"
+          />
+          <View style={styles.modalActions}>
+            <Button title="Отказ" variant="ghost" onPress={onClose} style={{ flex: 1 }} compact />
+            <Button title="Изтрий" variant="danger" compact onPress={onSubmit} style={{ flex: 1 }} />
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+});
 
 export default function ProfileScreen() {
   const navigation = useAppNavigation();
@@ -439,44 +534,13 @@ export default function ProfileScreen() {
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
       >
-        <View style={styles.topBar}>
-          <Text style={styles.topBarTitle}>Профил</Text>
-          <View style={styles.topBarRight}>
-            <View style={styles.themeToggle}>
-              <Pressable
-                style={styles.themeIconHit}
-                onPress={() => mode === 'dark' && toggleMode()}
-                accessibilityRole="button"
-                accessibilityLabel="Светла тема"
-                hitSlop={8}
-              >
-                <Ionicons
-                  name="sunny-outline"
-                  size={22}
-                  color={mode === 'light' ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.45)'}
-                />
-              </Pressable>
-              <Pressable
-                style={styles.themeIconHit}
-                onPress={() => mode === 'light' && toggleMode()}
-                accessibilityRole="button"
-                accessibilityLabel="Тъмна тема"
-                hitSlop={8}
-              >
-                <Ionicons
-                  name="moon-outline"
-                  size={21}
-                  color={mode === 'dark' ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.45)'}
-                />
-              </Pressable>
-            </View>
-            {user ? (
-              <Pressable style={styles.topBarSignOut} onPress={onSignOut} hitSlop={12}>
-                <Text style={styles.topBarSignOutText}>Изход</Text>
-              </Pressable>
-            ) : null}
-          </View>
-        </View>
+        <ProfileTopBar
+          mode={mode}
+          user={user}
+          styles={styles}
+          onToggleMode={toggleMode}
+          onSignOut={onSignOut}
+        />
 
         <View style={styles.bodyPad}>
           {!user ? (
@@ -619,30 +683,15 @@ export default function ProfileScreen() {
       </ScrollView>
 
       {user ? (
-        <Modal visible={deleteModalVisible} transparent animationType="fade" onRequestClose={closeDeleteModal}>
-          <View style={styles.modalBackdrop}>
-            <Pressable style={StyleSheet.absoluteFillObject} onPress={closeDeleteModal} accessibilityLabel="Затвори" />
-            <View style={styles.modalCard}>
-              <Text style={styles.modalTitle}>Изтриване на акаунта</Text>
-              <Text style={styles.modalHint}>
-                Необратимо изчиства облака и локалните данни. Въведи паролата си:
-              </Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Парола"
-                placeholderTextColor={colors.textMuted}
-                secureTextEntry
-                value={delPassword}
-                onChangeText={setDelPassword}
-                autoCapitalize="none"
-              />
-              <View style={styles.modalActions}>
-                <Button title="Отказ" variant="ghost" onPress={closeDeleteModal} style={{ flex: 1 }} compact />
-                <Button title="Изтрий" variant="danger" compact onPress={submitDeleteAccount} style={{ flex: 1 }} />
-              </View>
-            </View>
-          </View>
-        </Modal>
+        <DeleteAccountModal
+          visible={deleteModalVisible}
+          delPassword={delPassword}
+          colors={colors}
+          styles={styles}
+          onChangePassword={setDelPassword}
+          onClose={closeDeleteModal}
+          onSubmit={submitDeleteAccount}
+        />
       ) : null}
     </Screen>
   );

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useReducer, useState } from 'react';
 import {
   View,
   Text,
@@ -105,6 +105,39 @@ function createCreateTournamentStyles(colors: AppColors) {
   });
 }
 
+type FormState = {
+  name: string;
+  description: string;
+  category: TournamentCategory;
+  speciesId: string | null;
+  startDate: string;
+  endDate: string;
+  isPublic: boolean;
+};
+
+type FormAction =
+  | { type: 'SET_NAME'; value: string }
+  | { type: 'SET_DESCRIPTION'; value: string }
+  | { type: 'SET_CATEGORY'; value: TournamentCategory }
+  | { type: 'SET_SPECIES'; value: string | null }
+  | { type: 'SET_START_DATE'; value: string; adjustEnd?: string }
+  | { type: 'SET_END_DATE'; value: string }
+  | { type: 'SET_PUBLIC'; value: boolean };
+
+function formReducer(state: FormState, action: FormAction): FormState {
+  switch (action.type) {
+    case 'SET_NAME': return { ...state, name: action.value };
+    case 'SET_DESCRIPTION': return { ...state, description: action.value };
+    case 'SET_CATEGORY': return { ...state, category: action.value };
+    case 'SET_SPECIES': return { ...state, speciesId: action.value };
+    case 'SET_START_DATE':
+      return { ...state, startDate: action.value, endDate: action.adjustEnd ?? state.endDate };
+    case 'SET_END_DATE': return { ...state, endDate: action.value };
+    case 'SET_PUBLIC': return { ...state, isPublic: action.value };
+    default: return state;
+  }
+}
+
 export default function CreateTournamentScreen() {
   const navigation = useAppNavigation();
   const { colors } = useTheme();
@@ -115,13 +148,16 @@ export default function CreateTournamentScreen() {
   const inWeek = new Date();
   inWeek.setDate(today.getDate() + 7);
 
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [category, setCategory] = useState<TournamentCategory>('weight');
-  const [speciesId, setSpeciesId] = useState<string | null>(null);
-  const [startDate, setStartDate] = useState(isoDate(today));
-  const [endDate, setEndDate] = useState(isoDate(inWeek));
-  const [isPublic, setIsPublic] = useState(true);
+  const [form, dispatch] = useReducer(formReducer, {
+    name: '',
+    description: '',
+    category: 'weight',
+    speciesId: null,
+    startDate: isoDate(today),
+    endDate: isoDate(inWeek),
+    isPublic: true,
+  });
+  const { name, description, category, speciesId, startDate, endDate, isPublic } = form;
   const [picking, setPicking] = useState<'start' | 'end' | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -132,14 +168,14 @@ export default function CreateTournamentScreen() {
     setPicking(null);
     if (!date || !which) return;
     if (which === 'start') {
-      setStartDate(isoDate(date));
-      if (new Date(endDate).getTime() < date.getTime()) {
-        const end = new Date(date);
-        end.setDate(end.getDate() + 7);
-        setEndDate(isoDate(end));
-      }
+      const newStart = isoDate(date);
+      const adjustEnd =
+        new Date(endDate).getTime() < date.getTime()
+          ? isoDate(new Date(date.getTime() + 7 * 86_400_000))
+          : undefined;
+      dispatch({ type: 'SET_START_DATE', value: newStart, adjustEnd });
     } else {
-      setEndDate(isoDate(date));
+      dispatch({ type: 'SET_END_DATE', value: isoDate(date) });
     }
   };
 
@@ -195,7 +231,7 @@ export default function CreateTournamentScreen() {
         <Text style={styles.label}>Име</Text>
         <TextInput
           value={name}
-          onChangeText={setName}
+          onChangeText={(v) => dispatch({ type: 'SET_NAME', value: v })}
           placeholder="напр. Майско шаранско надбягване"
           style={styles.input}
           placeholderTextColor={colors.textMuted}
@@ -204,7 +240,7 @@ export default function CreateTournamentScreen() {
         <Text style={styles.label}>Описание (по избор)</Text>
         <TextInput
           value={description}
-          onChangeText={setDescription}
+          onChangeText={(v) => dispatch({ type: 'SET_DESCRIPTION', value: v })}
           placeholder="Правила, награди, условия…"
           multiline
           style={[styles.input, { height: 90, textAlignVertical: 'top' }]}
@@ -216,7 +252,7 @@ export default function CreateTournamentScreen() {
           {CATEGORIES.map((c) => (
             <Pressable
               key={c.id}
-              onPress={() => setCategory(c.id)}
+              onPress={() => dispatch({ type: 'SET_CATEGORY', value: c.id })}
               style={[styles.catCard, category === c.id && styles.catCardActive]}
             >
               <Ionicons name={c.icon} size={26} color={category === c.id ? colors.primary : colors.textMuted} />
@@ -231,13 +267,13 @@ export default function CreateTournamentScreen() {
 
         <Text style={styles.label}>Само за вид (по избор)</Text>
         <View style={styles.chips}>
-          <Pressable onPress={() => setSpeciesId(null)} style={[styles.chip, !speciesId && styles.chipActive]}>
+          <Pressable onPress={() => dispatch({ type: 'SET_SPECIES', value: null })} style={[styles.chip, !speciesId && styles.chipActive]}>
             <Text style={[styles.chipText, !speciesId && styles.chipTextActive]}>Всички видове</Text>
           </Pressable>
           {speciesList.map((s) => (
             <Pressable
               key={s.id}
-              onPress={() => setSpeciesId(s.id)}
+              onPress={() => dispatch({ type: 'SET_SPECIES', value: s.id })}
               style={[styles.chip, speciesId === s.id && styles.chipActive]}
             >
               <Text style={[styles.chipText, speciesId === s.id && styles.chipTextActive]}>{s.nameBg}</Text>
@@ -278,7 +314,7 @@ export default function CreateTournamentScreen() {
           </View>
           <Switch
             value={isPublic}
-            onValueChange={setIsPublic}
+            onValueChange={(v) => dispatch({ type: 'SET_PUBLIC', value: v })}
             trackColor={{ true: colors.primary, false: colors.border }}
           />
         </View>

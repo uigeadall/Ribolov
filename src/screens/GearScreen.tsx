@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useReducer, useState } from 'react';
 import Toast from 'react-native-toast-message';
 import { View, Text, FlatList, TextInput, StyleSheet, Pressable, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,14 +12,43 @@ import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 import { useFocusEffect } from '@react-navigation/native';
 
+type FormState = {
+  name: string;
+  notes: string;
+  editingId: string | null;
+  editName: string;
+  editNotes: string;
+};
+
+type FormAction =
+  | { type: 'SET_NAME'; value: string }
+  | { type: 'SET_NOTES'; value: string }
+  | { type: 'START_EDIT'; id: string; name: string; notes: string }
+  | { type: 'SET_EDIT_NAME'; value: string }
+  | { type: 'SET_EDIT_NOTES'; value: string }
+  | { type: 'CANCEL_EDIT' }
+  | { type: 'RESET_ADD' };
+
+const initialForm: FormState = { name: '', notes: '', editingId: null, editName: '', editNotes: '' };
+
+function formReducer(state: FormState, action: FormAction): FormState {
+  switch (action.type) {
+    case 'SET_NAME': return { ...state, name: action.value };
+    case 'SET_NOTES': return { ...state, notes: action.value };
+    case 'START_EDIT': return { ...state, editingId: action.id, editName: action.name, editNotes: action.notes };
+    case 'SET_EDIT_NAME': return { ...state, editName: action.value };
+    case 'SET_EDIT_NOTES': return { ...state, editNotes: action.value };
+    case 'CANCEL_EDIT': return { ...state, editingId: null };
+    case 'RESET_ADD': return { ...state, name: '', notes: '' };
+    default: return state;
+  }
+}
+
 export default function GearScreen() {
   const { colors } = useTheme();
   const [items, setItems] = useState<GearItem[]>([]);
-  const [name, setName] = useState('');
-  const [notes, setNotes] = useState('');
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState('');
-  const [editNotes, setEditNotes] = useState('');
+  const [form, dispatch] = useReducer(formReducer, initialForm);
+  const { name, notes, editingId, editName, editNotes } = form;
 
   const load = useCallback(() => {
     gearStore.list().then(setItems);
@@ -55,27 +84,24 @@ export default function GearScreen() {
     const n = name.trim();
     if (!n) return;
     await gearStore.save({ id: newId(), name: n, notes: notes.trim() || undefined });
-    setName('');
-    setNotes('');
+    dispatch({ type: 'RESET_ADD' });
     Toast.show({ type: 'success', text1: 'Предметът е добавен', visibilityTime: 2000 });
     load();
   };
 
   const startEdit = (item: GearItem) => {
-    setEditingId(item.id);
-    setEditName(item.name);
-    setEditNotes(item.notes ?? '');
+    dispatch({ type: 'START_EDIT', id: item.id, name: item.name, notes: item.notes ?? '' });
   };
 
   const saveEdit = async () => {
     if (!editingId || !editName.trim()) return;
     await gearStore.save({ id: editingId, name: editName.trim(), notes: editNotes.trim() || undefined });
-    setEditingId(null);
+    dispatch({ type: 'CANCEL_EDIT' });
     Toast.show({ type: 'success', text1: 'Запазено', visibilityTime: 2000 });
     load();
   };
 
-  const cancelEdit = () => setEditingId(null);
+  const cancelEdit = () => dispatch({ type: 'CANCEL_EDIT' });
 
   const confirmDelete = (item: GearItem) => {
     Alert.alert('Изтриване', `Изтриване на „${item.name}"?`, [
@@ -100,14 +126,14 @@ export default function GearScreen() {
           placeholder="Име на предмет"
           placeholderTextColor={colors.textMuted}
           value={name}
-          onChangeText={setName}
+          onChangeText={(v) => dispatch({ type: 'SET_NAME', value: v })}
         />
         <TextInput
           style={[styles.input, { minHeight: 72 }]}
           placeholder="Бележки (по избор)"
           placeholderTextColor={colors.textMuted}
           value={notes}
-          onChangeText={setNotes}
+          onChangeText={(v) => dispatch({ type: 'SET_NOTES', value: v })}
           multiline
           textAlignVertical="top"
         />
@@ -127,13 +153,13 @@ export default function GearScreen() {
                 <TextInput
                   style={[styles.input, { marginBottom: spacing.sm }]}
                   value={editName}
-                  onChangeText={setEditName}
+                  onChangeText={(v) => dispatch({ type: 'SET_EDIT_NAME', value: v })}
                   autoFocus
                 />
                 <TextInput
                   style={[styles.input, { minHeight: 64, marginBottom: spacing.sm }]}
                   value={editNotes}
-                  onChangeText={setEditNotes}
+                  onChangeText={(v) => dispatch({ type: 'SET_EDIT_NOTES', value: v })}
                   multiline
                   textAlignVertical="top"
                   placeholder="Бележки"

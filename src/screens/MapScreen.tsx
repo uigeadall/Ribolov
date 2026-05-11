@@ -759,7 +759,7 @@ type MapTopControlsProps = {
   onHintShow: () => void;
 };
 
-function MapTopControls({
+const MapTopControls = React.memo(function MapTopControls({
   colors,
   mapType,
   showDams,
@@ -856,7 +856,7 @@ function MapTopControls({
       )}
     </View>
   );
-}
+});
 
 type SpotScrollBarProps = {
   spots: Spot[];
@@ -867,7 +867,7 @@ type SpotScrollBarProps = {
   onSpotPress: (s: Spot) => void;
 };
 
-function SpotScrollBar({
+const SpotScrollBar = React.memo(function SpotScrollBar({
   spots,
   userCoord,
   catchCountByName,
@@ -914,7 +914,7 @@ function SpotScrollBar({
       </ScrollView>
     </View>
   );
-}
+});
 
 type NewSpotModalProps = {
   visible: boolean;
@@ -930,7 +930,7 @@ type NewSpotModalProps = {
   onSave: () => void;
 };
 
-function NewSpotModal({
+const NewSpotModal = React.memo(function NewSpotModal({
   visible,
   coord,
   name,
@@ -998,7 +998,7 @@ function NewSpotModal({
       </View>
     </Modal>
   );
-}
+});
 
 type WaterBodySheetProps = {
   selectedWater: SelectedWater | null;
@@ -1030,7 +1030,7 @@ type WaterBodySheetProps = {
   onSubmitReport: () => void;
 };
 
-function WaterBodySheet({
+const WaterBodySheet = React.memo(function WaterBodySheet({
   selectedWater,
   damWeather,
   damWeatherStatus,
@@ -1434,7 +1434,7 @@ function WaterBodySheet({
                           <View
                             style={{
                               height: 8,
-                              width: `${damLevel.fillPercent}%` as unknown as number,
+                              width: `${damLevel.fillPercent}%`,
                               backgroundColor: colors.primary,
                               borderRadius: 4,
                             }}
@@ -1502,7 +1502,7 @@ function WaterBodySheet({
       </View>
     </Modal>
   );
-}
+});
 
 type SpotSheetProps = {
   spot: Spot | null;
@@ -1518,7 +1518,7 @@ type SpotSheetProps = {
   onToggleFavorite: () => void;
 };
 
-function SpotSheet({
+const SpotSheet = React.memo(function SpotSheet({
   spot,
   userCoord,
   spotWeather,
@@ -1660,7 +1660,7 @@ function SpotSheet({
       </View>
     </Modal>
   );
-}
+});
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 

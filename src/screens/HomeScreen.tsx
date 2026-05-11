@@ -148,6 +148,185 @@ function createHomeStyles(colors: AppColors) {
   });
 }
 
+type WeatherCardProps = {
+  weather: WeatherSnapshot | null;
+  weatherStatus: 'idle' | 'loading' | 'error';
+  locLabel: string;
+  colors: ReturnType<typeof useTheme>['colors'];
+  styles: ReturnType<typeof createHomeStyles>;
+  onRetry: () => void;
+  onOpenMap: () => void;
+};
+
+const WeatherCard = React.memo(function WeatherCard({
+  weather, weatherStatus, locLabel, colors, styles, onRetry, onOpenMap,
+}: WeatherCardProps) {
+  return (
+    <Card style={styles.weatherCard}>
+      {weatherStatus === 'loading' && !weather ? (
+        <View style={{ gap: spacing.md }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+            <Skeleton width={54} height={54} borderRadius={27} />
+            <View style={{ flex: 1, gap: spacing.sm }}>
+              <Skeleton height={30} width="45%" />
+              <Skeleton height={14} width="70%" />
+            </View>
+            <Skeleton width={72} height={42} />
+          </View>
+          <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
+            <Skeleton width="100%" height={32} />
+            <Skeleton width="45%" height={32} />
+            <Skeleton width="45%" height={32} />
+            <Skeleton width="45%" height={32} />
+            <Skeleton width="45%" height={32} />
+          </View>
+        </View>
+      ) : weatherStatus === 'error' || !weather ? (
+        <View>
+          <Text style={{ ...typography.body, color: colors.text }}>
+            Няма връзка с прогнозата. Провери интернет и опитай отново.
+          </Text>
+          <Button title="Опитай отново" variant="secondary" onPress={onRetry} style={{ marginTop: spacing.md }} />
+        </View>
+      ) : (
+        <>
+          <Text style={{ ...typography.caption, color: colors.textMuted, marginBottom: spacing.sm }}>{locLabel}</Text>
+          <View style={styles.weatherTop}>
+            <WeatherIcon weatherCode={weather.weatherCode} size={54} color={colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.weatherTemp}>{weather.temperatureC}°C</Text>
+              <Text style={styles.weatherDesc}>
+                {weather.description} · усеща се {weather.feelsLikeC}°
+              </Text>
+            </View>
+            <View style={styles.weatherRatingCol}>
+              <StarRatingBar rating={weather.fishingRating} color={colors.accent} emptyColor={colors.border} size={14} />
+              <Text style={styles.ratingLabel}>риболовен индекс</Text>
+            </View>
+          </View>
+          <View style={styles.weatherDetails}>
+            <View style={[styles.detailItem, { minWidth: '100%' }]}>
+              <Ionicons name="flag-outline" size={18} color={colors.textMuted} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.detailVal}>
+                  {weather.windKmh} км/ч {windDirectionLabel(weather.windDirection)}
+                </Text>
+                <Text style={styles.detailLbl}>вятър</Text>
+              </View>
+            </View>
+            <View style={styles.detailItem}>
+              <Ionicons name="speedometer-outline" size={18} color={colors.textMuted} />
+              <View>
+                <Text style={styles.detailVal}>{weather.pressureHpa} hPa</Text>
+                <Text style={styles.detailLbl}>налягане</Text>
+              </View>
+            </View>
+            <View style={styles.detailItem}>
+              <Ionicons name="water-outline" size={18} color={colors.textMuted} />
+              <View>
+                <Text style={styles.detailVal}>{weather.humidity}%</Text>
+                <Text style={styles.detailLbl}>влажност</Text>
+              </View>
+            </View>
+            <View style={styles.detailItem}>
+              <Ionicons name="rainy-outline" size={18} color={colors.textMuted} />
+              <View>
+                <Text style={styles.detailVal}>{weather.precipitationProbability}%</Text>
+                <Text style={styles.detailLbl}>дъжд</Text>
+              </View>
+            </View>
+            <View style={styles.detailItem}>
+              <Ionicons name="sunny-outline" size={18} color={colors.textMuted} />
+              <View>
+                <Text style={styles.detailVal}>UV {weather.uvIndex}</Text>
+                <Text style={styles.detailLbl}>UV индекс</Text>
+              </View>
+            </View>
+          </View>
+          <Text style={[styles.weatherHint, { marginTop: spacing.sm }]}>
+            {weather.moonPhaseName}
+          </Text>
+          <Text style={styles.weatherHint}>
+            На картата можеш да избереш язовир или река и да видиш прогноза за точното място и следващите 7 дни.
+          </Text>
+          <Button
+            title="Отвори картата"
+            variant="secondary"
+            compact
+            onPress={onOpenMap}
+            style={{ marginTop: spacing.md, alignSelf: 'flex-start' }}
+          />
+        </>
+      )}
+    </Card>
+  );
+});
+
+type ForecastSectionProps = {
+  forecast: ForecastDay[];
+  weatherStatus: 'idle' | 'loading' | 'error';
+  colors: ReturnType<typeof useTheme>['colors'];
+  styles: ReturnType<typeof createHomeStyles>;
+  onNavigate: () => void;
+};
+
+const ForecastSection = React.memo(function ForecastSection({
+  forecast, weatherStatus, colors, styles, onNavigate,
+}: ForecastSectionProps) {
+  return (
+    <>
+      <SectionHeader hint="ПРОГНОЗА" title="Следващите 7 дни" subtitle="Дни с по-висок индекс са по-добри за риболов." />
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.sm, paddingBottom: spacing.xl }}
+      >
+        {forecast.length === 0 && weatherStatus === 'loading'
+          ? [0, 1, 2, 3, 4, 5, 6].map((i) => <Skeleton key={i} width={66} height={114} style={{ marginRight: 0 }} />)
+          : forecast.map((day) => {
+              const isBest = day.fishingRating >= 4;
+              const dateLabel = new Date(day.dateIso).toLocaleDateString('bg-BG', { day: 'numeric', month: 'short' });
+              return (
+                <Pressable
+                  key={day.dateIso}
+                  style={[styles.forecastDayCard, isBest && styles.forecastDayCardBest]}
+                  onPress={onNavigate}
+                >
+                  <Text style={[styles.forecastDayLabel, isBest && styles.forecastDayLabelBest]}>
+                    {day.dayLabel}
+                  </Text>
+                  <Text style={{ ...typography.caption, color: colors.textMuted, fontSize: 9 }}>
+                    {dateLabel}
+                  </Text>
+                  <Text style={{ fontSize: 18 }}>
+                    {day.fishingRating >= 4 ? '🎣' : day.precipProbability > 60 ? '🌧' : day.fishingRating <= 2 ? '😐' : '🐟'}
+                  </Text>
+                  <Text style={{ ...typography.small, color: isBest ? colors.primary : colors.text, fontWeight: '700' }}>
+                    {'★'.repeat(day.fishingRating)}{'☆'.repeat(5 - day.fishingRating)}
+                  </Text>
+                  <Text style={styles.forecastDayTemp}>{day.maxTempC}°</Text>
+                  {day.precipProbability > 20 ? (
+                    <Text style={{ ...typography.caption, color: colors.textMuted }}>{day.precipProbability}%💧</Text>
+                  ) : null}
+                </Pressable>
+              );
+            })}
+      </ScrollView>
+      {forecast.length > 0 ? (
+        <Pressable
+          onPress={onNavigate}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.lg, marginTop: -spacing.sm, marginBottom: spacing.md }}
+        >
+          <Ionicons name="calendar-outline" size={15} color={colors.primary} />
+          <Text style={{ ...typography.caption, color: colors.primary, fontWeight: '600' }}>Планирай излет за конкретен водоем</Text>
+          <Ionicons name="chevron-forward" size={13} color={colors.primary} />
+        </Pressable>
+      ) : null}
+    </>
+  );
+});
+
 export default function HomeScreen() {
   const navigation = useAppNavigation();
   const { colors } = useTheme();
@@ -350,155 +529,24 @@ export default function HomeScreen() {
       </Card>
 
       <SectionHeader hint="ПРОГНОЗА" title="Време сега" subtitle="Подходящо за бърз излет край теб или избран водоем от картата." />
-      <Card style={styles.weatherCard}>
-        {weatherStatus === 'loading' && !weather ? (
-          <View style={{ gap: spacing.md }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-              <Skeleton width={54} height={54} borderRadius={27} />
-              <View style={{ flex: 1, gap: spacing.sm }}>
-                <Skeleton height={30} width="45%" />
-                <Skeleton height={14} width="70%" />
-              </View>
-              <Skeleton width={72} height={42} />
-            </View>
-            <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
-              <Skeleton width="100%" height={32} />
-              <Skeleton width="45%" height={32} />
-              <Skeleton width="45%" height={32} />
-              <Skeleton width="45%" height={32} />
-              <Skeleton width="45%" height={32} />
-            </View>
-          </View>
-        ) : weatherStatus === 'error' || !weather ? (
-          <View>
-            <Text style={{ ...typography.body, color: colors.text }}>
-              Няма връзка с прогнозата. Провери интернет и опитай отново.
-            </Text>
-            <Button title="Опитай отново" variant="secondary" onPress={loadWeather} style={{ marginTop: spacing.md }} />
-          </View>
-        ) : (
-          <>
-            <Text style={{ ...typography.caption, color: colors.textMuted, marginBottom: spacing.sm }}>{locLabel}</Text>
-            <View style={styles.weatherTop}>
-              <WeatherIcon weatherCode={weather.weatherCode} size={54} color={colors.primary} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.weatherTemp}>{weather.temperatureC}°C</Text>
-                <Text style={styles.weatherDesc}>
-                  {weather.description} · усеща се {weather.feelsLikeC}°
-                </Text>
-              </View>
-              <View style={styles.weatherRatingCol}>
-                <StarRatingBar rating={weather.fishingRating} color={colors.accent} emptyColor={colors.border} size={14} />
-                <Text style={styles.ratingLabel}>риболовен индекс</Text>
-              </View>
-            </View>
-            <View style={styles.weatherDetails}>
-              <View style={[styles.detailItem, { minWidth: '100%' }]}>
-                <Ionicons name="flag-outline" size={18} color={colors.textMuted} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.detailVal}>
-                    {weather.windKmh} км/ч {windDirectionLabel(weather.windDirection)}
-                  </Text>
-                  <Text style={styles.detailLbl}>вятър</Text>
-                </View>
-              </View>
-              <View style={styles.detailItem}>
-                <Ionicons name="speedometer-outline" size={18} color={colors.textMuted} />
-                <View>
-                  <Text style={styles.detailVal}>{weather.pressureHpa} hPa</Text>
-                  <Text style={styles.detailLbl}>налягане</Text>
-                </View>
-              </View>
-              <View style={styles.detailItem}>
-                <Ionicons name="water-outline" size={18} color={colors.textMuted} />
-                <View>
-                  <Text style={styles.detailVal}>{weather.humidity}%</Text>
-                  <Text style={styles.detailLbl}>влажност</Text>
-                </View>
-              </View>
-              <View style={styles.detailItem}>
-                <Ionicons name="rainy-outline" size={18} color={colors.textMuted} />
-                <View>
-                  <Text style={styles.detailVal}>{weather.precipitationProbability}%</Text>
-                  <Text style={styles.detailLbl}>дъжд</Text>
-                </View>
-              </View>
-              <View style={styles.detailItem}>
-                <Ionicons name="sunny-outline" size={18} color={colors.textMuted} />
-                <View>
-                  <Text style={styles.detailVal}>UV {weather.uvIndex}</Text>
-                  <Text style={styles.detailLbl}>UV индекс</Text>
-                </View>
-              </View>
-            </View>
-            <Text style={[styles.weatherHint, { marginTop: spacing.sm }]}>
-              {weather.moonPhaseName}
-            </Text>
-            <Text style={styles.weatherHint}>
-              На картата можеш да избереш язовир или река и да видиш прогноза за точното място и следващите 7 дни.
-            </Text>
-            <Button
-              title="Отвори картата"
-              variant="secondary"
-              compact
-              onPress={() => navigation.navigate('MapTab')}
-              style={{ marginTop: spacing.md, alignSelf: 'flex-start' }}
-            />
-          </>
-        )}
-      </Card>
+      <WeatherCard
+        weather={weather}
+        weatherStatus={weatherStatus}
+        locLabel={locLabel}
+        colors={colors}
+        styles={styles}
+        onRetry={loadWeather}
+        onOpenMap={() => navigation.navigate('MapTab')}
+      />
 
       {(forecast.length > 0 || weatherStatus === 'loading') ? (
-        <>
-          <SectionHeader hint="ПРОГНОЗА" title="Следващите 7 дни" subtitle="Дни с по-висок индекс са по-добри за риболов." />
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.sm, paddingBottom: spacing.xl }}
-          >
-            {forecast.length === 0 && weatherStatus === 'loading'
-              ? [0, 1, 2, 3, 4, 5, 6].map((i) => <Skeleton key={i} width={66} height={114} style={{ marginRight: 0 }} />)
-              : forecast.map((day) => {
-                  const isBest = day.fishingRating >= 4;
-                  const dateLabel = new Date(day.dateIso).toLocaleDateString('bg-BG', { day: 'numeric', month: 'short' });
-                  return (
-                    <Pressable
-                      key={day.dateIso}
-                      style={[styles.forecastDayCard, isBest && styles.forecastDayCardBest]}
-                      onPress={() => navigation.navigate('ProfileTab', { screen: 'TripPlanner' })}
-                    >
-                      <Text style={[styles.forecastDayLabel, isBest && styles.forecastDayLabelBest]}>
-                        {day.dayLabel}
-                      </Text>
-                      <Text style={{ ...typography.caption, color: colors.textMuted, fontSize: 9 }}>
-                        {dateLabel}
-                      </Text>
-                      <Text style={{ fontSize: 18 }}>
-                        {day.fishingRating >= 4 ? '🎣' : day.precipProbability > 60 ? '🌧' : day.fishingRating <= 2 ? '😐' : '🐟'}
-                      </Text>
-                      <Text style={{ ...typography.small, color: isBest ? colors.primary : colors.text, fontWeight: '700' }}>
-                        {'★'.repeat(day.fishingRating)}{'☆'.repeat(5 - day.fishingRating)}
-                      </Text>
-                      <Text style={styles.forecastDayTemp}>{day.maxTempC}°</Text>
-                      {day.precipProbability > 20 ? (
-                        <Text style={{ ...typography.caption, color: colors.textMuted }}>{day.precipProbability}%💧</Text>
-                      ) : null}
-                    </Pressable>
-                  );
-                })}
-          </ScrollView>
-          {forecast.length > 0 ? (
-            <Pressable
-              onPress={() => navigation.navigate('ProfileTab', { screen: 'TripPlanner' })}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.lg, marginTop: -spacing.sm, marginBottom: spacing.md }}
-            >
-              <Ionicons name="calendar-outline" size={15} color={colors.primary} />
-              <Text style={{ ...typography.caption, color: colors.primary, fontWeight: '600' }}>Планирай излет за конкретен водоем</Text>
-              <Ionicons name="chevron-forward" size={13} color={colors.primary} />
-            </Pressable>
-          ) : null}
-        </>
+        <ForecastSection
+          forecast={forecast}
+          weatherStatus={weatherStatus}
+          colors={colors}
+          styles={styles}
+          onNavigate={() => navigation.navigate('ProfileTab', { screen: 'TripPlanner' })}
+        />
       ) : null}
 
       <SectionHeader hint="ДНЕВНИК" title="Твоите улови" subtitle="Брой записи на устройството — синхронизацията е от профила, ако си влязъл." />

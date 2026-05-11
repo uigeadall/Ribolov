@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { catchesStore } from '../storage/storage';
 import { ensureCatchPhotoUploadedForCloud, pushCatch } from './cloudSync';
 import { addBreadcrumb, captureException } from './observability';
+import { calcBackoffMs, readSyncQueue, writeSyncQueue } from './syncQueue';
 
 const QUEUE_KEY = 'ribolov:catch-sync-queue';
 
@@ -14,11 +15,12 @@ type Entry = {
 };
 
 const MAX_ATTEMPTS = 14;
-const BASE_DELAY_MS = 5000;
+const BASE_DELAY_MS = 5_000;
+const MAX_BACKOFF_ATTEMPTS = 10;
+const MAX_DELAY_MS = 3_600_000;
 
-function backoffMs(attempts: number): number {
-  return Math.min(BASE_DELAY_MS * 2 ** Math.min(attempts, 10), 3_600_000);
-}
+const backoffMs = (attempts: number) =>
+  calcBackoffMs(attempts, BASE_DELAY_MS, MAX_BACKOFF_ATTEMPTS, MAX_DELAY_MS);
 
 function normalizeEntries(raw: unknown): Entry[] {
   if (!Array.isArray(raw)) return [];
@@ -39,19 +41,8 @@ function normalizeEntries(raw: unknown): Entry[] {
   return out;
 }
 
-async function readQ(): Promise<Entry[]> {
-  try {
-    const raw = await AsyncStorage.getItem(QUEUE_KEY);
-    if (!raw) return [];
-    return normalizeEntries(JSON.parse(raw));
-  } catch {
-    return [];
-  }
-}
-
-async function writeQ(entries: Entry[]) {
-  await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(entries));
-}
+const readQ = () => readSyncQueue(QUEUE_KEY, normalizeEntries);
+const writeQ = (entries: Entry[]) => writeSyncQueue(QUEUE_KEY, entries);
 
 export async function enqueueCatchSync(catchId: string, sharePublic: boolean): Promise<void> {
   const q = await readQ();
