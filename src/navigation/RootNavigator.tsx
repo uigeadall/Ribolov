@@ -140,6 +140,7 @@ function ProfileNavigator() {
     <ErrorBoundary label="Профил">
     <ProfileStack.Navigator screenOptions={{ headerShown: false }}>
       <ProfileStack.Screen name="ProfileMain" component={ProfileScreen} />
+      <ProfileStack.Screen name="CatchDetail" component={CatchDetailScreen} />
       <ProfileStack.Screen name="Notifications" component={NotificationsWrapped} />
       <ProfileStack.Screen name="Stats" component={StatsScreen} />
       <ProfileStack.Screen name="Auth" component={AuthScreenWrapped} />

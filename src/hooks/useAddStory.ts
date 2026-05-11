@@ -35,7 +35,7 @@ export function useAddStory(
   const pickMedia = async (source: 'library' | 'camera', type: 'photo' | 'video') => {
     try {
       const opts: ImagePicker.ImagePickerOptions = {
-        mediaTypes: type === 'video' ? ImagePicker.MediaType.Videos : ImagePicker.MediaType.Images,
+        mediaTypes: type === 'video' ? 'videos' : 'images',
         quality: type === 'video' ? 0.8 : 0.85,
         videoMaxDuration: 60,
         allowsEditing: type === 'photo',

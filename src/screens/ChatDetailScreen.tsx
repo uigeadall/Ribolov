@@ -117,7 +117,7 @@ export default function ChatDetailScreen() {
       return;
     }
     const opts: ImagePicker.ImagePickerOptions = {
-      mediaTypes: ImagePicker.MediaType.Images,
+      mediaTypes: 'images',
       quality: 0.5,
     };
     const result = source === 'camera'

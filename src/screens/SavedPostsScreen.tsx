@@ -121,6 +121,7 @@ export default function SavedPostsScreen() {
               onPressAuthor={(authorUid, name) =>
                 navigation.navigate('UserPublicProfile', { uid: authorUid, displayName: name })
               }
+              onPressCatch={(catchItem) => navigation.navigate('CatchDetail', { id: catchItem.id })}
             />
           )}
         />
