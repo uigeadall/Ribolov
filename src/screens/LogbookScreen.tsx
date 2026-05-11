@@ -558,6 +558,15 @@ export default function LogbookScreen() {
             <SectionHeader hint="ДНЕВНИК" title="Улови" subtitle={subtitle} />
           </View>
           <Pressable
+            onPress={() => navigation.navigate('PhotoGallery')}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Галерия"
+            style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', marginTop: 2 }}
+          >
+            <Ionicons name="images-outline" size={20} color={colors.primary} />
+          </Pressable>
+          <Pressable
             style={styles.addBtn}
             onPress={() => navigation.navigate('AddCatch')}
             hitSlop={8}

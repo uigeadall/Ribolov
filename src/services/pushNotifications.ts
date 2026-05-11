@@ -1,7 +1,9 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import { doc, updateDoc, getDoc, setDoc } from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { requireFirebase } from './firebase';
+import type { ForecastDay } from './weather';
 
 const EAS_PROJECT_ID = '7e57275b-fc18-4ae3-bfa3-e519e37dae65';
 
@@ -57,6 +59,47 @@ export async function getUserPushToken(uid: string): Promise<string | null> {
     return typeof token === 'string' && token.startsWith('ExponentPushToken') ? token : null;
   } catch {
     return null;
+  }
+}
+
+const FORECAST_NOTIF_KEY = '@ribolov/lastForecastNotif';
+
+/**
+ * Fires a local notification once per calendar day when an upcoming day (next 3 days)
+ * has a fishing rating of 4 or 5 stars. Gated by AsyncStorage so it doesn't spam.
+ */
+export async function scheduleForecastNotificationIfGood(forecast: ForecastDay[]): Promise<void> {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const last = await AsyncStorage.getItem(FORECAST_NOTIF_KEY);
+    if (last === today) return;
+
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status !== 'granted') return;
+
+    // Skip today (index 0), look at next 3 days
+    const upcoming = forecast.slice(1, 4);
+    const best = upcoming.reduce<ForecastDay | null>(
+      (b, d) => (!b || d.fishingRating > b.fishingRating ? d : b),
+      null
+    );
+    if (!best || best.fishingRating < 4) return;
+
+    const stars = '⭐'.repeat(best.fishingRating);
+    const rain = best.precipProbability > 0 ? ` · 💧 ${best.precipProbability}%` : '';
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: '🎣 Добри условия за риболов!',
+        body: `${best.dayLabel} — ${stars} · ${best.maxTempC}°C${rain}`,
+        data: { type: 'forecast' },
+        sound: true,
+      } as any,
+      trigger: null,
+    });
+
+    await AsyncStorage.setItem(FORECAST_NOTIF_KEY, today);
+  } catch {
+    // Best-effort — never crash the app
   }
 }
 

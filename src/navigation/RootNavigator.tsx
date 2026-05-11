@@ -62,6 +62,7 @@ import GroupDetailScreen from '../screens/GroupDetailScreen';
 import CreateGroupScreen from '../screens/CreateGroupScreen';
 import ExploreScreen from '../screens/ExploreScreen';
 import SpeciesTargetScreen from '../screens/SpeciesTargetScreen';
+import PhotoGalleryScreen from '../screens/PhotoGalleryScreen';
 
 const wrap = (label: string, Component: React.ComponentType<any>) => (props: any) =>
   (
@@ -95,6 +96,7 @@ function LogbookNavigator() {
         <LogbookStack.Screen name="LogbookList" component={LogbookScreen} />
         <LogbookStack.Screen name="AddCatch" component={AddCatchScreen} />
         <LogbookStack.Screen name="CatchDetail" component={CatchDetailScreen} />
+        <LogbookStack.Screen name="PhotoGallery" component={PhotoGalleryScreen} />
       </LogbookStack.Navigator>
     </ErrorBoundary>
   );

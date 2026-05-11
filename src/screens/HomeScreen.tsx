@@ -26,6 +26,7 @@ import { radius, spacing, typography } from '../theme/typography';
 import { fetchWeather, fetchForecast, windDirectionLabel, type WeatherSnapshot, type ForecastDay } from '../services/weather';
 import { catchesStore } from '../storage/storage';
 import { fetchRankedClassicPhotos, periodStartIso, type RankedClassicPhoto } from '../services/classicsContest';
+import { scheduleForecastNotificationIfGood } from '../services/pushNotifications';
 import { subscribeUnreadMessagesCount } from '../services/cloudSync';
 import { subscribeMyNotifications } from '../services/socialFeed';
 import { BadgeIcon } from '../components/BadgeIcon';
@@ -232,6 +233,7 @@ export default function HomeScreen() {
       setWeather(w);
       setForecast(days);
       setWeatherStatus('idle');
+      scheduleForecastNotificationIfGood(days).catch(() => {});
     } catch {
       setWeather(null);
       setWeatherStatus('error');

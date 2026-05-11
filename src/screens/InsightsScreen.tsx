@@ -86,6 +86,15 @@ export default function InsightsScreen() {
     });
     const bestLoc = [...locMap.entries()].sort((a, b) => b[1] - a[1])[0];
 
+    // Best hour of day
+    const byHour = Array(24).fill(0) as number[];
+    catches.forEach((c) => { byHour[new Date(c.date).getHours()]++; });
+    const bestHour = byHour.indexOf(Math.max(...byHour));
+    const bestHourCount = byHour[bestHour];
+
+    // Top 5 locations by catch count
+    const topLocs = [...locMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+
     // Catches this year vs last year
     const thisYear = new Date().getFullYear();
     const thisYearN = catches.filter((c) => new Date(c.date).getFullYear() === thisYear).length;
@@ -102,6 +111,9 @@ export default function InsightsScreen() {
       releaseRate,
       waters: waters.size,
       bestLoc,
+      topLocs,
+      bestHour,
+      bestHourCount,
       thisYearN,
       lastYearN,
     };
@@ -109,6 +121,11 @@ export default function InsightsScreen() {
 
   const styles = useMemo(() => StyleSheet.create({
     divider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginVertical: 2 },
+    locRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.sm },
+    locBar: { flex: 1, height: 8, borderRadius: 4, backgroundColor: colors.border, overflow: 'hidden' },
+    locFill: { height: '100%', borderRadius: 4, backgroundColor: colors.primary },
+    locCount: { ...typography.caption, color: colors.textMuted, width: 24, textAlign: 'right' },
+    locName: { ...typography.caption, color: colors.text, width: 110 },
   }), [colors]);
 
   if (catches.length === 0) {
@@ -185,6 +202,13 @@ export default function InsightsScreen() {
             value={`${insights.waters}`}
             sub="различни места за риболов"
           />
+          <View style={styles.divider} />
+          <InsightRow
+            icon="time-outline"
+            label="Най-успешен час на деня"
+            value={`${insights.bestHour}:00 – ${insights.bestHour + 1}:00`}
+            sub={`${insights.bestHourCount} ${insights.bestHourCount === 1 ? 'улов' : 'улова'} в този час`}
+          />
         </Card>
 
         <Text style={{ ...typography.h3, color: colors.text, marginTop: spacing.xl, marginBottom: spacing.sm }}>Тегло и тенденции</Text>
@@ -212,6 +236,26 @@ export default function InsightsScreen() {
             sub={insights.releaseRate >= 50 ? 'Отличен рибовъд!' : 'Пускай когато можеш.'}
           />
         </Card>
+
+        {insights.topLocs.length > 1 ? (
+          <>
+            <Text style={{ ...typography.h3, color: colors.text, marginTop: spacing.xl, marginBottom: spacing.sm }}>Топ локации</Text>
+            <Card style={{ marginTop: spacing.sm }}>
+              {insights.topLocs.map(([name, count], i) => (
+                <View key={name}>
+                  {i > 0 ? <View style={styles.divider} /> : null}
+                  <View style={styles.locRow}>
+                    <Text style={styles.locName} numberOfLines={1}>{name}</Text>
+                    <View style={styles.locBar}>
+                      <View style={[styles.locFill, { width: `${(count / insights.topLocs[0][1]) * 100}%` }]} />
+                    </View>
+                    <Text style={styles.locCount}>{count}</Text>
+                  </View>
+                </View>
+              ))}
+            </Card>
+          </>
+        ) : null}
 
         <Text style={{ ...typography.h3, color: colors.text, marginTop: spacing.xl, marginBottom: spacing.sm }}>Тази година</Text>
         <Card style={{ marginTop: spacing.sm }}>

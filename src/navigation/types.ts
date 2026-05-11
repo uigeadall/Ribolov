@@ -9,6 +9,7 @@ export type LogbookStackParamList = {
       }
     | undefined;
   CatchDetail: { id: string };
+  PhotoGallery: undefined;
 };
 
 export type SpeciesStackParamList = {
