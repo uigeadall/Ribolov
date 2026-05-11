@@ -19,6 +19,7 @@ import { useAppNavigation } from '../navigation/useAppNavigation';
 import { LogbookStackParamList } from '../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import * as Location from 'expo-location';
 import { Image } from 'expo-image';
 import { Screen } from '../components/Screen';
@@ -107,6 +108,19 @@ function createAddCatchStyles(colors: AppColors) {
     banTitle: { ...typography.bodyBold, color: colors.danger },
     banText: { ...typography.caption, color: colors.danger, marginTop: 2 },
   });
+}
+
+async function compressPhoto(uri: string): Promise<string> {
+  try {
+    const result = await ImageManipulator.manipulateAsync(
+      uri,
+      [{ resize: { width: 1280 } }],
+      { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG }
+    );
+    return result.uri;
+  } catch {
+    return uri;
+  }
 }
 
 export default function AddCatchScreen() {
@@ -261,7 +275,7 @@ export default function AddCatchScreen() {
       quality: 0.7,
     });
     if (!result.canceled && result.assets[0]) {
-      setPhotoUri(result.assets[0].uri);
+      setPhotoUri(await compressPhoto(result.assets[0].uri));
       setCameraVerifiedPhoto(false);
     }
   };
@@ -286,7 +300,7 @@ export default function AddCatchScreen() {
     }
     const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
     if (!result.canceled && result.assets[0]) {
-      setPhotoUri(result.assets[0].uri);
+      setPhotoUri(await compressPhoto(result.assets[0].uri));
       setCameraVerifiedPhoto(true);
     }
   };
@@ -321,7 +335,8 @@ export default function AddCatchScreen() {
       quality: 0.7,
     });
     if (!result.canceled && result.assets[0]) {
-      setExtraPhotoUris((prev) => [...prev, result.assets[0].uri]);
+      const compressed = await compressPhoto(result.assets[0].uri);
+      setExtraPhotoUris((prev) => [...prev, compressed]);
     }
   };
 

@@ -30,6 +30,7 @@ import { scheduleForecastNotificationIfGood } from '../services/pushNotification
 import { subscribeUnreadMessagesCount } from '../services/cloudSync';
 import { subscribeMyNotifications } from '../services/socialFeed';
 import { BadgeIcon } from '../components/BadgeIcon';
+import { Skeleton } from '../components/Skeleton';
 import { Image } from 'expo-image';
 import type { Catch } from '../types/index';
 import { useAppNavigation } from '../navigation/useAppNavigation';
@@ -351,11 +352,23 @@ export default function HomeScreen() {
       <SectionHeader hint="ПРОГНОЗА" title="Време сега" subtitle="Подходящо за бърз излет край теб или избран водоем от картата." />
       <Card style={styles.weatherCard}>
         {weatherStatus === 'loading' && !weather ? (
-          <View style={{ alignItems: 'center', paddingVertical: spacing.xl }}>
-            <ActivityIndicator color={colors.primary} />
-            <Text style={[styles.weatherHint, { textAlign: 'center', marginTop: spacing.md }]}>
-              Зареждаме прогнозата…
-            </Text>
+          <View style={{ gap: spacing.md }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+              <Skeleton width={54} height={54} borderRadius={27} />
+              <View style={{ flex: 1, gap: spacing.sm }}>
+                <Skeleton height={30} width="45%" />
+                <Skeleton height={14} width="70%" />
+              </View>
+              <Skeleton width={72} height={42} />
+            </View>
+            <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
+              <Skeleton width="100%" height={32} />
+              <Skeleton width="45%" height={32} />
+              <Skeleton width="45%" height={32} />
+              <Skeleton width="45%" height={32} />
+              <Skeleton width="45%" height={32} />
+            </View>
           </View>
         ) : weatherStatus === 'error' || !weather ? (
           <View>
@@ -436,7 +449,7 @@ export default function HomeScreen() {
         )}
       </Card>
 
-      {forecast.length > 0 ? (
+      {(forecast.length > 0 || weatherStatus === 'loading') ? (
         <>
           <SectionHeader hint="ПРОГНОЗА" title="Следващите 7 дни" subtitle="Дни с по-висок индекс са по-добри за риболов." />
           <ScrollView
@@ -444,34 +457,47 @@ export default function HomeScreen() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.sm, paddingBottom: spacing.xl }}
           >
-            {forecast.map((day) => {
-              const isBest = day.fishingRating >= 4;
-              const dateLabel = new Date(day.dateIso).toLocaleDateString('bg-BG', { day: 'numeric', month: 'short' });
-              return (
-                <View
-                  key={day.dateIso}
-                  style={[styles.forecastDayCard, isBest && styles.forecastDayCardBest]}
-                >
-                  <Text style={[styles.forecastDayLabel, isBest && styles.forecastDayLabelBest]}>
-                    {day.dayLabel}
-                  </Text>
-                  <Text style={{ ...typography.caption, color: colors.textMuted, fontSize: 9 }}>
-                    {dateLabel}
-                  </Text>
-                  <Text style={{ fontSize: 18 }}>
-                    {day.fishingRating >= 4 ? '🎣' : day.precipProbability > 60 ? '🌧' : day.fishingRating <= 2 ? '😐' : '🐟'}
-                  </Text>
-                  <Text style={{ ...typography.small, color: isBest ? colors.primary : colors.text, fontWeight: '700' }}>
-                    {'★'.repeat(day.fishingRating)}{'☆'.repeat(5 - day.fishingRating)}
-                  </Text>
-                  <Text style={styles.forecastDayTemp}>{day.maxTempC}°</Text>
-                  {day.precipProbability > 20 ? (
-                    <Text style={{ ...typography.caption, color: colors.textMuted }}>{day.precipProbability}%💧</Text>
-                  ) : null}
-                </View>
-              );
-            })}
+            {forecast.length === 0 && weatherStatus === 'loading'
+              ? [0, 1, 2, 3, 4, 5, 6].map((i) => <Skeleton key={i} width={66} height={114} style={{ marginRight: 0 }} />)
+              : forecast.map((day) => {
+                  const isBest = day.fishingRating >= 4;
+                  const dateLabel = new Date(day.dateIso).toLocaleDateString('bg-BG', { day: 'numeric', month: 'short' });
+                  return (
+                    <Pressable
+                      key={day.dateIso}
+                      style={[styles.forecastDayCard, isBest && styles.forecastDayCardBest]}
+                      onPress={() => navigation.navigate('ProfileTab', { screen: 'TripPlanner' })}
+                    >
+                      <Text style={[styles.forecastDayLabel, isBest && styles.forecastDayLabelBest]}>
+                        {day.dayLabel}
+                      </Text>
+                      <Text style={{ ...typography.caption, color: colors.textMuted, fontSize: 9 }}>
+                        {dateLabel}
+                      </Text>
+                      <Text style={{ fontSize: 18 }}>
+                        {day.fishingRating >= 4 ? '🎣' : day.precipProbability > 60 ? '🌧' : day.fishingRating <= 2 ? '😐' : '🐟'}
+                      </Text>
+                      <Text style={{ ...typography.small, color: isBest ? colors.primary : colors.text, fontWeight: '700' }}>
+                        {'★'.repeat(day.fishingRating)}{'☆'.repeat(5 - day.fishingRating)}
+                      </Text>
+                      <Text style={styles.forecastDayTemp}>{day.maxTempC}°</Text>
+                      {day.precipProbability > 20 ? (
+                        <Text style={{ ...typography.caption, color: colors.textMuted }}>{day.precipProbability}%💧</Text>
+                      ) : null}
+                    </Pressable>
+                  );
+                })}
           </ScrollView>
+          {forecast.length > 0 ? (
+            <Pressable
+              onPress={() => navigation.navigate('ProfileTab', { screen: 'TripPlanner' })}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.lg, marginTop: -spacing.sm, marginBottom: spacing.md }}
+            >
+              <Ionicons name="calendar-outline" size={15} color={colors.primary} />
+              <Text style={{ ...typography.caption, color: colors.primary, fontWeight: '600' }}>Планирай излет за конкретен водоем</Text>
+              <Ionicons name="chevron-forward" size={13} color={colors.primary} />
+            </Pressable>
+          ) : null}
         </>
       ) : null}
 

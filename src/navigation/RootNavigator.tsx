@@ -63,6 +63,7 @@ import CreateGroupScreen from '../screens/CreateGroupScreen';
 import ExploreScreen from '../screens/ExploreScreen';
 import SpeciesTargetScreen from '../screens/SpeciesTargetScreen';
 import PhotoGalleryScreen from '../screens/PhotoGalleryScreen';
+import TripPlannerScreen from '../screens/TripPlannerScreen';
 
 const wrap = (label: string, Component: React.ComponentType<any>) => (props: any) =>
   (
@@ -150,6 +151,7 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="Achievements" component={AchievementsScreen} />
       <ProfileStack.Screen name="Trips" component={TripsScreen} />
       <ProfileStack.Screen name="TripDetail" component={TripDetailScreen} />
+      <ProfileStack.Screen name="TripPlanner" component={TripPlannerScreen} />
       <ProfileStack.Screen name="Insights" component={InsightsScreen} />
       <ProfileStack.Screen name="Leaderboard" component={LeaderboardScreenWrapped} />
       <ProfileStack.Screen name="Classics" component={ClassicsScreenWrapped} />

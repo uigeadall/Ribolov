@@ -42,6 +42,7 @@ export type ProfileStackParamList = {
   Achievements: undefined;
   Trips: undefined;
   TripDetail: { id: string };
+  TripPlanner: undefined;
   Insights: undefined;
   Leaderboard: { damId?: string; riverId?: string } | undefined;
   Classics: undefined;
