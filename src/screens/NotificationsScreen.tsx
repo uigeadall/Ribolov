@@ -146,9 +146,15 @@ export default function NotificationsScreen() {
       }
       if (n.type === 'follow') {
         navigation.navigate('UserPublicProfile', { uid: n.actorUid, displayName: n.actorName });
+      } else if (n.catchId) {
+        // like / comment — go directly to the catch in the logbook tab
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (navigation.navigate as any)('LogbookTab', {
+          screen: 'CatchDetail',
+          params: { id: n.catchId },
+        });
       } else {
-        // like / comment — navigate to the current user's own public profile where their catch is visible
-        navigation.navigate('UserPublicProfile', { uid: user.uid, displayName: 'Моят профил' });
+        navigation.navigate('UserPublicProfile', { uid: user.uid, displayName: user.displayName ?? 'Моят профил' });
       }
     },
     [navigation, user?.uid, setData]

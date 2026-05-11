@@ -129,19 +129,26 @@ async function notifyInteraction(opts: {
   if (!opts.recipientUid || !opts.actorUid) return;
   const fb = requireFirebase();
   const safeName = (opts.actorName || 'Рибар').trim().slice(0, 120) || 'Рибар';
-  await addDoc(
-    collection(fb.db, 'users', opts.recipientUid, 'notifications'),
-    {
-      actorUid: opts.actorUid,
-      actorName: safeName,
-      type: opts.type,
-      catchId: opts.catchId ?? '',
-      preview: (opts.preview ?? '').slice(0, 200),
-      ...(opts.reactionEmoji ? { reactionEmoji: opts.reactionEmoji } : {}),
-      read: false,
-      createdAt: serverTimestamp(),
-    }
-  );
+  const payload = {
+    actorUid: opts.actorUid,
+    actorName: safeName,
+    type: opts.type,
+    catchId: opts.catchId ?? '',
+    preview: (opts.preview ?? '').slice(0, 200),
+    ...(opts.reactionEmoji ? { reactionEmoji: opts.reactionEmoji } : {}),
+    read: false,
+    createdAt: serverTimestamp(),
+  };
+  if (opts.type === 'like') {
+    // Deterministic ID — prevents a second notification when the user unlikes then re-likes
+    await setDoc(
+      doc(fb.db, 'users', opts.recipientUid, 'notifications', `like_${opts.actorUid}_${opts.catchId}`),
+      payload
+    );
+  } else {
+    // Comments are unique events — each one deserves its own notification
+    await addDoc(collection(fb.db, 'users', opts.recipientUid, 'notifications'), payload);
+  }
   void getUserPushToken(opts.recipientUid).then((token) => {
     if (!token) return;
     const isLike = opts.type === 'like';
@@ -152,7 +159,7 @@ async function notifyInteraction(opts: {
       body: isLike
         ? `Реагира ${emoji} на твоя улов`
         : `Коментира: ${(opts.preview ?? '').slice(0, 80)}`,
-      data: { type: opts.type, catchId: opts.catchId },
+      data: { type: opts.type, catchId: opts.catchId, actorUid: opts.actorUid, actorName: opts.actorName },
     });
   }).catch(() => {});
 }
@@ -354,8 +361,9 @@ export async function sendFollowNotification(
 ): Promise<void> {
   if (!followedUid || followedUid === followerUid) return;
   const fb = requireFirebase();
-  await addDoc(
-    collection(fb.db, 'users', followedUid, 'notifications'),
+  // Deterministic ID — prevents a second notification when the user unfollows then re-follows
+  await setDoc(
+    doc(fb.db, 'users', followedUid, 'notifications', `follow_${followerUid}`),
     stripUndefinedForFirestore({
       actorUid: followerUid,
       actorName: followerDisplayName.slice(0, 120),
@@ -372,7 +380,7 @@ export async function sendFollowNotification(
       to: token,
       title: followerDisplayName,
       body: 'Започна да те следва 🎣',
-      data: { type: 'follow', actorUid: followerUid },
+      data: { type: 'follow', actorUid: followerUid, actorName: followerDisplayName },
     });
   }).catch(() => {});
 }
