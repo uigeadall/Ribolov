@@ -113,6 +113,7 @@ export default function MapScreen() {
   const [spotWeatherLoading, setSpotWeatherLoading] = useState(false);
   const [catchMarkers, setCatchMarkers] = useState<CatchMapMarker[]>([]);
   const [showCatchMarkers, setShowCatchMarkers] = useState(false);
+  const [catchCountByName, setCatchCountByName] = useState<Map<string, number>>(new Map());
 
   useEffect(() => {
     const t = setTimeout(() => setHintVisible(false), 5000);
@@ -152,6 +153,12 @@ export default function MapScreen() {
         weightKg: c.weightKg,
       }));
     setCatchMarkers(markers);
+    // Count catches per named location so spot cards can show "X улова"
+    const countMap = new Map<string, number>();
+    catches.forEach((c) => {
+      if (c.location?.name) countMap.set(c.location.name, (countMap.get(c.location.name) ?? 0) + 1);
+    });
+    setCatchCountByName(countMap);
   }, []);
 
   useEffect(() => {
@@ -616,6 +623,9 @@ export default function MapScreen() {
                         {dist !== null
                           ? ` · ${dist < 1 ? `${Math.round(dist * 1000)} м` : `${dist.toFixed(1)} км`}`
                           : ''}
+                        {(catchCountByName.get(s.name) ?? 0) > 0
+                          ? ` · 🎣 ${catchCountByName.get(s.name)}`
+                          : ''}
                       </Text>
                     </View>
                   </Pressable>
@@ -1061,6 +1071,14 @@ export default function MapScreen() {
               </View>
             ) : null}
             {selected?.description ? <Text style={styles.modalDesc}>{selected.description}</Text> : null}
+            {selected && (catchCountByName.get(selected.name) ?? 0) > 0 ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.sm }}>
+                <Ionicons name="fish-outline" size={15} color={colors.primary} />
+                <Text style={{ ...typography.caption, color: colors.primary, fontWeight: '600' }}>
+                  {catchCountByName.get(selected.name)} {catchCountByName.get(selected.name) === 1 ? 'улов' : 'улова'} от тук
+                </Text>
+              </View>
+            ) : null}
             {spotWeatherLoading ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md }}>
                 <ActivityIndicator size="small" color={colors.primary} />

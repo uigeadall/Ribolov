@@ -42,7 +42,10 @@ const MAP_HTML = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
 <style>
 html,body,#map{margin:0;padding:0;height:100%;width:100%;}
 .leaflet-tooltip.wt-dam{background:rgba(255,255,255,0.96)!important;border:2px solid #062D3D!important;color:#062D3D;font-weight:700;font-size:12px;padding:4px 9px;border-radius:7px;box-shadow:0 2px 8px rgba(0,0,0,.22);}
@@ -89,9 +92,12 @@ html,body,#map{margin:0;padding:0;height:100%;width:100%;}
     iconAnchor:[13,13]
   });}
 
-  var spotMarkers = [];
-  var damMarkers = [];
-  var riverMarkers = [];
+  var spotCluster = L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 55, spiderfyOnMaxZoom: true, disableClusteringAtZoom: 13 });
+  var damCluster = L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 65, disableClusteringAtZoom: 11 });
+  var riverCluster = L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 65, disableClusteringAtZoom: 11 });
+  map.addLayer(spotCluster);
+  map.addLayer(damCluster);
+  map.addLayer(riverCluster);
   var catchLayerMarkers = [];
   var pendMarker = null;
   var userMarker = null;
@@ -121,30 +127,27 @@ html,body,#map{margin:0;padding:0;height:100%;width:100%;}
     var mz = typeof payload.zoom === 'number' ? payload.zoom : 7;
     var showNames = mz >= 12;
 
-    clearArr(spotMarkers);
+    spotCluster.clearLayers();
     (payload.spots||[]).forEach(function(s){
       var m = L.marker([s.latitude,s.longitude], { icon: spotPin(), interactive:true })
-        .addTo(map)
         .on('click', function(){ POST({type:'spot', id:s.id}); });
-      spotMarkers.push(m);
+      spotCluster.addLayer(m);
     });
 
-    clearArr(damMarkers);
+    damCluster.clearLayers();
     (payload.dams||[]).forEach(function(d){
       var m = L.marker([d.latitude,d.longitude], { icon: damPin(), interactive:true })
-        .addTo(map)
         .on('click', function(){ POST({type:'dam', id:d.id}); });
       if(showNames){ m.bindTooltip(d.name, { permanent:true, direction:'top', className:'wt-dam', offset:[0,-14] }); }
-      damMarkers.push(m);
+      damCluster.addLayer(m);
     });
 
-    clearArr(riverMarkers);
+    riverCluster.clearLayers();
     (payload.rivers||[]).forEach(function(r){
       var m = L.marker([r.latitude,r.longitude], { icon: riverPin(), opacity: 0.95 })
-        .addTo(map)
         .on('click', function(){ POST({type:'river', id:r.id}); });
       if(showNames){ m.bindTooltip(r.name, { permanent:true, direction:'top', className:'wt-river', offset:[0,-14] }); }
-      riverMarkers.push(m);
+      riverCluster.addLayer(m);
     });
 
     clearArr(catchLayerMarkers);
