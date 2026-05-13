@@ -226,10 +226,9 @@ function TabNavigator() {
           if (route.name === 'MapTab') icon = focused ? 'map' : 'map-outline';
           if (route.name === 'FeedTab') icon = focused ? 'newspaper' : 'newspaper-outline';
           if (route.name === 'ProfileTab') icon = focused ? 'person' : 'person-outline';
-          if (!focused) return <Ionicons name={icon} size={iconSize} color={color} />;
           return (
             <View style={{
-              backgroundColor: colors.primarySurface,
+              backgroundColor: focused ? colors.primarySurface : 'transparent',
               borderRadius: 10,
               paddingHorizontal: 12,
               alignItems: 'center',
