@@ -6,6 +6,7 @@ export type LogbookStackParamList = {
     | {
         prefillLocation?: { latitude: number; longitude: number; name: string };
         editCatchId?: string;
+        duplicateCatchId?: string;
       }
     | undefined;
   CatchDetail: { id: string };

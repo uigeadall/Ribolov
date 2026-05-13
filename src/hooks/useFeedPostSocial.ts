@@ -39,6 +39,7 @@ export type FeedPostSocialState = {
   likeBusy: boolean;
   likeCount: number;
   comments: FeedComment[];
+  allComments: FeedComment[];
   draft: string;
   setDraft: (v: string) => void;
   replyingTo: { id: string; name: string } | null;
@@ -87,6 +88,7 @@ export function useFeedPostSocial({
   const [saved, setSaved] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
   const [likersOpen, setLikersOpen] = useState(false);
+  const [pendingComments, setPendingComments] = useState<FeedComment[]>([]);
   const [likers, setLikers] = useState<CatchLiker[]>([]);
   const [likersLoading, setLikersLoading] = useState(false);
 
@@ -123,6 +125,12 @@ export function useFeedPostSocial({
     return subscribeCatchSaved(myUid, catchId, setSaved);
   }, [socialEnabled, myUid, catchId, isVisible]);
 
+  useEffect(() => {
+    setPendingComments((pending) =>
+      pending.filter((p) => !comments.some((c) => c.authorUid === p.authorUid && c.text === p.text))
+    );
+  }, [comments]);
+
   const openLikers = useCallback(async () => {
     if (likeCount === 0) return;
     setLikersOpen(true);
@@ -140,22 +148,51 @@ export function useFeedPostSocial({
     if (!socialEnabled || !myUid || likeBusyRef.current) return;
     setReactionPickerOpen(false);
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    const prevReaction = myReaction;
+    const prevLikeCount = likeCount;
+    const prevSummary = reactionSummary;
+    const isToggleOff = prevReaction === reaction;
+    const nextReaction: ReactionType | null = isToggleOff ? null : reaction;
+
+    setMyReaction(nextReaction);
+    setLikeCount(isToggleOff ? Math.max(0, prevLikeCount - 1) : prevReaction ? prevLikeCount : prevLikeCount + 1);
+    setReactionSummary(() => {
+      let updated = prevSummary.map((r) => ({ ...r }));
+      if (prevReaction) {
+        const idx = updated.findIndex((r) => r.type === prevReaction);
+        if (idx >= 0) {
+          updated[idx].count -= 1;
+          if (updated[idx].count <= 0) updated = updated.filter((r) => r.type !== prevReaction);
+        }
+      }
+      if (!isToggleOff) {
+        const idx = updated.findIndex((r) => r.type === reaction);
+        if (idx >= 0) {
+          updated[idx].count += 1;
+        } else {
+          updated.push({ type: reaction, emoji: REACTIONS[reaction].emoji, count: 1 });
+          updated.sort((a, b) => b.count - a.count);
+        }
+      }
+      return updated;
+    });
+
     likeBusyRef.current = true;
     setLikeBusy(true);
-    const prev = myReaction;
     try {
-      const next = await toggleCatchReaction(catchId, myUid, item.ownerUid, myDisplayName, reaction);
-      if (!prev && next) setLikeCount((n) => n + 1);
-      else if (prev && !next) setLikeCount((n) => Math.max(0, n - 1));
-      const summary = await fetchReactionSummary(catchId);
-      setReactionSummary(summary);
+      await toggleCatchReaction(catchId, myUid, item.ownerUid, myDisplayName, reaction);
+      fetchReactionSummary(catchId).then(setReactionSummary).catch(() => {});
     } catch (e) {
+      setMyReaction(prevReaction);
+      setLikeCount(prevLikeCount);
+      setReactionSummary(prevSummary);
       Alert.alert('Реакция', e instanceof Error ? e.message : 'Неуспешно действие.');
     } finally {
       likeBusyRef.current = false;
       setLikeBusy(false);
     }
-  }, [socialEnabled, myUid, catchId, item.ownerUid, myDisplayName, myReaction]);
+  }, [socialEnabled, myUid, catchId, item.ownerUid, myDisplayName, myReaction, likeCount, reactionSummary]);
 
   const onToggleSave = useCallback(async () => {
     if (!socialEnabled || !myUid || saveBusyRef.current) return;
@@ -243,14 +280,29 @@ export function useFeedPostSocial({
     const t = draft.trim();
     if (!t) return;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    const reply = replyingTo;
+    const tempId = `temp-${Date.now()}`;
+    const tempComment: FeedComment = {
+      id: tempId,
+      authorUid: myUid,
+      authorName: myDisplayName,
+      text: t,
+      ...(reply ? { replyToId: reply.id, replyToName: reply.name } : {}),
+    };
+
+    setPendingComments((prev) => [...prev, tempComment]);
+    setDraft('');
+    setReplyingTo(null);
+
     sendBusyRef.current = true;
     setSendBusy(true);
-    const reply = replyingTo;
     try {
       await addCatchComment(catchId, myUid, myDisplayName, t, item.ownerUid, reply ?? undefined);
-      setDraft('');
-      setReplyingTo(null);
     } catch (e) {
+      setPendingComments((prev) => prev.filter((c) => c.id !== tempId));
+      setDraft(t);
+      setReplyingTo(reply);
       Alert.alert('Коментар', e instanceof Error ? e.message : 'Неуспешно изпращане.');
     } finally {
       sendBusyRef.current = false;
@@ -260,7 +312,8 @@ export function useFeedPostSocial({
 
   return {
     myReaction, reactionPickerOpen, setReactionPickerOpen, reactionSummary,
-    likeBusy, likeCount, comments, draft, setDraft, replyingTo, setReplyingTo,
+    likeBusy, likeCount, comments, allComments: [...comments, ...pendingComments],
+    draft, setDraft, replyingTo, setReplyingTo,
     sendBusy, editingComment, setEditingComment, editBusy,
     saved, saveBusy, likersOpen, setLikersOpen, likers, likersLoading,
     openLikers, onPickReaction, onToggleSave, onShare, onReportCatch,

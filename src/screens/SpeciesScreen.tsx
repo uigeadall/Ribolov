@@ -263,6 +263,7 @@ export default function SpeciesScreen() {
           data={filtered}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
+          removeClippedSubviews={Platform.OS === 'android'}
           contentContainerStyle={{ paddingHorizontal: spacing.xl, paddingBottom: spacing.xxl }}
           ListHeaderComponent={
             <Text style={styles.listHeaderLabel}>

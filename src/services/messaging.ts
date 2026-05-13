@@ -110,7 +110,7 @@ export async function listMyConversations(myUid: string, maxCount = 50): Promise
       unreadCount: data.unreadCounts?.[myUid] ?? 0,
     };
   });
-  return rows.sort((a, b) => b.lastMessageAt - a.lastMessageAt);
+  return rows.sort((a, b) => (b.lastMessageAt ?? 0) - (a.lastMessageAt ?? 0));
 }
 
 export function subscribeConversationMessages(
@@ -174,9 +174,9 @@ export async function sendConversationMessage(
     lastSenderUid: senderUid,
     [`unreadCounts.${recipientUid}`]: increment(1),
   });
-  void getUserPushToken(recipientUid).then((token) => {
+  void getUserPushToken(recipientUid).then(async (token) => {
     if (!token) return;
-    sendPushNotification({
+    await sendPushNotification({
       to: token,
       title: senderName ?? 'Ново съобщение',
       body: preview.slice(0, 120),

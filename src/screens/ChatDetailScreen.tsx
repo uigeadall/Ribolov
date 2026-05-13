@@ -68,21 +68,15 @@ export default function ChatDetailScreen() {
 
   useEffect(() => {
     if (!configured || !user) return;
-    // Mark as read when screen opens
     markConversationRead(convId, user.uid).catch(() => {});
-    const unsub = subscribeConversationMessages(convId, (next) => {
+    const unsubMsgs = subscribeConversationMessages(convId, (next) => {
       setMsgs(next);
       markConversationRead(convId, user.uid).catch(() => {});
       flatRef.current?.scrollToEnd({ animated: true });
     });
-    return unsub;
-  }, [convId, configured, user]);
-
-  useEffect(() => {
-    if (!configured) return;
-    const unsub = subscribeUserPresence(otherUid, setOtherPresence);
-    return unsub;
-  }, [otherUid, configured]);
+    const unsubPresence = subscribeUserPresence(otherUid, setOtherPresence);
+    return () => { unsubMsgs(); unsubPresence(); };
+  }, [convId, otherUid, configured, user]);
 
   const send = useCallback(async () => {
     if (!user || !text.trim()) return;

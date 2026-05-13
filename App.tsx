@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { StatusBar } from 'expo-status-bar';
 import Toast from 'react-native-toast-message';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -18,6 +19,7 @@ export default function App() {
   const [onboarded, setOnboarded] = useState<boolean | null>(null);
 
   useEffect(() => {
+    void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
     initObservability();
     const fb = ensureFirebase();
     if (fb) void initFirebaseAppCheckBridge(fb.app);

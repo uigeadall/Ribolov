@@ -28,7 +28,7 @@ import { TripPickerModal } from '../components/TripPickerModal';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
-import { catchesStore, tripsStore, newId } from '../storage/storage';
+import { catchesStore, tripsStore, newId, recentBaitsStore, recentSpeciesStore } from '../storage/storage';
 import { speciesList } from '../data/species';
 import { Achievement, Catch, TripPlan } from '../types';
 import { useAuth } from '../services/authContext';
@@ -45,6 +45,10 @@ import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
 import { isRemoteImageUri } from '../utils/formatCatchDate';
 import { handleError } from '../utils/handleError';
 import { fetchWeather } from '../services/weather';
+import { DAMS } from '../data/dams';
+import { RIVERS } from '../data/rivers';
+import { haversineKm } from '../services/leaderboards';
+import * as Haptics from 'expo-haptics';
 
 // ─── Form state (reducer) ────────────────────────────────────────────────────
 
@@ -57,6 +61,7 @@ type FormState = {
   photoTitle: string;
   released: boolean;
   shareToFeed: boolean;
+  enterLeaderboard: boolean;
   photoUri: string | undefined;
   locationCoords: { lat: number; lon: number } | null;
   locationName: string;
@@ -74,6 +79,7 @@ type FormAction =
   | { type: 'SET_PHOTO_TITLE'; payload: string }
   | { type: 'SET_RELEASED'; payload: boolean }
   | { type: 'SET_SHARE_TO_FEED'; payload: boolean }
+  | { type: 'SET_ENTER_LEADERBOARD'; payload: boolean }
   | { type: 'SET_PHOTO'; payload: { uri: string | undefined; cameraVerified: boolean } }
   | { type: 'CLEAR_PHOTO' }
   | { type: 'SET_LOCATION'; payload: { coords: { lat: number; lon: number }; name: string } }
@@ -92,6 +98,7 @@ function formReducer(state: FormState, action: FormAction): FormState {
     case 'SET_PHOTO_TITLE': return { ...state, photoTitle: action.payload.slice(0, 120) };
     case 'SET_RELEASED': return { ...state, released: action.payload };
     case 'SET_SHARE_TO_FEED': return { ...state, shareToFeed: action.payload };
+    case 'SET_ENTER_LEADERBOARD': return { ...state, enterLeaderboard: action.payload };
     case 'SET_PHOTO': return { ...state, photoUri: action.payload.uri, cameraVerifiedPhoto: action.payload.cameraVerified };
     case 'CLEAR_PHOTO': return { ...state, photoUri: undefined, photoTitle: '', cameraVerifiedPhoto: false };
     case 'SET_LOCATION': return { ...state, locationCoords: action.payload.coords, locationName: action.payload.name };
@@ -125,6 +132,7 @@ export default function AddCatchScreen() {
   const route = useRoute<RouteProp<LogbookStackParamList, 'AddCatch'>>();
   const prefill = route.params?.prefillLocation;
   const editCatchId = route.params?.editCatchId;
+  const duplicateCatchId = route.params?.duplicateCatchId;
   const { colors } = useTheme();
   const styles = useMemo(() => createAddCatchStyles(colors), [colors]);
   const { user, configured } = useAuth();
@@ -138,6 +146,7 @@ export default function AddCatchScreen() {
     photoTitle: '',
     released: false,
     shareToFeed: false,
+    enterLeaderboard: true,
     photoUri: undefined,
     locationCoords: prefill ? { lat: prefill.latitude, lon: prefill.longitude } : null,
     locationName: prefill?.name ?? '',
@@ -146,6 +155,7 @@ export default function AddCatchScreen() {
     tripId: undefined,
   });
 
+  const [recentBaits, setRecentBaits] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [unlockedNow, setUnlockedNow] = useState<Achievement[]>([]);
   const [editLoaded, setEditLoaded] = useState(!editCatchId);
@@ -169,6 +179,7 @@ export default function AddCatchScreen() {
 
   useEffect(() => {
     tripsStore.list().then(setTrips);
+    recentBaitsStore.get().then(setRecentBaits);
   }, []);
 
   useEffect(() => {
@@ -217,6 +228,7 @@ export default function AddCatchScreen() {
           notes: c.notes ?? '',
           photoTitle: c.photoTitle ?? '',
           released: !!c.released,
+          enterLeaderboard: c.enterLeaderboard ?? true,
           photoUri: c.photoUri,
           cameraVerifiedPhoto: isRemoteImageUri(c.photoUri) || c.photoTakenWithAppCamera === true,
           locationCoords: c.location
@@ -254,6 +266,23 @@ export default function AddCatchScreen() {
       cancelled = true;
     };
   }, [form.locationCoords]);
+
+  useEffect(() => {
+    if (!duplicateCatchId) return;
+    catchesStore.list().then((list) => {
+      const c = list.find((x) => x.id === duplicateCatchId);
+      if (!c) return;
+      dispatch({
+        type: 'LOAD_CATCH',
+        payload: {
+          speciesId: speciesList.some((s) => s.id === c.speciesId) ? c.speciesId : speciesList[0].id,
+          bait: c.bait ?? '',
+          locationCoords: c.location ? { lat: c.location.latitude, lon: c.location.longitude } : null,
+          locationName: c.location?.name ?? '',
+        },
+      });
+    });
+  }, [duplicateCatchId]);
 
   useEffect(() => {
     if (!editCatchId || !configured || !user) return;
@@ -346,23 +375,32 @@ export default function AddCatchScreen() {
       return;
     }
     const loc = await Location.getCurrentPositionAsync({});
+    const lat = loc.coords.latitude;
+    const lon = loc.coords.longitude;
     let name = '';
     try {
-      const places = await Location.reverseGeocodeAsync({
-        latitude: loc.coords.latitude,
-        longitude: loc.coords.longitude,
-      });
+      const places = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lon });
       if (places[0]) {
         const p = places[0];
         name = [p.name, p.city ?? p.region].filter(Boolean).join(', ');
       }
     } catch {}
+
+    // Prefer the actual water body name if within range
+    const nearestDam = DAMS
+      .map((d) => ({ name: d.name, km: haversineKm(lat, lon, d.latitude, d.longitude) }))
+      .filter((d) => d.km <= 5)
+      .sort((a, b) => a.km - b.km)[0];
+    const nearestRiver = RIVERS
+      .map((r) => ({ name: r.name, km: haversineKm(lat, lon, r.latitude, r.longitude) }))
+      .filter((r) => r.km <= 3)
+      .sort((a, b) => a.km - b.km)[0];
+    const waterBody = nearestDam ?? nearestRiver;
+    if (waterBody) name = waterBody.name;
+
     dispatch({
       type: 'SET_LOCATION',
-      payload: {
-        coords: { lat: loc.coords.latitude, lon: loc.coords.longitude },
-        name,
-      },
+      payload: { coords: { lat, lon }, name },
     });
   };
 
@@ -415,6 +453,7 @@ export default function AddCatchScreen() {
       notes: form.notes || undefined,
       ...(form.photoUri && trimmedPhotoTitle ? { photoTitle: trimmedPhotoTitle } : {}),
       released: form.released,
+      enterLeaderboard: form.shareToFeed ? form.enterLeaderboard : undefined,
       photoUri: form.photoUri,
       extraPhotoUris: form.extraPhotoUris.length > 0 ? form.extraPhotoUris : undefined,
       photoTakenWithAppCamera,
@@ -437,33 +476,24 @@ export default function AddCatchScreen() {
 
     try {
       await catchesStore.save(item);
-      if (user) {
-        const sync = await syncCatchToCloud(item, form.shareToFeed);
-        if (!sync.ok) {
-          await enqueueCatchSync(item.id, form.shareToFeed);
-          Alert.alert(
-            'Облачна грешка',
-            `Уловът е записан локално. Синхронизацията ще се повтори автоматично при връзка. Подробности: ${sync.message}\n\nМожеш да опиташ и ръчно.`,
-            [
-              { text: 'OK', style: 'cancel' },
-              {
-                text: 'Опитай отново',
-                onPress: async () => {
-                  const again = await syncCatchToCloud(item, form.shareToFeed);
-                  if (again.ok) Alert.alert('Готово', 'Уловът е синхронизиран с облака.');
-                  else Alert.alert('Пак неуспех', again.message);
-                },
-              },
-            ]
-          );
-        }
-      } else if (form.shareToFeed) {
-        Alert.alert('Нужен е акаунт', 'За да споделиш публично, влез/регистрирай се в Профил.');
-      }
 
       const allCatches = await catchesStore.list();
       const pb = checkNewPersonalBest(item, allCatches);
+      const achCtx = { firebaseConfigured: configured, userLoggedIn: !!user, uid: user?.uid };
+      const newUnlocks = await checkForNewUnlocks(allCatches, achCtx);
+
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      if (form.bait.trim()) void recentBaitsStore.push(form.bait).then(() => recentBaitsStore.get().then(setRecentBaits));
+      void recentSpeciesStore.push(form.speciesId);
+
+      Toast.show({
+        type: 'success',
+        text1: editCatchId ? 'Уловът е обновен' : 'Уловът е записан',
+        visibilityTime: 2000,
+      });
+
       if (pb.isNew && !editCatchId) {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
         const pbMsg =
           pb.field === 'both'
             ? 'Нов личен рекорд по тегло и дължина! 🏆'
@@ -473,17 +503,22 @@ export default function AddCatchScreen() {
         Alert.alert('Личен рекорд!', `${item.speciesName} — ${pbMsg}`);
       }
 
-      const achCtx = { firebaseConfigured: configured, userLoggedIn: !!user, uid: user?.uid };
-      const newUnlocks = await checkForNewUnlocks(allCatches, achCtx);
-      Toast.show({
-        type: 'success',
-        text1: editCatchId ? 'Уловът е обновен' : 'Уловът е записан',
-        visibilityTime: 2000,
-      });
       if (newUnlocks.length > 0) {
         setUnlockedNow(newUnlocks);
       } else {
         navigation.goBack();
+      }
+
+      // Cloud sync runs in the background — does not block navigation
+      if (user) {
+        void (async () => {
+          const sync = await syncCatchToCloud(item, form.shareToFeed);
+          if (!sync.ok) {
+            await enqueueCatchSync(item.id, form.shareToFeed).catch(() => {});
+          }
+        })();
+      } else if (form.shareToFeed) {
+        Alert.alert('Нужен е акаунт', 'За да споделиш публично, влез/регистрирай се в Профил.');
       }
     } catch (e: unknown) {
       handleError(e);
@@ -586,6 +621,26 @@ export default function AddCatchScreen() {
         </View>
 
         <Text style={styles.label}>Стръв / примамка</Text>
+        {recentBaits.length > 0 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.xs, marginBottom: spacing.sm }} keyboardShouldPersistTaps="handled">
+            {recentBaits.map((b) => (
+              <Pressable
+                key={b}
+                onPress={() => dispatch({ type: 'SET_BAIT', payload: b })}
+                style={{
+                  paddingHorizontal: spacing.md,
+                  paddingVertical: 6,
+                  borderRadius: radius.pill,
+                  backgroundColor: form.bait === b ? colors.primary : colors.card,
+                  borderWidth: 1,
+                  borderColor: form.bait === b ? colors.primary : colors.border,
+                }}
+              >
+                <Text style={{ ...typography.small, color: form.bait === b ? colors.white : colors.text, fontWeight: '600' }}>{b}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        ) : null}
         <TextInput
           value={form.bait}
           onChangeText={(v) => dispatch({ type: 'SET_BAIT', payload: v })}
@@ -684,6 +739,7 @@ export default function AddCatchScreen() {
             onValueChange={(v) => {
               if (!v) {
                 dispatch({ type: 'SET_SHARE_TO_FEED', payload: false });
+                dispatch({ type: 'SET_ENTER_LEADERBOARD', payload: false });
                 return;
               }
               if (
@@ -699,10 +755,25 @@ export default function AddCatchScreen() {
                 return;
               }
               dispatch({ type: 'SET_SHARE_TO_FEED', payload: true });
+              dispatch({ type: 'SET_ENTER_LEADERBOARD', payload: true });
             }}
             trackColor={{ true: colors.primary, false: colors.border }}
           />
         </View>
+
+        {form.shareToFeed ? (
+          <View style={[styles.row2, { alignItems: 'center', marginTop: spacing.md }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.label}>Участвай в класацията</Text>
+              <Text style={styles.muted}>Седмична и месечна класация по тегло.</Text>
+            </View>
+            <Switch
+              value={form.enterLeaderboard}
+              onValueChange={(v) => dispatch({ type: 'SET_ENTER_LEADERBOARD', payload: v })}
+              trackColor={{ true: colors.primary, false: colors.border }}
+            />
+          </View>
+        ) : null}
 
         <Button
           title={editCatchId ? 'Запази промените' : 'Запази улова'}

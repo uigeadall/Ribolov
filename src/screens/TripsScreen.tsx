@@ -169,6 +169,7 @@ export default function TripsScreen() {
         style={{ flex: 1 }}
         data={items}
         keyExtractor={(t) => t.id}
+        removeClippedSubviews={Platform.OS === 'android'}
         contentContainerStyle={{ padding: spacing.lg, paddingTop: 0, flexGrow: 1 }}
         ListEmptyComponent={
           <EmptyState

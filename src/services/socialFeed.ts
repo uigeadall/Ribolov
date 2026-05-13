@@ -149,11 +149,11 @@ async function notifyInteraction(opts: {
     // Comments are unique events — each one deserves its own notification
     await addDoc(collection(fb.db, 'users', opts.recipientUid, 'notifications'), payload);
   }
-  void getUserPushToken(opts.recipientUid).then((token) => {
+  void getUserPushToken(opts.recipientUid).then(async (token) => {
     if (!token) return;
     const isLike = opts.type === 'like';
     const emoji = opts.reactionEmoji ?? '❤️';
-    sendPushNotification({
+    await sendPushNotification({
       to: token,
       title: opts.actorName,
       body: isLike
@@ -374,9 +374,9 @@ export async function sendFollowNotification(
       createdAt: serverTimestamp(),
     })
   );
-  void getUserPushToken(followedUid).then((token) => {
+  void getUserPushToken(followedUid).then(async (token) => {
     if (!token) return;
-    sendPushNotification({
+    await sendPushNotification({
       to: token,
       title: followerDisplayName,
       body: 'Започна да те следва 🎣',

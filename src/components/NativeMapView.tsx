@@ -16,7 +16,7 @@ const LABEL_THRESHOLD = 0.11;
 // Degrees of extra padding beyond the visible region when culling markers.
 const CULL_BUFFER = 0.25;
 // How long (ms) to keep tracksViewChanges=true after a marker mounts/remounts on Android.
-const ANDROID_TRACK_MS = 600;
+const ANDROID_TRACK_MS = 800;
 
 function zoomToRegion(lat: number, lng: number, zoom: number): Region {
   const latDelta = Math.min(40, Math.max(0.003, 360 / Math.pow(2, zoom + 0.85)));
@@ -286,7 +286,7 @@ export const NativeMapView = forwardRef<LeafletMapHandle, LeafletMapProps>(
 
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: '#DDE8EE' },
-  markerCol: { alignItems: 'center' },
+  markerCol: { alignItems: 'center', overflow: 'visible' },
   labelBubble: {
     maxWidth: 220,
     paddingHorizontal: 10,
@@ -315,7 +315,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.38,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 5,
+    // On Android, elevation shadow is clipped when the marker view is rasterised.
+    // Use 0 to avoid truncated-icon artefacts; the white border provides contrast instead.
+    elevation: Platform.OS === 'android' ? 0 : 5,
   },
   plateDam: { backgroundColor: '#062D3D' },
   plateRiver: { backgroundColor: '#2E9B5A' },
@@ -332,6 +334,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.38,
     shadowRadius: 5,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 5,
+    elevation: Platform.OS === 'android' ? 0 : 5,
   },
 });

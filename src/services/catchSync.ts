@@ -58,6 +58,24 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
   throw lastErr;
 }
 
+async function waitForResizedUrl(
+  storage: ReturnType<typeof requireFirebase>['storage'],
+  originalPath: string,
+  suffix: string,
+  maxWaitMs = 25_000
+): Promise<string | null> {
+  const resizedPath = originalPath.replace(/\.[^.]+$/, `${suffix}.webp`);
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    try {
+      return await getDownloadURL(ref(storage, resizedPath));
+    } catch {
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+  }
+  return null;
+}
+
 export async function ensureCatchPhotoUploadedForCloud(c: Catch, ownerUid: string): Promise<Catch> {
   const uri = c.photoUri?.trim();
   if (!uri || isRemote(uri)) return c;
@@ -80,7 +98,8 @@ export async function ensureCatchPhotoUploadedForCloud(c: Catch, ownerUid: strin
     await uploadBytes(storageRef, blob, { contentType });
     return getDownloadURL(storageRef);
   });
-  return { ...c, photoUri: url, photoStoragePath: path };
+  const resizedUrl = await waitForResizedUrl(fb.storage, path, '_1200x1200');
+  return { ...c, photoUri: resizedUrl ?? url, photoStoragePath: path };
 }
 
 export async function pushCatch(c: Catch, ownerUid: string, ownerName: string, isPublic: boolean) {
@@ -110,13 +129,15 @@ export async function pushCatch(c: Catch, ownerUid: string, ownerName: string, i
 
 export async function fetchPublicFeed(
   maxItems = 20,
-  afterDoc?: DocumentSnapshot | null
+  afterDoc?: DocumentSnapshot | null,
+  ownerUids?: string[]
 ): Promise<FeedPage> {
   const fb = requireFirebase();
   const constraints: Parameters<typeof query>[1][] = [
     orderBy('date', 'desc'),
     limit(maxItems + 1),
   ];
+  if (ownerUids && ownerUids.length > 0) constraints.unshift(where('ownerUid', 'in', ownerUids));
   if (afterDoc) constraints.push(startAfter(afterDoc));
   const snap = await getDocs(query(collection(fb.db, 'publicCatches'), ...constraints));
   const hasMore = snap.docs.length > maxItems;

@@ -24,6 +24,15 @@ export function allowBurst(key: BucketKey, maxPerWindow: number, windowMs: numbe
   return true;
 }
 
+// Periodically evict keys whose windows have fully expired to prevent unbounded Map growth.
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, arr] of timestamps) {
+    // Each key encodes its own windowMs implicitly — use the max window (60s) as the eviction threshold.
+    if (arr.every((t) => now - t >= 60_000)) timestamps.delete(key);
+  }
+}, 5 * 60 * 1000);
+
 const lastLikeAtByUid = new Map<string, number>();
 
 export function allowLikeToggle(uid: string): boolean {

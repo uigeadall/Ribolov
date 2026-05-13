@@ -10,10 +10,12 @@ import {
   ScrollView,
   ActivityIndicator,
   Switch,
+  InteractionManager,
 } from 'react-native';
 import * as Location from 'expo-location';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { Ionicons } from '@expo/vector-icons';
-import { useRoute } from '@react-navigation/native';
+import { useRoute, useFocusEffect } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import { Screen } from '../components/Screen';
 import { Button } from '../components/Button';
@@ -139,6 +141,13 @@ export default function MapScreen() {
     return () => clearTimeout(t);
   }, []);
 
+  useFocusEffect(useCallback(() => {
+    void ScreenOrientation.unlockAsync();
+    return () => {
+      void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    };
+  }, []));
+
   useEffect(() => {
     AsyncStorage.getItem('@ribolov/lastMapPos').then((raw) => {
       if (!raw) return;
@@ -162,8 +171,8 @@ export default function MapScreen() {
   }, [showCatchMarkers]);
 
   const load = useCallback(async () => {
-    setSpots(await spotsStore.list());
-    const catches = await catchesStore.list();
+    const [loadedSpots, catches] = await Promise.all([spotsStore.list(), catchesStore.list()]);
+    setSpots(loadedSpots);
     const markers: CatchMapMarker[] = catches
       .filter((c) => c.location?.latitude != null && c.location?.longitude != null)
       .map((c) => ({
@@ -183,7 +192,7 @@ export default function MapScreen() {
   }, []);
 
   useEffect(() => {
-    load();
+    const task = InteractionManager.runAfterInteractions(() => { load(); });
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status === 'granted') {
@@ -193,6 +202,7 @@ export default function MapScreen() {
         setUserCoord({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
       }
     })();
+    return () => task.cancel();
   }, [load]);
 
   useEffect(() => {

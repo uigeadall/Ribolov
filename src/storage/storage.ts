@@ -135,6 +135,30 @@ export const tripsStore = {
 
 export const newId = () => Crypto.randomUUID();
 
+const RECENT_BAITS_KEY = '@ribolov/recent-baits';
+const RECENT_SPECIES_KEY = '@ribolov/recent-species';
+
+export const recentBaitsStore = {
+  get: (): Promise<string[]> => readJson<string[]>(RECENT_BAITS_KEY, []),
+  push: async (bait: string): Promise<void> => {
+    const trimmed = bait.trim();
+    if (!trimmed) return;
+    const all = await readJson<string[]>(RECENT_BAITS_KEY, []);
+    const next = [trimmed, ...all.filter((b) => b !== trimmed)].slice(0, 5);
+    await writeJson(RECENT_BAITS_KEY, next);
+  },
+};
+
+export const recentSpeciesStore = {
+  get: (): Promise<string[]> => readJson<string[]>(RECENT_SPECIES_KEY, []),
+  push: async (speciesId: string): Promise<void> => {
+    if (!speciesId) return;
+    const all = await readJson<string[]>(RECENT_SPECIES_KEY, []);
+    const next = [speciesId, ...all.filter((id) => id !== speciesId)].slice(0, 3);
+    await writeJson(RECENT_SPECIES_KEY, next);
+  },
+};
+
 export async function wipeAllLocalAppData(): Promise<void> {
   _catchesCache = null;
   await AsyncStorage.multiRemove([
@@ -143,6 +167,8 @@ export async function wipeAllLocalAppData(): Promise<void> {
     KEYS.gear,
     LEGACY_PROFILE_KEY,
     KEYS.trips,
+    RECENT_BAITS_KEY,
+    RECENT_SPECIES_KEY,
     'ribolov:achievements:unlocked',
     'ribolov:challenges:state',
     'ribolov:notifications:morning',

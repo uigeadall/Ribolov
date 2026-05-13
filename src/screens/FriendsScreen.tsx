@@ -50,7 +50,7 @@ export default function FriendsScreen() {
         if (summaries[i] == null) { staleUids.push(r.uid); }
         else { active.push({ uid: r.uid, displayName: r.displayName, photoUrl: summaries[i]?.photoUrl }); }
       });
-      staleUids.forEach((uid) => unfollowUser(user.uid, uid).catch(() => {}));
+      await Promise.all(staleUids.map((uid) => unfollowUser(user.uid, uid).catch(() => {})));
       return active;
     },
     [user?.uid],

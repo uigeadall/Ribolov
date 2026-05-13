@@ -4,7 +4,7 @@
     "slug": "ribolov-app",
     "scheme": "ribolov-app",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -87,6 +87,7 @@
           }
         }
       ],
+      "expo-screen-orientation",
       "expo-font",
       "expo-web-browser",
       "expo-apple-authentication",

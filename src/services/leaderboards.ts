@@ -4,6 +4,13 @@ import { RIVERS } from '../data/rivers';
 import { requireFirebase } from './firebase';
 import type { CloudCatch } from './cloudSync';
 
+const LEADERBOARD_CACHE_TTL = 5 * 60 * 1000;
+const leaderboardCache = new Map<string, { data: LeaderboardRow[]; at: number }>();
+
+function leaderboardCacheKey(minDateIso: string, period: LeaderboardPeriod, scope: LeaderboardScope): string {
+  return `${period}:${minDateIso}:${scope.type === 'water' ? `${scope.kind}:${scope.id}` : 'all'}`;
+}
+
 export type LeaderboardPeriod = 'day' | 'week' | 'month' | 'year';
 
 export type LeaderboardScope =
@@ -119,6 +126,7 @@ export function aggregateLeaderboard(
   for (const c of filtered) {
     const uid = c.ownerUid;
     if (!uid) continue;
+    if (c.enterLeaderboard === false) continue;
     const w = c.weightKg ?? 0;
     const prev = byOwner.get(uid);
     const name = c.ownerName ?? 'Рибар';
@@ -168,6 +176,10 @@ export async function fetchAndAggregateLeaderboard(
   period: LeaderboardPeriod,
   scope: LeaderboardScope,
 ): Promise<LeaderboardRow[]> {
+  const cacheKey = leaderboardCacheKey(minDateIso, period, scope);
+  const cached = leaderboardCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < LEADERBOARD_CACHE_TTL) return cached.data;
+
   const fb = requireFirebase();
 
   const maxTotal = PERIOD_MAX[period];
@@ -190,6 +202,7 @@ export async function fetchAndAggregateLeaderboard(
     for (const d of snap.docs) {
       const c = d.data() as CloudCatch;
       if (!c.ownerUid || !catchMatchesLeaderboardWater(c, scope)) continue;
+      if (c.enterLeaderboard === false) continue;
       const w = c.weightKg ?? 0;
       const name = c.ownerName ?? 'Рибар';
       const prev = byOwner.get(c.ownerUid);
@@ -220,5 +233,6 @@ export async function fetchAndAggregateLeaderboard(
     .sort((a, b) => b.totalKg - a.totalKg);
 
   rows.forEach((r, i) => { r.rank = i + 1; });
+  leaderboardCache.set(cacheKey, { data: rows, at: Date.now() });
   return rows;
 }

@@ -60,6 +60,8 @@ export type Catch = {
   photoStoragePath?: string;
   /** true ако снимката е заснета с камерата в приложението — изисква се за публични постове и класики */
   photoTakenWithAppCamera?: boolean;
+  /** Потребителят е избрал да участва в седмичните/месечните класации */
+  enterLeaderboard?: boolean;
   location?: { latitude: number; longitude: number; name?: string };
   syncedToCloud?: boolean;
   tripId?: string;

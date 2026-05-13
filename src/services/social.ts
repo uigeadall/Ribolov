@@ -11,6 +11,9 @@ import {
 import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
 
+const FOLLOWING_TTL_MS = 2 * 60 * 1000;
+const followingCache = new Map<string, { data: { uid: string; displayName: string }[]; at: number }>();
+
 export async function getFollowerCount(targetUid: string): Promise<number> {
   const fb = requireFirebase();
   if (!targetUid) return 0;
@@ -52,6 +55,7 @@ export async function followUser(myUid: string, targetUid: string, targetName?: 
     stripUndefinedForFirestore({ uid: myUid, createdAt: serverTimestamp() }),
   );
   await batch.commit();
+  followingCache.delete(myUid);
 }
 
 export async function unfollowUser(myUid: string, targetUid: string) {
@@ -60,15 +64,20 @@ export async function unfollowUser(myUid: string, targetUid: string) {
   batch.delete(doc(fb.db, 'users', myUid, 'following', targetUid));
   batch.delete(doc(fb.db, 'users', targetUid, 'followers', myUid));
   await batch.commit();
+  followingCache.delete(myUid);
 }
 
 export async function getFollowing(myUid: string) {
+  const cached = followingCache.get(myUid);
+  if (cached && Date.now() - cached.at < FOLLOWING_TTL_MS) return cached.data;
   const fb = requireFirebase();
   const snap = await getDocs(collection(fb.db, 'users', myUid, 'following'));
-  return snap.docs.map((d) => {
-    const data = d.data() as { uid?: string; displayName?: string };
-    return { uid: d.id, displayName: data.displayName ?? '' };
+  const data = snap.docs.map((d) => {
+    const d2 = d.data() as { uid?: string; displayName?: string };
+    return { uid: d.id, displayName: d2.displayName ?? '' };
   });
+  followingCache.set(myUid, { data, at: Date.now() });
+  return data;
 }
 
 export async function isMutualFollow(myUid: string, otherUid: string): Promise<boolean> {
