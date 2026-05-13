@@ -124,7 +124,7 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
   const styles = useMemo(() => feedStyles(colors), [colors]);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
-  const [photoAspectRatio, setPhotoAspectRatio] = useState(4 / 3);
+  const [photoHeight, setPhotoHeight] = useState(260);
   const [viewerUri, setViewerUri] = useState<string | null>(null);
   const hasExtra = !!(item.bait || (item as Record<string, unknown>).technique || (item as Record<string, unknown>).spotName);
 
@@ -153,15 +153,15 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
         {/* ── Photo-first: full-bleed image with author overlay ── */}
         {item.photoUri ? (
           <Pressable onPress={() => setViewerUri(item.photoUri!)}>
-            <View style={[styles.photoWrap, { aspectRatio: photoAspectRatio }]}>
+            <View style={[styles.photoWrap, { height: photoHeight }]}>
               <Image
                 source={{ uri: item.photoUri }}
                 style={StyleSheet.absoluteFillObject}
                 contentFit="cover"
                 cachePolicy="memory-disk"
-                onLoad={(e) => {
-                  const { width, height } = e.source;
-                  if (width && height) setPhotoAspectRatio(width / height);
+                onLayout={(e) => {
+                  const w = e.nativeEvent.layout.width;
+                  if (w > 0) setPhotoHeight(Math.round(w * 0.75));
                 }}
               />
               {/* Author overlay at bottom of photo */}

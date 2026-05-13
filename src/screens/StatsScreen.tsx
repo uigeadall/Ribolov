@@ -284,8 +284,8 @@ export default function StatsScreen() {
         {/* Summary numbers */}
         <View style={styles.statGrid}>
           <View style={styles.statCell}>
-            <AnimatedStatNum value={stats!.n} />
-            <Text style={styles.statLbl}>Общо улова</Text>
+            <AnimatedStatNum value={stats!.currentStreak} />
+            <Text style={styles.statLbl}>Дни серия</Text>
           </View>
           <View style={styles.statCell}>
             <AnimatedStatNum value={stats!.totalWeight} decimals={1} />

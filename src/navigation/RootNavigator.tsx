@@ -227,13 +227,16 @@ function TabNavigator() {
           if (route.name === 'FeedTab') icon = focused ? 'newspaper' : 'newspaper-outline';
           if (route.name === 'ProfileTab') icon = focused ? 'person' : 'person-outline';
           return (
-            <View style={{
-              backgroundColor: focused ? colors.primarySurface : 'transparent',
-              borderRadius: 10,
-              paddingHorizontal: 12,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
+            <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+              {focused && (
+                <View style={{
+                  position: 'absolute',
+                  backgroundColor: colors.primarySurface,
+                  borderRadius: 10,
+                  width: iconSize + 24,
+                  height: iconSize + 6,
+                }} />
+              )}
               <Ionicons name={icon} size={iconSize} color={color} />
             </View>
           );
