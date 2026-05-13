@@ -303,9 +303,21 @@ const ForecastSection = React.memo(function ForecastSection({
                   <Text style={{ fontSize: 18 }}>
                     {day.fishingRating >= 4 ? '🎣' : day.precipProbability > 60 ? '🌧' : day.fishingRating <= 2 ? '😐' : '🐟'}
                   </Text>
-                  <Text style={{ ...typography.small, color: isBest ? colors.primary : colors.text, fontWeight: '700' }}>
-                    {'★'.repeat(day.fishingRating)}{'☆'.repeat(5 - day.fishingRating)}
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 2, height: 18 }}>
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <View
+                        key={i}
+                        style={{
+                          width: 4,
+                          height: 4 + (i / 5) * 12,
+                          borderRadius: 2,
+                          backgroundColor: i <= day.fishingRating
+                            ? (isBest ? colors.primary : colors.primary + 'BB')
+                            : colors.border,
+                        }}
+                      />
+                    ))}
+                  </View>
                   <Text style={styles.forecastDayTemp}>{day.maxTempC}°</Text>
                   {day.precipProbability > 20 ? (
                     <Text style={{ ...typography.caption, color: colors.textMuted }}>{day.precipProbability}%💧</Text>

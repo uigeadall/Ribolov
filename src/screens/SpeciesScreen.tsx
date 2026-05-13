@@ -8,7 +8,7 @@ import {
   TextInput,
   Platform,
 } from 'react-native';
-
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { Screen } from '../components/Screen';
@@ -24,6 +24,15 @@ import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
 import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
 import { useAppNavigation } from '../navigation/useAppNavigation';
+
+function categoryBand(cat: string): [string, string] {
+  switch (cat) {
+    case 'saltwater': return ['#005A9E', '#0080CC'];
+    case 'predator':  return ['#0E4D64', '#1A7A9C'];
+    case 'cyprinid':  return ['#1B6B3A', '#2E9B5A'];
+    default:          return ['#006E8A', '#00A8CC'];
+  }
+}
 
 function createSpeciesListStyles(colors: AppColors) {
   return StyleSheet.create({
@@ -140,40 +149,48 @@ export default function SpeciesScreen() {
 
   const renderItem = ({ item }: { item: Species }) => {
     const photo = speciesPhotos[item.id];
+    const [bandStart, bandEnd] = categoryBand(item.category);
     return (
-    <Pressable
-      onPress={() => navigation.navigate('SpeciesDetail', { id: item.id })}
-      android_ripple={{ color: `${colors.primary}18` }}
-      style={({ pressed }) => (pressed && Platform.OS === 'ios' ? { opacity: 0.92 } : undefined)}
-    >
-      <Card style={{ padding: spacing.md }}>
-        <View style={styles.rowPressable}>
-          {photo ? (
-            <View style={styles.thumbWrap}>
-              <Image
-                source={{ uri: photo.url, headers: imageHeadersForUrl(photo.url) }}
-                style={styles.thumbImg}
-                contentFit="cover"
-                transition={180}
-              />
-            </View>
-          ) : (
-            <View style={styles.iconWrap}>
-              <Ionicons name="fish-outline" size={26} color={colors.primary} />
-            </View>
-          )}
-          <View style={styles.rowBody}>
-            <Text style={styles.name} numberOfLines={2}>
+      <Pressable
+        onPress={() => navigation.navigate('SpeciesDetail', { id: item.id })}
+        android_ripple={{ color: `${colors.primary}18` }}
+        style={({ pressed }) => [
+          { flex: 1, margin: spacing.xs / 2 },
+          pressed && Platform.OS === 'ios' ? { opacity: 0.92 } : undefined,
+        ]}
+      >
+        <Card style={{ padding: 0, overflow: 'hidden', flex: 1 }}>
+          {/* Coloured top band */}
+          <LinearGradient
+            colors={[bandStart, bandEnd]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={{ height: 5 }}
+          />
+          <View style={{ padding: spacing.sm, alignItems: 'center', gap: spacing.xs }}>
+            {photo ? (
+              <View style={[styles.thumbWrap, { width: '100%', height: 90, borderRadius: radius.sm }]}>
+                <Image
+                  source={{ uri: photo.url, headers: imageHeadersForUrl(photo.url) }}
+                  style={styles.thumbImg}
+                  contentFit="cover"
+                  transition={180}
+                />
+              </View>
+            ) : (
+              <View style={[styles.iconWrap, { width: '100%', height: 72, borderRadius: radius.sm }]}>
+                <Ionicons name="fish-outline" size={28} color={colors.primary} />
+              </View>
+            )}
+            <Text style={[styles.name, { fontSize: 14, textAlign: 'center' }]} numberOfLines={2}>
               {item.nameBg}
             </Text>
-            <Text style={styles.latin} numberOfLines={2}>
+            <Text style={[styles.latin, { textAlign: 'center' }]} numberOfLines={1}>
               {item.nameLatin}
             </Text>
           </View>
-          <Ionicons name="chevron-forward" size={22} color={colors.textMuted} />
-        </View>
-      </Card>
-    </Pressable>
+        </Card>
+      </Pressable>
     );
   };
 
@@ -263,15 +280,17 @@ export default function SpeciesScreen() {
           data={filtered}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
+          numColumns={2}
+          columnWrapperStyle={{ paddingHorizontal: spacing.md }}
           removeClippedSubviews={Platform.OS === 'android'}
-          contentContainerStyle={{ paddingHorizontal: spacing.xl, paddingBottom: spacing.xxl }}
+          contentContainerStyle={{ paddingHorizontal: spacing.xs, paddingBottom: spacing.xxl }}
           ListHeaderComponent={
-            <Text style={styles.listHeaderLabel}>
+            <Text style={[styles.listHeaderLabel, { paddingHorizontal: spacing.md, marginBottom: spacing.sm }]}>
               РЕЗУЛТАТИ ({filtered.length}
               {searchActive ? ` от ${speciesList.length}` : ''})
             </Text>
           }
-          ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
+          ItemSeparatorComponent={() => <View style={{ height: spacing.xs }} />}
           ListFooterComponent={<View style={styles.listFooterPad} />}
           {...keyboardAwareScrollProps}
         />

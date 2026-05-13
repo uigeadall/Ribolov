@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { LinearGradient } from 'expo-linear-gradient';
 import {
   View, Text, StyleSheet, Alert, ScrollView,
   TextInput, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform, Modal,
@@ -168,14 +169,70 @@ export default function CatchDetailScreen() {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Screen padded={false}>
-        <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
+        <ScrollView keyboardShouldPersistTaps="handled">
 
+          {/* ── Full-bleed photo header ── */}
+          {item.photoUri ? (
+            <View style={{ position: 'relative' }}>
+              <Pressable onPress={() => { setViewerUri(item.photoUri!); setViewerOpen(true); }}>
+                <Image
+                  source={{ uri: item.photoUri }}
+                  style={{ width: '100%', aspectRatio: photoAspectRatio ?? 4 / 3 }}
+                  contentFit="cover"
+                  cachePolicy="memory-disk"
+                  onLoad={(e) => {
+                    const { width, height } = e.source;
+                    if (width && height) setPhotoAspectRatio(width / height);
+                  }}
+                />
+                <LinearGradient
+                  colors={['transparent', 'rgba(0,0,0,0.75)']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 0, y: 1 }}
+                  style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: spacing.lg, paddingTop: spacing.xl }}
+                >
+                  <Text style={{ ...typography.h2, color: '#fff' }} numberOfLines={1}>{item.speciesName}</Text>
+                  <Text style={{ ...typography.body, color: 'rgba(255,255,255,0.82)', marginTop: 2 }} numberOfLines={1}>{metaLine}</Text>
+                </LinearGradient>
+              </Pressable>
+              {/* Floating back button */}
+              <Pressable
+                onPress={safeGoBack}
+                hitSlop={8}
+                style={{
+                  position: 'absolute', top: spacing.lg, left: spacing.md,
+                  width: 36, height: 36, borderRadius: 18,
+                  backgroundColor: 'rgba(0,0,0,0.38)',
+                  alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                <Ionicons name="chevron-back" size={22} color="#fff" />
+              </Pressable>
+            </View>
+          ) : (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.lg, paddingBottom: 0 }}>
+              <Pressable onPress={safeGoBack} hitSlop={8}>
+                <Ionicons name="chevron-back" size={28} color={colors.primary} />
+              </Pressable>
+              <Text style={styles.title} numberOfLines={1}>{item.speciesName}</Text>
+            </View>
+          )}
+
+          <View style={{ padding: spacing.lg, paddingBottom: spacing.xxl }}>
           <ViewShot ref={cardRef} options={{ format: 'png', quality: 0.95 }}>
             <View style={{ backgroundColor: colors.background }}>
-              <Text style={styles.title}>{item.speciesName}</Text>
-              <Text style={styles.meta}>{metaLine}</Text>
-              {item.location?.name ? <Text style={styles.meta}>{item.location.name}</Text> : null}
-              {item.bait ? <Text style={styles.meta}>Стръв: {item.bait}</Text> : null}
+              {!item.photoUri ? (
+                <>
+                  <Text style={styles.meta}>{metaLine}</Text>
+                  {item.location?.name ? <Text style={styles.meta}>{item.location.name}</Text> : null}
+                  {item.bait ? <Text style={styles.meta}>Стръв: {item.bait}</Text> : null}
+                </>
+              ) : (
+                <>
+                  {item.location?.name ? <Text style={styles.meta}>{item.location.name}</Text> : null}
+                  {item.bait ? <Text style={styles.meta}>Стръв: {item.bait}</Text> : null}
+                </>
+              )}
 
               <View style={styles.chipRow}>
                 {item.syncedToCloud ? <View style={styles.chip}><Text style={styles.chipText}>Синхронизиран</Text></View> : null}
@@ -185,23 +242,6 @@ export default function CatchDetailScreen() {
                 {item.conditions?.pressureHpa != null ? <View style={styles.chip}><Text style={styles.chipText}>⏱ {item.conditions.pressureHpa} hPa</Text></View> : null}
                 {item.conditions?.moonPhaseName ? <View style={styles.chip}><Text style={styles.chipText}>{item.conditions.moonPhaseName}</Text></View> : null}
               </View>
-
-              {item.photoUri ? (
-                <Pressable onPress={() => { setViewerUri(item.photoUri!); setViewerOpen(true); }}>
-                  <View style={[styles.photo, { aspectRatio: photoAspectRatio ?? 4 / 3 }]}>
-                    <Image
-                      source={{ uri: item.photoUri }}
-                      style={StyleSheet.absoluteFillObject}
-                      contentFit="contain"
-                      cachePolicy="memory-disk"
-                      onLoad={(e) => {
-                        const { width, height } = e.source;
-                        if (width && height) setPhotoAspectRatio(width / height);
-                      }}
-                    />
-                  </View>
-                </Pressable>
-              ) : null}
 
               {item.photoTitle ? <Text style={styles.photoTitle}>{item.photoTitle}</Text> : null}
               <Text style={styles.watermark}>🎣 Риболов</Text>
@@ -336,6 +376,7 @@ export default function CatchDetailScreen() {
               </>
             )}
           </Card>
+          </View>
         </ScrollView>
         <ImageViewer uri={viewerUri} visible={viewerOpen} onClose={() => setViewerOpen(false)} />
       </Screen>

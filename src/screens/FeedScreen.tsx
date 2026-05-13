@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { View, Text, StyleSheet, FlatList, Pressable, RefreshControl, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Pressable, RefreshControl, ActivityIndicator, Platform, TextInput, Animated } from 'react-native';
 import { Image } from 'expo-image';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -135,6 +135,10 @@ export default function FeedScreen() {
   const mountedRef = useRef(true);
   const flatListRef = useRef<FlatList<FeedItem>>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const heroTitleOpacity = scrollY.interpolate({ inputRange: [0, 50], outputRange: [1, 0], extrapolate: 'clamp' });
+  const heroTitleHeight = scrollY.interpolate({ inputRange: [0, 60], outputRange: [56, 0], extrapolate: 'clamp' });
 
   useEffect(() => {
     mountedRef.current = true;
@@ -250,6 +254,17 @@ export default function FeedScreen() {
   const myDisplayName = user?.displayName ?? user?.email ?? 'Аз';
   const socialEnabled = !!user && !!configured;
 
+  const displayedItems = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter(
+      (i) =>
+        i.speciesName.toLowerCase().includes(q) ||
+        (i.ownerName ?? '').toLowerCase().includes(q) ||
+        (i.location?.name ?? '').toLowerCase().includes(q),
+    );
+  }, [items, searchQuery]);
+
   const renderItem = useCallback(({ item }: { item: FeedItem }) => (
     <FeedPost
       item={item}
@@ -266,9 +281,15 @@ export default function FeedScreen() {
 
   const ItemSeparator = useCallback(() => <View style={styles.listGap} />, [styles.listGap]);
 
-  const onScroll = useCallback((e: { nativeEvent: { contentOffset: { y: number } } }) => {
-    setShowScrollTop(e.nativeEvent.contentOffset.y > 400);
-  }, []);
+  const onScroll = Animated.event(
+    [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+    {
+      useNativeDriver: false,
+      listener: (e: { nativeEvent: { contentOffset: { y: number } } }) => {
+        setShowScrollTop(e.nativeEvent.contentOffset.y > 400);
+      },
+    }
+  );
 
   const scrollToTop = useCallback(() => {
     flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
@@ -407,14 +428,38 @@ export default function FeedScreen() {
     <Screen padded={false} safeAreaEdges={['left', 'right']}>
       <View style={[styles.hero, heroTopStyle]}>
         <Header />
-        <View style={styles.heroTitleRow}>
-          <View style={styles.heroIconWrap}>
-            <Ionicons name="fish-outline" size={22} color={colors.primary} />
+        <Animated.View style={{ opacity: heroTitleOpacity, height: heroTitleHeight, overflow: 'hidden' }}>
+          <View style={styles.heroTitleRow}>
+            <View style={styles.heroIconWrap}>
+              <Ionicons name="fish-outline" size={22} color={colors.primary} />
+            </View>
+            <View style={styles.heroTitleBlock}>
+              <Text style={styles.heroTitle}>Лента</Text>
+              <Text style={styles.heroSubtitle}>Споделени улови от общността</Text>
+            </View>
           </View>
-          <View style={styles.heroTitleBlock}>
-            <Text style={styles.heroTitle}>Лента</Text>
-            <Text style={styles.heroSubtitle}>Споделени улови от риболовната общност</Text>
-          </View>
+        </Animated.View>
+        {/* Inline search bar */}
+        <View style={{
+          flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+          backgroundColor: colors.card, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border,
+          paddingHorizontal: spacing.md, paddingVertical: Platform.OS === 'ios' ? 8 : 4,
+          marginTop: spacing.sm,
+        }}>
+          <Ionicons name="search-outline" size={16} color={colors.textMuted} />
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Вид, автор или място…"
+            placeholderTextColor={colors.textMuted}
+            style={{ flex: 1, ...typography.body, color: colors.text, padding: 0 }}
+            returnKeyType="search"
+          />
+          {searchQuery.length > 0 && (
+            <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
+              <Ionicons name="close-circle" size={16} color={colors.textMuted} />
+            </Pressable>
+          )}
         </View>
       </View>
 
@@ -478,7 +523,7 @@ export default function FeedScreen() {
         <View style={{ flex: 1 }}>
           <FlatList
             ref={flatListRef}
-            data={items}
+            data={displayedItems}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.listContent}
             refreshControl={
@@ -489,12 +534,20 @@ export default function FeedScreen() {
             onEndReached={loadMore}
             onEndReachedThreshold={0.4}
             onScroll={onScroll}
-            scrollEventThrottle={200}
+            scrollEventThrottle={16}
             removeClippedSubviews={Platform.OS === 'android'}
             maxToRenderPerBatch={8}
             windowSize={5}
             initialNumToRender={6}
             updateCellsBatchingPeriod={50}
+            ListEmptyComponent={
+              searchQuery.trim() ? (
+                <View style={{ alignItems: 'center', paddingVertical: spacing.xxl }}>
+                  <Ionicons name="search-outline" size={36} color={colors.textMuted} />
+                  <Text style={[styles.centerMsg, { marginTop: spacing.sm }]}>Няма резултати за „{searchQuery}"</Text>
+                </View>
+              ) : null
+            }
             ListFooterComponent={
               loadingMore ? (
                 <View style={{ paddingVertical: spacing.lg, alignItems: 'center' }}>

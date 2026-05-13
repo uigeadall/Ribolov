@@ -401,9 +401,10 @@ export default function StatsScreen() {
                     const cell = stats!.calCells[wk * 7 + dow];
                     if (!cell) return <View key={dow} style={styles.calCell} />;
                     const bg = cell.isFuture ? 'transparent'
-                      : cell.count === 0 ? colors.border
-                      : cell.count === 1 ? colors.primary + '66'
-                      : cell.count <= 3 ? colors.primary + 'AA'
+                      : cell.count === 0 ? colors.surfaceAlt
+                      : cell.count === 1 ? colors.primary + '55'
+                      : cell.count <= 3 ? colors.primary + '99'
+                      : cell.count <= 6 ? colors.primary + 'CC'
                       : colors.primary;
                     return (
                       <Pressable
@@ -429,12 +430,13 @@ export default function StatsScreen() {
             </View>
           </ScrollView>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm }}>
-            <Text style={{ ...typography.caption, color: colors.textMuted }}>Без улов</Text>
-            <View style={[styles.calCell, { backgroundColor: colors.border }]} />
-            <View style={[styles.calCell, { backgroundColor: colors.primary + '66' }]} />
-            <View style={[styles.calCell, { backgroundColor: colors.primary + 'AA' }]} />
+            <Text style={{ ...typography.caption, color: colors.textMuted }}>Без</Text>
+            <View style={[styles.calCell, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }]} />
+            <View style={[styles.calCell, { backgroundColor: colors.primary + '55' }]} />
+            <View style={[styles.calCell, { backgroundColor: colors.primary + '99' }]} />
+            <View style={[styles.calCell, { backgroundColor: colors.primary + 'CC' }]} />
             <View style={[styles.calCell, { backgroundColor: colors.primary }]} />
-            <Text style={{ ...typography.caption, color: colors.textMuted }}>Много улови</Text>
+            <Text style={{ ...typography.caption, color: colors.textMuted }}>Много</Text>
           </View>
         </Card>
 

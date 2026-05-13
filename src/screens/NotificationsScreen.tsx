@@ -110,6 +110,11 @@ function NotifRow({ item, myUid, onOpen, styles, colors }: NotifRowProps) {
   });
   const [followState, setFollowState] = useState<'idle' | 'busy' | 'done'>('idle');
 
+  const dotColor =
+    item.type === 'like' ? colors.primary
+    : item.type === 'comment' ? '#e53935'
+    : '#2E9B5A';
+
   const verb =
     item.type === 'like'
       ? `реагира ${item.reactionEmoji ?? '❤️'} на твой улов`
@@ -187,7 +192,7 @@ function NotifRow({ item, myUid, onOpen, styles, colors }: NotifRowProps) {
           )}
         </View>
         {!item.read ? (
-          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primary, marginTop: 6 }} />
+          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dotColor, marginTop: 6 }} />
         ) : (
           <View style={{ width: 8 }} />
         )}

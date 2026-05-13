@@ -27,9 +27,12 @@ export function SectionHeader({ title, hint, subtitle }: Props) {
   return (
     <View style={styles.wrap}>
       {hint ? (
-        <Text style={styles.hint} numberOfLines={2}>
-          {hint}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.xs }}>
+          <View style={{ width: 3, alignSelf: 'stretch', borderRadius: 2, backgroundColor: colors.primary }} />
+          <Text style={[styles.hint, { marginBottom: 0 }]} numberOfLines={2}>
+            {hint}
+          </Text>
+        </View>
       ) : null}
       <Text style={styles.title}>{title}</Text>
       {subtitle ? (

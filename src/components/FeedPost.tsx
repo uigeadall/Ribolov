@@ -13,6 +13,7 @@ import {
   Clipboard,
   ToastAndroid,
   Animated,
+  PanResponder,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -152,6 +153,21 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
 
   const social = useFeedPostSocial({ item, myUid, myDisplayName, ownerName, socialEnabled, isVisible });
   const reactionScale = useRef(new Animated.Value(1)).current;
+  const sheetPanY = useRef(new Animated.Value(0)).current;
+  const sheetPanResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) => g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx),
+      onPanResponderMove: Animated.event([null, { dy: sheetPanY }], { useNativeDriver: false }),
+      onPanResponderRelease: (_, g) => {
+        if (g.dy > 80) {
+          sheetPanY.setValue(0);
+          social.setLikersOpen(false);
+        } else {
+          Animated.spring(sheetPanY, { toValue: 0, useNativeDriver: false, speed: 20, bounciness: 6 }).start();
+        }
+      },
+    })
+  ).current;
 
   const animateReaction = () => {
     Animated.sequence([
@@ -426,9 +442,21 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
               </View>
             </View>}
 
-            <Modal visible={social.likersOpen} animationType="slide" transparent onRequestClose={() => social.setLikersOpen(false)}>
-              <Pressable style={styles.modalBackdrop} onPress={() => social.setLikersOpen(false)}>
-                <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+            <Modal
+              visible={social.likersOpen}
+              animationType="slide"
+              transparent
+              onRequestClose={() => { sheetPanY.setValue(0); social.setLikersOpen(false); }}
+            >
+              <Pressable style={styles.modalBackdrop} onPress={() => { sheetPanY.setValue(0); social.setLikersOpen(false); }}>
+                <Animated.View
+                  style={[styles.modalSheet, { transform: [{ translateY: sheetPanY }] }]}
+                  {...sheetPanResponder.panHandlers}
+                >
+                  {/* Drag handle */}
+                  <View style={{ alignItems: 'center', marginBottom: spacing.sm }}>
+                    <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border }} />
+                  </View>
                   <Text style={styles.modalTitle}>Харесали ({social.likeCount})</Text>
                   {social.likersLoading ? (
                     <ActivityIndicator color={colors.primary} style={{ marginVertical: spacing.lg }} />
@@ -438,7 +466,7 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
                       keyExtractor={(x) => x.uid}
                       style={{ maxHeight: 360 }}
                       renderItem={({ item: liker }) => (
-                        <Pressable style={styles.likerRow} onPress={() => { social.setLikersOpen(false); onPressAuthor(liker.uid, liker.displayName); }}>
+                        <Pressable style={styles.likerRow} onPress={() => { sheetPanY.setValue(0); social.setLikersOpen(false); onPressAuthor(liker.uid, liker.displayName); }}>
                           <Ionicons name="person-circle-outline" size={28} color={colors.primary} />
                           <Text style={styles.likerName}>{liker.displayName}</Text>
                           <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
@@ -447,10 +475,10 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
                       ListEmptyComponent={<Text style={{ ...typography.body, color: colors.textMuted }}>Няма видими харесвания.</Text>}
                     />
                   )}
-                  <Pressable onPress={() => social.setLikersOpen(false)} style={{ marginTop: spacing.md, alignItems: 'center' }}>
+                  <Pressable onPress={() => { sheetPanY.setValue(0); social.setLikersOpen(false); }} style={{ marginTop: spacing.md, alignItems: 'center' }}>
                     <Text style={{ ...typography.bodyBold, color: colors.primary }}>Затвори</Text>
                   </Pressable>
-                </Pressable>
+                </Animated.View>
               </Pressable>
             </Modal>
           </>
