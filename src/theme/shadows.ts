@@ -1,15 +1,15 @@
 import { Platform, ViewStyle } from 'react-native';
 
-/** Лека „височина“ за карти и плаващи панели */
+/** Лека „височина” за карти и плаващи панели */
 export function shadowCard(mode: 'light' | 'dark'): ViewStyle {
   return Platform.select<ViewStyle>({
     ios: {
-      shadowColor: mode === 'dark' ? '#000000' : '#0E2A33',
-      shadowOffset: { width: 0, height: 3 },
-      shadowOpacity: mode === 'dark' ? 0.35 : 0.07,
-      shadowRadius: 10,
+      shadowColor: mode === 'dark' ? '#000000' : '#1C1409',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: mode === 'dark' ? 0.45 : 0.09,
+      shadowRadius: 14,
     },
-    android: { elevation: 2 },
+    android: { elevation: 3 },
     default: {},
   })!;
 }

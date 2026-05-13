@@ -134,6 +134,7 @@ export default function MapScreen() {
   const [spotWeatherLoading, setSpotWeatherLoading] = useState(false);
   const [catchMarkers, setCatchMarkers] = useState<CatchMapMarker[]>([]);
   const [showCatchMarkers, setShowCatchMarkers] = useState(false);
+  const [layersOpen, setLayersOpen] = useState(false);
   const [catchCountByName, setCatchCountByName] = useState<Map<string, number>>(new Map());
 
   useEffect(() => {
@@ -639,6 +640,50 @@ export default function MapScreen() {
           <Ionicons name="search" size={20} color={colors.white} />
           <Text style={styles.searchFabText}>Търси водоем</Text>
         </Pressable>
+
+        {/* Layers FAB */}
+        <Pressable
+          style={[styles.layersFab, layersOpen && { backgroundColor: colors.primary }]}
+          onPress={() => setLayersOpen((v) => !v)}
+          accessibilityLabel="Слоеве"
+        >
+          <Ionicons name="layers-outline" size={22} color={layersOpen ? colors.white : colors.primary} />
+        </Pressable>
+
+        {layersOpen ? (
+          <View style={styles.layersPanel}>
+            <Pressable
+              onPress={() => setShowDams((v) => !v)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xs, paddingHorizontal: spacing.sm, borderRadius: radius.md, backgroundColor: showDams ? colors.primarySurface : 'transparent' }}
+            >
+              <Ionicons name="layers-outline" size={18} color={showDams ? colors.primary : colors.textMuted} />
+              <Text style={{ ...typography.caption, fontWeight: '600', color: showDams ? colors.primary : colors.text }}>Язовири</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setShowRivers((v) => !v)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xs, paddingHorizontal: spacing.sm, borderRadius: radius.md, backgroundColor: showRivers ? '#2E9B5A18' : 'transparent' }}
+            >
+              <Ionicons name="git-branch-outline" size={18} color={showRivers ? '#2E9B5A' : colors.textMuted} />
+              <Text style={{ ...typography.caption, fontWeight: '600', color: showRivers ? '#2E9B5A' : colors.text }}>Реки</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setShowFavoritesOnly((v) => !v)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xs, paddingHorizontal: spacing.sm, borderRadius: radius.md, backgroundColor: showFavoritesOnly ? '#C49A0018' : 'transparent' }}
+            >
+              <Ionicons name="star" size={18} color={showFavoritesOnly ? '#C49A00' : colors.textMuted} />
+              <Text style={{ ...typography.caption, fontWeight: '600', color: showFavoritesOnly ? '#C49A00' : colors.text }}>Любими</Text>
+            </Pressable>
+            {catchMarkers.length > 0 ? (
+              <Pressable
+                onPress={() => setShowCatchMarkers((v) => !v)}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xs, paddingHorizontal: spacing.sm, borderRadius: radius.md, backgroundColor: showCatchMarkers ? '#E85D0418' : 'transparent' }}
+              >
+                <Text style={{ fontSize: 16 }}>🎣</Text>
+                <Text style={{ ...typography.caption, fontWeight: '600', color: showCatchMarkers ? '#E85D04' : colors.text }}>Мои улови</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
 
         {routeLine && routeLine.length >= 2 ? (
           <Pressable
@@ -1825,6 +1870,38 @@ function createMapStyles(colors: AppColors) {
       elevation: 4,
     },
     searchFabText: { color: colors.white, ...typography.caption, fontWeight: '600' },
+    layersFab: {
+      position: 'absolute',
+      right: spacing.lg,
+      bottom: 130 + 48 + spacing.sm + 40 + spacing.sm,
+      backgroundColor: colors.white,
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: '#000',
+      shadowOpacity: 0.15,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 2 },
+      elevation: 4,
+    },
+    layersPanel: {
+      position: 'absolute',
+      right: spacing.lg + 48 + spacing.sm,
+      bottom: 130 + 48 + spacing.sm + 40 + spacing.sm,
+      backgroundColor: colors.card,
+      borderRadius: radius.lg,
+      padding: spacing.sm,
+      gap: spacing.xs,
+      borderWidth: 1,
+      borderColor: colors.border,
+      shadowColor: '#000',
+      shadowOpacity: 0.15,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 2 },
+      elevation: 5,
+    },
     routeClearFab: {
       position: 'absolute',
       left: spacing.lg,

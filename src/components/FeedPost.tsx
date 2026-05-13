@@ -29,27 +29,48 @@ import { ImageViewer } from './ImageViewer';
 
 function feedStyles(colors: AppColors) {
   return StyleSheet.create({
-    header: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.sm },
-    avatar: {
-      width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary,
-      alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
-    },
-    avatarImg: { width: 40, height: 40 },
-    avatarText: { color: colors.white, fontWeight: '700', fontSize: 16 },
-    meta: { flex: 1 },
-    name: { ...typography.bodyBold, color: colors.text },
-    date: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
-    photoTitle: { ...typography.bodyBold, color: colors.primary, fontSize: 17, lineHeight: 24, marginBottom: spacing.xs },
-    species: { ...typography.h3, color: colors.text, marginBottom: spacing.xs },
-    stats: { ...typography.body, color: colors.textMuted },
-    notes: { ...typography.body, color: colors.text, marginTop: spacing.sm, lineHeight: 22 },
+    // Photo-first card: no padding on the card itself, photo is full-bleed
+    cardInner: { padding: spacing.lg, paddingTop: spacing.sm },
+    // Full-bleed photo at the top
     photoWrap: {
       width: '100%',
-      borderRadius: radius.md,
-      marginTop: spacing.sm,
+      borderTopLeftRadius: radius.lg,
+      borderTopRightRadius: radius.lg,
       backgroundColor: colors.surfaceAlt,
       overflow: 'hidden',
     },
+    // Author overlay at the bottom of the photo
+    photoOverlay: {
+      position: 'absolute',
+      bottom: 0,
+      left: 0,
+      right: 0,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      backgroundColor: 'rgba(0,0,0,0.42)',
+    },
+    avatar: {
+      width: 32, height: 32, borderRadius: 16, backgroundColor: colors.primary,
+      alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+      borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.6)',
+    },
+    avatarImg: { width: 32, height: 32 },
+    avatarText: { color: colors.white, fontFamily: 'DMSans_700Bold', fontSize: 13 },
+    meta: { flex: 1 },
+    name: { ...typography.bodyBold, color: '#fff', fontSize: 13 },
+    date: { ...typography.small, color: 'rgba(255,255,255,0.75)', marginTop: 1 },
+    // No-photo fallback header (when there's no photo)
+    header: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.sm },
+    headerName: { ...typography.bodyBold, color: colors.text },
+    headerDate: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
+    // Content below photo
+    photoTitle: { ...typography.bodyBold, color: colors.primary, fontSize: 16, lineHeight: 22, marginBottom: spacing.xs, marginTop: spacing.sm },
+    species: { ...typography.h3, color: colors.text, marginBottom: 2 },
+    stats: { ...typography.body, color: colors.textMuted },
+    notes: { ...typography.body, color: colors.text, marginTop: spacing.sm, lineHeight: 22 },
     loc: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.sm },
     locText: { ...typography.caption, color: colors.primary, flex: 1 },
     socialRow: {
@@ -128,32 +149,8 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <Card>
-        <Pressable onPress={() => onPressAuthor(item.ownerUid, ownerName)} style={styles.header}>
-          <View style={styles.avatar}>
-            {avatarUrl ? (
-              <Image source={{ uri: avatarUrl }} style={[styles.avatarImg, { backgroundColor: colors.primary }]} contentFit="cover" cachePolicy="memory-disk" />
-            ) : (
-              <Text style={styles.avatarText}>{initials}</Text>
-            )}
-          </View>
-          <View style={styles.meta}>
-            <Text style={styles.name}>{isMine ? myDisplayName : ownerName}</Text>
-            <Text style={styles.date}>{formatTimeAgo(item.date)}{item.location?.name ? ` · ${item.location.name}` : ''}</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-        </Pressable>
-
-        {item.photoTitle ? <Text style={styles.photoTitle}>{item.photoTitle}</Text> : null}
-        <Pressable onPress={() => onPressCatch?.(item)} disabled={!onPressCatch} hitSlop={4}>
-          <Text style={styles.species}>{item.speciesName}</Text>
-        </Pressable>
-        <Text style={styles.stats}>
-          {item.weightKg != null ? `${item.weightKg} кг` : '— кг'}
-          {item.lengthCm != null ? ` · ${item.lengthCm} см` : ''}
-          {item.released ? ' · пуснат' : ''}
-        </Text>
-        {item.notes ? <Text style={styles.notes}>{item.notes}</Text> : null}
+      <Card style={{ padding: 0 }}>
+        {/* ── Photo-first: full-bleed image with author overlay ── */}
         {item.photoUri ? (
           <Pressable onPress={() => setViewerUri(item.photoUri!)}>
             <View style={[styles.photoWrap, { aspectRatio: photoAspectRatio }]}>
@@ -167,10 +164,54 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
                   if (width && height) setPhotoAspectRatio(width / height);
                 }}
               />
+              {/* Author overlay at bottom of photo */}
+              <Pressable style={styles.photoOverlay} onPress={() => onPressAuthor(item.ownerUid, ownerName)}>
+                <View style={styles.avatar}>
+                  {avatarUrl ? (
+                    <Image source={{ uri: avatarUrl }} style={styles.avatarImg} contentFit="cover" cachePolicy="memory-disk" />
+                  ) : (
+                    <Text style={styles.avatarText}>{initials}</Text>
+                  )}
+                </View>
+                <View style={styles.meta}>
+                  <Text style={styles.name} numberOfLines={1}>{isMine ? myDisplayName : ownerName}</Text>
+                  <Text style={styles.date}>{formatTimeAgo(item.date)}{item.location?.name ? ` · ${item.location.name}` : ''}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.7)" />
+              </Pressable>
             </View>
           </Pressable>
-        ) : null}
+        ) : (
+          // No-photo fallback: classic header row
+          <Pressable onPress={() => onPressAuthor(item.ownerUid, ownerName)} style={[styles.header, { padding: spacing.lg, paddingBottom: 0 }]}>
+            <View style={[styles.avatar, { width: 40, height: 40, borderRadius: 20, borderWidth: 1, borderColor: colors.border }]}>
+              {avatarUrl ? (
+                <Image source={{ uri: avatarUrl }} style={{ width: 40, height: 40 }} contentFit="cover" cachePolicy="memory-disk" />
+              ) : (
+                <Text style={[styles.avatarText, { fontSize: 16 }]}>{initials}</Text>
+              )}
+            </View>
+            <View style={styles.meta}>
+              <Text style={styles.headerName}>{isMine ? myDisplayName : ownerName}</Text>
+              <Text style={styles.headerDate}>{formatTimeAgo(item.date)}{item.location?.name ? ` · ${item.location.name}` : ''}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </Pressable>
+        )}
         <ImageViewer uri={viewerUri ?? ''} visible={!!viewerUri} onClose={() => setViewerUri(null)} />
+
+        {/* ── Content below photo ── */}
+        <View style={styles.cardInner}>
+        {item.photoTitle ? <Text style={styles.photoTitle}>{item.photoTitle}</Text> : null}
+        <Pressable onPress={() => onPressCatch?.(item)} disabled={!onPressCatch} hitSlop={4}>
+          <Text style={styles.species}>{item.speciesName}</Text>
+        </Pressable>
+        <Text style={styles.stats}>
+          {item.weightKg != null ? `${item.weightKg} кг` : '— кг'}
+          {item.lengthCm != null ? ` · ${item.lengthCm} см` : ''}
+          {item.released ? ' · пуснат' : ''}
+        </Text>
+        {item.notes ? <Text style={styles.notes}>{item.notes}</Text> : null}
         {item.location?.latitude != null && item.location.longitude != null ? (
           <Pressable
             style={styles.loc}
@@ -397,6 +438,7 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
             </Modal>
           </>
         ) : null}
+        </View>
       </Card>
     </KeyboardAvoidingView>
   );

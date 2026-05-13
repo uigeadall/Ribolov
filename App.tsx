@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import * as ScreenOrientation from 'expo-screen-orientation';
+import { useFonts, DMSans_400Regular, DMSans_500Medium, DMSans_600SemiBold, DMSans_700Bold } from '@expo-google-fonts/dm-sans';
 import { StatusBar } from 'expo-status-bar';
 import Toast from 'react-native-toast-message';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -17,6 +18,7 @@ const ONBOARDED_KEY = '@ribolov/onboarded';
 
 export default function App() {
   const [onboarded, setOnboarded] = useState<boolean | null>(null);
+  const [fontsLoaded] = useFonts({ DMSans_400Regular, DMSans_500Medium, DMSans_600SemiBold, DMSans_700Bold });
 
   useEffect(() => {
     void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
@@ -31,8 +33,8 @@ export default function App() {
     setOnboarded(true);
   };
 
-  // Still loading the onboarding flag — render nothing to avoid flash
-  if (onboarded === null) return null;
+  // Still loading the onboarding flag or fonts — render nothing to avoid flash
+  if (onboarded === null || !fontsLoaded) return null;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

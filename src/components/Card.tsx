@@ -13,7 +13,8 @@ export function Card({ children, style, ...rest }: ViewProps) {
           backgroundColor: colors.card,
           borderRadius: radius.lg,
           padding: spacing.lg,
-          borderWidth: 1,
+          // Light mode: shadow only. Dark mode: subtle border + shadow.
+          borderWidth: mode === 'dark' ? 1 : 0,
           borderColor: colors.cardEdge,
           ...shadowCard(mode),
         },

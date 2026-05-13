@@ -22,11 +22,11 @@ function useCountUp(target: number, duration = 900): number {
   return value;
 }
 
-function AnimatedStatNum({ value, decimals = 0, suffix = '' }: { value: number; decimals?: number; suffix?: string }) {
+function AnimatedStatNum({ value, decimals = 0, suffix = '', color }: { value: number; decimals?: number; suffix?: string; color?: string }) {
   const { colors } = useTheme();
   const animated = useCountUp(value);
   return (
-    <Text style={{ ...typography.h2, color: colors.primary, fontSize: 24 }}>
+    <Text style={{ ...typography.h2, color: color ?? colors.primary, fontSize: 24 }}>
       {decimals > 0 ? animated.toFixed(decimals) : Math.round(animated)}{suffix}
     </Text>
   );
@@ -248,7 +248,38 @@ export default function StatsScreen() {
         contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
       >
-        <Text style={{ ...typography.h2, color: colors.text, marginBottom: spacing.lg }}>Статистики</Text>
+        <Text style={{ ...typography.h2, color: colors.text, marginBottom: spacing.md }}>Статистики</Text>
+
+        {/* Hero card */}
+        <View style={{
+          backgroundColor: colors.primary,
+          borderRadius: radius.xl,
+          padding: spacing.xl,
+          marginBottom: spacing.lg,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: spacing.lg,
+        }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ ...typography.overline, color: 'rgba(255,255,255,0.7)', marginBottom: 4 }}>Общо улова</Text>
+            <AnimatedStatNum value={stats!.n} color="#fff" />
+            <View style={{ flexDirection: 'row', gap: spacing.lg, marginTop: spacing.sm }}>
+              <View>
+                <Text style={{ ...typography.small, color: 'rgba(255,255,255,0.65)' }}>Общо тегло</Text>
+                <Text style={{ ...typography.bodyBold, color: '#fff' }}>{stats!.totalWeight.toFixed(1)} кг</Text>
+              </View>
+              <View>
+                <Text style={{ ...typography.small, color: 'rgba(255,255,255,0.65)' }}>Вида</Text>
+                <Text style={{ ...typography.bodyBold, color: '#fff' }}>{stats!.speciesMap.size}</Text>
+              </View>
+              <View>
+                <Text style={{ ...typography.small, color: 'rgba(255,255,255,0.65)' }}>Сезон</Text>
+                <Text style={{ ...typography.bodyBold, color: '#fff' }}>{stats!.activeDaysThisYear} дни</Text>
+              </View>
+            </View>
+          </View>
+          <Text style={{ fontSize: 52, opacity: 0.9 }}>🎣</Text>
+        </View>
 
         {/* Summary numbers */}
         <View style={styles.statGrid}>

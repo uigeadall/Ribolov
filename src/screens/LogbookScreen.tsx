@@ -318,6 +318,44 @@ const CatchListRow = React.memo(function CatchListRow({
   );
 });
 
+type CatchGridItemProps = {
+  item: Catch;
+  colors: AppColors;
+  personalBests: ReturnType<typeof computePersonalBests>;
+  onPress: (item: Catch) => void;
+};
+
+const CatchGridItem = React.memo(function CatchGridItem({ item, colors, personalBests, onPress }: CatchGridItemProps) {
+  const isPB = isPersonalBestCatch(item, personalBests);
+  return (
+    <Pressable
+      onPress={() => onPress(item)}
+      android_ripple={{ color: `${colors.primary}18` }}
+      style={({ pressed }) => ({ flex: 1, margin: spacing.xs, opacity: pressed && Platform.OS === 'ios' ? 0.9 : 1 })}
+    >
+      <View style={{ borderRadius: radius.md, overflow: 'hidden', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
+        {item.photoUri ? (
+          <Image source={{ uri: item.photoUri }} style={{ width: '100%', aspectRatio: 1 }} contentFit="cover" />
+        ) : (
+          <View style={{ width: '100%', aspectRatio: 1, backgroundColor: colors.primarySurface, alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="fish-outline" size={36} color={colors.primary} />
+          </View>
+        )}
+        <View style={{ padding: spacing.sm }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Text style={{ ...typography.caption, fontWeight: '700', color: colors.text, flex: 1 }} numberOfLines={1}>{item.speciesName}</Text>
+            {isPB ? <Text style={{ fontSize: 11 }}>🏆</Text> : null}
+          </View>
+          {item.weightKg != null ? (
+            <Text style={{ ...typography.small, color: colors.primary, fontWeight: '700', marginTop: 1 }}>{item.weightKg} кг</Text>
+          ) : null}
+          <Text style={{ ...typography.small, color: colors.textMuted, marginTop: 1 }}>{new Date(item.date).toLocaleDateString('bg-BG', { day: 'numeric', month: 'short' })}</Text>
+        </View>
+      </View>
+    </Pressable>
+  );
+});
+
 function SpeciesChip({ label, selected, onPress, colors, styles }: SpeciesChipProps) {
   return (
     <Pressable
@@ -384,6 +422,7 @@ export default function LogbookScreen() {
   const [dateTo, setDateTo] = useState<Date | null>(null);
   const [pickFrom, setPickFrom] = useState(false);
   const [pickTo, setPickTo] = useState(false);
+  const [gridView, setGridView] = useState(false);
 
   useEffect(() => {
     const id = setTimeout(() => setDebouncedQuery(searchQuery), 250);
@@ -472,7 +511,14 @@ export default function LogbookScreen() {
   const CatchSeparator = useCallback(() => <View style={{ height: CATCH_SEP_H }} />, []);
 
   const renderCatchItem = useCallback(
-    ({ item }: { item: Catch }) => (
+    ({ item }: { item: Catch }) => gridView ? (
+      <CatchGridItem
+        item={item}
+        colors={colors}
+        personalBests={personalBests}
+        onPress={(c) => navigation.navigate('CatchDetail', { id: c.id })}
+      />
+    ) : (
       <CatchListRow
         item={item}
         colors={colors}
@@ -483,7 +529,7 @@ export default function LogbookScreen() {
         onDelete={handleSwipeDelete}
       />
     ),
-    [colors, styles, personalBests, user, navigation, handleSwipeDelete]
+    [gridView, colors, styles, personalBests, user, navigation, handleSwipeDelete]
   );
 
   const filtersCard = (
@@ -604,6 +650,15 @@ export default function LogbookScreen() {
             <SectionHeader hint="ДНЕВНИК" title="Улови" subtitle={subtitle} />
           </View>
           <Pressable
+            onPress={() => setGridView((v) => !v)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={gridView ? 'Списък' : 'Мрежа'}
+            style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: gridView ? colors.primarySurface : colors.surfaceAlt, borderWidth: 1, borderColor: gridView ? colors.primary : colors.border, alignItems: 'center', justifyContent: 'center', marginTop: 2 }}
+          >
+            <Ionicons name={gridView ? 'list-outline' : 'grid-outline'} size={20} color={colors.primary} />
+          </Pressable>
+          <Pressable
             onPress={() => navigation.navigate('PhotoGallery')}
             hitSlop={8}
             accessibilityRole="button"
@@ -709,22 +764,24 @@ export default function LogbookScreen() {
           </ScrollView>
         ) : (
           <FlatList
+            key={gridView ? 'grid' : 'list'}
             data={filtered}
             keyExtractor={(item) => item.id}
+            numColumns={gridView ? 2 : 1}
             removeClippedSubviews={Platform.OS === 'android'}
-            contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: bottomPad }}
+            contentContainerStyle={{ paddingHorizontal: gridView ? spacing.sm : spacing.lg, paddingBottom: bottomPad }}
             ListHeaderComponent={
-              <Text style={[styles.filterSectionLabel, { marginBottom: spacing.sm }]}>
+              <Text style={[styles.filterSectionLabel, { marginBottom: spacing.sm, paddingHorizontal: gridView ? spacing.sm : 0 }]}>
                 РЕЗУЛТАТИ ({filtered.length})
               </Text>
             }
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
-            ItemSeparatorComponent={CatchSeparator}
+            ItemSeparatorComponent={gridView ? null : CatchSeparator}
             ListFooterComponent={<View style={styles.listFooterPad} />}
             maxToRenderPerBatch={10}
             windowSize={5}
             initialNumToRender={10}
-            getItemLayout={getCatchItemLayout}
+            {...(!gridView && { getItemLayout: getCatchItemLayout })}
             {...keyboardAwareScrollProps}
             renderItem={renderCatchItem}
           />

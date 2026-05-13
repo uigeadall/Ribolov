@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import {
   NavigationContainer,
   DefaultTheme,
@@ -226,7 +226,17 @@ function TabNavigator() {
           if (route.name === 'MapTab') icon = focused ? 'map' : 'map-outline';
           if (route.name === 'FeedTab') icon = focused ? 'newspaper' : 'newspaper-outline';
           if (route.name === 'ProfileTab') icon = focused ? 'person' : 'person-outline';
-          return <Ionicons name={icon} size={iconSize} color={color} />;
+          if (!focused) return <Ionicons name={icon} size={iconSize} color={color} />;
+          return (
+            <View style={{
+              backgroundColor: colors.primarySurface,
+              borderRadius: 10,
+              paddingHorizontal: 12,
+              paddingVertical: 2,
+            }}>
+              <Ionicons name={icon} size={iconSize} color={color} />
+            </View>
+          );
         },
       })}
     >

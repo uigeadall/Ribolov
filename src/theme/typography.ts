@@ -1,18 +1,18 @@
 import { TextStyle } from 'react-native';
 
 export const typography: Record<string, TextStyle> = {
-  h1: { fontSize: 28, fontWeight: '700' as const, letterSpacing: -0.6, lineHeight: 34 },
-  h2: { fontSize: 22, fontWeight: '700' as const, letterSpacing: -0.35, lineHeight: 28 },
-  h3: { fontSize: 17, fontWeight: '600' as const, letterSpacing: -0.15, lineHeight: 22 },
-  body: { fontSize: 16, fontWeight: '400' as const, letterSpacing: 0.08, lineHeight: 24 },
-  bodyBold: { fontSize: 16, fontWeight: '600' as const, letterSpacing: 0.08, lineHeight: 24 },
-  caption: { fontSize: 13, fontWeight: '400' as const, letterSpacing: 0.15, lineHeight: 19 },
-  small: { fontSize: 12, fontWeight: '400' as const, letterSpacing: 0.18, lineHeight: 17 },
+  h1: { fontSize: 28, fontFamily: 'DMSans_700Bold', letterSpacing: -0.5, lineHeight: 34 },
+  h2: { fontSize: 22, fontFamily: 'DMSans_700Bold', letterSpacing: -0.3, lineHeight: 28 },
+  h3: { fontSize: 17, fontFamily: 'DMSans_600SemiBold', letterSpacing: -0.1, lineHeight: 22 },
+  body: { fontSize: 15, fontFamily: 'DMSans_400Regular', letterSpacing: 0.05, lineHeight: 22 },
+  bodyBold: { fontSize: 15, fontFamily: 'DMSans_600SemiBold', letterSpacing: 0.05, lineHeight: 22 },
+  caption: { fontSize: 13, fontFamily: 'DMSans_400Regular', letterSpacing: 0.1, lineHeight: 18 },
+  small: { fontSize: 12, fontFamily: 'DMSans_400Regular', letterSpacing: 0.12, lineHeight: 16 },
   /** Етикети над секции */
   overline: {
     fontSize: 11,
-    fontWeight: '600' as const,
-    letterSpacing: 1.2,
+    fontFamily: 'DMSans_600SemiBold',
+    letterSpacing: 1.1,
     textTransform: 'uppercase' as const,
   },
 };
