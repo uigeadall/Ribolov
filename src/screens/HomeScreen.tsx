@@ -24,6 +24,7 @@ import { ListRow } from '../components/ListRow';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchWeather, fetchForecast, windDirectionLabel, type WeatherSnapshot, type ForecastDay } from '../services/weather';
 import { catchesStore } from '../storage/storage';
 import { fetchRankedClassicPhotos, periodStartIso, type RankedClassicPhoto } from '../services/classicsContest';
@@ -37,6 +38,17 @@ import type { Catch } from '../types/index';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 
 const FALLBACK_COORD = { latitude: 42.6977, longitude: 23.3219 };
+
+function moonPhaseEmoji(name: string): string {
+  const n = (name ?? '').toLowerCase();
+  if (n.includes('нова') || n.includes('new')) return '🌑';
+  if (n.includes('пълн') || n.includes('full')) return '🌕';
+  if ((n.includes('нараст') || n.includes('wax') || n.includes('first')) && (n.includes('четв') || n.includes('quarter'))) return '🌓';
+  if ((n.includes('нам') || n.includes('wan') || n.includes('last')) && (n.includes('четв') || n.includes('quarter'))) return '🌗';
+  if (n.includes('нараст') || n.includes('wax')) return '🌔';
+  if (n.includes('нам') || n.includes('wan')) return '🌘';
+  return '🌕';
+}
 
 function greetingBg(): string {
   const h = new Date().getHours();
@@ -157,10 +169,11 @@ type WeatherCardProps = {
   styles: ReturnType<typeof createHomeStyles>;
   onRetry: () => void;
   onOpenMap: () => void;
+  pressureTrend: 'up' | 'down' | 'stable';
 };
 
 const WeatherCard = React.memo(function WeatherCard({
-  weather, weatherStatus, locLabel, colors, styles, onRetry, onOpenMap,
+  weather, weatherStatus, locLabel, colors, styles, onRetry, onOpenMap, pressureTrend,
 }: WeatherCardProps) {
   return (
     <Card style={styles.weatherCard}>
@@ -219,7 +232,16 @@ const WeatherCard = React.memo(function WeatherCard({
             <View style={styles.detailItem}>
               <Ionicons name="speedometer-outline" size={18} color={colors.textMuted} />
               <View>
-                <Text style={styles.detailVal}>{weather.pressureHpa} hPa</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Text style={styles.detailVal}>{weather.pressureHpa} hPa</Text>
+                  {pressureTrend !== 'stable' && (
+                    <Ionicons
+                      name={pressureTrend === 'up' ? 'arrow-up' : 'arrow-down'}
+                      size={13}
+                      color={pressureTrend === 'up' ? '#2E9B5A' : '#e53935'}
+                    />
+                  )}
+                </View>
                 <Text style={styles.detailLbl}>налягане</Text>
               </View>
             </View>
@@ -245,9 +267,10 @@ const WeatherCard = React.memo(function WeatherCard({
               </View>
             </View>
           </View>
-          <Text style={[styles.weatherHint, { marginTop: spacing.sm }]}>
-            {weather.moonPhaseName}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm }}>
+            <Text style={{ fontSize: 20 }}>{moonPhaseEmoji(weather.moonPhaseName)}</Text>
+            <Text style={[styles.weatherHint, { marginTop: 0, flex: 1 }]}>{weather.moonPhaseName}</Text>
+          </View>
           <Text style={styles.weatherHint}>
             На картата можеш да избереш язовир или река и да видиш прогноза за точното място и следващите 7 дни.
           </Text>
@@ -350,6 +373,7 @@ export default function HomeScreen() {
   const lastFetchRef = useRef<number>(0);
   const [weather, setWeather] = useState<WeatherSnapshot | null>(null);
   const [weatherStatus, setWeatherStatus] = useState<'idle' | 'loading' | 'error'>('idle');
+  const [pressureTrend, setPressureTrend] = useState<'up' | 'down' | 'stable'>('stable');
   const [locLabel, setLocLabel] = useState<string>('София (примерно)');
   const [totalCatches, setTotalCatches] = useState(0);
   const [weekCatches, setWeekCatches] = useState(0);
@@ -426,6 +450,17 @@ export default function HomeScreen() {
       setWeather(w);
       setForecast(days);
       setWeatherStatus('idle');
+      // Barometric trend
+      AsyncStorage.getItem('@ribolov/lastPressure')
+        .then((v) => {
+          const last = v ? parseFloat(v) : null;
+          if (last !== null) {
+            const diff = w.pressureHpa - last;
+            setPressureTrend(diff > 1.5 ? 'up' : diff < -1.5 ? 'down' : 'stable');
+          }
+          AsyncStorage.setItem('@ribolov/lastPressure', String(w.pressureHpa)).catch(() => {});
+        })
+        .catch(() => {});
       scheduleForecastNotificationIfGood(days).catch(() => {});
     } catch {
       setWeather(null);
@@ -541,6 +576,7 @@ export default function HomeScreen() {
         styles={styles}
         onRetry={loadWeather}
         onOpenMap={() => navigation.navigate('MapTab')}
+        pressureTrend={pressureTrend}
       />
 
       {(forecast.length > 0 || weatherStatus === 'loading') ? (

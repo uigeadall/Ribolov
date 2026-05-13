@@ -5,6 +5,7 @@ import {
   Text,
   StyleSheet,
   FlatList,
+  SectionList,
   Pressable,
   RefreshControl,
   TextInput,
@@ -476,6 +477,21 @@ export default function LogbookScreen() {
 
   const totalKg = filtered.reduce((s, i) => s + (i.weightKg ?? 0), 0);
   const personalBests = useMemo(() => computePersonalBests(items), [items]);
+
+  const sections = useMemo(() => {
+    const sorted = [...filtered].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+    const map = new Map<string, Catch[]>();
+    sorted.forEach((c) => {
+      const key = c.date.slice(0, 7);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(c);
+    });
+    return [...map.entries()].map(([key, data]) => ({
+      title: new Date(key + '-01').toLocaleDateString('bg-BG', { month: 'long', year: 'numeric' }),
+      key,
+      data,
+    }));
+  }, [filtered]);
   const filtersActive =
     !!speciesId || releasedOnly || !!dateFrom || !!dateTo || searchQuery.trim().length > 0;
 
@@ -772,26 +788,64 @@ export default function LogbookScreen() {
             <EmptyState icon="search-outline" title="Няма съвпадения" subtitle="Няма записи за тези филтри. Опитай друга комбинация." />
             <Button title="Изчисти филтри" variant="secondary" onPress={resetFilters} style={{ marginTop: spacing.lg }} />
           </ScrollView>
-        ) : (
+        ) : gridView ? (
           <FlatList
-            key={gridView ? 'grid' : 'list'}
+            key="grid"
             data={filtered}
             keyExtractor={(item) => item.id}
-            numColumns={gridView ? 2 : 1}
+            numColumns={2}
             removeClippedSubviews={Platform.OS === 'android'}
-            contentContainerStyle={{ paddingHorizontal: gridView ? spacing.sm : spacing.lg, paddingBottom: bottomPad }}
+            contentContainerStyle={{ paddingHorizontal: spacing.sm, paddingBottom: bottomPad }}
             ListHeaderComponent={
-              <Text style={[styles.filterSectionLabel, { marginBottom: spacing.sm, paddingHorizontal: gridView ? spacing.sm : 0 }]}>
+              <Text style={[styles.filterSectionLabel, { marginBottom: spacing.sm, paddingHorizontal: spacing.sm }]}>
                 РЕЗУЛТАТИ ({filtered.length})
               </Text>
             }
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
-            ItemSeparatorComponent={gridView ? null : CatchSeparator}
             ListFooterComponent={<View style={styles.listFooterPad} />}
             maxToRenderPerBatch={10}
             windowSize={5}
             initialNumToRender={10}
-            {...(!gridView && { getItemLayout: getCatchItemLayout })}
+            {...keyboardAwareScrollProps}
+            renderItem={renderCatchItem}
+          />
+        ) : (
+          <SectionList
+            sections={sections}
+            keyExtractor={(item) => item.id}
+            removeClippedSubviews={Platform.OS === 'android'}
+            contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: bottomPad }}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+            ItemSeparatorComponent={CatchSeparator}
+            stickySectionHeadersEnabled={false}
+            renderSectionHeader={({ section }) => (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm }}>
+                <View style={{ flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
+                <View style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 6,
+                  backgroundColor: colors.primarySurface, paddingHorizontal: spacing.md, paddingVertical: 4,
+                  borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border,
+                }}>
+                  <Text style={{ ...typography.overline, color: colors.primary, textTransform: 'capitalize' }}>
+                    {section.title}
+                  </Text>
+                  <Text style={{ ...typography.small, color: colors.textMuted, fontWeight: '600' }}>
+                    · {section.data.length}
+                  </Text>
+                </View>
+                <View style={{ flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
+              </View>
+            )}
+            renderSectionFooter={() => <View style={{ height: spacing.sm }} />}
+            ListHeaderComponent={
+              <Text style={[styles.filterSectionLabel, { marginBottom: spacing.xs }]}>
+                РЕЗУЛТАТИ ({filtered.length})
+              </Text>
+            }
+            ListFooterComponent={<View style={styles.listFooterPad} />}
+            maxToRenderPerBatch={10}
+            windowSize={5}
+            initialNumToRender={10}
             {...keyboardAwareScrollProps}
             renderItem={renderCatchItem}
           />

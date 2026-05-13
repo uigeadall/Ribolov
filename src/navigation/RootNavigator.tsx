@@ -229,13 +229,26 @@ function TabNavigator() {
           return (
             <View style={{ alignItems: 'center', justifyContent: 'center' }}>
               {focused && (
-                <View style={{
-                  position: 'absolute',
-                  backgroundColor: colors.primarySurface,
-                  borderRadius: 10,
-                  width: iconSize + 24,
-                  height: iconSize + 6,
-                }} />
+                <>
+                  {/* Top accent line */}
+                  <View style={{
+                    position: 'absolute',
+                    top: -(tabPadTop + 4),
+                    width: iconSize + 24,
+                    height: 2.5,
+                    backgroundColor: colors.primary,
+                    borderBottomLeftRadius: 2,
+                    borderBottomRightRadius: 2,
+                  }} />
+                  {/* Pill background */}
+                  <View style={{
+                    position: 'absolute',
+                    backgroundColor: colors.primarySurface,
+                    borderRadius: 10,
+                    width: iconSize + 24,
+                    height: iconSize + 6,
+                  }} />
+                </>
               )}
               <Ionicons name={icon} size={iconSize} color={color} />
             </View>

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   View,
@@ -35,6 +35,8 @@ import { updateProfile } from 'firebase/auth';
 import { handleError } from '../utils/handleError';
 import { ensureFirebase } from '../services/firebase';
 import { useAppNavigation } from '../navigation/useAppNavigation';
+import { catchesStore } from '../storage/storage';
+import type { Catch } from '../types';
 import * as Haptics from 'expo-haptics';
 import {
   getUserPublicSummary,
@@ -163,6 +165,20 @@ export default function ProfileScreen() {
   const navigation = useAppNavigation();
   const { colors, mode, toggleMode } = useTheme();
   const { user, configured, loading: authLoading, signOut, deleteAccount } = useAuth();
+
+  const [catches, setCatches] = useState<Catch[]>([]);
+  useEffect(() => { catchesStore.list().then(setCatches).catch(() => {}); }, []);
+
+  const BADGES = useMemo(() => [
+    { id: 'first', emoji: '🎣', label: 'Първи улов', earned: catches.length >= 1 },
+    { id: 'ten', emoji: '🏅', label: '10 улова', earned: catches.length >= 10 },
+    { id: 'fifty', emoji: '🥇', label: '50 улова', earned: catches.length >= 50 },
+    { id: 'century', emoji: '💯', label: '100 улова', earned: catches.length >= 100 },
+    { id: 'species5', emoji: '🐠', label: '5 вида', earned: new Set(catches.map((c) => c.speciesId)).size >= 5 },
+    { id: 'tenkg', emoji: '⚖️', label: '10 кг', earned: catches.reduce((s, c) => s + (c.weightKg ?? 0), 0) >= 10 },
+    { id: 'release', emoji: '♻️', label: 'Пуснал риба', earned: catches.some((c) => c.released) },
+    { id: 'photo5', emoji: '📸', label: 'Фотограф', earned: catches.filter((c) => c.photoUri).length >= 5 },
+  ], [catches]);
 
   const [displayName, setDisplayName] = useState('');
   const [city, setCity] = useState('');
@@ -638,6 +654,34 @@ export default function ProfileScreen() {
                 </Pressable>
               ) : null}
             </LinearGradient>
+          )}
+
+          {/* ── Achievements badges row ── */}
+          {catches.length > 0 && (
+            <View style={{ marginTop: spacing.md, marginBottom: spacing.xs }}>
+              <Text style={{ ...typography.overline, color: colors.textMuted, marginBottom: spacing.sm }}>ПОСТИЖЕНИЯ</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm, paddingBottom: 2 }}>
+                {BADGES.map((b) => (
+                  <View
+                    key={b.id}
+                    style={{
+                      alignItems: 'center', gap: 4,
+                      paddingVertical: spacing.sm + 2, paddingHorizontal: spacing.md,
+                      borderRadius: radius.md, borderWidth: 1,
+                      backgroundColor: b.earned ? colors.primarySurface : colors.surfaceAlt,
+                      borderColor: b.earned ? colors.primary + '88' : colors.border,
+                      opacity: b.earned ? 1 : 0.45,
+                      minWidth: 64,
+                    }}
+                  >
+                    <Text style={{ fontSize: 24, opacity: b.earned ? 1 : 0.5 }}>{b.emoji}</Text>
+                    <Text style={{ ...typography.small, color: b.earned ? colors.primary : colors.textMuted, fontWeight: '600', textAlign: 'center', fontSize: 10 }} numberOfLines={2}>
+                      {b.label}
+                    </Text>
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
           )}
 
           {!configured && user ? (

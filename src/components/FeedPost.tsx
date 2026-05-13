@@ -153,6 +153,49 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
 
   const social = useFeedPostSocial({ item, myUid, myDisplayName, ownerName, socialEnabled, isVisible });
   const reactionScale = useRef(new Animated.Value(1)).current;
+
+  // Double-tap to like
+  const lastTapTimeRef = useRef(0);
+  const heartOpacity = useRef(new Animated.Value(0)).current;
+  const heartScale = useRef(new Animated.Value(0.4)).current;
+  const heartY = useRef(new Animated.Value(0)).current;
+
+  const isRecent = useMemo(() => {
+    const ms = Date.parse(item.date);
+    return !isNaN(ms) && Date.now() - ms < 86_400_000;
+  }, [item.date]);
+
+  function handlePhotoPress() {
+    const now = Date.now();
+    if (now - lastTapTimeRef.current < 320) {
+      lastTapTimeRef.current = 0;
+      if (socialEnabled && !social.myReaction && !social.likeBusy) {
+        social.onPickReaction('heart');
+        animateReaction();
+      }
+      heartOpacity.setValue(1);
+      heartScale.setValue(0.4);
+      heartY.setValue(0);
+      Animated.parallel([
+        Animated.spring(heartScale, { toValue: 1, useNativeDriver: true, speed: 14, bounciness: 14 }),
+        Animated.sequence([
+          Animated.delay(550),
+          Animated.parallel([
+            Animated.timing(heartOpacity, { toValue: 0, duration: 450, useNativeDriver: true }),
+            Animated.timing(heartY, { toValue: -70, duration: 450, useNativeDriver: true }),
+          ]),
+        ]),
+      ]).start();
+    } else {
+      lastTapTimeRef.current = now;
+      setTimeout(() => {
+        if (Date.now() - lastTapTimeRef.current >= 280) {
+          setViewerUri(item.photoUri!);
+        }
+      }, 280);
+    }
+  }
+
   const sheetPanY = useRef(new Animated.Value(0)).current;
   const sheetPanResponder = useRef(
     PanResponder.create({
@@ -181,7 +224,7 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
       <Card style={{ padding: 0 }}>
         {/* ── Photo-first: full-bleed image with author overlay ── */}
         {item.photoUri ? (
-          <Pressable onPress={() => setViewerUri(item.photoUri!)}>
+          <Pressable onPress={handlePhotoPress}>
             <View style={[styles.photoWrap, { height: photoHeight }]}>
               <Image
                 source={{ uri: item.photoUri }}
@@ -193,14 +236,34 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
                   if (w > 0) setPhotoHeight(Math.round(w * 0.75));
                 }}
               />
+              {/* Floating double-tap heart */}
+              <Animated.Text
+                style={{
+                  position: 'absolute', alignSelf: 'center', top: '30%',
+                  fontSize: 90, pointerEvents: 'none',
+                  opacity: heartOpacity,
+                  transform: [{ scale: heartScale }, { translateY: heartY }],
+                }}
+              >
+                ❤️
+              </Animated.Text>
               {/* Author overlay at bottom of photo */}
               <Pressable style={styles.photoOverlay} onPress={() => onPressAuthor(item.ownerUid, ownerName)}>
-                <View style={styles.avatar}>
-                  {avatarUrl ? (
-                    <Image source={{ uri: avatarUrl }} style={styles.avatarImg} contentFit="cover" cachePolicy="memory-disk" />
-                  ) : (
-                    <Text style={styles.avatarText}>{initials}</Text>
+                <View style={{ position: 'relative' }}>
+                  {isRecent && (
+                    <View style={{
+                      position: 'absolute', top: -2.5, left: -2.5,
+                      width: 37, height: 37, borderRadius: 18.5,
+                      borderWidth: 2.5, borderColor: colors.primary,
+                    }} />
                   )}
+                  <View style={styles.avatar}>
+                    {avatarUrl ? (
+                      <Image source={{ uri: avatarUrl }} style={styles.avatarImg} contentFit="cover" cachePolicy="memory-disk" />
+                    ) : (
+                      <Text style={styles.avatarText}>{initials}</Text>
+                    )}
+                  </View>
                 </View>
                 <View style={styles.meta}>
                   <Text style={styles.name} numberOfLines={1}>{isMine ? myDisplayName : ownerName}</Text>
@@ -281,17 +344,43 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
 
         {socialEnabled ? (
           <>
-            {/* ── Reaction picker popup ── */}
-            <Modal visible={social.reactionPickerOpen} transparent animationType="fade" onRequestClose={() => social.setReactionPickerOpen(false)}>
-              <Pressable style={{ flex: 1 }} onPress={() => social.setReactionPickerOpen(false)}>
-                <View style={{ position: 'absolute', bottom: 120, left: spacing.lg, right: spacing.lg, backgroundColor: colors.card, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, flexDirection: 'row', justifyContent: 'space-around', padding: spacing.sm, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 8 }}>
-                  {(Object.entries(REACTIONS) as [ReactionType, { emoji: string; label: string }][]).map(([type, r]) => (
-                    <Pressable key={type} onPress={() => social.onPickReaction(type)} style={{ alignItems: 'center', padding: spacing.sm, borderRadius: radius.md, backgroundColor: social.myReaction === type ? colors.primarySurface : 'transparent' }}>
-                      <Text style={{ fontSize: 28 }}>{r.emoji}</Text>
-                      <Text style={{ ...typography.caption, color: colors.textMuted, marginTop: 2, fontSize: 10 }}>{r.label}</Text>
-                    </Pressable>
-                  ))}
-                </View>
+            {/* ── Reaction picker bottom sheet ── */}
+            <Modal visible={social.reactionPickerOpen} transparent animationType="slide" onRequestClose={() => social.setReactionPickerOpen(false)}>
+              <Pressable style={{ flex: 1, justifyContent: 'flex-end' }} onPress={() => social.setReactionPickerOpen(false)}>
+                <Pressable
+                  onPress={(e) => e.stopPropagation()}
+                  style={{
+                    backgroundColor: colors.card,
+                    borderTopLeftRadius: 20, borderTopRightRadius: 20,
+                    paddingTop: spacing.sm, paddingBottom: spacing.xl,
+                    paddingHorizontal: spacing.lg,
+                    borderWidth: 1, borderColor: colors.border,
+                    shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
+                    shadowOpacity: 0.12, shadowRadius: 12, elevation: 16,
+                  }}
+                >
+                  <View style={{ alignItems: 'center', marginBottom: spacing.md }}>
+                    <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border }} />
+                  </View>
+                  <Text style={{ ...typography.overline, color: colors.textMuted, textAlign: 'center', marginBottom: spacing.md }}>Реакция</Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
+                    {(Object.entries(REACTIONS) as [ReactionType, { emoji: string; label: string }][]).map(([type, r]) => (
+                      <Pressable
+                        key={type}
+                        onPress={() => social.onPickReaction(type)}
+                        style={{
+                          alignItems: 'center', padding: spacing.md, borderRadius: radius.lg,
+                          backgroundColor: social.myReaction === type ? colors.primarySurface : 'transparent',
+                          borderWidth: social.myReaction === type ? 1 : 0,
+                          borderColor: colors.border,
+                        }}
+                      >
+                        <Text style={{ fontSize: 32 }}>{r.emoji}</Text>
+                        <Text style={{ ...typography.caption, color: social.myReaction === type ? colors.primary : colors.textMuted, marginTop: 4, fontSize: 10, fontWeight: '600' }}>{r.label}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </Pressable>
               </Pressable>
             </Modal>
 
