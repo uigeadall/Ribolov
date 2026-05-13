@@ -568,43 +568,59 @@ export default function HomeScreen() {
       <SectionHeader hint="КЛАСИКИ" title="Снимка на седмицата" subtitle="Гласувай с харесване · най-много харесвания печели." />
       <Pressable
         onPress={() => navigation.navigate('ProfileTab', { screen: 'Classics' })}
-        style={{ marginBottom: spacing.xl }}
+        style={{ marginBottom: spacing.xl, borderRadius: radius.xl, overflow: 'hidden' }}
+        android_ripple={{ color: 'rgba(0,0,0,0.12)' }}
       >
         {topClassic?.item.photoUri ? (
-          <View style={{ borderRadius: radius.xl, overflow: 'hidden', height: 200 }}>
+          <View style={{ height: 260 }}>
             <Image source={{ uri: topClassic.item.photoUri }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
-            <View style={{ position: 'absolute', inset: 0, justifyContent: 'space-between', padding: spacing.md }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FFD700', paddingHorizontal: spacing.md, paddingVertical: 5, borderRadius: radius.pill }}>
-                  <Text style={{ fontSize: 13 }}>🥇</Text>
-                  <Text style={{ fontSize: 11, fontWeight: '800', color: '#1a1a1a', letterSpacing: 0.5 }}>ПОБЕДИТЕЛ</Text>
-                </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: spacing.sm, paddingVertical: 5, borderRadius: radius.pill }}>
+            {/* Cinematic bottom gradient */}
+            <LinearGradient
+              colors={['transparent', 'rgba(0,0,0,0.82)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 150, justifyContent: 'flex-end', padding: spacing.md }}
+            >
+              <Text style={{ ...typography.small, color: 'rgba(255,255,255,0.68)', fontWeight: '600', letterSpacing: 0.2 }}>
+                {topClassic.item.ownerName ?? 'Рибар'}
+              </Text>
+              <Text style={{ ...typography.h3, color: '#fff', marginTop: 2 }} numberOfLines={2}>
+                {topClassic.item.photoTitle ?? topClassic.item.speciesName}
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: spacing.sm }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radius.pill }}>
                   <Ionicons name="heart" size={13} color="#ff6b6b" />
-                  <Text style={{ ...typography.small, color: '#fff', fontWeight: '700' }}>{topClassic.likes}</Text>
+                  <Text style={{ ...typography.caption, color: '#fff', fontWeight: '700' }}>{topClassic.likes}</Text>
+                </View>
+                <View style={{ flex: 1 }} />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.primary, paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.pill }}>
+                  <Ionicons name="heart-outline" size={13} color="#fff" />
+                  <Text style={{ ...typography.small, color: '#fff', fontWeight: '700' }}>Гласувай</Text>
                 </View>
               </View>
-              <View style={{ backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: radius.md, padding: spacing.sm }}>
-                <Text style={{ ...typography.small, color: 'rgba(255,255,255,0.7)', fontWeight: '600' }}>{topClassic.item.ownerName ?? 'Рибар'}</Text>
-                <Text style={{ ...typography.bodyBold, color: '#fff', marginTop: 2 }} numberOfLines={1}>
-                  {topClassic.item.photoTitle ?? topClassic.item.speciesName}
-                </Text>
-              </View>
+            </LinearGradient>
+            {/* Gold winner badge */}
+            <View style={{ position: 'absolute', top: spacing.md, left: spacing.md, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#FFD700', paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.pill, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.35, shadowRadius: 6, elevation: 5 }}>
+              <Text style={{ fontSize: 14 }}>🥇</Text>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: '#2a1800', letterSpacing: 0.7 }}>ПОБЕДИТЕЛ</Text>
             </View>
           </View>
         ) : (
-          <Card style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-            <View style={{ width: 52, height: 52, borderRadius: radius.md, backgroundColor: colors.primarySurface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontSize: 26 }}>🏆</Text>
-            </View>
+          <LinearGradient
+            colors={['#7A5800', '#C49A00', '#E8C832']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={{ borderRadius: radius.xl, padding: spacing.xl, flexDirection: 'row', alignItems: 'center', gap: spacing.lg, minHeight: 110 }}
+          >
             <View style={{ flex: 1 }}>
-              <Text style={{ ...typography.bodyBold, color: colors.text }}>Класики тази седмица</Text>
-              <Text style={{ ...typography.small, color: colors.textMuted, marginTop: 2 }}>
-                Сподели улов и спечели!
+              <Text style={{ ...typography.overline, color: 'rgba(42,24,0,0.6)', marginBottom: 4 }}>КЛАСИКИ ТАЗИ СЕДМИЦА</Text>
+              <Text style={{ ...typography.h3, color: '#2a1800' }}>Сподели улов и спечели!</Text>
+              <Text style={{ ...typography.caption, color: 'rgba(42,24,0,0.65)', marginTop: spacing.xs, lineHeight: 18 }}>
+                Гласувай за най-добрата снимка
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-          </Card>
+            <Text style={{ fontSize: 52, opacity: 0.9 }}>🏆</Text>
+          </LinearGradient>
         )}
       </Pressable>
 
@@ -612,22 +628,48 @@ export default function HomeScreen() {
       {bestThisMonth ? (
         <>
           <SectionHeader hint="ЛИЧЕН РЕКОРД" title="Най-голям улов този месец" />
-          <Card style={{ marginBottom: spacing.xl, flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-            <View style={{ width: 48, height: 48, borderRadius: radius.md, backgroundColor: colors.primarySurface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontSize: 24 }}>🏆</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ ...typography.bodyBold, color: colors.text }}>{bestThisMonth.speciesName}</Text>
-              <Text style={{ ...typography.body, color: colors.textMuted, marginTop: 2 }}>
-                {bestThisMonth.weightKg != null ? `${bestThisMonth.weightKg} кг` : '—'}
-                {bestThisMonth.lengthCm != null ? ` · ${bestThisMonth.lengthCm} см` : ''}
-                {' · '}{new Date(bestThisMonth.date).toLocaleDateString('bg-BG', { day: 'numeric', month: 'short' })}
-              </Text>
-            </View>
-            <Pressable onPress={() => navigation.navigate('LogbookTab', { screen: 'LogbookList' })} hitSlop={8}>
-              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-            </Pressable>
-          </Card>
+          <Pressable
+            onPress={() => navigation.navigate('LogbookTab', { screen: 'LogbookList' })}
+            style={{ marginBottom: spacing.xl, borderRadius: radius.xl, overflow: 'hidden' }}
+          >
+            {bestThisMonth.photoUri ? (
+              <View style={{ height: 140 }}>
+                <Image source={{ uri: bestThisMonth.photoUri }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
+                <LinearGradient
+                  colors={['transparent', 'rgba(0,0,0,0.78)']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 0, y: 1 }}
+                  style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 90, justifyContent: 'flex-end', padding: spacing.md }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                    <Text style={{ fontSize: 18 }}>🏆</Text>
+                    <View>
+                      <Text style={{ ...typography.bodyBold, color: '#fff' }}>{bestThisMonth.speciesName}</Text>
+                      <Text style={{ ...typography.caption, color: 'rgba(255,255,255,0.72)' }}>
+                        {bestThisMonth.weightKg != null ? `${bestThisMonth.weightKg} кг` : '—'}
+                        {bestThisMonth.lengthCm != null ? ` · ${bestThisMonth.lengthCm} см` : ''}
+                      </Text>
+                    </View>
+                  </View>
+                </LinearGradient>
+              </View>
+            ) : (
+              <Card style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+                <View style={{ width: 52, height: 52, borderRadius: radius.md, backgroundColor: colors.primarySurface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 26 }}>🏆</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ ...typography.bodyBold, color: colors.text }}>{bestThisMonth.speciesName}</Text>
+                  <Text style={{ ...typography.body, color: colors.textMuted, marginTop: 2 }}>
+                    {bestThisMonth.weightKg != null ? `${bestThisMonth.weightKg} кг` : '—'}
+                    {bestThisMonth.lengthCm != null ? ` · ${bestThisMonth.lengthCm} см` : ''}
+                    {' · '}{new Date(bestThisMonth.date).toLocaleDateString('bg-BG', { day: 'numeric', month: 'short' })}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+              </Card>
+            )}
+          </Pressable>
         </>
       ) : null}
 
