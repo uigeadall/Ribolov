@@ -232,7 +232,8 @@ function TabNavigator() {
               backgroundColor: colors.primarySurface,
               borderRadius: 10,
               paddingHorizontal: 12,
-              paddingVertical: 2,
+              alignItems: 'center',
+              justifyContent: 'center',
             }}>
               <Ionicons name={icon} size={iconSize} color={color} />
             </View>
