@@ -35,7 +35,7 @@ function AnimatedStatNum({ value, decimals = 0, suffix = '', color }: { value: n
 const MONTH_LABELS = ['Яну', 'Фев', 'Мар', 'Апр', 'Май', 'Юни', 'Юли', 'Авг', 'Сеп', 'Окт', 'Ное', 'Дек'];
 
 export default function StatsScreen() {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const navigation = useAppNavigation();
   const [catches, setCatches] = useState<Catch[]>([]);
   const [loadError, setLoadError] = useState(false);
@@ -252,7 +252,9 @@ export default function StatsScreen() {
 
         {/* Hero card */}
         <View style={{
-          backgroundColor: colors.primary,
+          backgroundColor: mode === 'dark' ? colors.primarySurface : colors.primary,
+          borderWidth: mode === 'dark' ? 1 : 0,
+          borderColor: colors.primary,
           borderRadius: radius.xl,
           padding: spacing.xl,
           marginBottom: spacing.lg,
@@ -261,24 +263,24 @@ export default function StatsScreen() {
           gap: spacing.lg,
         }}>
           <View style={{ flex: 1 }}>
-            <Text style={{ ...typography.overline, color: 'rgba(255,255,255,0.7)', marginBottom: 4 }}>Общо улова</Text>
-            <AnimatedStatNum value={stats!.n} color="#fff" />
+            <Text style={{ ...typography.overline, color: mode === 'dark' ? colors.textMuted : 'rgba(255,255,255,0.7)', marginBottom: 4 }}>Общо улова</Text>
+            <AnimatedStatNum value={stats!.n} color={mode === 'dark' ? colors.primary : '#fff'} />
             <View style={{ flexDirection: 'row', gap: spacing.lg, marginTop: spacing.sm }}>
               <View>
-                <Text style={{ ...typography.small, color: 'rgba(255,255,255,0.65)' }}>Общо тегло</Text>
-                <Text style={{ ...typography.bodyBold, color: '#fff' }}>{stats!.totalWeight.toFixed(1)} кг</Text>
+                <Text style={{ ...typography.small, color: mode === 'dark' ? colors.textMuted : 'rgba(255,255,255,0.65)' }}>Общо тегло</Text>
+                <Text style={{ ...typography.bodyBold, color: mode === 'dark' ? colors.text : '#fff' }}>{stats!.totalWeight.toFixed(1)} кг</Text>
               </View>
               <View>
-                <Text style={{ ...typography.small, color: 'rgba(255,255,255,0.65)' }}>Вида</Text>
-                <Text style={{ ...typography.bodyBold, color: '#fff' }}>{stats!.speciesMap.size}</Text>
+                <Text style={{ ...typography.small, color: mode === 'dark' ? colors.textMuted : 'rgba(255,255,255,0.65)' }}>Вида</Text>
+                <Text style={{ ...typography.bodyBold, color: mode === 'dark' ? colors.text : '#fff' }}>{stats!.speciesMap.size}</Text>
               </View>
               <View>
-                <Text style={{ ...typography.small, color: 'rgba(255,255,255,0.65)' }}>Сезон</Text>
-                <Text style={{ ...typography.bodyBold, color: '#fff' }}>{stats!.activeDaysThisYear} дни</Text>
+                <Text style={{ ...typography.small, color: mode === 'dark' ? colors.textMuted : 'rgba(255,255,255,0.65)' }}>Сезон</Text>
+                <Text style={{ ...typography.bodyBold, color: mode === 'dark' ? colors.text : '#fff' }}>{stats!.activeDaysThisYear} дни</Text>
               </View>
             </View>
           </View>
-          <Text style={{ fontSize: 52, opacity: 0.9 }}>🎣</Text>
+          <Text style={{ fontSize: 52, opacity: mode === 'dark' ? 0.6 : 0.9 }}>🎣</Text>
         </View>
 
         {/* Summary numbers */}

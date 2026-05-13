@@ -7,6 +7,7 @@ import {
   ViewStyle,
   StyleProp,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 import { shadowButton } from '../theme/shadows';
@@ -18,7 +19,6 @@ type Props = {
   loading?: boolean;
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
-  /** По-компактен ред за вложени действия */
   compact?: boolean;
 };
 
@@ -32,7 +32,7 @@ export function Button({ title, onPress, variant = 'primary', loading, disabled,
           ? colors.danger
           : variant === 'ghost'
             ? 'transparent'
-            : colors.primary;
+            : 'transparent'; // primary: gradient handles bg
     const fg =
       variant === 'secondary'
         ? colors.primary
@@ -54,6 +54,7 @@ export function Button({ title, onPress, variant = 'primary', loading, disabled,
         borderWidth: variant === 'secondary' ? 1.5 : 0,
         borderColor: border,
         minHeight: compact ? 44 : 52,
+        overflow: 'hidden',
         ...(variant === 'primary' ? shadowButton(mode) : {}),
       },
       text: { ...typography.bodyBold, fontSize: compact ? 15 : 16, color: fg },
@@ -72,6 +73,14 @@ export function Button({ title, onPress, variant = 'primary', loading, disabled,
       android_ripple={{ color: variant === 'primary' ? 'rgba(255,255,255,0.2)' : `${colors.primary}22` }}
       style={[styles.btn, isDisabled && styles.disabled, style]}
     >
+      {variant === 'primary' && (
+        <LinearGradient
+          colors={[colors.primaryLight, colors.primaryDark]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={StyleSheet.absoluteFillObject}
+        />
+      )}
       {loading ? (
         <ActivityIndicator color={indicatorColor} />
       ) : (

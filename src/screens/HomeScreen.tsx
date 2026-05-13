@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { LinearGradient } from 'expo-linear-gradient';
 import {
   View,
   Text,
@@ -470,43 +471,32 @@ export default function HomeScreen() {
         ),
       }}
     >
-      <Card
-        style={{
-          marginBottom: spacing.md,
-          backgroundColor: colors.primarySurface,
-          borderColor: colors.cardEdge,
-        }}
+      <LinearGradient
+        colors={[colors.primaryDark, colors.primary, colors.primaryLight]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={{ borderRadius: radius.xl, marginBottom: spacing.md, padding: spacing.lg }}
       >
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <View style={styles.heroRow}>
-            <View style={styles.heroIconWrap}>
-              <Ionicons name="fish" size={26} color={colors.white} />
-            </View>
-            <View>
-              <Text style={styles.heroTitle}>{greetingBg()}, {firstName}!</Text>
-              <Text style={styles.heroDate}>{dateStr}</Text>
-            </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ ...typography.overline, color: 'rgba(255,255,255,0.65)', marginBottom: 4 }}>RIBOLOV</Text>
+            <Text style={{ ...typography.h2, color: '#fff', letterSpacing: -0.3 }}>{greetingBg()}, {firstName}!</Text>
+            <Text style={{ ...typography.caption, color: 'rgba(255,255,255,0.7)', marginTop: 2, textTransform: 'capitalize' }}>{dateStr}</Text>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: 2 }}>
-            <Pressable
-              onPress={() => navigation.navigate('ProfileTab', { screen: 'Chats' })}
-              hitSlop={10}
-            >
-              <BadgeIcon name="chatbubble-outline" size={24} color={colors.primary} count={unreadMsgs} />
+            <Pressable onPress={() => navigation.navigate('ProfileTab', { screen: 'Chats' })} hitSlop={10}>
+              <BadgeIcon name="chatbubble-outline" size={24} color="rgba(255,255,255,0.9)" count={unreadMsgs} />
             </Pressable>
-            <Pressable
-              onPress={() => navigation.navigate('ProfileTab', { screen: 'Notifications' })}
-              hitSlop={10}
-            >
-              <BadgeIcon name="notifications-outline" size={24} color={colors.primary} count={unreadNotifs} />
+            <Pressable onPress={() => navigation.navigate('ProfileTab', { screen: 'Notifications' })} hitSlop={10}>
+              <BadgeIcon name="notifications-outline" size={24} color="rgba(255,255,255,0.9)" count={unreadNotifs} />
             </Pressable>
           </View>
         </View>
 
         {lastCatch ? (
-          <View style={styles.lastCatchRow}>
-            <Ionicons name="time-outline" size={13} color={colors.textMuted} />
-            <Text style={styles.lastCatchText} numberOfLines={1}>
+          <View style={[styles.lastCatchRow, { marginTop: spacing.md, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.2)', paddingTop: spacing.sm }]}>
+            <Ionicons name="time-outline" size={13} color="rgba(255,255,255,0.65)" />
+            <Text style={[styles.lastCatchText, { color: 'rgba(255,255,255,0.8)' }]} numberOfLines={1}>
               Последен: {lastCatch.speciesName}
               {lastCatch.weightKg != null ? ` · ${lastCatch.weightKg} кг` : ''}
               {' · '}{new Date(lastCatch.date).toLocaleDateString('bg-BG')}
@@ -514,19 +504,21 @@ export default function HomeScreen() {
           </View>
         ) : null}
 
-        <Button
-          title="Запиши улов"
+        <Pressable
           onPress={() => navigation.navigate('LogbookTab', { screen: 'AddCatch' })}
-          style={{ marginTop: spacing.sm }}
-        />
-
-        <View style={styles.heroFoot}>
-          <Ionicons name="information-circle-outline" size={15} color={colors.primary} />
-          <Text style={styles.heroFootText}>
-            Дълго натискане на картата добавя спот · Лентата е в Профил
-          </Text>
-        </View>
-      </Card>
+          style={({ pressed }) => ({
+            marginTop: spacing.md,
+            backgroundColor: pressed ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.2)',
+            borderWidth: 1,
+            borderColor: 'rgba(255,255,255,0.4)',
+            borderRadius: radius.lg,
+            paddingVertical: spacing.md + 2,
+            alignItems: 'center',
+          })}
+        >
+          <Text style={{ ...typography.bodyBold, color: '#fff', fontSize: 16 }}>🎣  Запиши улов</Text>
+        </Pressable>
+      </LinearGradient>
 
       <SectionHeader hint="ПРОГНОЗА" title="Време сега" subtitle="Подходящо за бърз излет край теб или избран водоем от картата." />
       <WeatherCard

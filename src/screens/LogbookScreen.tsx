@@ -36,6 +36,13 @@ import { Catch } from '../types';
 import { speciesList } from '../data/species';
 import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
 
+const CATCH_ACCENTS = ['#1A7A9C', '#2E9B5A', '#0E4D64', '#7BB7CC', '#006E8A', '#C49A00'];
+function speciesAccent(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
+  return CATCH_ACCENTS[Math.abs(h) % CATCH_ACCENTS.length];
+}
+
 function startOfDay(d: Date): number {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
@@ -260,8 +267,10 @@ const CatchListRow = React.memo(function CatchListRow({
         android_ripple={{ color: `${colors.primary}18` }}
         style={({ pressed }) => (pressed && Platform.OS === 'ios' ? { opacity: 0.92 } : undefined)}
       >
-        <Card style={{ padding: spacing.sm + 2 }}>
-          <View style={styles.row}>
+        <Card style={{ padding: 0, overflow: 'hidden' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'stretch' }}>
+          <View style={{ width: 4, backgroundColor: speciesAccent(item.speciesName) }} />
+          <View style={[styles.row, { flex: 1, padding: spacing.sm + 2 }]}>
             <View>
               {item.photoUri ? (
                 <Image source={{ uri: item.photoUri }} style={styles.thumb} contentFit="cover" />
@@ -311,6 +320,7 @@ const CatchListRow = React.memo(function CatchListRow({
               ) : null}
               <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
             </View>
+          </View>
           </View>
         </Card>
       </Pressable>

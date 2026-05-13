@@ -62,7 +62,20 @@ function feedStyles(colors: AppColors) {
     meta: { flex: 1 },
     name: { ...typography.bodyBold, color: '#fff', fontSize: 13 },
     date: { ...typography.small, color: 'rgba(255,255,255,0.75)', marginTop: 1 },
-    // No-photo fallback header (when there's no photo)
+    // No-photo fallback banner
+    noBanner: {
+      backgroundColor: colors.primarySurface,
+      borderTopLeftRadius: radius.lg,
+      borderTopRightRadius: radius.lg,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.md,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      minHeight: 90,
+    },
+    noBannerEmoji: { fontSize: 44, opacity: 0.35 },
+    noBannerAuthorRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.xs },
     header: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.sm },
     headerName: { ...typography.bodyBold, color: colors.text },
     headerDate: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
@@ -182,20 +195,24 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
             </View>
           </Pressable>
         ) : (
-          // No-photo fallback: classic header row
-          <Pressable onPress={() => onPressAuthor(item.ownerUid, ownerName)} style={[styles.header, { padding: spacing.lg, paddingBottom: 0 }]}>
-            <View style={[styles.avatar, { width: 40, height: 40, borderRadius: 20, borderWidth: 1, borderColor: colors.border }]}>
-              {avatarUrl ? (
-                <Image source={{ uri: avatarUrl }} style={{ width: 40, height: 40 }} contentFit="cover" cachePolicy="memory-disk" />
-              ) : (
-                <Text style={[styles.avatarText, { fontSize: 16 }]}>{initials}</Text>
+          // No-photo fallback: species banner with author
+          <Pressable onPress={() => onPressAuthor(item.ownerUid, ownerName)} style={styles.noBanner}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ ...typography.h3, color: colors.primary }} numberOfLines={1}>{item.speciesName}</Text>
+              {item.weightKg != null && (
+                <Text style={{ ...typography.body, color: colors.text, marginTop: 2 }}>{item.weightKg} кг{item.lengthCm != null ? ` · ${item.lengthCm} см` : ''}</Text>
               )}
+              <View style={styles.noBannerAuthorRow}>
+                <View style={[styles.avatar, { width: 22, height: 22, borderRadius: 11, borderWidth: 1, borderColor: colors.border }]}>
+                  {avatarUrl
+                    ? <Image source={{ uri: avatarUrl }} style={{ width: 22, height: 22 }} contentFit="cover" cachePolicy="memory-disk" />
+                    : <Text style={{ ...typography.small, color: colors.white, fontWeight: '700' }}>{initials}</Text>}
+                </View>
+                <Text style={{ ...typography.caption, color: colors.textMuted }}>{isMine ? myDisplayName : ownerName}</Text>
+                <Text style={{ ...typography.caption, color: colors.textMuted }}>· {formatTimeAgo(item.date)}</Text>
+              </View>
             </View>
-            <View style={styles.meta}>
-              <Text style={styles.headerName}>{isMine ? myDisplayName : ownerName}</Text>
-              <Text style={styles.headerDate}>{formatTimeAgo(item.date)}{item.location?.name ? ` · ${item.location.name}` : ''}</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+            <Text style={styles.noBannerEmoji}>🐟</Text>
           </Pressable>
         )}
         <ImageViewer uri={viewerUri ?? ''} visible={!!viewerUri} onClose={() => setViewerUri(null)} />

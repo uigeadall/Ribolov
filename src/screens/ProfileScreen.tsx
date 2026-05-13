@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
+import { LinearGradient } from 'expo-linear-gradient';
 import {
   View,
   Text,
@@ -595,45 +596,48 @@ export default function ProfileScreen() {
               <ActivityIndicator color={colors.primary} />
             </View>
           ) : (
-            <View style={styles.identityRow}>
+            <LinearGradient
+              colors={[colors.primary, colors.primaryLight]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={{ alignItems: 'center', paddingTop: spacing.xl, paddingBottom: spacing.xl, paddingHorizontal: spacing.lg, marginHorizontal: -spacing.lg }}
+            >
               <Pressable
                 onPress={configured ? pickProfileAvatar : undefined}
                 disabled={!configured}
                 accessibilityRole={configured ? 'button' : 'image'}
                 accessibilityLabel={configured ? 'Промени снимка на профила' : 'Аватар'}
               >
-                <View style={styles.avatarRing}>
-                  <View style={styles.avatarInner}>
+                <View style={{ width: 96, height: 96, borderRadius: 48, padding: 3, backgroundColor: 'rgba(255,255,255,0.3)', position: 'relative' }}>
+                  <View style={{ flex: 1, borderRadius: 45, overflow: 'hidden', backgroundColor: colors.primaryDark, alignItems: 'center', justifyContent: 'center' }}>
                     {avatarUri ? (
-                      <Image source={{ uri: avatarUri }} style={styles.avatarImg} contentFit="cover" />
+                      <Image source={{ uri: avatarUri }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
                     ) : (
-                      <Text style={styles.avatarLetter}>{initialLetter}</Text>
+                      <Text style={{ color: colors.white, fontSize: 36, fontWeight: '700' }}>{initialLetter}</Text>
                     )}
                   </View>
                   {configured ? (
-                    <View style={styles.avatarBadge} pointerEvents="none">
-                      <Ionicons name="camera" size={13} color={colors.white} />
+                    <View style={[styles.avatarBadge, { width: 30, height: 30, borderRadius: 15 }]} pointerEvents="none">
+                      <Ionicons name="camera" size={15} color={colors.white} />
                     </View>
                   ) : null}
                 </View>
               </Pressable>
-              <View style={styles.identityTextCol}>
-                <Text style={styles.identityName} numberOfLines={2}>
-                  {displayName.trim() || user.displayName || 'Рибар'}
+              <Text style={{ ...typography.h2, color: '#fff', marginTop: spacing.md, letterSpacing: -0.3 }} numberOfLines={1}>
+                {displayName.trim() || user.displayName || 'Рибар'}
+              </Text>
+              {user.email ? (
+                <Text style={{ ...typography.caption, color: 'rgba(255,255,255,0.72)', marginTop: 2 }} numberOfLines={1}>
+                  {user.email}
                 </Text>
-                {user.email ? (
-                  <Text style={styles.identityEmail} numberOfLines={1}>
-                    {user.email}
-                  </Text>
-                ) : null}
-                {configured ? (
-                  <Pressable style={styles.previewLink} onPress={openPublicPreview} hitSlop={8}>
-                    <Ionicons name="eye-outline" size={15} color={colors.primary} />
-                    <Text style={styles.previewLinkText}>Как те виждат другите</Text>
-                  </Pressable>
-                ) : null}
-              </View>
-            </View>
+              ) : null}
+              {configured ? (
+                <Pressable style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.sm, backgroundColor: 'rgba(255,255,255,0.18)', paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.pill }} onPress={openPublicPreview} hitSlop={8}>
+                  <Ionicons name="eye-outline" size={14} color="rgba(255,255,255,0.9)" />
+                  <Text style={{ ...typography.small, fontWeight: '700', color: 'rgba(255,255,255,0.9)' }}>Как те виждат другите</Text>
+                </Pressable>
+              ) : null}
+            </LinearGradient>
           )}
 
           {!configured && user ? (

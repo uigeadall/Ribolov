@@ -944,7 +944,7 @@ const SpotScrollBar = React.memo(function SpotScrollBar({
         {spots.map((s) => {
           const dist = distanceTo(s);
           return (
-            <Pressable key={s.id} style={styles.spotCard} onPress={() => onSpotPress(s)}>
+            <Pressable key={s.id} style={[styles.spotCard, { borderLeftWidth: 3, borderLeftColor: waterTypeColor(s.waterType) }]} onPress={() => onSpotPress(s)}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                 {s.isFavorite ? <Ionicons name="star" size={14} color="#E8B923" /> : null}
                 <View style={[styles.spotDot, { backgroundColor: waterTypeColor(s.waterType) }]} />
