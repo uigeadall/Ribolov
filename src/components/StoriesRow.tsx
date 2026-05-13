@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Modal,
   TextInput, KeyboardAvoidingView, Platform, Linking,
-  ActivityIndicator, Dimensions, Animated,
+  ActivityIndicator, Dimensions, Animated, PanResponder,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
@@ -13,6 +13,9 @@ import { useAuth } from '../services/authContext';
 import { getStories, deleteStory, timeAgo, STORY_REACTIONS, type Story, type StoryReactionType } from '../services/stories';
 import { useStoryViewer, type FlyingEmoji } from '../hooks/useStoryViewer';
 import { useAddStory } from '../hooks/useAddStory';
+import { useAppNavigation } from '../navigation/useAppNavigation';
+
+const STORY_DURATION = 8000;
 
 const { width: SW, height: SH } = Dimensions.get('window');
 
@@ -59,11 +62,17 @@ type Props = { onStoriesLoaded?: (count: number) => void };
 export function StoriesRow({ onStoriesLoaded }: Props) {
   const { colors } = useTheme();
   const { user, configured } = useAuth();
+  const navigation = useAppNavigation();
   const insets = useSafeAreaInsets();
   const [stories, setStories] = useState<Story[]>([]);
-  const [viewing, setViewing] = useState<Story | null>(null);
+  const [viewingIndex, setViewingIndex] = useState<number>(-1);
+  const viewing = viewingIndex >= 0 ? (stories[viewingIndex] ?? null) : null;
   const [addOpen, setAddOpen] = useState(false);
   const [imageError, setImageError] = useState(false);
+
+  // Progress bar animation
+  const progressAnim = useRef(new Animated.Value(0)).current;
+  const progressTimer = useRef<ReturnType<typeof Animated.timing> | null>(null);
 
   const viewer = useStoryViewer(viewing, user);
   const addStory = useAddStory(user, () => loadStories(), () => setAddOpen(false));
@@ -77,14 +86,59 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
 
   useEffect(() => { void loadStories(); }, [loadStories]);
 
+  const goNext = useCallback(() => {
+    setViewingIndex((prev) => {
+      if (prev < stories.length - 1) return prev + 1;
+      return -1;
+    });
+  }, [stories.length]);
+
+  const goPrev = useCallback(() => {
+    setViewingIndex((prev) => {
+      if (prev > 0) return prev - 1;
+      return prev;
+    });
+  }, []);
+
+  // Start/reset progress bar when viewing changes
+  useEffect(() => {
+    if (progressTimer.current) { progressTimer.current.stop(); }
+    progressAnim.setValue(0);
+    if (viewingIndex < 0) return;
+    const anim = Animated.timing(progressAnim, {
+      toValue: 1,
+      duration: STORY_DURATION,
+      useNativeDriver: false,
+    });
+    progressTimer.current = anim;
+    anim.start(({ finished }) => { if (finished) goNext(); });
+    return () => { anim.stop(); };
+  }, [viewingIndex, progressAnim, goNext]);
+
+  // Swipe gesture handler
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dy) > 10 || Math.abs(gs.dx) > 10,
+      onPanResponderRelease: (_, gs) => {
+        if (Math.abs(gs.dy) > Math.abs(gs.dx) && gs.dy > 80) {
+          setViewingIndex(-1);
+        } else if (Math.abs(gs.dx) > Math.abs(gs.dy)) {
+          if (gs.dx < -50) goNext();
+          else if (gs.dx > 50) goPrev();
+        }
+      },
+    })
+  ).current;
+
   const openViewer = (s: Story) => {
+    const idx = stories.findIndex((st) => st.id === s.id);
     viewer.setCommentsOpen(false);
     viewer.setCommentDraft('');
     setImageError(false);
-    setViewing(s);
+    setViewingIndex(idx >= 0 ? idx : 0);
   };
 
-  const closeViewer = () => { setViewing(null); };
+  const closeViewer = () => { setViewingIndex(-1); };
 
   const reactionEntries = Object.entries(STORY_REACTIONS) as [StoryReactionType, { emoji: string; label: string }][];
 
@@ -163,7 +217,19 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
       <Modal visible={!!viewing} transparent={false} animationType="fade" onRequestClose={closeViewer}>
         {viewing ? (
           <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-            <View style={styles.viewerBg}>
+            <View style={styles.viewerBg} {...panResponder.panHandlers}>
+              {/* Progress bar */}
+              <View style={{ position: 'absolute', top: insets.top + 8, left: spacing.md, right: spacing.md, flexDirection: 'row', gap: 4, zIndex: 100 }}>
+                {stories.map((_, i) => (
+                  <View key={i} style={{ flex: 1, height: 3, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.3)', overflow: 'hidden' }}>
+                    {i < viewingIndex
+                      ? <View style={{ flex: 1, backgroundColor: '#fff' }} />
+                      : i === viewingIndex
+                        ? <Animated.View style={{ width: progressAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }), height: 3, backgroundColor: '#fff' }} />
+                        : null}
+                  </View>
+                ))}
+              </View>
               {viewing.mediaUrl && viewing.mediaType === 'photo' && !imageError ? (
                 <Image
                   source={{ uri: viewing.mediaUrl }}
@@ -198,7 +264,9 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
 
               <View style={styles.viewerOverlay}>
                 <View style={styles.viewerInfo}>
-                  <Text style={styles.viewerName}>{viewing.userName} · {timeAgo(viewing.createdAt)}</Text>
+                  <Pressable onPress={() => { closeViewer(); navigation.navigate('UserPublicProfile', { uid: viewing.uid, displayName: viewing.userName }); }} hitSlop={8}>
+                    <Text style={styles.viewerName}>{viewing.userName} · {timeAgo(viewing.createdAt)}</Text>
+                  </Pressable>
                   {viewing.text ? <Text style={styles.viewerText}>{viewing.text}</Text> : null}
                   {viewing.locationName ? <Text style={styles.viewerMeta}>📍 {viewing.locationName}</Text> : null}
                   {viewing.uid === user?.uid ? (

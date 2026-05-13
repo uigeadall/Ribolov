@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,9 @@ import {
   Platform,
   Modal,
   FlatList,
+  Clipboard,
+  ToastAndroid,
+  Animated,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,8 +22,10 @@ import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
 import { Card } from './Card';
 import { REACTIONS, type ReactionType } from '../services/socialFeed';
+import { formatTimeAgo } from '../utils/formatCatchDate';
 import { useAvatarUrl } from '../hooks/useAvatarUrl';
 import { useFeedPostSocial } from '../hooks/useFeedPostSocial';
+import { ImageViewer } from './ImageViewer';
 
 function feedStyles(colors: AppColors) {
   return StyleSheet.create({
@@ -38,7 +43,13 @@ function feedStyles(colors: AppColors) {
     species: { ...typography.h3, color: colors.text, marginBottom: spacing.xs },
     stats: { ...typography.body, color: colors.textMuted },
     notes: { ...typography.body, color: colors.text, marginTop: spacing.sm, lineHeight: 22 },
-    photo: { width: '100%', height: 220, borderRadius: radius.md, marginTop: spacing.sm, backgroundColor: colors.surfaceAlt },
+    photoWrap: {
+      width: '100%',
+      borderRadius: radius.md,
+      marginTop: spacing.sm,
+      backgroundColor: colors.surfaceAlt,
+      overflow: 'hidden',
+    },
     loc: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.sm },
     locText: { ...typography.caption, color: colors.primary, flex: 1 },
     socialRow: {
@@ -91,6 +102,9 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
   const { colors } = useTheme();
   const styles = useMemo(() => feedStyles(colors), [colors]);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [photoAspectRatio, setPhotoAspectRatio] = useState(4 / 3);
+  const [viewerUri, setViewerUri] = useState<string | null>(null);
   const hasExtra = !!(item.bait || (item as Record<string, unknown>).technique || (item as Record<string, unknown>).spotName);
 
   const ownerName = item.ownerName || 'Рибар';
@@ -103,6 +117,14 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
   });
 
   const social = useFeedPostSocial({ item, myUid, myDisplayName, ownerName, socialEnabled, isVisible });
+  const reactionScale = useRef(new Animated.Value(1)).current;
+
+  const animateReaction = () => {
+    Animated.sequence([
+      Animated.spring(reactionScale, { toValue: 1.35, useNativeDriver: true, speed: 60, bounciness: 14 }),
+      Animated.spring(reactionScale, { toValue: 1, useNativeDriver: true, speed: 40, bounciness: 6 }),
+    ]).start();
+  };
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -117,13 +139,15 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
           </View>
           <View style={styles.meta}>
             <Text style={styles.name}>{isMine ? myDisplayName : ownerName}</Text>
-            <Text style={styles.date}>{item.date}{item.location?.name ? ` · ${item.location.name}` : ''}</Text>
+            <Text style={styles.date}>{formatTimeAgo(item.date)}{item.location?.name ? ` · ${item.location.name}` : ''}</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
         </Pressable>
 
         {item.photoTitle ? <Text style={styles.photoTitle}>{item.photoTitle}</Text> : null}
-        <Text style={styles.species}>{item.speciesName}</Text>
+        <Pressable onPress={() => onPressCatch?.(item)} disabled={!onPressCatch} hitSlop={4}>
+          <Text style={styles.species}>{item.speciesName}</Text>
+        </Pressable>
         <Text style={styles.stats}>
           {item.weightKg != null ? `${item.weightKg} кг` : '— кг'}
           {item.lengthCm != null ? ` · ${item.lengthCm} см` : ''}
@@ -131,17 +155,38 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
         </Text>
         {item.notes ? <Text style={styles.notes}>{item.notes}</Text> : null}
         {item.photoUri ? (
-          <Pressable onPress={() => onPressCatch?.(item)} disabled={!onPressCatch}>
-            <Image source={{ uri: item.photoUri }} style={[styles.photo, { backgroundColor: colors.surfaceAlt }]} contentFit="cover" cachePolicy="memory-disk" transition={200} />
+          <Pressable onPress={() => setViewerUri(item.photoUri!)}>
+            <View style={[styles.photoWrap, { aspectRatio: photoAspectRatio }]}>
+              <Image
+                source={{ uri: item.photoUri }}
+                style={StyleSheet.absoluteFillObject}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                onLoad={(e) => {
+                  const { width, height } = e.source;
+                  if (width && height) setPhotoAspectRatio(width / height);
+                }}
+              />
+            </View>
           </Pressable>
         ) : null}
+        <ImageViewer uri={viewerUri ?? ''} visible={!!viewerUri} onClose={() => setViewerUri(null)} />
         {item.location?.latitude != null && item.location.longitude != null ? (
-          <View style={styles.loc}>
+          <Pressable
+            style={styles.loc}
+            hitSlop={8}
+            onPress={() => {
+              const coords = `${item.location!.latitude.toFixed(6)}, ${item.location!.longitude.toFixed(6)}`;
+              Clipboard.setString(coords);
+              if (Platform.OS === 'android') ToastAndroid.show('Координатите са копирани', ToastAndroid.SHORT);
+            }}
+          >
             <Ionicons name="location-outline" size={14} color={colors.primary} />
             <Text style={styles.locText} numberOfLines={1}>
               {item.location.latitude.toFixed(4)}, {item.location.longitude.toFixed(4)}
             </Text>
-          </View>
+            <Ionicons name="copy-outline" size={12} color={colors.textMuted} />
+          </Pressable>
         ) : null}
 
         {hasExtra ? (
@@ -177,12 +222,21 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
             </Modal>
 
             <View style={styles.socialRow}>
-              <Pressable onPress={() => social.myReaction ? social.onPickReaction(social.myReaction) : social.setReactionPickerOpen(true)} onLongPress={() => social.setReactionPickerOpen(true)} disabled={social.likeBusy} style={styles.socialBtn} hitSlop={8} delayLongPress={300}>
-                {social.likeBusy ? (
-                  <ActivityIndicator size="small" color={colors.primary} />
-                ) : (
-                  <Text style={{ fontSize: 22 }}>{social.myReaction ? REACTIONS[social.myReaction].emoji : '🤍'}</Text>
-                )}
+              <Pressable
+                onPress={() => {
+                  animateReaction();
+                  if (social.myReaction) social.onPickReaction(social.myReaction);
+                  else social.setReactionPickerOpen(true);
+                }}
+                onLongPress={() => social.setReactionPickerOpen(true)}
+                disabled={social.likeBusy}
+                style={[styles.socialBtn, social.likeBusy && { opacity: 0.5 }]}
+                hitSlop={8}
+                delayLongPress={300}
+              >
+                <Animated.Text style={{ fontSize: 22, transform: [{ scale: reactionScale }] }}>
+                  {social.myReaction ? REACTIONS[social.myReaction].emoji : '🤍'}
+                </Animated.Text>
               </Pressable>
 
               <Pressable onPress={social.openLikers} disabled={social.likeCount === 0} hitSlop={8} style={[styles.socialBtn, { gap: 2 }]}>
@@ -197,10 +251,10 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
               <Pressable onPress={social.onReportCatch} style={styles.socialBtn} hitSlop={8} accessibilityLabel="Докладвай публикацията">
                 <Ionicons name="flag-outline" size={20} color={colors.textMuted} />
               </Pressable>
-              <View style={styles.socialBtn}>
-                <Ionicons name="chatbubble-outline" size={20} color={colors.textMuted} />
-                <Text style={styles.socialLbl}>{social.comments.length}</Text>
-              </View>
+              <Pressable style={styles.socialBtn} onPress={() => setCommentsOpen((v) => !v)} hitSlop={8}>
+                <Ionicons name={commentsOpen ? 'chatbubble' : 'chatbubble-outline'} size={20} color={commentsOpen ? colors.primary : colors.textMuted} />
+                {social.allComments.length > 0 && <Text style={[styles.socialLbl, commentsOpen && { color: colors.primary }]}>{social.allComments.length}</Text>}
+              </Pressable>
               <Pressable onPress={social.onShare} style={styles.socialBtn} hitSlop={8}>
                 <Ionicons name="share-outline" size={22} color={colors.primary} />
               </Pressable>
@@ -213,8 +267,8 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
               </Pressable>
             </View>
 
-            <View style={styles.commentsWrap}>
-              {social.comments.map((c) => {
+            {commentsOpen && <View style={styles.commentsWrap}>
+              {social.allComments.map((c) => {
                 const isReply = !!c.replyToId;
                 const isMyComment = myUid === c.authorUid;
                 const canDelete = isMyComment || isMine;
@@ -255,6 +309,8 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
                             <Text style={styles.commentAuthor}>{c.authorName}</Text>
                             {c.editedAt ? (
                               <Text style={{ ...typography.caption, color: colors.textMuted, fontSize: 10 }}>(редактиран)</Text>
+                            ) : c.createdAt ? (
+                              <Text style={{ ...typography.caption, color: colors.textMuted, fontSize: 10 }}>{formatTimeAgo(c.createdAt)}</Text>
                             ) : null}
                           </View>
                           <Text style={styles.commentText}>{c.text}</Text>
@@ -310,7 +366,7 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
                   )}
                 </Pressable>
               </View>
-            </View>
+            </View>}
 
             <Modal visible={social.likersOpen} animationType="slide" transparent onRequestClose={() => social.setLikersOpen(false)}>
               <Pressable style={styles.modalBackdrop} onPress={() => social.setLikersOpen(false)}>

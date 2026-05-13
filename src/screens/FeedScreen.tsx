@@ -24,6 +24,7 @@ import { captureException } from '../services/observability';
 import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 import * as Haptics from 'expo-haptics';
+import { useUnreadNotifCount } from '../hooks/useUnreadNotifCount';
 
 type FeedScope = 'all' | 'following';
 
@@ -119,6 +120,7 @@ export default function FeedScreen() {
   const { user, configured } = useAuth();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const unreadNotifCount = useUnreadNotifCount(user?.uid);
 
   const heroTopStyle = useMemo(
     () => ({ paddingTop: insets.top + spacing.md }),
@@ -130,6 +132,14 @@ export default function FeedScreen() {
   const [avatarMap, setAvatarMap] = useState<Record<string, string>>({});
   const visibleIdsRef = useRef<Set<string>>(new Set());
   const [visibleIds, setVisibleIds] = useState<Set<string>>(new Set());
+  const mountedRef = useRef(true);
+  const flatListRef = useRef<FlatList<FeedItem>>(null);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -181,6 +191,7 @@ export default function FeedScreen() {
       if (missingUids.length > 0) {
         Promise.all(missingUids.map((uid) => getUserPublicSummary(uid).catch(() => null)))
           .then((summaries) => {
+            if (!mountedRef.current) return;
             const patch: Record<string, string> = {};
             summaries.forEach((s, idx) => {
               const url = s?.photoUrl?.trim();
@@ -255,6 +266,15 @@ export default function FeedScreen() {
 
   const ItemSeparator = useCallback(() => <View style={styles.listGap} />, [styles.listGap]);
 
+  const onScroll = useCallback((e: { nativeEvent: { contentOffset: { y: number } } }) => {
+    setShowScrollTop(e.nativeEvent.contentOffset.y > 400);
+  }, []);
+
+  const scrollToTop = useCallback(() => {
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+    void Haptics.selectionAsync();
+  }, []);
+
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 40 }).current;
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: Array<{ item: FeedItem }> }) => {
@@ -292,7 +312,25 @@ export default function FeedScreen() {
         style={styles.backBtn}
         accessibilityLabel="Известия"
       >
-        <Ionicons name="notifications-outline" size={22} color={colors.primary} />
+        <View style={{ position: 'relative' }}>
+          <Ionicons
+            name={unreadNotifCount > 0 ? 'notifications' : 'notifications-outline'}
+            size={22}
+            color={colors.primary}
+          />
+          {unreadNotifCount > 0 && (
+            <View style={{
+              position: 'absolute', top: -4, right: -6,
+              backgroundColor: '#e53935', borderRadius: 8,
+              minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center',
+              paddingHorizontal: 3,
+            }}>
+              <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700', lineHeight: 12 }}>
+                {unreadNotifCount > 99 ? '99+' : unreadNotifCount}
+              </Text>
+            </View>
+          )}
+        </View>
       </Pressable>
       <Pressable
         onPress={() => navigation.navigate('Search')}
@@ -437,36 +475,66 @@ export default function FeedScreen() {
           ) : null}
         </View>
       ) : (
-        <FlatList
-          data={items}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
-          }
-          ItemSeparatorComponent={ItemSeparator}
-          showsVerticalScrollIndicator={false}
-          onEndReached={loadMore}
-          onEndReachedThreshold={0.4}
-          removeClippedSubviews={Platform.OS === 'android'}
-          maxToRenderPerBatch={8}
-          windowSize={5}
-          initialNumToRender={6}
-          updateCellsBatchingPeriod={50}
-          ListFooterComponent={
-            loadingMore ? (
-              <View style={{ paddingVertical: spacing.lg, alignItems: 'center' }}>
-                <ActivityIndicator color={colors.primary} />
-              </View>
-            ) : hasMore ? (
-              <View style={{ height: spacing.lg }} />
-            ) : null
-          }
-          {...keyboardAwareScrollProps}
-          renderItem={renderItem}
-          onViewableItemsChanged={onViewableItemsChanged}
-          viewabilityConfig={viewabilityConfig}
-        />
+        <View style={{ flex: 1 }}>
+          <FlatList
+            ref={flatListRef}
+            data={items}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.listContent}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+            }
+            ItemSeparatorComponent={ItemSeparator}
+            showsVerticalScrollIndicator={false}
+            onEndReached={loadMore}
+            onEndReachedThreshold={0.4}
+            onScroll={onScroll}
+            scrollEventThrottle={200}
+            removeClippedSubviews={Platform.OS === 'android'}
+            maxToRenderPerBatch={8}
+            windowSize={5}
+            initialNumToRender={6}
+            updateCellsBatchingPeriod={50}
+            ListFooterComponent={
+              loadingMore ? (
+                <View style={{ paddingVertical: spacing.lg, alignItems: 'center' }}>
+                  <ActivityIndicator color={colors.primary} />
+                </View>
+              ) : hasMore ? (
+                <View style={{ height: spacing.lg }} />
+              ) : null
+            }
+            {...keyboardAwareScrollProps}
+            renderItem={renderItem}
+            onViewableItemsChanged={onViewableItemsChanged}
+            viewabilityConfig={viewabilityConfig}
+          />
+          {showScrollTop && (
+            <Pressable
+              onPress={scrollToTop}
+              style={{
+                position: 'absolute',
+                bottom: spacing.xl,
+                alignSelf: 'center',
+                backgroundColor: colors.primary,
+                borderRadius: 20,
+                paddingHorizontal: spacing.md,
+                paddingVertical: spacing.sm,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.25,
+                shadowRadius: 4,
+                elevation: 6,
+              }}
+            >
+              <Ionicons name="arrow-up" size={16} color={colors.white} />
+              <Text style={{ ...typography.small, color: colors.white, fontWeight: '700' }}>Нагоре</Text>
+            </Pressable>
+          )}
+        </View>
       )}
     </Screen>
   );

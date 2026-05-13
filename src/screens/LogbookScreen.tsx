@@ -26,6 +26,7 @@ import { Card } from '../components/Card';
 import { EmptyState } from '../components/EmptyState';
 import { Button } from '../components/Button';
 import { SectionHeader } from '../components/SectionHeader';
+import { Skeleton } from '../components/Skeleton';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
@@ -336,6 +337,25 @@ function SpeciesChip({ label, selected, onPress, colors, styles }: SpeciesChipPr
   );
 }
 
+function LogbookSkeleton({ colors, mode }: { colors: AppColors; mode: 'light' | 'dark' }) {
+  const styles = useMemo(() => createLogbookStyles(colors, mode), [colors, mode]);
+  return (
+    <View style={{ paddingHorizontal: spacing.lg, gap: spacing.sm, marginTop: spacing.sm }}>
+      {[0, 1, 2, 3, 4].map((i) => (
+        <View key={i} style={{ backgroundColor: colors.card, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.sm + 2, flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+          <Skeleton width={60} height={60} borderRadius={radius.md} />
+          <View style={{ flex: 1, gap: 8 }}>
+            <Skeleton height={14} width="60%" />
+            <Skeleton height={11} width="40%" />
+            <Skeleton height={11} width="80%" />
+          </View>
+          <Skeleton width={20} height={20} borderRadius={10} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
 export default function LogbookScreen() {
   const navigation = useAppNavigation();
   const { colors, mode } = useTheme();
@@ -344,6 +364,7 @@ export default function LogbookScreen() {
   const bottomPad = insets.bottom + spacing.xl;
 
   const [items, setItems] = useState<Catch[]>([]);
+  const [initialLoading, setInitialLoading] = useState(true);
   const styles = useMemo(() => createLogbookStyles(colors, mode), [colors, mode]);
 
   // Badge shows count of unsynced catches on the tab bar
@@ -369,9 +390,11 @@ export default function LogbookScreen() {
     return () => clearTimeout(id);
   }, [searchQuery]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (isRefresh = false) => {
+    if (!isRefresh) setInitialLoading(true);
     const list = await catchesStore.list();
     setItems(list);
+    setInitialLoading(false);
   }, []);
 
   useFocusEffect(
@@ -382,7 +405,7 @@ export default function LogbookScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await load();
+    await load(true);
     setRefreshing(false);
   };
 
@@ -652,7 +675,9 @@ export default function LogbookScreen() {
           </>
         ) : null}
 
-        {items.length === 0 ? (
+        {initialLoading ? (
+          <LogbookSkeleton colors={colors} mode={mode} />
+        ) : items.length === 0 ? (
           <ScrollView
             contentContainerStyle={{
               flexGrow: 1,
@@ -686,6 +711,7 @@ export default function LogbookScreen() {
           <FlatList
             data={filtered}
             keyExtractor={(item) => item.id}
+            removeClippedSubviews={Platform.OS === 'android'}
             contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: bottomPad }}
             ListHeaderComponent={
               <Text style={[styles.filterSectionLabel, { marginBottom: spacing.sm }]}>
@@ -695,7 +721,6 @@ export default function LogbookScreen() {
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
             ItemSeparatorComponent={CatchSeparator}
             ListFooterComponent={<View style={styles.listFooterPad} />}
-            removeClippedSubviews={Platform.OS === 'android'}
             maxToRenderPerBatch={10}
             windowSize={5}
             initialNumToRender={10}

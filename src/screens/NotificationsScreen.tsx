@@ -1,19 +1,56 @@
-import React, { useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, Alert } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, Pressable, Alert, Platform } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { EmptyState } from '../components/EmptyState';
+import { Skeleton } from '../components/Skeleton';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
-import { spacing, typography } from '../theme/typography';
+import { radius, spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
 import { subscribeMyNotifications, markNotificationRead, markAllNotificationsRead, type SocialNotification } from '../services/socialFeed';
+import { followUser, isFollowingUser } from '../services/social';
 import { useFirestoreSubscription } from '../hooks/useFirestoreSubscription';
 import { useAvatarUrl } from '../hooks/useAvatarUrl';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 import * as Haptics from 'expo-haptics';
+
+function formatNotifTime(createdAt: unknown): string {
+  if (!createdAt) return '';
+  let ms: number | null = null;
+  if (typeof createdAt === 'object' && createdAt !== null && 'toMillis' in createdAt) {
+    ms = (createdAt as { toMillis: () => number }).toMillis();
+  } else if (typeof createdAt === 'number') {
+    ms = createdAt;
+  }
+  if (!ms) return '';
+  const diff = Date.now() - ms;
+  if (diff < 60_000) return 'Сега';
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} мин`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} ч`;
+  if (diff < 7 * 86_400_000) return `${Math.floor(diff / 86_400_000)} д`;
+  return new Date(ms).toLocaleDateString('bg-BG', { day: 'numeric', month: 'short' });
+}
+
+function NotifSkeleton() {
+  const { colors } = useTheme();
+  return (
+    <View style={{ padding: spacing.lg, gap: spacing.md }}>
+      {[0, 1, 2, 3].map((i) => (
+        <View key={i} style={{ flexDirection: 'row', gap: spacing.md, alignItems: 'center', backgroundColor: colors.card, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border }}>
+          <Skeleton width={40} height={40} borderRadius={20} />
+          <View style={{ flex: 1, gap: 8 }}>
+            <Skeleton height={13} width="72%" />
+            <Skeleton height={10} width="45%" />
+          </View>
+          <Skeleton width={8} height={8} borderRadius={4} />
+        </View>
+      ))}
+    </View>
+  );
+}
 
 function createStyles(colors: AppColors) {
   return StyleSheet.create({
@@ -71,6 +108,7 @@ function NotifRow({ item, myUid, onOpen, styles, colors }: NotifRowProps) {
     resolvedAvatarUrl: undefined,
     ownerPhotoUrl: undefined,
   });
+  const [followState, setFollowState] = useState<'idle' | 'busy' | 'done'>('idle');
 
   const verb =
     item.type === 'like'
@@ -85,6 +123,19 @@ function NotifRow({ item, myUid, onOpen, styles, colors }: NotifRowProps) {
         ? 'chatbubble-ellipses-outline'
         : 'person-add-outline';
   const initials = item.actorName.slice(0, 1).toUpperCase();
+
+  const onFollowBack = useCallback(async () => {
+    if (followState !== 'idle') return;
+    setFollowState('busy');
+    try {
+      const already = await isFollowingUser(myUid, item.actorUid);
+      if (!already) await followUser(myUid, item.actorUid, item.actorName);
+      setFollowState('done');
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {
+      setFollowState('idle');
+    }
+  }, [followState, myUid, item.actorUid, item.actorName]);
 
   return (
     <Pressable onPress={() => onOpen(item)}>
@@ -109,6 +160,31 @@ function NotifRow({ item, myUid, onOpen, styles, colors }: NotifRowProps) {
               </Text>
             </View>
           ) : null}
+          {item.createdAt ? (
+            <Text style={[styles.meta, { marginTop: 4 }]}>{formatNotifTime(item.createdAt)}</Text>
+          ) : null}
+          {item.type === 'follow' && (
+            <Pressable
+              onPress={(e) => { e.stopPropagation(); void onFollowBack(); }}
+              disabled={followState !== 'idle'}
+              style={{
+                marginTop: spacing.sm,
+                alignSelf: 'flex-start',
+                paddingHorizontal: spacing.md,
+                paddingVertical: 5,
+                borderRadius: 20,
+                backgroundColor: followState === 'done' ? colors.primarySurface : colors.primary,
+                borderWidth: 1,
+                borderColor: followState === 'done' ? colors.border : colors.primary,
+                opacity: followState === 'busy' ? 0.6 : 1,
+              }}
+              hitSlop={8}
+            >
+              <Text style={{ ...typography.small, fontWeight: '700', color: followState === 'done' ? colors.primary : colors.white }}>
+                {followState === 'done' ? '✓ Последван' : 'Последвай'}
+              </Text>
+            </Pressable>
+          )}
         </View>
         {!item.read ? (
           <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primary, marginTop: 6 }} />
@@ -198,9 +274,7 @@ export default function NotificationsScreen() {
       </View>
 
       {loading ? (
-        <View style={{ flex: 1, justifyContent: 'center' }}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
+        <NotifSkeleton />
       ) : items.length === 0 ? (
         <EmptyState
           icon="notifications-off-outline"
@@ -211,6 +285,7 @@ export default function NotificationsScreen() {
         <FlatList
           data={items}
           keyExtractor={(n) => n.id}
+          removeClippedSubviews={Platform.OS === 'android'}
           contentContainerStyle={styles.listContent}
           ItemSeparatorComponent={() => <View style={styles.sep} />}
           renderItem={({ item }) => (

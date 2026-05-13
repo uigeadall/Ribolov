@@ -1,10 +1,11 @@
-import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, Pressable, Platform, TextInput } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { EmptyState } from '../components/EmptyState';
+import { Skeleton } from '../components/Skeleton';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
@@ -25,6 +26,23 @@ function formatTime(ms: number): string {
   return new Date(ms).toLocaleDateString('bg-BG', { day: 'numeric', month: 'short' });
 }
 
+function ChatSkeleton({ colors }: { colors: AppColors }) {
+  return (
+    <View style={{ padding: spacing.lg, gap: spacing.md }}>
+      {[0, 1, 2, 3].map((i) => (
+        <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.card, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border }}>
+          <Skeleton width={48} height={48} borderRadius={24} />
+          <View style={{ flex: 1, gap: 8 }}>
+            <Skeleton height={14} width="55%" />
+            <Skeleton height={11} width="80%" />
+          </View>
+          <Skeleton height={11} width={32} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function createChatsStyles(colors: AppColors) {
   return StyleSheet.create({
     header: {
@@ -35,6 +53,20 @@ function createChatsStyles(colors: AppColors) {
       paddingTop: spacing.lg,
       paddingBottom: spacing.md,
     },
+    searchWrap: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.surfaceAlt,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: spacing.md,
+      paddingVertical: Platform.OS === 'ios' ? spacing.sm : spacing.xs,
+      marginHorizontal: spacing.lg,
+      marginBottom: spacing.sm,
+      gap: spacing.sm,
+    },
+    searchInput: { flex: 1, color: colors.text, ...typography.body, paddingVertical: 2 },
     title: { ...typography.h2, color: colors.text },
     center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
@@ -120,6 +152,7 @@ export default function ChatsScreen() {
   const styles = useMemo(() => createChatsStyles(colors), [colors]);
   const navigation = useAppNavigation();
   const { user, configured } = useAuth();
+  const [searchQuery, setSearchQuery] = useState('');
 
   const { data, loading } = useFirestoreSubscription<ConversationPreview[]>(
     (cb) => {
@@ -128,7 +161,12 @@ export default function ChatsScreen() {
     },
     [user?.uid],
   );
-  const items: ConversationPreview[] = data ?? [];
+  const allItems: ConversationPreview[] = data ?? [];
+  const items = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return allItems;
+    return allItems.filter((c) => c.otherName.toLowerCase().includes(q) || (c.lastMessage ?? '').toLowerCase().includes(q));
+  }, [allItems, searchQuery]);
 
   const onPressConv = (item: ConversationPreview) => {
     navigation.navigate('ChatDetail', {
@@ -166,15 +204,26 @@ export default function ChatsScreen() {
   return (
     <Screen padded={false}>
       <Header onBack={() => navigation.goBack()} />
+      <View style={styles.searchWrap}>
+        <Ionicons name="search-outline" size={18} color={colors.textMuted} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Търси разговори…"
+          placeholderTextColor={colors.textMuted}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          returnKeyType="search"
+          clearButtonMode="while-editing"
+        />
+      </View>
 
       {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.primary} />
-        </View>
+        <ChatSkeleton colors={colors} />
       ) : (
         <FlatList
           data={items}
           keyExtractor={(item) => item.convId}
+          removeClippedSubviews={Platform.OS === 'android'}
           contentContainerStyle={{ padding: spacing.lg, flexGrow: 1 }}
           ListEmptyComponent={
             <EmptyState

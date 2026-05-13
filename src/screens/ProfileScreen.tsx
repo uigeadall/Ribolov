@@ -11,6 +11,7 @@ import {
   Platform,
   Modal,
   Keyboard,
+  RefreshControl,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -33,6 +34,7 @@ import { updateProfile } from 'firebase/auth';
 import { handleError } from '../utils/handleError';
 import { ensureFirebase } from '../services/firebase';
 import { useAppNavigation } from '../navigation/useAppNavigation';
+import * as Haptics from 'expo-haptics';
 import {
   getUserPublicSummary,
   pushUserProfilePublic,
@@ -60,7 +62,7 @@ const ProfileTopBar = React.memo(function ProfileTopBar({
         <View style={styles.themeToggle}>
           <Pressable
             style={styles.themeIconHit}
-            onPress={() => mode === 'dark' && onToggleMode()}
+            onPress={() => { if (mode === 'dark') { void Haptics.selectionAsync(); onToggleMode(); } }}
             accessibilityRole="button"
             accessibilityLabel="Светла тема"
             hitSlop={8}
@@ -73,7 +75,7 @@ const ProfileTopBar = React.memo(function ProfileTopBar({
           </Pressable>
           <Pressable
             style={styles.themeIconHit}
-            onPress={() => mode === 'light' && onToggleMode()}
+            onPress={() => { if (mode === 'light') { void Haptics.selectionAsync(); onToggleMode(); } }}
             accessibilityRole="button"
             accessibilityLabel="Тъмна тема"
             hitSlop={8}
@@ -166,6 +168,7 @@ export default function ProfileScreen() {
   const [bio, setBio] = useState('');
   const [delPassword, setDelPassword] = useState('');
   const [profileSaving, setProfileSaving] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [profileLoading, setProfileLoading] = useState(false);
   const [remotePhotoUrl, setRemotePhotoUrl] = useState<string | undefined>();
   const [pickedAvatarUri, setPickedAvatarUri] = useState<string | undefined>();
@@ -222,7 +225,7 @@ export default function ProfileScreen() {
     } finally {
       setProfileLoading(false);
     }
-  }, [user?.uid, user?.displayName, user?.photoURL, configured, authLoading]);
+  }, [user?.uid, configured, authLoading]);
 
   useFocusEffect(
     useCallback(() => {
@@ -559,6 +562,13 @@ export default function ProfileScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={async () => { setRefreshing(true); await loadRemoteProfile().catch(() => {}); setRefreshing(false); }}
+            tintColor={colors.primary}
+          />
+        }
       >
         <ProfileTopBar
           mode={mode}

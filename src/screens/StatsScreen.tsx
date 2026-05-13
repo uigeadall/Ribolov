@@ -1,20 +1,62 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Pressable, RefreshControl, Modal, Animated } from 'react-native';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
+import { Ionicons } from '@expo/vector-icons';
+import { useAppNavigation } from '../navigation/useAppNavigation';
 
 import { catchesStore } from '../storage/storage';
 import type { Catch } from '../types';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 
+function useCountUp(target: number, duration = 900): number {
+  const [value, setValue] = useState(0);
+  const animRef = useRef<Animated.Value>(new Animated.Value(0));
+  useEffect(() => {
+    animRef.current.setValue(0);
+    Animated.timing(animRef.current, { toValue: target, duration, useNativeDriver: false }).start();
+    const listener = animRef.current.addListener(({ value: v }) => setValue(v));
+    return () => animRef.current.removeListener(listener);
+  }, [target, duration]);
+  return value;
+}
+
+function AnimatedStatNum({ value, decimals = 0, suffix = '' }: { value: number; decimals?: number; suffix?: string }) {
+  const { colors } = useTheme();
+  const animated = useCountUp(value);
+  return (
+    <Text style={{ ...typography.h2, color: colors.primary, fontSize: 24 }}>
+      {decimals > 0 ? animated.toFixed(decimals) : Math.round(animated)}{suffix}
+    </Text>
+  );
+}
+
 const MONTH_LABELS = ['Яну', 'Фев', 'Мар', 'Апр', 'Май', 'Юни', 'Юли', 'Авг', 'Сеп', 'Окт', 'Ное', 'Дек'];
 
 export default function StatsScreen() {
   const { colors } = useTheme();
+  const navigation = useAppNavigation();
   const [catches, setCatches] = useState<Catch[]>([]);
+  const [loadError, setLoadError] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [selectedDay, setSelectedDay] = useState<{ dateKey: string; catches: Catch[] } | null>(null);
 
-  useEffect(() => { catchesStore.list().then(setCatches); }, []);
+  const loadCatches = useCallback(() => {
+    setLoadError(false);
+    setLoading(true);
+    catchesStore.list().then((list) => { setCatches(list); setLoading(false); }).catch(() => { setLoadError(true); setLoading(false); });
+  }, []);
+
+  useEffect(() => { loadCatches(); }, [loadCatches]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    setLoadError(false);
+    try { setCatches(await catchesStore.list()); } catch { setLoadError(true); }
+    setRefreshing(false);
+  }, []);
 
   const stats = useMemo(() => {
     if (catches.length === 0) return null;
@@ -92,7 +134,21 @@ export default function StatsScreen() {
 
     const activeDaysThisYear = [...catchDayCount.keys()].filter((k) => k.startsWith(String(today.getFullYear()))).length;
 
-    return { totalWeight, avgWeight, released, speciesMap, topSpecies, monthly, maxMonthly, maxSpecies, n: catches.length, calCells, currentStreak, longestStreak, activeDaysThisYear };
+    const pbBySpecies = new Map<string, { name: string; bestKg: number; bestCm: number }>();
+    catches.forEach((c) => {
+      const prev = pbBySpecies.get(c.speciesId);
+      if (!prev) {
+        pbBySpecies.set(c.speciesId, { name: c.speciesName, bestKg: c.weightKg ?? 0, bestCm: c.lengthCm ?? 0 });
+      } else {
+        if ((c.weightKg ?? 0) > prev.bestKg) prev.bestKg = c.weightKg!;
+        if ((c.lengthCm ?? 0) > prev.bestCm) prev.bestCm = c.lengthCm!;
+      }
+    });
+    const pbList = [...pbBySpecies.values()]
+      .filter((p) => p.bestKg > 0 || p.bestCm > 0)
+      .sort((a, b) => b.bestKg - a.bestKg);
+
+    return { totalWeight, avgWeight, released, speciesMap, topSpecies, monthly, maxMonthly, maxSpecies, n: catches.length, calCells, currentStreak, longestStreak, activeDaysThisYear, pbList };
   }, [catches]);
 
   const styles = useMemo(() => StyleSheet.create({
@@ -134,14 +190,53 @@ export default function StatsScreen() {
     streakLbl: { ...typography.caption, color: colors.textMuted, marginTop: 2, textAlign: 'center' },
   }), [colors]);
 
-  if (catches.length === 0) {
+  if (loadError) {
     return (
       <Screen scroll>
         <Text style={{ ...typography.h2, color: colors.text }}>Статистики</Text>
         <Card style={{ marginTop: spacing.lg }}>
-          <Text style={{ ...typography.body, color: colors.textMuted }}>
-            Добави улови в дневника, за да виждаш статистики.
+          <Text style={{ ...typography.body, color: colors.textMuted, marginBottom: spacing.md }}>
+            Грешка при зареждане на данните.
           </Text>
+          <TouchableOpacity onPress={loadCatches}>
+            <Text style={{ ...typography.body, color: colors.primary, fontWeight: '600' }}>Опитай отново</Text>
+          </TouchableOpacity>
+        </Card>
+      </Screen>
+    );
+  }
+
+  if (loading) {
+    return (
+      <Screen scroll>
+        <Text style={{ ...typography.h2, color: colors.text, marginBottom: spacing.lg }}>Статистики</Text>
+        <View style={{ gap: spacing.md }}>
+          {[120, 80, 100, 70].map((h, i) => (
+            <View key={i} style={{ height: h, borderRadius: radius.md, backgroundColor: colors.border, opacity: 0.5 }} />
+          ))}
+        </View>
+      </Screen>
+    );
+  }
+
+  if (catches.length === 0) {
+    return (
+      <Screen scroll>
+        <Text style={{ ...typography.h2, color: colors.text }}>Статистики</Text>
+        <Card style={{ marginTop: spacing.lg, alignItems: 'center', paddingVertical: spacing.xl }}>
+          <Ionicons name="bar-chart-outline" size={48} color={colors.textMuted} style={{ marginBottom: spacing.md }} />
+          <Text style={{ ...typography.bodyBold, color: colors.text, marginBottom: spacing.sm }}>
+            Все още няма статистики
+          </Text>
+          <Text style={{ ...typography.body, color: colors.textMuted, textAlign: 'center', marginBottom: spacing.lg }}>
+            Добави первия си улов в дневника, за да видиш графики и анализи.
+          </Text>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('AddCatch', {})}
+            style={{ backgroundColor: colors.primary, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: 20 }}
+          >
+            <Text style={{ color: '#fff', fontWeight: '700', ...typography.body }}>Добави улов</Text>
+          </TouchableOpacity>
         </Card>
       </Screen>
     );
@@ -149,35 +244,38 @@ export default function StatsScreen() {
 
   return (
     <Screen padded={false}>
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}>
+      <ScrollView
+        contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+      >
         <Text style={{ ...typography.h2, color: colors.text, marginBottom: spacing.lg }}>Статистики</Text>
 
         {/* Summary numbers */}
         <View style={styles.statGrid}>
           <View style={styles.statCell}>
-            <Text style={styles.statNum}>{stats!.n}</Text>
+            <AnimatedStatNum value={stats!.n} />
             <Text style={styles.statLbl}>Общо улова</Text>
           </View>
           <View style={styles.statCell}>
-            <Text style={styles.statNum}>{stats!.totalWeight.toFixed(1)}</Text>
+            <AnimatedStatNum value={stats!.totalWeight} decimals={1} />
             <Text style={styles.statLbl}>кг общо</Text>
           </View>
           <View style={styles.statCell}>
-            <Text style={styles.statNum}>{stats!.avgWeight > 0 ? stats!.avgWeight.toFixed(1) : '—'}</Text>
+            {stats!.avgWeight > 0
+              ? <AnimatedStatNum value={stats!.avgWeight} decimals={1} />
+              : <Text style={styles.statNum}>—</Text>}
             <Text style={styles.statLbl}>кг средно</Text>
           </View>
           <View style={styles.statCell}>
-            <Text style={styles.statNum}>{stats!.released}</Text>
+            <AnimatedStatNum value={stats!.released} />
             <Text style={styles.statLbl}>Пуснати</Text>
           </View>
           <View style={styles.statCell}>
-            <Text style={styles.statNum}>{stats!.speciesMap.size}</Text>
+            <AnimatedStatNum value={stats!.speciesMap.size} />
             <Text style={styles.statLbl}>Различни вида</Text>
           </View>
           <View style={styles.statCell}>
-            <Text style={styles.statNum}>
-              {stats!.n > 0 ? Math.round((stats!.released / stats!.n) * 100) : 0}%
-            </Text>
+            <AnimatedStatNum value={stats!.n > 0 ? Math.round((stats!.released / stats!.n) * 100) : 0} suffix="%" />
             <Text style={styles.statLbl}>Пуснати %</Text>
           </View>
         </View>
@@ -226,6 +324,32 @@ export default function StatsScreen() {
             </Card>
           </>
         )}
+        {/* Personal bests per species */}
+        {stats!.pbList.length > 0 && (
+          <>
+            <Text style={{ ...typography.h3, color: colors.text, marginTop: spacing.xl, marginBottom: spacing.sm }}>Лични рекорди по вид</Text>
+            <Card>
+              {stats!.pbList.map((pb) => (
+                <View key={pb.name} style={[styles.speciesRow, { alignItems: 'center' }]}>
+                  <Text style={[styles.speciesName, { width: 100 }]} numberOfLines={1}>{pb.name}</Text>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    {pb.bestKg > 0 ? (
+                      <Text style={{ ...typography.caption, color: colors.primary, fontWeight: '700' }}>
+                        🏆 {pb.bestKg} кг
+                      </Text>
+                    ) : null}
+                    {pb.bestCm > 0 ? (
+                      <Text style={{ ...typography.caption, color: colors.textMuted }}>
+                        📏 {pb.bestCm} см
+                      </Text>
+                    ) : null}
+                  </View>
+                </View>
+              ))}
+            </Card>
+          </>
+        )}
+
         {/* Fishing calendar */}
         <Text style={{ ...typography.h3, color: colors.text, marginTop: spacing.xl, marginBottom: spacing.sm }}>Риболовен календар (16 седмици)</Text>
         <Card>
@@ -249,8 +373,16 @@ export default function StatsScreen() {
                       : cell.count <= 3 ? colors.primary + 'AA'
                       : colors.primary;
                     return (
-                      <View
+                      <Pressable
                         key={dow}
+                        onPress={() => {
+                          if (cell.isFuture || cell.count === 0) return;
+                          const dayCatches = catches.filter((c) => {
+                            const d = new Date(c.date);
+                            return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === cell.dateKey;
+                          });
+                          setSelectedDay({ dateKey: cell.dateKey, catches: dayCatches });
+                        }}
                         style={[
                           styles.calCell,
                           { backgroundColor: bg },
@@ -289,6 +421,41 @@ export default function StatsScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {/* Calendar day detail modal */}
+      <Modal
+        visible={!!selectedDay}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSelectedDay(null)}
+      >
+        <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }} onPress={() => setSelectedDay(null)}>
+          <Pressable style={{ backgroundColor: colors.card, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: spacing.lg, maxHeight: '60%' }}>
+            <Text style={{ ...typography.h3, color: colors.text, marginBottom: spacing.sm }}>
+              {selectedDay ? new Date(selectedDay.dateKey).toLocaleDateString('bg-BG', { day: 'numeric', month: 'long', year: 'numeric' }) : ''}
+            </Text>
+            <Text style={{ ...typography.caption, color: colors.textMuted, marginBottom: spacing.md }}>
+              {selectedDay?.catches.length ?? 0} улова
+            </Text>
+            <ScrollView>
+              {selectedDay?.catches.map((c) => (
+                <View key={c.id} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+                  <Ionicons name="fish-outline" size={18} color={colors.primary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ ...typography.bodyBold, color: colors.text }}>{c.speciesName}</Text>
+                    {c.weightKg != null ? <Text style={{ ...typography.caption, color: colors.textMuted }}>{c.weightKg} кг{c.lengthCm != null ? ` · ${c.lengthCm} см` : ''}</Text> : null}
+                    {c.location?.name ? <Text style={{ ...typography.caption, color: colors.textMuted }}>{c.location.name}</Text> : null}
+                  </View>
+                  {c.released ? <Text style={{ ...typography.caption, color: colors.accent, fontWeight: '700' }}>Пуснат</Text> : null}
+                </View>
+              ))}
+            </ScrollView>
+            <Pressable onPress={() => setSelectedDay(null)} style={{ marginTop: spacing.lg, alignItems: 'center' }}>
+              <Text style={{ ...typography.body, color: colors.primary, fontWeight: '700' }}>Затвори</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </Screen>
   );
 }
