@@ -14,6 +14,8 @@ import {
   ToastAndroid,
   Animated,
   PanResponder,
+  ActionSheetIOS,
+  Alert,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -27,6 +29,7 @@ import { formatTimeAgo } from '../utils/formatCatchDate';
 import { useAvatarUrl } from '../hooks/useAvatarUrl';
 import { useFeedPostSocial } from '../hooks/useFeedPostSocial';
 import { ImageViewer } from './ImageViewer';
+import * as Haptics from 'expo-haptics';
 
 function feedStyles(colors: AppColors) {
   return StyleSheet.create({
@@ -153,6 +156,18 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
 
   const social = useFeedPostSocial({ item, myUid, myDisplayName, ownerName, socialEnabled, isVisible });
   const reactionScale = useRef(new Animated.Value(1)).current;
+  const pickerAnim = useRef(new Animated.Value(0)).current;
+
+  const showPicker = social.reactionPickerOpen;
+  const openPicker = () => {
+    social.setReactionPickerOpen(true);
+    Animated.spring(pickerAnim, { toValue: 1, useNativeDriver: true, speed: 18, bounciness: 10 }).start();
+  };
+  const closePicker = () => {
+    Animated.timing(pickerAnim, { toValue: 0, duration: 150, useNativeDriver: true }).start(() => {
+      social.setReactionPickerOpen(false);
+    });
+  };
 
   // Double-tap to like
   const lastTapTimeRef = useRef(0);
@@ -169,6 +184,7 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
     const now = Date.now();
     if (now - lastTapTimeRef.current < 320) {
       lastTapTimeRef.current = 0;
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       if (socialEnabled && !social.myReaction && !social.likeBusy) {
         social.onPickReaction('heart');
         animateReaction();
@@ -211,6 +227,24 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
       },
     })
   ).current;
+
+  const openMoreMenu = () => {
+    const options = isMine
+      ? ['Докладвай', 'Отказ']
+      : ['Докладвай', 'Отказ'];
+    const cancelIdx = options.length - 1;
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options, cancelButtonIndex: cancelIdx, destructiveButtonIndex: 0 },
+        (idx) => { if (idx === 0) social.onReportCatch(); }
+      );
+    } else {
+      Alert.alert('Опции', undefined, [
+        { text: 'Докладвай', style: 'destructive', onPress: social.onReportCatch },
+        { text: 'Отказ', style: 'cancel' },
+      ]);
+    }
+  };
 
   const animateReaction = () => {
     Animated.sequence([
@@ -308,21 +342,22 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
           {item.released ? ' · пуснат' : ''}
         </Text>
         {item.notes ? <Text style={styles.notes}>{item.notes}</Text> : null}
-        {item.location?.latitude != null && item.location.longitude != null ? (
+        {(item.location?.name || (item.location?.latitude != null && item.location.longitude != null)) ? (
           <Pressable
-            style={styles.loc}
+            style={[styles.loc, { backgroundColor: colors.primarySurface, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 3, alignSelf: 'flex-start' }]}
             hitSlop={8}
             onPress={() => {
-              const coords = `${item.location!.latitude.toFixed(6)}, ${item.location!.longitude.toFixed(6)}`;
-              Clipboard.setString(coords);
-              if (Platform.OS === 'android') ToastAndroid.show('Координатите са копирани', ToastAndroid.SHORT);
+              const coords = `${item.location!.latitude?.toFixed(6) ?? ''}, ${item.location!.longitude?.toFixed(6) ?? ''}`;
+              Clipboard.setString(item.location!.name ?? coords);
+              if (Platform.OS === 'android') ToastAndroid.show('Копирано', ToastAndroid.SHORT);
             }}
           >
-            <Ionicons name="location-outline" size={14} color={colors.primary} />
-            <Text style={styles.locText} numberOfLines={1}>
-              {item.location.latitude.toFixed(4)}, {item.location.longitude.toFixed(4)}
+            <Ionicons name="location" size={13} color={colors.primary} />
+            <Text style={[styles.locText, { color: colors.primary, fontWeight: '600', fontSize: 12 }]} numberOfLines={1}>
+              {item.location!.name
+                ? item.location!.name
+                : `${item.location!.latitude!.toFixed(4)}, ${item.location!.longitude!.toFixed(4)}`}
             </Text>
-            <Ionicons name="copy-outline" size={12} color={colors.textMuted} />
           </Pressable>
         ) : null}
 
@@ -344,62 +379,62 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
 
         {socialEnabled ? (
           <>
-            {/* ── Reaction picker bottom sheet ── */}
-            <Modal visible={social.reactionPickerOpen} transparent animationType="slide" onRequestClose={() => social.setReactionPickerOpen(false)}>
-              <Pressable style={{ flex: 1, justifyContent: 'flex-end' }} onPress={() => social.setReactionPickerOpen(false)}>
-                <Pressable
-                  onPress={(e) => e.stopPropagation()}
-                  style={{
-                    backgroundColor: colors.card,
-                    borderTopLeftRadius: 20, borderTopRightRadius: 20,
-                    paddingTop: spacing.sm, paddingBottom: spacing.xl,
-                    paddingHorizontal: spacing.lg,
-                    borderWidth: 1, borderColor: colors.border,
-                    shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
-                    shadowOpacity: 0.12, shadowRadius: 12, elevation: 16,
-                  }}
-                >
-                  <View style={{ alignItems: 'center', marginBottom: spacing.md }}>
-                    <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border }} />
-                  </View>
-                  <Text style={{ ...typography.overline, color: colors.textMuted, textAlign: 'center', marginBottom: spacing.md }}>Реакция</Text>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
-                    {(Object.entries(REACTIONS) as [ReactionType, { emoji: string; label: string }][]).map(([type, r]) => (
-                      <Pressable
-                        key={type}
-                        onPress={() => social.onPickReaction(type)}
-                        style={{
-                          alignItems: 'center', padding: spacing.md, borderRadius: radius.lg,
-                          backgroundColor: social.myReaction === type ? colors.primarySurface : 'transparent',
-                          borderWidth: social.myReaction === type ? 1 : 0,
-                          borderColor: colors.border,
-                        }}
-                      >
-                        <Text style={{ fontSize: 32 }}>{r.emoji}</Text>
-                        <Text style={{ ...typography.caption, color: social.myReaction === type ? colors.primary : colors.textMuted, marginTop: 4, fontSize: 10, fontWeight: '600' }}>{r.label}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
+            {/* ── Inline reaction picker ── */}
+            {showPicker && (
+              <Animated.View
+                style={{
+                  flexDirection: 'row', justifyContent: 'space-around',
+                  backgroundColor: colors.card, borderRadius: radius.xl,
+                  borderWidth: 1, borderColor: colors.border,
+                  paddingVertical: spacing.sm, paddingHorizontal: spacing.xs,
+                  marginTop: spacing.sm,
+                  opacity: pickerAnim,
+                  transform: [{ scale: pickerAnim.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] }) }],
+                  shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.1, shadowRadius: 8, elevation: 4,
+                }}
+              >
+                {(Object.entries(REACTIONS) as [ReactionType, { emoji: string; label: string }][]).map(([type, r]) => (
+                  <Pressable
+                    key={type}
+                    onPress={() => { closePicker(); social.onPickReaction(type); }}
+                    style={{
+                      alignItems: 'center', paddingHorizontal: spacing.sm, paddingVertical: 4,
+                      borderRadius: radius.md,
+                      backgroundColor: social.myReaction === type ? colors.primarySurface : 'transparent',
+                    }}
+                  >
+                    <Text style={{ fontSize: 28 }}>{r.emoji}</Text>
+                    <Text style={{ ...typography.caption, color: social.myReaction === type ? colors.primary : colors.textMuted, marginTop: 2, fontSize: 10 }}>{r.label}</Text>
+                  </Pressable>
+                ))}
+                <Pressable onPress={closePicker} style={{ alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.sm }}>
+                  <Ionicons name="close-circle" size={22} color={colors.textMuted} />
                 </Pressable>
-              </Pressable>
-            </Modal>
+              </Animated.View>
+            )}
 
             <View style={styles.socialRow}>
               <Pressable
                 onPress={() => {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                   animateReaction();
                   if (social.myReaction) social.onPickReaction(social.myReaction);
-                  else social.setReactionPickerOpen(true);
+                  else openPicker();
                 }}
-                onLongPress={() => social.setReactionPickerOpen(true)}
+                onLongPress={openPicker}
                 disabled={social.likeBusy}
                 style={[styles.socialBtn, social.likeBusy && { opacity: 0.5 }]}
                 hitSlop={8}
                 delayLongPress={300}
               >
-                <Animated.Text style={{ fontSize: 22, transform: [{ scale: reactionScale }] }}>
-                  {social.myReaction ? REACTIONS[social.myReaction].emoji : '🤍'}
-                </Animated.Text>
+                <Animated.View style={{ transform: [{ scale: reactionScale }] }}>
+                  {social.myReaction ? (
+                    <Text style={{ fontSize: 22 }}>{REACTIONS[social.myReaction].emoji}</Text>
+                  ) : (
+                    <Ionicons name="heart-outline" size={22} color={colors.textMuted} />
+                  )}
+                </Animated.View>
               </Pressable>
 
               <Pressable onPress={social.openLikers} disabled={social.likeCount === 0} hitSlop={8} style={[styles.socialBtn, { gap: 2 }]}>
@@ -411,9 +446,6 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
                 )}
               </Pressable>
 
-              <Pressable onPress={social.onReportCatch} style={styles.socialBtn} hitSlop={8} accessibilityLabel="Докладвай публикацията">
-                <Ionicons name="flag-outline" size={20} color={colors.textMuted} />
-              </Pressable>
               <Pressable style={styles.socialBtn} onPress={() => setCommentsOpen((v) => !v)} hitSlop={8}>
                 <Ionicons name={commentsOpen ? 'chatbubble' : 'chatbubble-outline'} size={20} color={commentsOpen ? colors.primary : colors.textMuted} />
                 {social.allComments.length > 0 && <Text style={[styles.socialLbl, commentsOpen && { color: colors.primary }]}>{social.allComments.length}</Text>}
@@ -421,12 +453,15 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
               <Pressable onPress={social.onShare} style={styles.socialBtn} hitSlop={8}>
                 <Ionicons name="share-outline" size={22} color={colors.primary} />
               </Pressable>
-              <Pressable onPress={social.onToggleSave} disabled={social.saveBusy} style={styles.socialBtn} hitSlop={8}>
+              <Pressable onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); social.onToggleSave(); }} disabled={social.saveBusy} style={styles.socialBtn} hitSlop={8}>
                 {social.saveBusy ? (
                   <ActivityIndicator size="small" color={colors.primary} />
                 ) : (
                   <Ionicons name={social.saved ? 'bookmark' : 'bookmark-outline'} size={22} color={social.saved ? colors.primary : colors.textMuted} />
                 )}
+              </Pressable>
+              <Pressable onPress={openMoreMenu} style={[styles.socialBtn, { marginLeft: 'auto' }]} hitSlop={8}>
+                <Ionicons name="ellipsis-horizontal" size={20} color={colors.textMuted} />
               </Pressable>
             </View>
 
@@ -466,7 +501,16 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
                         </View>
                       </View>
                     ) : (
-                      <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm }}>
+                        <View style={{
+                          width: 26, height: 26, borderRadius: 13,
+                          backgroundColor: colors.primarySurface, borderWidth: 1, borderColor: colors.border,
+                          alignItems: 'center', justifyContent: 'center', marginTop: 2, flexShrink: 0,
+                        }}>
+                          <Text style={{ ...typography.small, color: colors.primary, fontWeight: '700', fontSize: 10 }}>
+                            {c.authorName.slice(0, 1).toUpperCase()}
+                          </Text>
+                        </View>
                         <View style={{ flex: 1 }}>
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                             <Text style={styles.commentAuthor}>{c.authorName}</Text>

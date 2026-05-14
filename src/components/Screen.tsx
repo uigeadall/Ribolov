@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
 import { useTheme } from '../services/themeContext';
 import { spacing } from '../theme/typography';
@@ -33,16 +34,24 @@ export function Screen({
   safeAreaEdges = ['top'],
   ...rest
 }: Props) {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
+
+  const gradientColors = (
+    mode === 'dark'
+      ? ['#060D14', '#050F12', '#060F12']
+      : ['#C8E7F5', '#DDF0F7', '#EEF5F7']
+  ) as [string, string, string];
+
   const styles = useMemo(
     () =>
       StyleSheet.create({
-        safe: { flex: 1, backgroundColor: colors.background },
+        safe: { flex: 1, backgroundColor: gradientColors[0] },
         fill: { flex: 1 },
         padded: { paddingHorizontal: spacing.xl, paddingTop: spacing.md, paddingBottom: spacing.lg },
         scroll: { flexGrow: 1, paddingBottom: spacing.xxl },
       }),
-    [colors.background]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [colors.background, mode]
   );
 
   const inner = (
@@ -80,6 +89,13 @@ export function Screen({
 
   return (
     <SafeAreaView style={styles.safe} edges={safeAreaEdges}>
+      <LinearGradient
+        colors={gradientColors}
+        start={{ x: 0.25, y: 0 }}
+        end={{ x: 0.75, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+        pointerEvents="none"
+      />
       <OfflineBanner />
       {body}
     </SafeAreaView>

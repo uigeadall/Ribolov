@@ -16,6 +16,7 @@ import {
 import { uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
 import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
+import { getUserPushToken, sendPushNotification } from './pushNotifications';
 
 const TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -171,6 +172,27 @@ export async function toggleStoryReaction(
     return null;
   }
   await setDoc(ref2, { reaction, displayName: (displayName || 'Рибар').slice(0, 120), createdAt: serverTimestamp() });
+
+  void (async () => {
+    const storySnap = await getDoc(doc(fb.db, 'stories', storyId));
+    if (!storySnap.exists()) return;
+    const ownerUid = storySnap.data()?.uid as string | undefined;
+    if (!ownerUid || ownerUid === uid) return;
+    const emoji = STORY_REACTIONS[reaction].emoji;
+    await setDoc(
+      doc(fb.db, 'users', ownerUid, 'notifications', `storyLike_${uid}_${storyId}`),
+      { actorUid: uid, actorName: (displayName || 'Рибар').slice(0, 120), type: 'storyLike', storyId, reactionEmoji: emoji, preview: '', read: false, createdAt: serverTimestamp() }
+    );
+    const token = await getUserPushToken(ownerUid);
+    if (!token) return;
+    await sendPushNotification({
+      to: token,
+      title: displayName || 'Рибар',
+      body: `Реагира ${emoji} на твоята история`,
+      data: { type: 'storyLike', storyId, actorUid: uid, actorName: displayName },
+    });
+  })().catch(() => {});
+
   return reaction;
 }
 
@@ -228,6 +250,24 @@ export async function addStoryComment(
     text: trimmed.slice(0, 500),
     createdAt: serverTimestamp(),
   });
+
+  void (async () => {
+    const storySnap = await getDoc(doc(fb.db, 'stories', storyId));
+    if (!storySnap.exists()) return;
+    const ownerUid = storySnap.data()?.uid as string | undefined;
+    if (!ownerUid || ownerUid === authorUid) return;
+    await addDoc(collection(fb.db, 'users', ownerUid, 'notifications'), {
+      actorUid: authorUid, actorName: (authorName || 'Рибар').slice(0, 120), type: 'storyComment', storyId, preview: trimmed.slice(0, 200), read: false, createdAt: serverTimestamp(),
+    });
+    const token = await getUserPushToken(ownerUid);
+    if (!token) return;
+    await sendPushNotification({
+      to: token,
+      title: authorName || 'Рибар',
+      body: `Коментира историята ти: ${trimmed.slice(0, 80)}`,
+      data: { type: 'storyComment', storyId, actorUid: authorUid, actorName: authorName },
+    });
+  })().catch(() => {});
 }
 
 export async function deleteStoryComment(storyId: string, commentId: string): Promise<void> {

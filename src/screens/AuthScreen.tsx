@@ -12,6 +12,7 @@ import { handleError } from '../utils/handleError';
 import { GoogleSignInSection } from '../components/GoogleSignInButton';
 import { AppleSignInSection } from '../components/AppleSignInSection';
 import { FacebookSignInSection } from '../components/FacebookSignInButton';
+import Toast from 'react-native-toast-message';
 
 export default function AuthScreen() {
   const navigation = useAppNavigation();
@@ -217,7 +218,7 @@ export default function AuthScreen() {
                       onPress: async () => {
                         try {
                           await resetPassword(target);
-                          Alert.alert('Изпратено', 'Провери пощата си за линк за нулиране на паролата.');
+                          Toast.show({ type: 'success', text1: 'Изпратено', text2: 'Провери пощата си за линк за нулиране на паролата.', visibilityTime: 3000 });
                         } catch (e: unknown) {
                           handleError(e);
                         }

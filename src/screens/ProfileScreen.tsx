@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
+import Toast from 'react-native-toast-message';
 import {
   View,
   Text,
@@ -36,8 +37,10 @@ import { handleError } from '../utils/handleError';
 import { ensureFirebase } from '../services/firebase';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 import { catchesStore } from '../storage/storage';
+import { LiquidBlobBg } from '../components/LiquidBlobBg';
 import type { Catch } from '../types';
 import * as Haptics from 'expo-haptics';
+import { useUnreadNotifCount } from '../hooks/useUnreadNotifCount';
 import {
   getUserPublicSummary,
   pushUserProfilePublic,
@@ -187,6 +190,7 @@ export default function ProfileScreen() {
   const [profileSaving, setProfileSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [pubExpanded, setPubExpanded] = useState(false);
   const [remotePhotoUrl, setRemotePhotoUrl] = useState<string | undefined>();
   const [pickedAvatarUri, setPickedAvatarUri] = useState<string | undefined>();
   // Resized base64 data URL — small enough for Firestore, used for save + persistent display
@@ -452,7 +456,7 @@ export default function ProfileScreen() {
     if (!configured || !user) return;
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert('Достъп', 'Нужен е достъп до снимките, за да избереш аватар.');
+      Toast.show({ type: 'info', text1: 'Достъп до снимките', text2: 'Разреши достъп в настройките на устройството.', visibilityTime: 3000 });
       return;
     }
     const res = await ImagePicker.launchImageLibraryAsync({
@@ -520,7 +524,7 @@ export default function ProfileScreen() {
       if (urlForAuth) {
         refreshOwnerPhotoOnPublicCatches(user.uid, urlForAuth).catch(() => {});
       }
-      Alert.alert('Готово', 'Профилът е запазен.');
+      Toast.show({ type: 'success', text1: 'Готово', text2: 'Профилът е запазен.', visibilityTime: 2500 });
     } catch (e: unknown) {
       handleError(e);
     } finally {
@@ -569,6 +573,7 @@ export default function ProfileScreen() {
     });
   };
 
+  const unreadNotifs = useUnreadNotifCount(user?.uid);
   const avatarUri = pickedAvatarUri ?? remotePhotoUrl ?? user?.photoURL ?? undefined;
   const initialLetter = (displayName || user?.email || '?').slice(0, 1).toUpperCase();
 
@@ -613,11 +618,12 @@ export default function ProfileScreen() {
             </View>
           ) : (
             <LinearGradient
-              colors={[colors.primary, colors.primaryLight]}
+              colors={[colors.primaryDark, colors.primary, colors.accent]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={{ alignItems: 'center', paddingTop: spacing.xl, paddingBottom: spacing.xl, paddingHorizontal: spacing.lg, marginHorizontal: -spacing.lg }}
+              style={{ alignItems: 'center', paddingTop: spacing.xl, paddingBottom: spacing.xl, paddingHorizontal: spacing.lg, marginHorizontal: -spacing.lg, overflow: 'hidden' }}
             >
+              <LiquidBlobBg />
               <Pressable
                 onPress={configured ? pickProfileAvatar : undefined}
                 disabled={!configured}
@@ -656,33 +662,47 @@ export default function ProfileScreen() {
             </LinearGradient>
           )}
 
-          {/* ── Achievements badges row ── */}
-          {catches.length > 0 && (
-            <View style={{ marginTop: spacing.md, marginBottom: spacing.xs }}>
-              <Text style={{ ...typography.overline, color: colors.textMuted, marginBottom: spacing.sm }}>ПОСТИЖЕНИЯ</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm, paddingBottom: 2 }}>
-                {BADGES.map((b) => (
-                  <View
-                    key={b.id}
-                    style={{
-                      alignItems: 'center', gap: 4,
-                      paddingVertical: spacing.sm + 2, paddingHorizontal: spacing.md,
-                      borderRadius: radius.md, borderWidth: 1,
-                      backgroundColor: b.earned ? colors.primarySurface : colors.surfaceAlt,
-                      borderColor: b.earned ? colors.primary + '88' : colors.border,
-                      opacity: b.earned ? 1 : 0.45,
-                      minWidth: 64,
-                    }}
-                  >
-                    <Text style={{ fontSize: 24, opacity: b.earned ? 1 : 0.5 }}>{b.emoji}</Text>
-                    <Text style={{ ...typography.small, color: b.earned ? colors.primary : colors.textMuted, fontWeight: '600', textAlign: 'center', fontSize: 10 }} numberOfLines={2}>
-                      {b.label}
-                    </Text>
-                  </View>
-                ))}
-              </ScrollView>
-            </View>
-          )}
+          {/* ── Achievements compact row ── */}
+          {catches.length > 0 && (() => {
+            const earned = BADGES.filter((b) => b.earned);
+            const pct = (earned.length / BADGES.length) * 100;
+            return (
+              <Pressable
+                onPress={() => { void Haptics.selectionAsync(); navigation.navigate('Achievements'); }}
+                style={({ pressed }) => ({
+                  marginTop: spacing.md,
+                  marginBottom: spacing.xs,
+                  backgroundColor: colors.card,
+                  borderRadius: radius.md,
+                  borderWidth: 1,
+                  borderColor: colors.cardEdge,
+                  padding: spacing.md,
+                  opacity: pressed ? 0.75 : 1,
+                  ...shadowCard(mode),
+                })}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm }}>
+                  <Ionicons name="trophy-outline" size={15} color={colors.primary} style={{ marginRight: spacing.xs }} />
+                  <Text style={{ ...typography.bodyBold, fontSize: 13, color: colors.text, flex: 1 }}>Постижения</Text>
+                  <Text style={{ ...typography.small, color: colors.textMuted, marginRight: spacing.xs }}>
+                    {earned.length}/{BADGES.length}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
+                </View>
+                <View style={{ height: 4, backgroundColor: colors.border, borderRadius: 2, overflow: 'hidden', marginBottom: spacing.sm }}>
+                  <View style={{ width: `${pct}%`, height: 4, backgroundColor: colors.primary, borderRadius: 2 }} />
+                </View>
+                <View style={{ flexDirection: 'row', gap: spacing.xs }}>
+                  {earned.slice(0, 5).map((b) => (
+                    <Text key={b.id} style={{ fontSize: 18 }}>{b.emoji}</Text>
+                  ))}
+                  {earned.length === 0 && (
+                    <Text style={{ ...typography.caption, color: colors.textMuted }}>Още няма спечелени — започни да ловиш!</Text>
+                  )}
+                </View>
+              </Pressable>
+            );
+          })()}
 
           {!configured && user ? (
             <View style={styles.warnBanner}>
@@ -694,39 +714,60 @@ export default function ProfileScreen() {
           ) : null}
 
           {user && configured ? (
-            <View style={styles.panel}>
-              <Text style={styles.panelTitle}>Публични данни</Text>
-              <Text style={styles.panelSub}>Лента и профилът ти към другите.</Text>
+            <View style={[styles.panel, { padding: 0, overflow: 'hidden' }]}>
+              <Pressable
+                onPress={() => { void Haptics.selectionAsync(); setPubExpanded((v) => !v); }}
+                style={{ flexDirection: 'row', alignItems: 'center', padding: spacing.md }}
+              >
+                <Ionicons name="person-circle-outline" size={18} color={colors.primary} style={{ marginRight: spacing.sm }} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.panelTitle}>Публичен профил</Text>
+                  {!pubExpanded && (displayName.trim() || city.trim()) ? (
+                    <Text style={styles.panelSub} numberOfLines={1}>
+                      {[displayName.trim(), city.trim()].filter(Boolean).join(' · ')}
+                    </Text>
+                  ) : null}
+                </View>
+                <Ionicons
+                  name={pubExpanded ? 'chevron-up' : 'chevron-down'}
+                  size={16}
+                  color={colors.textMuted}
+                />
+              </Pressable>
 
-              <Text style={[styles.fieldLabel, styles.fieldLabelFirst]}>Име</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Как да те виждат другите"
-                placeholderTextColor={colors.textMuted}
-                value={displayName}
-                onChangeText={setDisplayName}
-              />
+              {pubExpanded ? (
+                <View style={{ paddingHorizontal: spacing.md, paddingBottom: spacing.md, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+                  <Text style={[styles.fieldLabel, styles.fieldLabelFirst]}>Име</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Как да те виждат другите"
+                    placeholderTextColor={colors.textMuted}
+                    value={displayName}
+                    onChangeText={setDisplayName}
+                  />
 
-              <Text style={styles.fieldLabel}>Град или регион</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Напр. Балчик"
-                placeholderTextColor={colors.textMuted}
-                value={city}
-                onChangeText={setCity}
-              />
+                  <Text style={styles.fieldLabel}>Град или регион</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Напр. Балчик"
+                    placeholderTextColor={colors.textMuted}
+                    value={city}
+                    onChangeText={setCity}
+                  />
 
-              <Text style={styles.fieldLabel}>За теб</Text>
-              <TextInput
-                style={[styles.input, { minHeight: 72, textAlignVertical: 'top', paddingTop: spacing.sm + 4 }]}
-                placeholder="Кратко представяне…"
-                placeholderTextColor={colors.textMuted}
-                value={bio}
-                onChangeText={setBio}
-                multiline
-              />
+                  <Text style={styles.fieldLabel}>За теб</Text>
+                  <TextInput
+                    style={[styles.input, { minHeight: 72, textAlignVertical: 'top', paddingTop: spacing.sm + 4 }]}
+                    placeholder="Кратко представяне…"
+                    placeholderTextColor={colors.textMuted}
+                    value={bio}
+                    onChangeText={setBio}
+                    multiline
+                  />
 
-              <Button title="Запази промените" onPress={savePublicProfile} loading={profileSaving} style={{ marginTop: spacing.md }} />
+                  <Button title="Запази промените" onPress={savePublicProfile} loading={profileSaving} style={{ marginTop: spacing.md }} />
+                </View>
+              ) : null}
             </View>
           ) : null}
 
@@ -738,7 +779,7 @@ export default function ProfileScreen() {
             <MenuRow dense icon="newspaper-outline" title="Лента" onPress={() => navigation.navigate('Feed')} showDivider />
             <MenuRow dense icon="images-outline" title="Седмични и месечни класации" onPress={() => navigation.navigate('Classics')} showDivider />
             <MenuRow dense icon="bookmark-outline" title="Запазени" onPress={() => navigation.navigate('SavedPosts')} showDivider />
-            <MenuRow dense icon="notifications-outline" title="Известия" onPress={() => navigation.navigate('Notifications')} showDivider />
+            <MenuRow dense icon="notifications-outline" title="Известия" onPress={() => navigation.navigate('Notifications')} showDivider rightBadge={unreadNotifs || undefined} />
             <MenuRow dense icon="people-outline" title="Приятели" onPress={() => navigation.navigate('Friends')} showDivider />
             <MenuRow dense icon="trophy-outline" title="Постижения" onPress={() => navigation.navigate('Achievements')} showDivider />
             <MenuRow dense icon="calendar-outline" title="Излети" onPress={() => navigation.navigate('Trips')} showDivider />

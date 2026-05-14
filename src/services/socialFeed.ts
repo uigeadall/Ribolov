@@ -49,8 +49,9 @@ export type SocialNotification = {
   id: string;
   actorUid: string;
   actorName: string;
-  type: 'like' | 'comment' | 'follow';
-  catchId: string;
+  type: 'like' | 'comment' | 'follow' | 'storyLike' | 'storyComment';
+  catchId?: string;
+  storyId?: string;
   preview?: string;
   reactionEmoji?: string;
   read: boolean;
@@ -217,6 +218,18 @@ export async function toggleCatchLike(
 ): Promise<boolean> {
   const r = await toggleCatchReaction(catchId, myUid, catchOwnerUid, actorName, 'heart');
   return r !== null;
+}
+
+/** Batch-check which of the given catchIds the user has already liked. */
+export async function getMyLikedCatchIds(uid: string, catchIds: string[]): Promise<Set<string>> {
+  if (!catchIds.length) return new Set();
+  const fb = requireFirebase();
+  const snaps = await Promise.all(
+    catchIds.map((id) => getDoc(doc(fb.db, 'publicCatches', id, 'likes', uid)))
+  );
+  const liked = new Set<string>();
+  snaps.forEach((snap, i) => { if (snap.exists()) liked.add(catchIds[i]); });
+  return liked;
 }
 
 export function subscribeCatchComments(catchId: string, onNext: (comments: FeedComment[]) => void): () => void {

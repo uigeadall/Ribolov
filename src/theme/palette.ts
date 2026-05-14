@@ -20,6 +20,10 @@ export type AppColors = {
   success: string;
   warning: string;
   danger: string;
+  /** Border colour for glassmorphism cards */
+  glassBorder: string;
+  /** Top-left highlight start for glass card gradient */
+  glassOverlay: string;
 };
 
 export const lightColors: AppColors = {
@@ -40,6 +44,8 @@ export const lightColors: AppColors = {
   success: '#00A86A',
   warning: '#D98C1A',
   danger: '#C93030',
+  glassBorder: 'rgba(255,255,255,0.52)',
+  glassOverlay: 'rgba(255,255,255,0.72)',
 };
 
 export const darkColors: AppColors = {
@@ -60,6 +66,8 @@ export const darkColors: AppColors = {
   success: '#00D98E',
   warning: '#F0A830',
   danger: '#FF6B6B',
+  glassBorder: 'rgba(0,196,232,0.16)',
+  glassOverlay: 'rgba(255,255,255,0.055)',
 };
 
 /** Fallback за ErrorBoundary извън ThemeProvider */

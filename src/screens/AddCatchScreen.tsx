@@ -828,23 +828,34 @@ function PhotoSection({
 }: PhotoSectionProps) {
   return (
     <>
-      <Pressable
-        onPress={() => {
-          if (photoUri && shareToFeed) onTakePhoto();
-          else if (photoUri) onPickPhoto();
-          else onTakePhoto();
-        }}
-        style={styles.photoBox}
-      >
+      <View style={[styles.photoBox, photoUri ? { height: 300, borderWidth: 0, borderRadius: radius.xl } : null]}>
         {photoUri ? (
-          <Image source={{ uri: photoUri }} style={styles.photo} contentFit="cover" />
+          <>
+            <Image source={{ uri: photoUri }} style={styles.photo} contentFit="cover" />
+            <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', gap: spacing.sm, padding: spacing.md, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.32)' }}>
+              <Pressable
+                onPress={shareToFeed ? onTakePhoto : onPickPhoto}
+                style={{ backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: 20, paddingHorizontal: spacing.md, paddingVertical: 6, flexDirection: 'row', gap: 4, alignItems: 'center' }}
+              >
+                <Ionicons name={shareToFeed ? 'camera' : 'image'} size={14} color="#111" />
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#111' }}>Смени</Text>
+              </Pressable>
+              <Pressable
+                onPress={onClearPhoto}
+                style={{ backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 20, paddingHorizontal: spacing.md, paddingVertical: 6, flexDirection: 'row', gap: 4, alignItems: 'center' }}
+              >
+                <Ionicons name="trash" size={14} color="#fff" />
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>Премахни</Text>
+              </Pressable>
+            </View>
+          </>
         ) : (
-          <View style={styles.photoPlaceholder}>
+          <Pressable onPress={onTakePhoto} style={[styles.photoPlaceholder, { width: '100%' }]}>
             <Ionicons name="camera-outline" size={36} color={colors.primary} />
             <Text style={styles.photoText}>Добави снимка</Text>
-          </View>
+          </Pressable>
         )}
-      </Pressable>
+      </View>
 
       {photoUri ? (
         <>
@@ -867,26 +878,7 @@ function PhotoSection({
         </>
       ) : null}
 
-      {photoUri ? (
-        <View style={styles.photoActions}>
-          {shareToFeed ? (
-            <Button
-              title="Нова снимка (камера)"
-              variant="secondary"
-              onPress={onTakePhoto}
-              style={{ flex: 1 }}
-            />
-          ) : (
-            <Button title="Смени" variant="secondary" onPress={onPickPhoto} style={{ flex: 1 }} />
-          )}
-          <Button
-            title="Премахни"
-            variant="ghost"
-            onPress={onClearPhoto}
-            style={{ flex: 1 }}
-          />
-        </View>
-      ) : (
+      {!photoUri ? (
         <View style={styles.photoActions}>
           <Button
             title="От галерията"
@@ -897,7 +889,7 @@ function PhotoSection({
           />
           <Button title="Снимай" variant="secondary" onPress={onTakePhoto} style={{ flex: 1 }} />
         </View>
-      )}
+      ) : null}
 
       {!photoUri && shareToFeed ? (
         <Text style={[styles.muted, { marginTop: spacing.xs }]}>

@@ -9,15 +9,14 @@ type Props = {
   title: string;
   subtitle?: string;
   onPress: () => void;
-  /** Линия под реда (за групирани менюта в карта) */
   showDivider?: boolean;
-  /** По-тесни редове (напр. дълги списъци в профила) */
   dense?: boolean;
-  /** Червено оформление (опасни действия) */
   destructive?: boolean;
+  /** Red badge count shown before the chevron */
+  rightBadge?: number;
 };
 
-export function MenuRow({ icon, title, subtitle, onPress, showDivider, dense, destructive }: Props) {
+export function MenuRow({ icon, title, subtitle, onPress, showDivider, dense, destructive, rightBadge }: Props) {
   const { colors } = useTheme();
   const iconBox = dense ? 30 : 40;
   const iconRadius = dense ? 9 : 12;
@@ -90,6 +89,11 @@ export function MenuRow({ icon, title, subtitle, onPress, showDivider, dense, de
           <Text style={styles.title}>{title}</Text>
           {subtitle ? <Text style={styles.sub}>{subtitle}</Text> : null}
         </View>
+        {rightBadge ? (
+          <View style={{ backgroundColor: '#E53935', borderRadius: 10, minWidth: 20, height: 20, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5, marginRight: 6 }}>
+            <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{rightBadge > 99 ? '99+' : rightBadge}</Text>
+          </View>
+        ) : null}
         <Ionicons name="chevron-forward" size={chevronSz} color={chevronColor} />
       </Pressable>
       {showDivider ? <View style={styles.divider} /> : null}

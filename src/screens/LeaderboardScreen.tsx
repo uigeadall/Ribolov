@@ -190,6 +190,43 @@ function createStyles(colors: AppColors, mode: 'light' | 'dark') {
 
 type WaterModalTab = 'all' | 'dams' | 'rivers';
 
+function Podium({ rows, colors }: { rows: LeaderboardRow[]; colors: AppColors }) {
+  const cols = [
+    { row: rows[1], medal: '🥈', color: '#A8A8A8', pedH: 52, fontSize: 26 },
+    { row: rows[0], medal: '🥇', color: '#FFB800', pedH: 76, fontSize: 30, crown: true },
+    { row: rows[2] ?? null, medal: '🥉', color: '#B87333', pedH: 36, fontSize: 22 },
+  ];
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.sm, gap: spacing.sm }}>
+      {cols.map(({ row, medal, color, pedH, fontSize, crown }, idx) => {
+        if (!row) return <View key={idx} style={{ flex: 1 }} />;
+        return (
+          <View key={idx} style={{ flex: 1, alignItems: 'center' }}>
+            {crown && <Text style={{ fontSize: 18, marginBottom: 2 }}>👑</Text>}
+            <Text style={{ fontSize }}>{medal}</Text>
+            <Text style={{ ...typography.small, color: colors.text, fontWeight: '700', textAlign: 'center', marginTop: 4, lineHeight: 16 }} numberOfLines={2}>
+              {row.ownerName}
+            </Text>
+            <Text style={{ ...typography.caption, color: colors.textMuted, marginTop: 2, textAlign: 'center' }}>
+              {row.totalKg.toFixed(1)} кг
+            </Text>
+            <View style={{
+              width: '100%', height: pedH, marginTop: spacing.sm,
+              backgroundColor: color + '28',
+              borderTopLeftRadius: 6, borderTopRightRadius: 6,
+              borderTopWidth: 2, borderLeftWidth: 1, borderRightWidth: 1,
+              borderColor: color,
+              alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Text style={{ fontWeight: '800', fontSize: 18, color }}>{idx === 0 ? '2' : idx === 1 ? '1' : '3'}</Text>
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 export default function LeaderboardScreen() {
   const navigation = useAppNavigation();
   const route = useRoute<RouteProp<ProfileStackParamList, 'Leaderboard'>>();
@@ -398,7 +435,8 @@ export default function LeaderboardScreen() {
         <FlatList
           data={rows}
           keyExtractor={(item) => item.ownerUid}
-          contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}
+          contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl }}
+          ListHeaderComponent={rows.length >= 2 ? <Podium rows={rows} colors={colors} /> : null}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => reload(true)} tintColor={colors.primary} />}
           renderItem={({ item }) => (
             <Pressable

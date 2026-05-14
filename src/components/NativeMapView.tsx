@@ -33,8 +33,11 @@ function rnMapType(mt: LeafletMapType): 'standard' | 'satellite' | 'hybrid' {
 
 function SpotPin() {
   return (
-    <View style={styles.spotPlate}>
-      <Ionicons name="fish-outline" size={26} color="#E8F8FF" />
+    <View style={{ alignItems: 'center' }}>
+      <View style={styles.spotPlate}>
+        <Ionicons name="fish-outline" size={22} color="#E8F8FF" />
+      </View>
+      <View style={styles.spotTail} />
     </View>
   );
 }
@@ -48,8 +51,9 @@ function DamPin({ name, showLabel }: { name: string; showLabel: boolean }) {
         </View>
       ) : null}
       <View style={[styles.iconPlate, styles.plateDam]}>
-        <Ionicons name="layers-outline" size={26} color="#C8F0E8" />
+        <Ionicons name="layers-outline" size={24} color="#C8F0E8" />
       </View>
+      <View style={styles.damTail} />
     </View>
   );
 }
@@ -63,8 +67,9 @@ function RiverPin({ name, showLabel }: { name: string; showLabel: boolean }) {
         </View>
       ) : null}
       <View style={[styles.iconPlate, styles.plateRiver]}>
-        <Ionicons name="water-outline" size={27} color="#E8FFF2" />
+        <Ionicons name="water-outline" size={24} color="#E8FFF2" />
       </View>
+      <View style={styles.riverTail} />
     </View>
   );
 }
@@ -205,7 +210,7 @@ export const NativeMapView = forwardRef<LeafletMapHandle, LeafletMapProps>(
           <Marker
             key={`spot-${s.id}`}
             coordinate={{ latitude: s.latitude, longitude: s.longitude }}
-            anchor={{ x: 0.5, y: 0.5 }}
+            anchor={{ x: 0.5, y: 1 }}
             tracksViewChanges={spotTracks}
             onPress={() => onMarkerPress(s.id)}
           >
@@ -335,5 +340,41 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
     shadowOffset: { width: 0, height: 2 },
     elevation: Platform.OS === 'android' ? 0 : 5,
+  },
+  spotTail: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 7,
+    borderRightWidth: 7,
+    borderTopWidth: 10,
+    borderStyle: 'solid',
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: '#1A7A9C',
+    marginTop: -1,
+  },
+  damTail: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 6,
+    borderRightWidth: 6,
+    borderTopWidth: 9,
+    borderStyle: 'solid',
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: '#062D3D',
+    marginTop: -1,
+  },
+  riverTail: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 6,
+    borderRightWidth: 6,
+    borderTopWidth: 9,
+    borderStyle: 'solid',
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: '#2E9B5A',
+    marginTop: -1,
   },
 });

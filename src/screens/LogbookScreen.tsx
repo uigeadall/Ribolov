@@ -36,6 +36,7 @@ import { catchesStore } from '../storage/storage';
 import { Catch } from '../types';
 import { speciesList } from '../data/species';
 import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
+import * as Haptics from 'expo-haptics';
 
 const CATCH_ACCENTS = ['#1A7A9C', '#2E9B5A', '#0E4D64', '#7BB7CC', '#006E8A', '#C49A00'];
 function speciesAccent(name: string): string {
@@ -254,7 +255,7 @@ const CatchListRow = React.memo(function CatchListRow({
     <Swipeable
       renderRightActions={() => (
         <Pressable
-          onPress={() => onDelete(item)}
+          onPress={() => { void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); onDelete(item); }}
           style={{ backgroundColor: colors.danger, justifyContent: 'center', alignItems: 'center', width: 76, borderRadius: radius.md, marginBottom: spacing.sm }}
         >
           <Ionicons name="trash-outline" size={22} color={colors.white} />
@@ -287,20 +288,33 @@ const CatchListRow = React.memo(function CatchListRow({
               ) : null}
             </View>
             <View style={styles.itemBody}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
                 <Text style={styles.itemTitle} numberOfLines={1}>{item.speciesName}</Text>
-                {isPersonalBestCatch(item, personalBests) ? <Text style={{ fontSize: 14 }}>🏆</Text> : null}
+                {isPersonalBestCatch(item, personalBests) ? (
+                  <View style={{ backgroundColor: '#FFD70022', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: '#C49A0055' }}>
+                    <Text style={{ color: '#C49A00', fontSize: 9, fontWeight: '700', letterSpacing: 0.5 }}>РЕКОРД</Text>
+                  </View>
+                ) : null}
               </View>
               {item.photoTitle ? (
                 <Text style={styles.photoTitleLine} numberOfLines={1}>
                   „{item.photoTitle}"
                 </Text>
               ) : null}
-              <Text style={styles.itemMeta}>
-                {new Date(item.date).toLocaleDateString('bg-BG')}
-                {item.weightKg != null ? ` · ${item.weightKg} кг` : ''}
-                {item.lengthCm != null ? ` · ${item.lengthCm} см` : ''}
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap', marginTop: 3 }}>
+                {item.weightKg != null && (() => {
+                  const ac = speciesAccent(item.speciesName);
+                  return (
+                    <View style={{ backgroundColor: ac + '1A', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 7, borderWidth: 1, borderColor: ac + '44' }}>
+                      <Text style={{ color: ac, fontSize: 11, fontWeight: '700' }}>{item.weightKg} кг</Text>
+                    </View>
+                  );
+                })()}
+                {item.lengthCm != null && (
+                  <Text style={[styles.itemMeta, { marginTop: 0 }]}>{item.lengthCm} см</Text>
+                )}
+                <Text style={[styles.itemMeta, { marginTop: 0 }]}>{new Date(item.date).toLocaleDateString('bg-BG')}</Text>
+              </View>
               {item.location?.name ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
                   <Ionicons name="location-outline" size={14} color={colors.textMuted} />
@@ -370,7 +384,7 @@ const CatchGridItem = React.memo(function CatchGridItem({ item, colors, personal
 function SpeciesChip({ label, selected, onPress, colors, styles }: SpeciesChipProps) {
   return (
     <Pressable
-      onPress={onPress}
+      onPress={() => { void Haptics.selectionAsync(); onPress(); }}
       accessibilityRole="button"
       android_ripple={{ color: `${colors.primary}22` }}
       style={({ pressed }) => [

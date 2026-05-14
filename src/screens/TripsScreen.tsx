@@ -17,7 +17,7 @@ import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { EmptyState } from '../components/EmptyState';
-import { tripsStore, newId } from '../storage/storage';
+import { tripsStore, catchesStore, newId } from '../storage/storage';
 import type { TripPlan } from '../types';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
@@ -32,11 +32,16 @@ export default function TripsScreen() {
   const [showPicker, setShowPicker] = useState(false);
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const [titleError, setTitleError] = useState('');
+  const [catchCountByTrip, setCatchCountByTrip] = useState<Map<string, number>>(new Map());
 
   const load = useCallback(() => {
-    tripsStore.list().then((list) =>
-      setItems([...list].sort((a, b) => b.dateIso.localeCompare(a.dateIso)))
-    );
+    Promise.all([tripsStore.list(), catchesStore.list()]).then(([list, catches]) => {
+      setItems([...list].sort((a, b) => b.dateIso.localeCompare(a.dateIso)));
+      const m = new Map<string, number>();
+      catches.forEach((c) => { if (c.tripId) m.set(c.tripId, (m.get(c.tripId) ?? 0) + 1); });
+      setCatchCountByTrip(m);
+    });
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -54,9 +59,10 @@ export default function TripsScreen() {
 
   const addTrip = async () => {
     if (!title.trim()) {
-      Alert.alert('Заглавие', 'Въведи ime на излета.');
+      setTitleError('Въведи заглавие на излета');
       return;
     }
+    setTitleError('');
     setSaving(true);
     try {
       await tripsStore.save({
@@ -101,12 +107,13 @@ export default function TripsScreen() {
         <Card>
           <Text style={{ ...typography.h3, color: colors.text }}>Нов излет</Text>
           <TextInput
-            style={inputStyle}
+            style={[inputStyle, titleError ? { borderColor: '#E53935' } : {}]}
             placeholder="Заглавие (напр. Искър сутрин)"
             placeholderTextColor={colors.textMuted}
             value={title}
-            onChangeText={setTitle}
+            onChangeText={(v) => { setTitle(v); if (titleError) setTitleError(''); }}
           />
+          {titleError ? <Text style={{ color: '#E53935', fontSize: 12, marginTop: 4 }}>{titleError}</Text> : null}
 
           {/* Date picker trigger */}
           <Pressable
@@ -179,29 +186,42 @@ export default function TripsScreen() {
           />
         }
         ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
-        renderItem={({ item }) => (
-          <Pressable onPress={() => navigation.navigate('TripDetail', { id: item.id })}>
-            <Card>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-                <Ionicons name="boat-outline" size={22} color={colors.primary} />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ ...typography.bodyBold, color: colors.text }}>{item.title}</Text>
-                  <Text style={{ ...typography.caption, color: colors.textMuted }}>
-                    {new Date(item.dateIso).toLocaleDateString('bg-BG', { day: 'numeric', month: 'long', year: 'numeric' })}
-                  </Text>
+        renderItem={({ item }) => {
+          const catchCount = catchCountByTrip.get(item.id) ?? 0;
+          return (
+            <Pressable onPress={() => navigation.navigate('TripDetail', { id: item.id })}>
+              <Card style={{ borderLeftWidth: 3, borderLeftColor: colors.primary }}>
+                <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md }}>
+                  <View style={{ width: 42, height: 42, borderRadius: radius.md, backgroundColor: colors.primarySurface, alignItems: 'center', justifyContent: 'center' }}>
+                    <Ionicons name="boat-outline" size={22} color={colors.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ ...typography.bodyBold, color: colors.text }}>{item.title}</Text>
+                    <Text style={{ ...typography.caption, color: colors.textMuted }}>
+                      {new Date(item.dateIso).toLocaleDateString('bg-BG', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    </Text>
+                    {item.notes ? (
+                      <Text style={{ ...typography.small, color: colors.textMuted, marginTop: 2 }} numberOfLines={1}>{item.notes}</Text>
+                    ) : null}
+                  </View>
+                  <View style={{ alignItems: 'flex-end', gap: spacing.xs }}>
+                    {catchCount > 0 ? (
+                      <View style={{ backgroundColor: colors.primarySurface, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 2, borderWidth: 1, borderColor: colors.border }}>
+                        <Text style={{ ...typography.small, color: colors.primary, fontWeight: '700' }}>🎣 {catchCount}</Text>
+                      </View>
+                    ) : null}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                      <Pressable hitSlop={8} onPress={() => confirmDelete(item)}>
+                        <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                      </Pressable>
+                      <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+                    </View>
+                  </View>
                 </View>
-                <Pressable
-                  hitSlop={8}
-                  onPress={() => confirmDelete(item)}
-                  style={{ padding: spacing.xs }}
-                >
-                  <Ionicons name="trash-outline" size={18} color={colors.danger} />
-                </Pressable>
-                <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-              </View>
-            </Card>
-          </Pressable>
-        )}
+              </Card>
+            </Pressable>
+          );
+        }}
       />
     </Screen>
   );

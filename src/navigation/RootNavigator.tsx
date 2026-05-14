@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import {
   NavigationContainer,
   DefaultTheme,
@@ -21,6 +22,7 @@ import {
   TabsParamList,
 } from './types';
 import { useNotificationNavigation } from '../hooks/useNotificationNavigation';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import HomeScreen from '../screens/HomeScreen';
 import LogbookScreen from '../screens/LogbookScreen';
@@ -173,6 +175,17 @@ function ProfileNavigator() {
 function TabNavigator() {
   const { colors, mode } = useTheme();
   const insets = useSafeAreaInsets();
+  const [feedBadge, setFeedBadge] = React.useState<string | undefined>(undefined);
+
+  React.useEffect(() => {
+    AsyncStorage.getItem('@ribolov/feedLastVisit')
+      .then((v) => {
+        if (!v || Date.now() - parseInt(v, 10) > 30 * 60 * 1000) {
+          setFeedBadge('·');
+        }
+      })
+      .catch(() => {});
+  }, []);
   const tabRowInner = 34;
   const tabPadTop = 2;
   // Use the full bottom inset so the tab icons clear the Android system navigation bar.
@@ -181,19 +194,35 @@ function TabNavigator() {
 
   const tabBarStyle = useMemo(
     () => ({
-      backgroundColor: colors.card,
+      backgroundColor: 'transparent',
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: colors.border,
       elevation: 12,
-      shadowColor: '#000',
+      shadowColor: mode === 'dark' ? colors.primary : '#093545',
       shadowOffset: { width: 0, height: -2 },
-      shadowOpacity: mode === 'dark' ? 0.28 : 0.06,
+      shadowOpacity: mode === 'dark' ? 0.18 : 0.06,
       shadowRadius: 10,
       paddingTop: tabPadTop,
       paddingBottom: bottomPad,
       height: tabPadTop + tabRowInner + bottomPad,
     }),
-    [colors.border, colors.card, mode, bottomPad]
+    [colors.border, colors.primary, mode, bottomPad]
+  );
+
+  const tabBarBackground = useMemo(
+    () => () => (
+      <LinearGradient
+        colors={
+          mode === 'dark'
+            ? [colors.card + 'E0', colors.card]
+            : ['rgba(238,245,247,0.88)', colors.card]
+        }
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+      />
+    ),
+    [colors.card, mode]
   );
 
   return (
@@ -205,6 +234,7 @@ function TabNavigator() {
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarStyle,
+        tabBarBackground,
         tabBarButton: (props) => (
           <PlatformPressable
             {...props}
@@ -269,9 +299,14 @@ function TabNavigator() {
       <Tabs.Screen
         name="FeedTab"
         component={FeedNavigator}
-        options={{ title: 'Лента' }}
+        options={{ title: 'Лента', tabBarBadge: feedBadge }}
         listeners={({ navigation }) => ({
-          tabPress: (e) => { e.preventDefault(); navigation.navigate('FeedTab', { screen: 'FeedList' }); },
+          tabPress: (e) => {
+            e.preventDefault();
+            setFeedBadge(undefined);
+            AsyncStorage.setItem('@ribolov/feedLastVisit', String(Date.now())).catch(() => {});
+            navigation.navigate('FeedTab', { screen: 'FeedList' });
+          },
         })}
       />
       <Tabs.Screen

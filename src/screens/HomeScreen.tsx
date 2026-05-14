@@ -36,6 +36,8 @@ import { Skeleton } from '../components/Skeleton';
 import { Image } from 'expo-image';
 import type { Catch } from '../types/index';
 import { useAppNavigation } from '../navigation/useAppNavigation';
+import { LiquidBlobBg } from '../components/LiquidBlobBg';
+import { useCountUp } from '../hooks/useCountUp';
 
 const FALLBACK_COORD = { latitude: 42.6977, longitude: 23.3219 };
 
@@ -55,6 +57,16 @@ function greetingBg(): string {
   if (h < 12) return 'Добро утро';
   if (h < 18) return 'Добър ден';
   return 'Добър вечер';
+}
+
+function weatherMoodColors(code: number): [string, string] {
+  if (code <= 1) return ['rgba(255,183,0,0.09)', 'transparent'];
+  if (code <= 3) return ['rgba(255,210,80,0.06)', 'transparent'];
+  if (code <= 49) return ['rgba(150,180,220,0.07)', 'transparent'];
+  if (code <= 67) return ['rgba(30,90,200,0.09)', 'transparent'];
+  if (code <= 77) return ['rgba(180,220,255,0.09)', 'transparent'];
+  if (code <= 82) return ['rgba(30,90,200,0.09)', 'transparent'];
+  return ['rgba(90,20,180,0.09)', 'transparent'];
 }
 
 function createHomeStyles(colors: AppColors) {
@@ -88,13 +100,13 @@ function createHomeStyles(colors: AppColors) {
     statsRow: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.sm },
     statBox: {
       flex: 1,
-      backgroundColor: colors.primarySurface,
       borderRadius: radius.md,
       paddingVertical: spacing.md + 4,
       paddingHorizontal: spacing.md,
       borderWidth: 1,
-      borderColor: colors.border,
+      borderColor: colors.glassBorder,
       alignItems: 'center',
+      overflow: 'hidden',
     },
     statNum: { ...typography.h2, fontSize: 26, color: colors.primary, letterSpacing: -0.5 },
     statLbl: { ...typography.caption, color: colors.textMuted, marginTop: 4, textAlign: 'center' },
@@ -170,13 +182,23 @@ type WeatherCardProps = {
   onRetry: () => void;
   onOpenMap: () => void;
   pressureTrend: 'up' | 'down' | 'stable';
+  mode: 'light' | 'dark';
 };
 
 const WeatherCard = React.memo(function WeatherCard({
-  weather, weatherStatus, locLabel, colors, styles, onRetry, onOpenMap, pressureTrend,
+  weather, weatherStatus, locLabel, colors, styles, onRetry, onOpenMap, pressureTrend, mode,
 }: WeatherCardProps) {
   return (
     <Card style={styles.weatherCard}>
+      {weather?.weatherCode != null && (
+        <LinearGradient
+          colors={weatherMoodColors(weather.weatherCode)}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFillObject}
+          pointerEvents="none"
+        />
+      )}
       {weatherStatus === 'loading' && !weather ? (
         <View style={{ gap: spacing.md }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
@@ -365,7 +387,7 @@ const ForecastSection = React.memo(function ForecastSection({
 
 export default function HomeScreen() {
   const navigation = useAppNavigation();
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const { user, configured } = useAuth();
   const firstName = user?.displayName?.trim().split(/\s+/)[0] || 'рибарю';
   const styles = useMemo(() => createHomeStyles(colors), [colors]);
@@ -377,6 +399,8 @@ export default function HomeScreen() {
   const [locLabel, setLocLabel] = useState<string>('София (примерно)');
   const [totalCatches, setTotalCatches] = useState(0);
   const [weekCatches, setWeekCatches] = useState(0);
+  const animatedTotal = useCountUp(totalCatches);
+  const animatedWeek = useCountUp(weekCatches);
   const [lastCatch, setLastCatch] = useState<Catch | null>(null);
   const [bestThisMonth, setBestThisMonth] = useState<Catch | null>(null);
   const [daysSinceCatch, setDaysSinceCatch] = useState<number | null>(null);
@@ -385,6 +409,7 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [unreadMsgs, setUnreadMsgs] = useState(0);
   const [unreadNotifs, setUnreadNotifs] = useState(0);
+  const [bestSpot, setBestSpot] = useState<{ name: string; count: number } | null>(null);
 
   const loadStats = useCallback(async () => {
     const list = await catchesStore.list();
@@ -416,6 +441,10 @@ export default function HomeScreen() {
       null
     );
     setBestThisMonth(best);
+    const locMap = new Map<string, number>();
+    list.forEach((c) => { if (c.location?.name) locMap.set(c.location.name, (locMap.get(c.location.name) ?? 0) + 1); });
+    const topSpot = [...locMap.entries()].sort((a, b) => b[1] - a[1])[0];
+    setBestSpot(topSpot ? { name: topSpot[0], count: topSpot[1] } : null);
     // Load top classic in background (best-effort)
     fetchRankedClassicPhotos(periodStartIso('week'), { maxCandidates: 20, resultLimit: 1 })
       .then((r) => setTopClassic(r[0] ?? null))
@@ -522,8 +551,9 @@ export default function HomeScreen() {
         colors={[colors.primaryDark, colors.primary, colors.primaryLight]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={{ borderRadius: radius.xl, marginBottom: spacing.md, padding: spacing.lg }}
+        style={{ borderRadius: radius.xl, marginBottom: spacing.md, padding: spacing.lg, overflow: 'hidden' }}
       >
+        <LiquidBlobBg />
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <View style={{ flex: 1 }}>
             <Text style={{ ...typography.overline, color: 'rgba(255,255,255,0.65)', marginBottom: 4 }}>RIBOLOV</Text>
@@ -577,6 +607,7 @@ export default function HomeScreen() {
         onRetry={loadWeather}
         onOpenMap={() => navigation.navigate('MapTab')}
         pressureTrend={pressureTrend}
+        mode={mode}
       />
 
       {(forecast.length > 0 || weatherStatus === 'loading') ? (
@@ -593,13 +624,23 @@ export default function HomeScreen() {
       <Card style={{ marginBottom: spacing.xl }}>
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
+            <LinearGradient
+              colors={mode === 'dark' ? ['rgba(0,196,232,0.12)', 'rgba(0,196,232,0.03)'] : [colors.primarySurface, 'rgba(212,235,243,0.35)']}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFillObject}
+            />
             <Ionicons name="archive-outline" size={20} color={colors.primary} style={{ marginBottom: 6 }} />
-            <Text style={styles.statNum}>{totalCatches}</Text>
+            <Text style={styles.statNum}>{animatedTotal}</Text>
             <Text style={styles.statLbl}>общо записа</Text>
           </View>
           <View style={styles.statBox}>
+            <LinearGradient
+              colors={mode === 'dark' ? ['rgba(0,196,232,0.12)', 'rgba(0,196,232,0.03)'] : [colors.primarySurface, 'rgba(212,235,243,0.35)']}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFillObject}
+            />
             <Ionicons name="time-outline" size={20} color={colors.primary} style={{ marginBottom: 6 }} />
-            <Text style={styles.statNum}>{weekCatches}</Text>
+            <Text style={styles.statNum}>{animatedWeek}</Text>
             <Text style={styles.statLbl}>последни 7 дни</Text>
           </View>
         </View>
@@ -611,6 +652,26 @@ export default function HomeScreen() {
           style={{ marginTop: spacing.md }}
         />
       </Card>
+
+      {bestSpot ? (
+        <Pressable onPress={() => navigation.navigate('MapTab')} style={{ marginBottom: spacing.xl }}>
+          <Card style={{ borderLeftWidth: 3, borderLeftColor: colors.primary }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+              <View style={{ width: 40, height: 40, borderRadius: radius.md, backgroundColor: colors.primarySurface, alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="location" size={20} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ ...typography.overline, color: colors.textMuted, marginBottom: 2 }}>НАЙ-ДОБЪР СПОТ</Text>
+                <Text style={{ ...typography.bodyBold, color: colors.text }} numberOfLines={1}>{bestSpot.name}</Text>
+                <Text style={{ ...typography.caption, color: colors.textMuted }}>
+                  {bestSpot.count} {bestSpot.count === 1 ? 'улов' : 'улова'} записани тук
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+            </View>
+          </Card>
+        </Pressable>
+      ) : null}
 
       {/* ── Classics preview ── */}
       <SectionHeader hint="КЛАСИКИ" title="Снимка на седмицата" subtitle="Гласувай с харесване · най-много харесвания печели." />

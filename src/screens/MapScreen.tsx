@@ -11,6 +11,8 @@ import {
   ActivityIndicator,
   Switch,
   InteractionManager,
+  Animated,
+  PanResponder,
 } from 'react-native';
 import * as Location from 'expo-location';
 import * as ScreenOrientation from 'expo-screen-orientation';
@@ -52,6 +54,7 @@ import {
 import { getDamLevel, type DamLevel } from '../services/damLevels';
 import { handleError } from '../utils/handleError';
 import { useAppNavigation } from '../navigation/useAppNavigation';
+import Toast from 'react-native-toast-message';
 import type { User } from 'firebase/auth';
 
 type SelectedWater = { kind: 'dam'; item: Dam } | { kind: 'river'; item: River };
@@ -437,7 +440,7 @@ export default function MapScreen() {
       setSelectedWater(null);
       setShowFavoritesOnly(true);
       mapRef.current?.flyTo(item.latitude, item.longitude, 12);
-      Alert.alert('Запазен в любими', `„${item.name}" е добавен в любимите ти спотове.`);
+      Toast.show({ type: 'success', text1: 'Запазен в любими', text2: `„${item.name}" е добавен в любимите ти спотове.`, visibilityTime: 2500 });
     },
     [spots]
   );
@@ -947,7 +950,11 @@ const SpotScrollBar = React.memo(function SpotScrollBar({
             <Pressable key={s.id} style={[styles.spotCard, { borderLeftWidth: 3, borderLeftColor: waterTypeColor(s.waterType) }]} onPress={() => onSpotPress(s)}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                 {s.isFavorite ? <Ionicons name="star" size={14} color="#E8B923" /> : null}
-                <View style={[styles.spotDot, { backgroundColor: waterTypeColor(s.waterType) }]} />
+                <Ionicons
+                  name={WATER_TYPES.find((x) => x.id === s.waterType)?.ion ?? 'water-outline'}
+                  size={15}
+                  color={waterTypeColor(s.waterType)}
+                />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.spotName} numberOfLines={1}>
@@ -1022,26 +1029,37 @@ const NewSpotModal = React.memo(function NewSpotModal({
             multiline
             placeholderTextColor={colors.textMuted}
           />
-          <View style={styles.types}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md }}>
             {WATER_TYPES.map((t) => (
               <Pressable
                 key={t.id}
                 onPress={() => onChangeWaterType(t.id)}
-                style={[
-                  styles.typeChip,
-                  waterType === t.id && { backgroundColor: t.color, borderColor: t.color },
-                ]}
+                style={{
+                  flex: 1,
+                  minWidth: '28%',
+                  alignItems: 'center',
+                  paddingVertical: spacing.md,
+                  paddingHorizontal: spacing.sm,
+                  borderRadius: radius.md,
+                  borderWidth: 2,
+                  backgroundColor: waterType === t.id ? t.color + '22' : colors.card,
+                  borderColor: waterType === t.id ? t.color : colors.border,
+                }}
               >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Ionicons
-                    name={t.ion}
-                    size={16}
-                    color={waterType === t.id ? colors.white : colors.textMuted}
-                  />
-                  <Text style={[styles.typeText, waterType === t.id && styles.typeTextActive]}>
-                    {t.label}
-                  </Text>
-                </View>
+                <Ionicons
+                  name={t.ion}
+                  size={22}
+                  color={waterType === t.id ? t.color : colors.textMuted}
+                />
+                <Text style={{
+                  ...typography.small,
+                  color: waterType === t.id ? t.color : colors.text,
+                  fontWeight: '600',
+                  marginTop: 4,
+                  textAlign: 'center',
+                }}>
+                  {t.label}
+                </Text>
               </Pressable>
             ))}
           </View>
@@ -1115,6 +1133,24 @@ const WaterBodySheet = React.memo(function WaterBodySheet({
   onSubmitReport,
 }: WaterBodySheetProps) {
   const styles = useMemo(() => createMapStyles(colors), [colors]);
+  const sheetPanY = useRef(new Animated.Value(0)).current;
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) => g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx),
+      onPanResponderMove: (_, g) => { if (g.dy > 0) sheetPanY.setValue(g.dy); },
+      onPanResponderRelease: (_, g) => {
+        if (g.dy > 80 || g.vy > 0.5) {
+          Animated.timing(sheetPanY, { toValue: 700, duration: 200, useNativeDriver: true }).start(() => {
+            sheetPanY.setValue(0);
+            onClose();
+          });
+        } else {
+          Animated.spring(sheetPanY, { toValue: 0, useNativeDriver: true, speed: 30, bounciness: 0 }).start();
+        }
+      },
+    })
+  ).current;
+  const headerColor = selectedWater?.kind === 'river' ? '#2E9B5A' : '#0E4D64';
   return (
     <Modal
       visible={!!selectedWater}
@@ -1130,10 +1166,14 @@ const WaterBodySheet = React.memo(function WaterBodySheet({
           accessibilityLabel="Затвори панела за водоема"
         />
         <View style={styles.damModalWrap} pointerEvents="box-none">
-          <View style={[styles.modal, styles.damModal]}>
+          <Animated.View style={[styles.modal, styles.damModal, { transform: [{ translateY: sheetPanY }] }]}>
+            <View {...panResponder.panHandlers} style={{ alignItems: 'center', paddingTop: spacing.sm, paddingBottom: spacing.sm }}>
+              <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border }} />
+            </View>
             <ScrollView showsVerticalScrollIndicator={false}>
               {selectedWater ? (
                 <>
+                  <View style={{ height: 3, backgroundColor: headerColor, borderRadius: 2, marginBottom: spacing.md }} />
                   <View style={styles.damHeader}>
                     <View
                       style={[
@@ -1506,42 +1546,37 @@ const WaterBodySheet = React.memo(function WaterBodySheet({
                     firebaseConfigured={firebaseConfigured}
                   />
 
-                  <Button
-                    title="Класиране за този водоем"
-                    variant="secondary"
-                    onPress={onOpenLeaderboard}
-                    style={{ marginTop: spacing.lg }}
-                  />
-                  <Button
-                    title="Маршрут в приложението"
-                    onPress={onOpenInAppRoute}
-                    loading={routeLoading}
-                    style={{ marginTop: spacing.lg }}
-                  />
-                  <Button
-                    title="Навигация в Google / Apple Maps"
-                    variant="secondary"
-                    onPress={onExternalRoute}
-                    style={{ marginTop: spacing.md }}
-                  />
-                  <Button
-                    title="Запиши улов от тук"
-                    onPress={onRecordCatch}
-                    style={{ marginTop: spacing.lg }}
-                  />
-                  <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.md }}>
-                    <Button
-                      title="Запази в любими"
-                      variant="secondary"
-                      onPress={onSaveAsFavorite}
-                      style={{ flex: 1 }}
-                    />
-                    <Button
-                      title="Покажи на карта"
-                      variant="secondary"
-                      onPress={onShowOnMap}
-                      style={{ flex: 1 }}
-                    />
+                  <View style={styles.actionGrid}>
+                    <Pressable style={styles.actionBtn} onPress={onRecordCatch}>
+                      <Ionicons name="fish-outline" size={22} color={colors.primary} />
+                      <Text style={styles.actionBtnText}>Запиши улов</Text>
+                    </Pressable>
+                    <Pressable style={styles.actionBtn} onPress={onSaveAsFavorite}>
+                      <Ionicons name="star-outline" size={22} color="#C49A00" />
+                      <Text style={styles.actionBtnText}>Любими</Text>
+                    </Pressable>
+                    <Pressable style={styles.actionBtn} onPress={onShowOnMap}>
+                      <Ionicons name="map-outline" size={22} color={colors.primary} />
+                      <Text style={styles.actionBtnText}>На карта</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.actionBtn, routeLoading && { opacity: 0.6 }]}
+                      onPress={onOpenInAppRoute}
+                      disabled={routeLoading}
+                    >
+                      {routeLoading
+                        ? <ActivityIndicator size="small" color={colors.primary} />
+                        : <Ionicons name="navigate-outline" size={22} color={colors.primary} />}
+                      <Text style={styles.actionBtnText}>Маршрут</Text>
+                    </Pressable>
+                    <Pressable style={styles.actionBtn} onPress={onExternalRoute}>
+                      <Ionicons name="open-outline" size={22} color={colors.primary} />
+                      <Text style={styles.actionBtnText}>Навигация</Text>
+                    </Pressable>
+                    <Pressable style={styles.actionBtn} onPress={onOpenLeaderboard}>
+                      <Ionicons name="trophy-outline" size={22} color="#C49A00" />
+                      <Text style={styles.actionBtnText}>Класиране</Text>
+                    </Pressable>
                   </View>
                 </>
               ) : null}
@@ -1552,7 +1587,7 @@ const WaterBodySheet = React.memo(function WaterBodySheet({
                 <Text style={{ color: colors.textMuted, ...typography.body }}>Затвори</Text>
               </Pressable>
             </ScrollView>
-          </View>
+          </Animated.View>
         </View>
       </View>
     </Modal>
@@ -1587,10 +1622,34 @@ const SpotSheet = React.memo(function SpotSheet({
   onToggleFavorite,
 }: SpotSheetProps) {
   const styles = useMemo(() => createMapStyles(colors), [colors]);
+  const sheetPanY = useRef(new Animated.Value(0)).current;
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) => g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx),
+      onPanResponderMove: (_, g) => { if (g.dy > 0) sheetPanY.setValue(g.dy); },
+      onPanResponderRelease: (_, g) => {
+        if (g.dy > 80 || g.vy > 0.5) {
+          Animated.timing(sheetPanY, { toValue: 700, duration: 200, useNativeDriver: true }).start(() => {
+            sheetPanY.setValue(0);
+            onClose();
+          });
+        } else {
+          Animated.spring(sheetPanY, { toValue: 0, useNativeDriver: true, speed: 30, bounciness: 0 }).start();
+        }
+      },
+    })
+  ).current;
+  const spotTypeColor = spot
+    ? (WATER_TYPES.find((x) => x.id === spot.waterType)?.color ?? colors.primary)
+    : colors.primary;
   return (
     <Modal visible={!!spot} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
-        <View style={styles.modal}>
+        <Animated.View style={[styles.modal, { transform: [{ translateY: sheetPanY }] }]}>
+          <View {...panResponder.panHandlers} style={{ alignItems: 'center', paddingTop: spacing.sm, paddingBottom: spacing.xs }}>
+            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border }} />
+          </View>
+          <View style={{ height: 3, backgroundColor: spotTypeColor, borderRadius: 2, marginBottom: spacing.sm }} />
           <Text style={styles.modalTitle}>{spot?.name}</Text>
           <Text style={styles.modalSub}>{spot ? waterTypeLabel(spot.waterType) : ''}</Text>
           {spot ? (
@@ -1711,7 +1770,7 @@ const SpotSheet = React.memo(function SpotSheet({
             <Button title="Затвори" variant="secondary" onPress={onClose} style={{ flex: 1 }} />
             <Button title="Изтрий" variant="danger" onPress={onRemove} style={{ flex: 1 }} />
           </View>
-        </View>
+        </Animated.View>
       </View>
     </Modal>
   );
@@ -1974,5 +2033,30 @@ function createMapStyles(colors: AppColors) {
     },
     typeText: { ...typography.body, color: colors.text },
     typeTextActive: { color: colors.white, fontWeight: '600' },
+    actionGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.sm,
+      marginTop: spacing.lg,
+    },
+    actionBtn: {
+      flex: 1,
+      minWidth: '30%',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.xs,
+      backgroundColor: colors.card,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      gap: 4,
+    },
+    actionBtnText: {
+      ...typography.small,
+      color: colors.text,
+      fontWeight: '600',
+      textAlign: 'center',
+    },
   });
 }

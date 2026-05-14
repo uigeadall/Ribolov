@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { View, Text, StyleSheet, FlatList, Pressable, RefreshControl, ActivityIndicator, Platform, TextInput, Animated } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Pressable, RefreshControl, Platform, TextInput, Animated, ActionSheetIOS, Alert } from 'react-native';
 import { Image } from 'expo-image';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -33,7 +34,7 @@ function createStyles(colors: AppColors) {
     hero: {
       paddingHorizontal: spacing.lg,
       paddingBottom: spacing.lg,
-      backgroundColor: colors.surfaceAlt,
+      overflow: 'hidden',
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.border,
     },
@@ -118,8 +119,12 @@ export default function FeedScreen() {
   const navigation = useAppNavigation();
   const insets = useSafeAreaInsets();
   const { user, configured } = useAuth();
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+
+  const heroGradient = (mode === 'dark'
+    ? ['#0A1E2A', '#0C2230', '#0E2535']
+    : ['#B8DFF0', '#D5EEF8', '#EAF5FB']) as [string, string, string];
   const unreadNotifCount = useUnreadNotifCount(user?.uid);
 
   const heroTopStyle = useMemo(
@@ -133,8 +138,10 @@ export default function FeedScreen() {
   const visibleIdsRef = useRef<Set<string>>(new Set());
   const [visibleIds, setVisibleIds] = useState<Set<string>>(new Set());
   const mountedRef = useRef(true);
+  const loadingMoreRef = useRef(false);
   const flatListRef = useRef<FlatList<FeedItem>>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const scrollTopAnim = useRef(new Animated.Value(0)).current;
   const [searchQuery, setSearchQuery] = useState('');
   const scrollY = useRef(new Animated.Value(0)).current;
   const heroTitleOpacity = scrollY.interpolate({ inputRange: [0, 50], outputRange: [1, 0], extrapolate: 'clamp' });
@@ -217,22 +224,28 @@ export default function FeedScreen() {
   }, [configured, user, scope, prefetchBatch]);
 
   const loadMore = useCallback(async () => {
-    if (!configured || !user || !hasMore || loadingMore || !lastDoc) return;
+    if (!configured || !user || !hasMore || loadingMoreRef.current || !lastDoc) return;
+    loadingMoreRef.current = true;
     setLoadingMore(true);
     try {
       const blockedUids = await getBlockedUids(user.uid);
       const page = await fetchPublicFeed(20, lastDoc);
       const next = page.items.filter((i) => !blockedUids.has(i.ownerUid));
-      setItems((prev) => [...prev, ...next]);
+      setItems((prev) => {
+        const existingIds = new Set(prev.map((i) => i.id));
+        const deduped = next.filter((i) => !existingIds.has(i.id));
+        return [...prev, ...deduped];
+      });
       prefetchBatch(next);
       setLastDoc(page.lastDoc);
       setHasMore(page.hasMore);
     } catch {
       /* silent — user can pull to refresh */
     } finally {
+      loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  }, [configured, user, hasMore, loadingMore, lastDoc, prefetchBatch]);
+  }, [configured, user, hasMore, lastDoc, prefetchBatch]);
 
   useEffect(() => {
     if (user && configured) load();
@@ -256,13 +269,16 @@ export default function FeedScreen() {
 
   const displayedItems = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter(
-      (i) =>
-        i.speciesName.toLowerCase().includes(q) ||
-        (i.ownerName ?? '').toLowerCase().includes(q) ||
-        (i.location?.name ?? '').toLowerCase().includes(q),
-    );
+    const filtered = q
+      ? items.filter(
+          (i) =>
+            i.speciesName.toLowerCase().includes(q) ||
+            (i.ownerName ?? '').toLowerCase().includes(q) ||
+            (i.location?.name ?? '').toLowerCase().includes(q),
+        )
+      : items;
+    const seen = new Set<string>();
+    return filtered.filter((i) => { if (seen.has(i.id)) return false; seen.add(i.id); return true; });
   }, [items, searchQuery]);
 
   const renderItem = useCallback(({ item }: { item: FeedItem }) => (
@@ -286,7 +302,18 @@ export default function FeedScreen() {
     {
       useNativeDriver: false,
       listener: (e: { nativeEvent: { contentOffset: { y: number } } }) => {
-        setShowScrollTop(e.nativeEvent.contentOffset.y > 400);
+        const show = e.nativeEvent.contentOffset.y > 400;
+        setShowScrollTop((prev) => {
+          if (prev !== show) {
+            Animated.spring(scrollTopAnim, {
+              toValue: show ? 1 : 0,
+              useNativeDriver: true,
+              speed: 18,
+              bounciness: 8,
+            }).start();
+          }
+          return show;
+        });
       },
     }
   );
@@ -305,28 +332,34 @@ export default function FeedScreen() {
     }
   ).current;
 
+  const openOverflow = useCallback(() => {
+    const options = ['Класации', 'Запазени', 'Открий', 'Отказ'];
+    const actions = [
+      () => navigation.navigate('Classics'),
+      () => navigation.navigate('SavedPosts'),
+      () => navigation.navigate('Explore'),
+    ];
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options, cancelButtonIndex: 3 },
+        (idx) => { if (idx < 3) actions[idx](); }
+      );
+    } else {
+      Alert.alert('Меню', undefined, [
+        { text: 'Класации', onPress: actions[0] },
+        { text: 'Запазени', onPress: actions[1] },
+        { text: 'Открий', onPress: actions[2] },
+        { text: 'Отказ', style: 'cancel' },
+      ]);
+    }
+  }, [navigation]);
+
   const Header = () => (
     <View style={styles.header}>
       <Pressable onPress={() => navigation.goBack()} hitSlop={8} style={styles.backBtn}>
         <Ionicons name="chevron-back" size={22} color={colors.primary} />
       </Pressable>
       <View style={{ flex: 1 }} />
-      <Pressable
-        onPress={() => navigation.navigate('Classics')}
-        hitSlop={8}
-        style={styles.backBtn}
-        accessibilityLabel="Седмични и месечни класации"
-      >
-        <Ionicons name="trophy-outline" size={22} color={colors.primary} />
-      </Pressable>
-      <Pressable
-        onPress={() => navigation.navigate('SavedPosts')}
-        hitSlop={8}
-        style={styles.backBtn}
-        accessibilityLabel="Запазени публикации"
-      >
-        <Ionicons name="bookmark-outline" size={22} color={colors.primary} />
-      </Pressable>
       <Pressable
         onPress={() => navigation.navigate('Notifications')}
         hitSlop={8}
@@ -361,13 +394,8 @@ export default function FeedScreen() {
       >
         <Ionicons name="search-outline" size={22} color={colors.primary} />
       </Pressable>
-      <Pressable
-        onPress={() => navigation.navigate('Explore')}
-        hitSlop={8}
-        style={styles.backBtn}
-        accessibilityLabel="Открий"
-      >
-        <Ionicons name="compass-outline" size={22} color={colors.primary} />
+      <Pressable onPress={openOverflow} hitSlop={8} style={styles.backBtn} accessibilityLabel="Още">
+        <Ionicons name="ellipsis-horizontal" size={22} color={colors.primary} />
       </Pressable>
     </View>
   );
@@ -375,7 +403,7 @@ export default function FeedScreen() {
   if (!configured) {
     return (
       <Screen padded={false} safeAreaEdges={['left', 'right']}>
-        <View style={[styles.hero, heroTopStyle]}>
+        <LinearGradient colors={heroGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.hero, heroTopStyle]}>
           <Header />
           <View style={styles.heroTitleRow}>
             <View style={styles.heroIconWrap}>
@@ -385,7 +413,7 @@ export default function FeedScreen() {
               <Text style={styles.heroTitle}>Лента</Text>
             </View>
           </View>
-        </View>
+        </LinearGradient>
         <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg }}>
           <Card>
             <Text style={styles.warnTitle}>Социалната част изисква Firebase</Text>
@@ -402,7 +430,7 @@ export default function FeedScreen() {
   if (!user) {
     return (
       <Screen padded={false} safeAreaEdges={['left', 'right']}>
-        <View style={[styles.hero, heroTopStyle]}>
+        <LinearGradient colors={heroGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.hero, heroTopStyle]}>
           <Header />
           <View style={styles.heroTitleRow}>
             <View style={styles.heroIconWrap}>
@@ -412,7 +440,7 @@ export default function FeedScreen() {
               <Text style={styles.heroTitle}>Лента</Text>
             </View>
           </View>
-        </View>
+        </LinearGradient>
         <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg }}>
           <Card>
             <Text style={styles.warnTitle}>Влез в акаунта си</Text>
@@ -426,7 +454,7 @@ export default function FeedScreen() {
 
   return (
     <Screen padded={false} safeAreaEdges={['left', 'right']}>
-      <View style={[styles.hero, heroTopStyle]}>
+      <LinearGradient colors={heroGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.hero, heroTopStyle]}>
         <Header />
         <Animated.View style={{ opacity: heroTitleOpacity, height: heroTitleHeight, overflow: 'hidden' }}>
           <View style={styles.heroTitleRow}>
@@ -461,8 +489,11 @@ export default function FeedScreen() {
             </Pressable>
           )}
         </View>
-      </View>
+      </LinearGradient>
 
+      <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 4 }}>
+        <Text style={{ ...typography.overline, color: colors.textMuted, letterSpacing: 1 }}>ИСТОРИИ</Text>
+      </View>
       <StoriesRow />
 
       <View style={styles.segmentWrap}>
@@ -545,14 +576,13 @@ export default function FeedScreen() {
                 <View style={{ alignItems: 'center', paddingVertical: spacing.xxl }}>
                   <Ionicons name="search-outline" size={36} color={colors.textMuted} />
                   <Text style={[styles.centerMsg, { marginTop: spacing.sm }]}>Няма резултати за „{searchQuery}"</Text>
+                  <Text style={[styles.centerMsg, { fontSize: 12, marginTop: spacing.xs }]}>Търсиш сред заредените публикации</Text>
                 </View>
               ) : null
             }
             ListFooterComponent={
               loadingMore ? (
-                <View style={{ paddingVertical: spacing.lg, alignItems: 'center' }}>
-                  <ActivityIndicator color={colors.primary} />
-                </View>
+                <FeedSkeleton />
               ) : hasMore ? (
                 <View style={{ height: spacing.lg }} />
               ) : null
@@ -562,13 +592,19 @@ export default function FeedScreen() {
             onViewableItemsChanged={onViewableItemsChanged}
             viewabilityConfig={viewabilityConfig}
           />
-          {showScrollTop && (
+          <Animated.View
+            pointerEvents={showScrollTop ? 'auto' : 'none'}
+            style={{
+              position: 'absolute',
+              bottom: spacing.xl,
+              alignSelf: 'center',
+              opacity: scrollTopAnim,
+              transform: [{ scale: scrollTopAnim.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1] }) }],
+            }}
+          >
             <Pressable
               onPress={scrollToTop}
               style={{
-                position: 'absolute',
-                bottom: spacing.xl,
-                alignSelf: 'center',
                 backgroundColor: colors.primary,
                 borderRadius: 20,
                 paddingHorizontal: spacing.md,
@@ -586,7 +622,7 @@ export default function FeedScreen() {
               <Ionicons name="arrow-up" size={16} color={colors.white} />
               <Text style={{ ...typography.small, color: colors.white, fontWeight: '700' }}>Нагоре</Text>
             </Pressable>
-          )}
+          </Animated.View>
         </View>
       )}
     </Screen>

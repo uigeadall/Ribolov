@@ -20,7 +20,7 @@ import { Image } from 'expo-image';
 import { Screen } from '../components/Screen';
 import { Button } from '../components/Button';
 import { useTheme } from '../services/themeContext';
-import { spacing, typography } from '../theme/typography';
+import { radius, spacing, typography } from '../theme/typography';
 import type { ProfileStackParamList } from '../navigation/types';
 import type { DirectMessage } from '../types';
 import { useAuth } from '../services/authContext';
@@ -51,6 +51,29 @@ function formatMsgTime(createdAt: unknown): string {
   return `${d.toLocaleDateString('bg-BG', { day: 'numeric', month: 'short' })} ${timeStr}`;
 }
 
+type ChatItem = DirectMessage | { _sep: true; label: string; id: string };
+
+function msgDateKey(createdAt: unknown): string {
+  if (!createdAt) return '';
+  let d: Date | null = null;
+  if (typeof createdAt === 'number') d = new Date(createdAt);
+  else { const t = createdAt as { toDate?: () => Date; seconds?: number }; d = t.toDate ? t.toDate() : t.seconds ? new Date(t.seconds * 1000) : null; }
+  return d ? d.toDateString() : '';
+}
+
+function msgDayLabel(createdAt: unknown): string {
+  if (!createdAt) return '';
+  let d: Date | null = null;
+  if (typeof createdAt === 'number') d = new Date(createdAt);
+  else { const t = createdAt as { toDate?: () => Date; seconds?: number }; d = t.toDate ? t.toDate() : t.seconds ? new Date(t.seconds * 1000) : null; }
+  if (!d) return '';
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return 'Днес';
+  const yest = new Date(now); yest.setDate(now.getDate() - 1);
+  if (d.toDateString() === yest.toDateString()) return 'Вчера';
+  return d.toLocaleDateString('bg-BG', { day: 'numeric', month: 'long' });
+}
+
 export default function ChatDetailScreen() {
   const route = useRoute<R>();
   const navigation = useAppNavigation();
@@ -62,7 +85,21 @@ export default function ChatDetailScreen() {
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [otherPresence, setOtherPresence] = useState<{ online: boolean; lastSeen?: number }>({ online: false });
-  const flatRef = useRef<FlatList<DirectMessage>>(null);
+  const flatRef = useRef<FlatList<ChatItem>>(null);
+
+  const chatItems = useMemo<ChatItem[]>(() => {
+    const result: ChatItem[] = [];
+    let prevKey = '';
+    msgs.forEach((msg) => {
+      const key = msgDateKey(msg.createdAt);
+      if (key && key !== prevKey) {
+        result.push({ _sep: true, label: msgDayLabel(msg.createdAt), id: `sep-${key}` });
+        prevKey = key;
+      }
+      result.push(msg);
+    });
+    return result;
+  }, [msgs]);
 
   const { otherUid } = route.params;
 
@@ -176,20 +213,16 @@ export default function ChatDetailScreen() {
         },
         title: { ...typography.h3, color: colors.text },
         bubbleMine: {
-          alignSelf: 'flex-end',
           backgroundColor: colors.primary,
           padding: spacing.md,
           borderRadius: 14,
-          maxWidth: '85%',
-          marginBottom: spacing.sm,
+          borderBottomRightRadius: 3,
         },
         bubbleOther: {
-          alignSelf: 'flex-start',
           backgroundColor: colors.surfaceAlt,
           padding: spacing.md,
           borderRadius: 14,
-          maxWidth: '85%',
-          marginBottom: spacing.sm,
+          borderBottomLeftRadius: 3,
           borderWidth: 1,
           borderColor: colors.border,
         },
@@ -244,33 +277,52 @@ export default function ChatDetailScreen() {
 
         <FlatList
           ref={flatRef}
-          data={msgs}
-          keyExtractor={(m) => m.id}
+          data={chatItems}
+          keyExtractor={(m) => ('_sep' in m ? m.id : m.id)}
           contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.md }}
           onContentSizeChange={() => flatRef.current?.scrollToEnd({ animated: false })}
           renderItem={({ item }) => {
+            if ('_sep' in item) {
+              return (
+                <View style={{ alignItems: 'center', marginVertical: spacing.sm }}>
+                  <View style={{ backgroundColor: colors.surfaceAlt, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 3, borderWidth: 1, borderColor: colors.border }}>
+                    <Text style={{ ...typography.caption, color: colors.textMuted, fontWeight: '600' }}>{item.label}</Text>
+                  </View>
+                </View>
+              );
+            }
             const mine = item.senderUid === user.uid;
             return (
-              <View style={mine ? styles.bubbleMine : styles.bubbleOther}>
-                {item.mediaUrl && item.mediaType === 'photo' ? (
-                  <Image
-                    source={{ uri: item.mediaUrl }}
-                    style={{ width: 200, height: 150, borderRadius: 8 }}
-                    contentFit="cover"
-                  />
-                ) : item.mediaUrl && item.mediaType === 'video' ? (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Ionicons name="videocam" size={20} color={mine ? colors.white : colors.text} />
-                    <Text style={mine ? styles.msgMine : styles.msgOther}>Видео</Text>
-                  </View>
-                ) : (
-                  <Text style={mine ? styles.msgMine : styles.msgOther}>{item.text}</Text>
-                )}
-                {item.createdAt ? (
-                  <Text style={{ fontSize: 10, color: mine ? 'rgba(255,255,255,0.6)' : colors.textMuted, marginTop: 3, alignSelf: 'flex-end' }}>
-                    {formatMsgTime(item.createdAt)}
-                  </Text>
-                ) : null}
+              <View style={{ position: 'relative', alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '85%', marginBottom: spacing.sm }}>
+                <View style={mine ? styles.bubbleMine : styles.bubbleOther}>
+                  {item.mediaUrl && item.mediaType === 'photo' ? (
+                    <Image
+                      source={{ uri: item.mediaUrl }}
+                      style={{ width: 200, height: 150, borderRadius: 8 }}
+                      contentFit="cover"
+                    />
+                  ) : item.mediaUrl && item.mediaType === 'video' ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Ionicons name="videocam" size={20} color={mine ? colors.white : colors.text} />
+                      <Text style={mine ? styles.msgMine : styles.msgOther}>Видео</Text>
+                    </View>
+                  ) : (
+                    <Text style={mine ? styles.msgMine : styles.msgOther}>{item.text}</Text>
+                  )}
+                  {item.createdAt ? (
+                    <Text style={{ fontSize: 10, color: mine ? 'rgba(255,255,255,0.6)' : colors.textMuted, marginTop: 3, alignSelf: 'flex-end' }}>
+                      {formatMsgTime(item.createdAt)}
+                    </Text>
+                  ) : null}
+                </View>
+                {/* Bubble tail */}
+                <View style={{
+                  position: 'absolute', bottom: 0,
+                  ...(mine
+                    ? { right: -6, borderTopWidth: 10, borderTopColor: colors.primary, borderLeftWidth: 8, borderLeftColor: 'transparent', borderBottomColor: 'transparent', borderBottomWidth: 0 }
+                    : { left: -6, borderTopWidth: 10, borderTopColor: colors.surfaceAlt, borderRightWidth: 8, borderRightColor: 'transparent', borderBottomColor: 'transparent', borderBottomWidth: 0 }),
+                  width: 0, height: 0, borderStyle: 'solid',
+                }} />
               </View>
             );
           }}

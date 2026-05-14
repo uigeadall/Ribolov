@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { FeedPost, FeedItem } from '../components/FeedPost';
 import { EmptyState } from '../components/EmptyState';
+import { Skeleton } from '../components/Skeleton';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { spacing, typography } from '../theme/typography';
@@ -89,9 +90,20 @@ export default function SavedPostsScreen() {
       </View>
 
       {loading && itemList.length === 0 ? (
-        <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg }}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.centerMsg}>Зареждане…</Text>
+        <View style={{ padding: spacing.lg, gap: spacing.lg }}>
+          {[0, 1, 2].map((i) => (
+            <View key={i} style={{ gap: spacing.sm }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                <Skeleton width={40} height={40} borderRadius={20} />
+                <View style={{ flex: 1, gap: 6 }}>
+                  <Skeleton height={13} width="55%" />
+                  <Skeleton height={11} width="35%" />
+                </View>
+              </View>
+              <Skeleton height={200} borderRadius={12} />
+              <Skeleton height={12} width="80%" />
+            </View>
+          ))}
         </View>
       ) : error && itemList.length === 0 ? (
         <View style={{ padding: spacing.lg }}>

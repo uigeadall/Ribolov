@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
+import * as Haptics from 'expo-haptics';
 import { Button } from '../components/Button';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
@@ -25,6 +26,10 @@ import {
   type ClassicPeriod,
   type RankedClassicPhoto,
 } from '../services/classicsContest';
+import {
+  getMyLikedCatchIds,
+  toggleCatchReaction,
+} from '../services/socialFeed';
 import { useAsync } from '../hooks/useAsync';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 
@@ -60,12 +65,36 @@ export default function ClassicsScreen() {
   const [period, setPeriod] = useState<ClassicPeriod>('week');
   const [fullScreen, setFullScreen] = useState<FullScreen | null>(null);
 
+  // Local like state — mirrors remote but updated optimistically
+  const [myLikes, setMyLikes] = useState<Set<string>>(new Set());
+  const [localRows, setLocalRows] = useState<RankedClassicPhoto[]>([]);
+
   const { data, loading, refreshing, error, reload } = useAsync(async () => {
     if (!configured || !user) return [];
     return fetchRankedClassicPhotos(periodStartIso(period));
   }, [configured, user, period]);
 
-  const rows: RankedClassicPhoto[] = data ?? [];
+  // Sync remote data into local rows and batch-check which the user has liked
+  useEffect(() => {
+    if (!data) return;
+    setLocalRows(data);
+    if (!user?.uid || !data.length) return;
+    getMyLikedCatchIds(user.uid, data.map((r) => r.item.id))
+      .then(setMyLikes)
+      .catch(() => {});
+  }, [data, user?.uid]);
+
+  const onLike = async (row: RankedClassicPhoto) => {
+    if (!user || !configured) return;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const id = row.item.id;
+    const liked = myLikes.has(id);
+    setMyLikes((prev) => { const next = new Set(prev); liked ? next.delete(id) : next.add(id); return next; });
+    setLocalRows((prev) => prev.map((r) => r.item.id === id ? { ...r, likes: r.likes + (liked ? -1 : 1) } : r));
+    await toggleCatchReaction(id, user.uid, row.item.ownerUid ?? '', user.displayName || 'Рибар', 'heart');
+  };
+
+  const rows: RankedClassicPhoto[] = localRows.length ? localRows : (data ?? []);
 
   const left = daysLeft(period);
   const [first, second, third, ...rest] = rows;
@@ -281,7 +310,18 @@ export default function ClassicsScreen() {
           <Text style={s.podiumRankText}>{rank === 1 ? '1ST' : rank === 2 ? '2ND' : '3RD'}</Text>
         </View>
         <Text style={s.podiumName} numberOfLines={1}>{row.item.ownerName ?? 'Рибар'}</Text>
-        <Text style={s.podiumLikes}>❤️ {row.likes}</Text>
+        <Pressable
+          onPress={() => onLike(row)}
+          hitSlop={10}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+        >
+          <Ionicons
+            name={myLikes.has(row.item.id) ? 'heart' : 'heart-outline'}
+            size={13}
+            color={myLikes.has(row.item.id) ? '#ff6b6b' : 'rgba(255,255,255,0.55)'}
+          />
+          <Text style={s.podiumLikes}>{row.likes}</Text>
+        </Pressable>
       </Pressable>
     );
   };
@@ -317,7 +357,7 @@ export default function ClassicsScreen() {
             </Pressable>
           </View>
           <Text style={{ fontSize: 48 }}>🏆</Text>
-          <Text style={s.emptyTitle}>Класики</Text>
+          <Text style={s.emptyTitle}>Класации</Text>
           <Text style={s.emptyBody}>Влез в акаунта си, за да виждаш класацията.</Text>
         </View>
         <View style={{ padding: spacing.lg }}>
@@ -363,7 +403,7 @@ export default function ClassicsScreen() {
               </Pressable>
             </View>
             <Text style={{ fontSize: 38 }}>🏆</Text>
-            <Text style={s.bannerTitle}>Класики</Text>
+            <Text style={s.bannerTitle}>{period === 'week' ? 'Седмична класация' : 'Месечна класация'}</Text>
           </View>
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md }}>
             <ActivityIndicator size="large" color={colors.primary} />
@@ -417,7 +457,7 @@ export default function ClassicsScreen() {
                     <Ionicons name="chevron-back" size={20} color="#fff" />
                   </Pressable>
                   <View style={s.bannerTitleWrap}>
-                    <Text style={s.bannerTitle}>🏆  Класики</Text>
+                    <Text style={s.bannerTitle}>🏆  {period === 'week' ? 'Седмична класация' : 'Месечна класация'}</Text>
                   </View>
                   <View style={s.periodToggle}>
                     {(['week', 'month'] as ClassicPeriod[]).map((p) => (
@@ -473,10 +513,18 @@ export default function ClassicsScreen() {
                       <Text style={s.featuredTitle} numberOfLines={1}>
                         {first.item.photoTitle ?? first.item.speciesName}
                       </Text>
-                      <View style={s.featuredLikes}>
-                        <Ionicons name="heart" size={13} color="#ff6b6b" />
+                      <Pressable
+                        style={s.featuredLikes}
+                        onPress={(e) => { e.stopPropagation(); void onLike(first); }}
+                        hitSlop={10}
+                      >
+                        <Ionicons
+                          name={myLikes.has(first.item.id) ? 'heart' : 'heart-outline'}
+                          size={13}
+                          color="#ff6b6b"
+                        />
                         <Text style={s.featuredLikesText}>{first.likes} харесвания</Text>
-                      </View>
+                      </Pressable>
                     </View>
                   </View>
                 </Pressable>
@@ -508,10 +556,20 @@ export default function ClassicsScreen() {
                 <Text style={s.rankName} numberOfLines={1}>{row.item.ownerName ?? 'Рибар'}</Text>
                 <Text style={s.rankSub} numberOfLines={1}>{row.item.photoTitle ?? row.item.speciesName}</Text>
               </View>
-              <View style={s.rankLikesRow}>
-                <Ionicons name="heart" size={13} color="#ff6b6b" />
-                <Text style={s.rankLikesNum}>{row.likes}</Text>
-              </View>
+              <Pressable
+                style={[s.rankLikesRow, { paddingVertical: 8, paddingLeft: 10 }]}
+                onPress={(e) => { e.stopPropagation(); void onLike(row); }}
+                hitSlop={6}
+              >
+                <Ionicons
+                  name={myLikes.has(row.item.id) ? 'heart' : 'heart-outline'}
+                  size={15}
+                  color={myLikes.has(row.item.id) ? '#ff6b6b' : colors.textMuted}
+                />
+                <Text style={[s.rankLikesNum, myLikes.has(row.item.id) && { color: '#ff6b6b' }]}>
+                  {row.likes}
+                </Text>
+              </Pressable>
             </Pressable>
           )}
         />

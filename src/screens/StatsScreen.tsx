@@ -32,6 +32,13 @@ function AnimatedStatNum({ value, decimals = 0, suffix = '', color }: { value: n
   );
 }
 
+const SPECIES_PALETTE = ['#1A7A9C', '#2E9B5A', '#C49A00', '#7B4FA6', '#E85D04', '#0E4D64', '#D64545', '#0094B8'];
+function speciesColor(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
+  return SPECIES_PALETTE[Math.abs(h) % SPECIES_PALETTE.length];
+}
+
 const MONTH_LABELS = ['Яну', 'Фев', 'Мар', 'Апр', 'Май', 'Юни', 'Юли', 'Авг', 'Сеп', 'Окт', 'Ное', 'Дек'];
 
 export default function StatsScreen() {
@@ -345,15 +352,21 @@ export default function StatsScreen() {
           <>
             <Text style={{ ...typography.h3, color: colors.text, marginTop: spacing.xl, marginBottom: spacing.sm }}>Топ видове</Text>
             <Card>
-              {stats!.topSpecies.map(([name, count]) => (
-                <View key={name} style={styles.speciesRow}>
-                  <Text style={styles.speciesName} numberOfLines={1}>{name}</Text>
-                  <View style={styles.speciesBar}>
-                    <View style={[styles.speciesFill, { width: `${(count / stats!.maxSpecies) * 100}%` }]} />
+              {stats!.topSpecies.map(([name, count]) => {
+                const sc = speciesColor(name);
+                return (
+                  <View key={name} style={styles.speciesRow}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, width: 96 }}>
+                      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: sc }} />
+                      <Text style={[styles.speciesName, { width: undefined, flex: 1 }]} numberOfLines={1}>{name}</Text>
+                    </View>
+                    <View style={styles.speciesBar}>
+                      <View style={[styles.speciesFill, { width: `${(count / stats!.maxSpecies) * 100}%`, backgroundColor: sc }]} />
+                    </View>
+                    <Text style={styles.speciesCount}>{count}</Text>
                   </View>
-                  <Text style={styles.speciesCount}>{count}</Text>
-                </View>
-              ))}
+                );
+              })}
             </Card>
           </>
         )}
