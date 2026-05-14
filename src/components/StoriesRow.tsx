@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
-import { getStories, deleteStory, timeAgo, STORY_REACTIONS, type Story, type StoryReactionType } from '../services/stories';
+import { subscribeStories, deleteStory, timeAgo, STORY_REACTIONS, type Story, type StoryReactionType } from '../services/stories';
 import { useStoryViewer, type FlyingEmoji } from '../hooks/useStoryViewer';
 import { useAddStory } from '../hooks/useAddStory';
 import { useAppNavigation } from '../navigation/useAppNavigation';
@@ -77,14 +77,19 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
   const viewer = useStoryViewer(viewing, user);
   const addStory = useAddStory(user, () => loadStories(), () => setAddOpen(false));
 
-  const loadStories = useCallback(async () => {
-    if (!configured) return;
-    const list = await getStories();
-    setStories(list);
-    onStoriesLoaded?.(list.length);
+  const loadStories = useCallback(() => {
+    if (!configured) return () => {};
+    const unsub = subscribeStories((list) => {
+      setStories(list);
+      onStoriesLoaded?.(list.length);
+    });
+    return unsub;
   }, [configured, onStoriesLoaded]);
 
-  useEffect(() => { void loadStories(); }, [loadStories]);
+  useEffect(() => {
+    const unsub = loadStories();
+    return unsub;
+  }, [loadStories]);
 
   const goNext = useCallback(() => {
     setViewingIndex((prev) => {
@@ -102,6 +107,7 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
 
   // Start/reset progress bar when viewing changes
   useEffect(() => {
+    setImageError(false);
     if (progressTimer.current) { progressTimer.current.stop(); }
     progressAnim.setValue(0);
     if (viewingIndex < 0) return;
@@ -198,9 +204,9 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
         {stories.map((s) => (
           <Pressable key={s.id} style={styles.bubble} onPress={() => openViewer(s)}>
             <View style={[styles.ring, { borderColor: s.uid === user?.uid ? colors.accent : colors.primary }]}>
-              {s.mediaUrl && s.mediaType === 'photo' ? (
+              {s.mediaUrl && s.mediaType !== 'video' ? (
                 <Image source={{ uri: s.mediaUrl }} style={{ width: 58, height: 58 }} contentFit="cover" />
-              ) : s.mediaType === 'video' ? (
+              ) : s.mediaUrl && s.mediaType === 'video' ? (
                 <Ionicons name="videocam" size={26} color={colors.primary} />
               ) : (
                 <Text style={styles.emojiText}>{s.emoji ?? '🎣'}</Text>
@@ -230,14 +236,14 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
                   </View>
                 ))}
               </View>
-              {viewing.mediaUrl && viewing.mediaType === 'photo' && !imageError ? (
+              {viewing.mediaUrl && viewing.mediaType !== 'video' && !imageError ? (
                 <Image
                   source={{ uri: viewing.mediaUrl }}
                   style={styles.viewerMedia}
                   contentFit="contain"
                   onError={() => setImageError(true)}
                 />
-              ) : viewing.mediaUrl && viewing.mediaType === 'photo' && imageError ? (
+              ) : viewing.mediaUrl && viewing.mediaType !== 'video' && imageError ? (
                 <View style={[styles.viewerMedia, { alignItems: 'center', justifyContent: 'center' }]}>
                   <Text style={{ fontSize: 72 }}>{viewing.emoji ?? '🎣'}</Text>
                 </View>

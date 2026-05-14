@@ -102,6 +102,27 @@ export async function addStory(s: Omit<Story, 'id' | 'createdAt' | 'expiresAt'>)
   );
 }
 
+function mapStoryDoc(d: { id: string; data: () => Record<string, unknown> }): Story {
+  const data = d.data() as Omit<Story, 'id'> & { createdAt?: { toMillis?: () => number } };
+  return {
+    id: d.id,
+    uid: data.uid,
+    userName: data.userName,
+    userPhotoUrl: data.userPhotoUrl,
+    text: data.text,
+    locationName: data.locationName,
+    waterTempC: data.waterTempC,
+    emoji: data.emoji,
+    mediaUrl: data.mediaUrl,
+    mediaType: data.mediaType,
+    createdAt:
+      typeof data.createdAt?.toMillis === 'function'
+        ? new Date(data.createdAt.toMillis()).toISOString()
+        : new Date().toISOString(),
+    expiresAt: data.expiresAt,
+  };
+}
+
 export async function getStories(): Promise<Story[]> {
   const fb = requireFirebase();
   try {
@@ -114,29 +135,30 @@ export async function getStories(): Promise<Story[]> {
         limit(50)
       )
     );
-    return snap.docs.map((d) => {
-      const data = d.data() as Omit<Story, 'id'> & { createdAt?: { toMillis?: () => number } };
-      return {
-        id: d.id,
-        uid: data.uid,
-        userName: data.userName,
-        userPhotoUrl: data.userPhotoUrl,
-        text: data.text,
-        locationName: data.locationName,
-        waterTempC: data.waterTempC,
-        emoji: data.emoji,
-        mediaUrl: data.mediaUrl,
-        mediaType: data.mediaType,
-        createdAt:
-          typeof data.createdAt?.toMillis === 'function'
-            ? new Date(data.createdAt.toMillis()).toISOString()
-            : new Date().toISOString(),
-        expiresAt: data.expiresAt,
-      };
-    });
+    return snap.docs.map(mapStoryDoc);
   } catch {
     return [];
   }
+}
+
+/** Real-time subscription — fires immediately and on every change. */
+export function subscribeStories(onNext: (stories: Story[]) => void): () => void {
+  const fb = requireFirebase();
+  const now = Date.now();
+  const q = query(
+    collection(fb.db, 'stories'),
+    where('expiresAt', '>', now),
+    orderBy('expiresAt', 'desc'),
+    limit(50)
+  );
+  return onSnapshot(q, (snap) => {
+    const fresh = Date.now();
+    onNext(
+      snap.docs
+        .filter((d) => (d.data().expiresAt as number) > fresh)
+        .map(mapStoryDoc)
+    );
+  }, () => onNext([]));
 }
 
 export async function deleteStory(storyId: string): Promise<void> {
