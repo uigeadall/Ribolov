@@ -14,6 +14,7 @@ import { ensureFirebase } from './src/services/firebase';
 import { initFirebaseAppCheckBridge } from './src/services/firebaseAppCheckBridge';
 import OnboardingScreen from './src/screens/OnboardingScreen';
 import { OfflineBar } from './src/components/OfflineBar';
+import AppSplashScreen from './src/components/AppSplashScreen';
 
 const ONBOARDING_KEY = '@ribolov/onboarding_done';
 
@@ -34,8 +35,7 @@ export default function App() {
     setOnboardingDone(true);
   };
 
-  // Still loading the onboarding flag or fonts — render nothing to avoid flash
-  if (onboardingDone === null || !fontsLoaded) return null;
+  if (onboardingDone === null || !fontsLoaded) return <AppSplashScreen />;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

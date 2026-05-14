@@ -38,8 +38,8 @@ import { updateProfile } from 'firebase/auth';
 import { handleError } from '../utils/handleError';
 import { ensureFirebase } from '../services/firebase';
 import { useAppNavigation } from '../navigation/useAppNavigation';
-import { catchesStore } from '../storage/storage';
-import type { Catch } from '../types';
+import { catchesStore, tripsStore } from '../storage/storage';
+import type { Catch, TripPlan } from '../types';
 import * as Haptics from 'expo-haptics';
 import { useUnreadNotifCount } from '../hooks/useUnreadNotifCount';
 import {
@@ -129,9 +129,21 @@ export default function ProfileScreen() {
   const [catches, setCatches] = useState<Catch[]>([]);
   useEffect(() => { catchesStore.list().then(setCatches).catch(() => {}); }, []);
 
+  const [nextTrip, setNextTrip] = useState<TripPlan | null>(null);
+  const loadNextTrip = useCallback(async () => {
+    const all = await tripsStore.list().catch(() => [] as TripPlan[]);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const upcoming = all
+      .filter((t) => new Date(t.dateIso) >= today)
+      .sort((a, b) => new Date(a.dateIso).getTime() - new Date(b.dateIso).getTime());
+    setNextTrip(upcoming[0] ?? null);
+  }, []);
+  useFocusEffect(useCallback(() => { void loadNextTrip(); }, [loadNextTrip]));
+
   const [friends, setFriends] = useState<{ uid: string; displayName: string; photoUrl?: string }[]>([]);
   const [myGroups, setMyGroups] = useState<Group[]>([]);
-  useEffect(() => {
+
+  const loadSocialData = useCallback(async () => {
     if (!user?.uid || !configured) return;
     getFollowing(user.uid).then(async (list) => {
       setFriends(list);
@@ -145,6 +157,10 @@ export default function ProfileScreen() {
     }).catch(() => {});
     fetchMyGroups(user.uid).then(setMyGroups).catch(() => {});
   }, [user?.uid, configured]);
+
+  useFocusEffect(
+    useCallback(() => { void loadSocialData(); }, [loadSocialData])
+  );
 
   const [displayName, setDisplayName] = useState('');
   const [city, setCity] = useState('');
@@ -483,6 +499,30 @@ export default function ProfileScreen() {
           paddingHorizontal: spacing.xs,
           marginBottom: spacing.sm,
         },
+        // ── Upcoming trip ──
+        tripCard: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          marginHorizontal: spacing.lg,
+          marginTop: spacing.md,
+          backgroundColor: colors.primarySurface,
+          borderRadius: radius.md,
+          borderWidth: 1,
+          borderColor: colors.primary + '44',
+          padding: spacing.md,
+          gap: spacing.sm,
+        },
+        tripIconWrap: {
+          width: 40,
+          height: 40,
+          borderRadius: 20,
+          backgroundColor: colors.primary,
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        tripLabel: { ...typography.small, color: colors.primary, fontWeight: '700', marginBottom: 2 },
+        tripTitle: { ...typography.bodyBold, fontSize: 14, color: colors.text },
+        tripDate: { ...typography.small, color: colors.textMuted, marginTop: 1 },
         // ── Social sections ──
         sectionWrap: {
           backgroundColor: colors.card,
@@ -946,6 +986,28 @@ export default function ProfileScreen() {
                   Облакът не е активен — настрой Firebase, за да редактираш снимка и онлайн профил.
                 </Text>
               </View>
+            ) : null}
+
+            {/* ── Upcoming trip ── */}
+            {nextTrip ? (
+              <Pressable
+                style={({ pressed }) => [styles.tripCard, pressed && { opacity: 0.75 }]}
+                onPress={() => navigation.navigate('Trips')}
+                accessibilityRole="button"
+                accessibilityLabel="Следващ излет"
+              >
+                <View style={styles.tripIconWrap}>
+                  <Ionicons name="calendar-outline" size={20} color={colors.white} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.tripLabel}>СЛЕДВАЩ ИЗЛЕТ</Text>
+                  <Text style={styles.tripTitle} numberOfLines={1}>{nextTrip.title}</Text>
+                  <Text style={styles.tripDate}>
+                    {new Date(nextTrip.dateIso).toLocaleDateString('bg-BG', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={colors.primary} />
+              </Pressable>
             ) : null}
 
             {/* ── Friends ── */}
