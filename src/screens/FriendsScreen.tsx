@@ -6,9 +6,11 @@ import {
   FlatList,
   TextInput,
   Pressable,
+  Alert,
   ActivityIndicator,
   Platform,
 } from 'react-native';
+import { Skeleton } from '../components/Skeleton';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
@@ -26,6 +28,22 @@ import { useAsync } from '../hooks/useAsync';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 
 type FollowedRow = { uid: string; displayName: string; photoUrl?: string };
+
+function FriendsSkeleton({ borderColor }: { borderColor: string }) {
+  return (
+    <>
+      {[0, 1, 2, 3].map((i) => (
+        <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm + 2, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: borderColor }}>
+          <Skeleton width={44} height={44} borderRadius={22} />
+          <View style={{ flex: 1, gap: 8 }}>
+            <Skeleton height={14} width="55%" />
+          </View>
+          <Skeleton width={76} height={32} borderRadius={radius.pill} />
+        </View>
+      ))}
+    </>
+  );
+}
 
 export default function FriendsScreen() {
   const navigation = useAppNavigation();
@@ -121,14 +139,29 @@ export default function FriendsScreen() {
 
   const toggleFollow = useCallback(async (uid: string, displayName: string) => {
     if (!user) return;
+    if (followedUids.has(uid)) {
+      Alert.alert('Спри да следваш', `Спри да следваш ${displayName}?`, [
+        { text: 'Отказ', style: 'cancel' },
+        {
+          text: 'Спри',
+          style: 'destructive',
+          onPress: async () => {
+            setFollowBusy((prev) => new Set([...prev, uid]));
+            try {
+              await unfollowUser(user.uid, uid);
+              await reloadFollows(true);
+            } finally {
+              setFollowBusy((prev) => { const s = new Set(prev); s.delete(uid); return s; });
+            }
+          },
+        },
+      ]);
+      return;
+    }
     setFollowBusy((prev) => new Set([...prev, uid]));
     try {
-      if (followedUids.has(uid)) {
-        await unfollowUser(user.uid, uid);
-      } else {
-        await followUser(user.uid, uid);
-        await sendFollowNotification(uid, user.uid, user.displayName ?? 'Рибар');
-      }
+      await followUser(user.uid, uid);
+      await sendFollowNotification(uid, user.uid, user.displayName ?? 'Рибар');
       await reloadFollows(true);
     } finally {
       setFollowBusy((prev) => { const s = new Set(prev); s.delete(uid); return s; });
@@ -214,11 +247,11 @@ export default function FriendsScreen() {
 
       {isSearching ? (
         <>
-          <Text style={styles.sectionLabel}>РЕЗУЛТАТИ</Text>
+          <Text style={styles.sectionLabel}>
+            {searching ? 'ТЪРСЕНЕ…' : `РЕЗУЛТАТИ${searchResults.length > 0 ? ` (${searchResults.length})` : ''}`}
+          </Text>
           {searching && searchResults.length === 0 ? (
-            <View style={{ paddingVertical: spacing.xxl, alignItems: 'center' }}>
-              <ActivityIndicator color={colors.primary} />
-            </View>
+            <FriendsSkeleton borderColor={colors.border} />
           ) : searchResults.length === 0 ? (
             <EmptyState icon="person-outline" title="Няма резултати" subtitle="Опитай с различно или по-пълно име." />
           ) : (
@@ -233,9 +266,7 @@ export default function FriendsScreen() {
         <>
           <Text style={styles.sectionLabel}>СЛЕДВАНИ</Text>
           {followsLoading ? (
-            <View style={{ paddingVertical: spacing.xxl, alignItems: 'center' }}>
-              <ActivityIndicator color={colors.primary} />
-            </View>
+            <FriendsSkeleton borderColor={colors.border} />
           ) : (followedRows ?? []).length === 0 ? (
             <EmptyState
               icon="people-outline"

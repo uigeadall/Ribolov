@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
   View,
   Text,
   StyleSheet,
@@ -336,6 +335,7 @@ const CatchListRow = React.memo(function CatchListRow({
               <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
             </View>
           </View>
+          <View style={{ width: 3, backgroundColor: colors.danger + '28' }} />
           </View>
         </Card>
       </Pressable>
@@ -428,6 +428,8 @@ export default function LogbookScreen() {
 
   const [items, setItems] = useState<Catch[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [pendingDelete, setPendingDelete] = useState<Catch | null>(null);
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const styles = useMemo(() => createLogbookStyles(colors, mode), [colors, mode]);
 
   // Badge shows count of unsynced catches on the tab bar
@@ -522,19 +524,25 @@ export default function LogbookScreen() {
       ? 'Записвай всеки улов с дата, място и детайли — всичко остава на телефона.'
       : `${items.length} ${items.length === 1 ? 'запис' : 'записа'} в дневника · преглед и филтри по-долу`;
 
-  const handleSwipeDelete = (item: Catch) => {
-    Alert.alert('Изтриване', `Изтриване на „${item.speciesName}"?`, [
-      { text: 'Отказ', style: 'cancel' },
-      {
-        text: 'Изтрий',
-        style: 'destructive',
-        onPress: async () => {
-          await catchesStore.remove(item.id);
-          await load();
-        },
-      },
-    ]);
-  };
+  const handleSwipeDelete = useCallback((catchItem: Catch) => {
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    setItems((prev) => prev.filter((c) => c.id !== catchItem.id));
+    catchesStore.remove(catchItem.id).catch(() => {});
+    setPendingDelete(catchItem);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    undoTimerRef.current = setTimeout(() => setPendingDelete(null), 4000);
+  }, []);
+
+  const handleUndoDelete = useCallback(async () => {
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    if (!pendingDelete) return;
+    await catchesStore.save(pendingDelete);
+    setItems((prev) =>
+      [...prev, pendingDelete].sort((a, b) => Date.parse(b.date) - Date.parse(a.date))
+    );
+    setPendingDelete(null);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }, [pendingDelete]);
 
   // Card(60 thumb + 10+10 padding + 1+1 border) + 8 separator
   const CATCH_ROW_H = 82;
@@ -684,7 +692,7 @@ export default function LogbookScreen() {
 
   return (
     <Screen padded={false}>
-      <View style={{ flex: 1 }}>
+      <View style={{ flex: 1, position: 'relative' }}>
         <View style={styles.topRow}>
           <View style={styles.titleCol}>
             <SectionHeader hint="ДНЕВНИК" title="Улови" subtitle={subtitle} />
@@ -864,6 +872,27 @@ export default function LogbookScreen() {
             renderItem={renderCatchItem}
           />
         )}
+
+        {/* ── Undo delete snackbar ── */}
+        {pendingDelete ? (
+          <View style={{
+            position: 'absolute', bottom: bottomPad, left: spacing.lg, right: spacing.lg,
+            backgroundColor: mode === 'dark' ? '#2a2a2a' : '#1c1c1c',
+            borderRadius: radius.lg, flexDirection: 'row', alignItems: 'center',
+            paddingVertical: spacing.md, paddingHorizontal: spacing.lg,
+            gap: spacing.md, elevation: 8,
+            shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.3, shadowRadius: 8,
+          }}>
+            <Ionicons name="trash-outline" size={18} color="rgba(255,255,255,0.6)" />
+            <Text style={{ ...typography.body, color: '#fff', flex: 1 }} numberOfLines={1}>
+              „{pendingDelete.speciesName}" изтрит
+            </Text>
+            <Pressable onPress={handleUndoDelete} hitSlop={8}>
+              <Text style={{ ...typography.bodyBold, color: colors.primary }}>Отмени</Text>
+            </Pressable>
+          </View>
+        ) : null}
       </View>
     </Screen>
   );

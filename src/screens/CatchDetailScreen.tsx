@@ -14,6 +14,7 @@ import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { ImageViewer } from '../components/ImageViewer';
+import { Skeleton } from '../components/Skeleton';
 import { useTheme } from '../services/themeContext';
 import { spacing, typography } from '../theme/typography';
 import { catchesStore } from '../storage/storage';
@@ -29,40 +30,69 @@ import type { FeedItem } from '../services/catchSync';
 
 type R = RouteProp<LogbookStackParamList, 'CatchDetail'>;
 
+function CatchDetailSkeleton() {
+  return (
+    <>
+      <Skeleton height={300} borderRadius={0} />
+      <View style={{ padding: spacing.lg, gap: spacing.md }}>
+        <Skeleton height={26} width="58%" />
+        <Skeleton height={16} width="78%" />
+        <Skeleton height={14} width="46%" />
+        <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
+          <Skeleton height={28} width={88} />
+          <Skeleton height={28} width={72} />
+          <Skeleton height={28} width={80} />
+        </View>
+        <View style={{ marginTop: spacing.md, gap: spacing.sm }}>
+          <Skeleton height={16} width="90%" />
+          <Skeleton height={16} width="70%" />
+        </View>
+      </View>
+    </>
+  );
+}
+
 export default function CatchDetailScreen() {
   const route = useRoute<R>();
   const navigation = useAppNavigation();
   const { colors } = useTheme();
   const { user, configured } = useAuth();
   const [item, setItem] = useState<Catch | null>(null);
+  const [loading, setLoading] = useState(true);
   const [isOwn, setIsOwn] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [photoAspectRatio, setPhotoAspectRatio] = useState<number | null>(null);
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerUri, setViewerUri] = useState<string>('');
+  const [currentExtraPhoto, setCurrentExtraPhoto] = useState(0);
   const cardRef = useRef<ViewShot>(null);
 
   const reload = useCallback(async () => {
-    const id = route.params.id;
-    const list = await catchesStore.list();
-    const local = list.find((c) => c.id === id);
-    if (local) {
-      setItem(local);
-      setIsOwn(true);
-      return;
-    }
+    setLoading(true);
     try {
-      const fb = requireFirebase();
-      const snap = await getDoc(doc(fb.db, 'publicCatches', id));
-      if (snap.exists()) {
-        const data = snap.data() as Catch & { ownerUid?: string };
-        setItem(data);
-        setIsOwn(!!user?.uid && data.ownerUid === user.uid);
-      } else {
+      const id = route.params.id;
+      const list = await catchesStore.list();
+      const local = list.find((c) => c.id === id);
+      if (local) {
+        setItem(local);
+        setIsOwn(true);
+        return;
+      }
+      try {
+        const fb = requireFirebase();
+        const snap = await getDoc(doc(fb.db, 'publicCatches', id));
+        if (snap.exists()) {
+          const data = snap.data() as Catch & { ownerUid?: string };
+          setItem(data);
+          setIsOwn(!!user?.uid && data.ownerUid === user.uid);
+        } else {
+          setItem(null);
+        }
+      } catch {
         setItem(null);
       }
-    } catch {
-      setItem(null);
+    } finally {
+      setLoading(false);
     }
   }, [route.params.id, user?.uid]);
 
@@ -127,6 +157,14 @@ export default function CatchDetailScreen() {
     if (navigation.canGoBack()) navigation.goBack();
     else navigation.navigate('LogbookList');
   };
+
+  if (loading) {
+    return (
+      <Screen padded={false}>
+        <CatchDetailSkeleton />
+      </Screen>
+    );
+  }
 
   if (!item) {
     return (
@@ -249,13 +287,28 @@ export default function CatchDetailScreen() {
           </ViewShot>
 
           {(item.extraPhotoUris?.length ?? 0) > 0 ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {item.extraPhotoUris!.map((uri, i) => (
-                <Pressable key={i} onPress={() => { setViewerUri(uri); setViewerOpen(true); }}>
-                  <Image source={{ uri }} style={styles.extraPhoto} contentFit="cover" />
-                </Pressable>
-              ))}
-            </ScrollView>
+            <>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                scrollEventThrottle={160}
+                onScroll={(e) => {
+                  const x = e.nativeEvent.contentOffset.x;
+                  setCurrentExtraPhoto(Math.round(x / 208));
+                }}
+              >
+                {item.extraPhotoUris!.map((uri, i) => (
+                  <Pressable key={i} onPress={() => { setViewerUri(uri); setViewerOpen(true); }}>
+                    <Image source={{ uri }} style={styles.extraPhoto} contentFit="cover" />
+                  </Pressable>
+                ))}
+              </ScrollView>
+              {item.extraPhotoUris!.length > 1 && (
+                <Text style={{ ...typography.caption, color: colors.textMuted, textAlign: 'center', marginTop: 4 }}>
+                  {currentExtraPhoto + 1} / {item.extraPhotoUris!.length}
+                </Text>
+              )}
+            </>
           ) : null}
 
           {item.notes ? <Text style={styles.notes}>{item.notes}</Text> : null}
