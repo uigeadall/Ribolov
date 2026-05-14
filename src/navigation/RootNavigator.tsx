@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import {
   NavigationContainer,
   DefaultTheme,
@@ -195,34 +196,41 @@ function TabNavigator() {
   const tabBarStyle = useMemo(
     () => ({
       backgroundColor: 'transparent',
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: colors.border,
-      elevation: 12,
-      shadowColor: mode === 'dark' ? colors.primary : '#093545',
-      shadowOffset: { width: 0, height: -2 },
-      shadowOpacity: mode === 'dark' ? 0.18 : 0.06,
-      shadowRadius: 10,
+      borderTopWidth: 0,
+      elevation: 0,
+      shadowOpacity: 0,
       paddingTop: tabPadTop,
       paddingBottom: bottomPad,
       height: tabPadTop + tabRowInner + bottomPad,
     }),
-    [colors.border, colors.primary, mode, bottomPad]
+    [bottomPad]
   );
 
   const tabBarBackground = useMemo(
     () => () => (
-      <LinearGradient
-        colors={
-          mode === 'dark'
-            ? [colors.card + 'E0', colors.card]
-            : ['rgba(238,245,247,0.88)', colors.card]
-        }
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
-      />
+      <>
+        <BlurView
+          intensity={mode === 'dark' ? 65 : 82}
+          tint={mode === 'dark' ? 'dark' : 'light'}
+          style={StyleSheet.absoluteFillObject}
+        />
+        <LinearGradient
+          colors={mode === 'dark'
+            ? ['rgba(255,255,255,0.07)', 'rgba(255,255,255,0.02)']
+            : ['rgba(255,255,255,0.58)', 'rgba(255,255,255,0.18)']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={StyleSheet.absoluteFillObject}
+        />
+        {/* Glass rim — specular highlight along the top edge */}
+        <View style={{
+          position: 'absolute', top: 0, left: 0, right: 0,
+          height: StyleSheet.hairlineWidth,
+          backgroundColor: mode === 'dark' ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.90)',
+        }} />
+      </>
     ),
-    [colors.card, mode]
+    [mode]
   );
 
   return (

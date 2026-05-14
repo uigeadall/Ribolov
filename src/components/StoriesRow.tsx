@@ -14,6 +14,7 @@ import { subscribeStories, deleteStory, timeAgo, STORY_REACTIONS, type Story, ty
 import { useStoryViewer, type FlyingEmoji } from '../hooks/useStoryViewer';
 import { useAddStory } from '../hooks/useAddStory';
 import { useAppNavigation } from '../navigation/useAppNavigation';
+import { BlurView } from 'expo-blur';
 
 const STORY_DURATION = 8000;
 
@@ -159,17 +160,17 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
     viewerBg: { flex: 1, backgroundColor: '#000' },
     viewerMedia: { width: SW, height: SH },
     viewerOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0 },
-    viewerInfo: { padding: spacing.lg, paddingBottom: spacing.sm, backgroundColor: 'rgba(0,0,0,0.45)' },
+    viewerInfo: { padding: spacing.lg, paddingBottom: spacing.sm },
     viewerName: { ...typography.bodyBold, color: '#fff', marginBottom: spacing.xs },
     viewerText: { ...typography.h3, color: '#fff', lineHeight: 26 },
     viewerMeta: { ...typography.caption, color: 'rgba(255,255,255,0.7)', marginTop: spacing.sm },
     viewerClose: { position: 'absolute', top: insets.top + spacing.md, right: spacing.lg },
-    reactionBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.sm, paddingVertical: spacing.sm, backgroundColor: 'rgba(0,0,0,0.65)' },
+    reactionBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.sm, paddingVertical: spacing.sm },
     reactionBtn: { alignItems: 'center', flex: 1, paddingVertical: spacing.xs, borderRadius: radius.md },
     reactionBtnActive: { backgroundColor: 'rgba(255,255,255,0.18)' },
     reactionEmoji: { fontSize: 28 },
     reactionCount: { ...typography.caption, color: 'rgba(255,255,255,0.75)', fontSize: 10, marginTop: 1 },
-    reactionSummaryBar: { paddingHorizontal: spacing.md, paddingVertical: 5, backgroundColor: 'rgba(0,0,0,0.4)' },
+    reactionSummaryBar: { paddingHorizontal: spacing.md, paddingVertical: 5 },
     commentsPanel: { backgroundColor: 'rgba(10,10,10,0.92)', paddingBottom: insets.bottom || spacing.md },
     commentsPanelHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(255,255,255,0.08)' },
     commentItem: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(255,255,255,0.05)', flexDirection: 'row', alignItems: 'flex-start' },
@@ -269,7 +270,7 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
               </Pressable>
 
               <View style={styles.viewerOverlay}>
-                <View style={styles.viewerInfo}>
+                <BlurView intensity={45} tint="dark" style={styles.viewerInfo}>
                   <Pressable onPress={() => { closeViewer(); navigation.navigate('UserPublicProfile', { uid: viewing.uid, displayName: viewing.userName }); }} hitSlop={8}>
                     <Text style={styles.viewerName}>{viewing.userName} · {timeAgo(viewing.createdAt)}</Text>
                   </Pressable>
@@ -280,10 +281,10 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
                       <Text style={{ ...typography.caption, color: 'rgba(255,255,255,0.45)' }}>Изтрий момента</Text>
                     </Pressable>
                   ) : null}
-                </View>
+                </BlurView>
 
                 {user ? (
-                  <View style={styles.reactionBar}>
+                  <BlurView intensity={50} tint="dark" style={styles.reactionBar}>
                     {reactionEntries.map(([type, r], idx) => {
                       const count = viewer.reactionSummary.find((s) => s.type === type)?.count ?? 0;
                       const isActive = viewer.myReaction === type;
@@ -300,15 +301,15 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
                       <Ionicons name={viewer.commentsOpen ? 'chatbubble' : 'chatbubble-outline'} size={24} color={viewer.commentsOpen ? '#fff' : 'rgba(255,255,255,0.55)'} />
                       {viewer.comments.length > 0 && <Text style={styles.reactionCount}>{viewer.comments.length}</Text>}
                     </Pressable>
-                  </View>
+                  </BlurView>
                 ) : null}
 
                 {viewer.totalReactions > 0 && !viewer.commentsOpen && (
-                  <View style={styles.reactionSummaryBar}>
+                  <BlurView intensity={35} tint="dark" style={styles.reactionSummaryBar}>
                     <Text style={{ ...typography.caption, color: 'rgba(255,255,255,0.55)' }}>
                       {viewer.reactionSummary.slice(0, 3).map((r) => r.emoji).join('  ')}  {viewer.totalReactions}
                     </Text>
-                  </View>
+                  </BlurView>
                 )}
 
                 {viewer.commentsOpen && (

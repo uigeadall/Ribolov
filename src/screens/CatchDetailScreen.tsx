@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import {
   View, Text, StyleSheet, Alert, ScrollView,
   TextInput, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform, Modal,
@@ -233,19 +234,25 @@ export default function CatchDetailScreen() {
                   <Text style={{ ...typography.body, color: 'rgba(255,255,255,0.82)', marginTop: 2 }} numberOfLines={1}>{metaLine}</Text>
                 </LinearGradient>
               </Pressable>
-              {/* Floating back button */}
-              <Pressable
-                onPress={safeGoBack}
-                hitSlop={8}
-                style={{
-                  position: 'absolute', top: spacing.lg, left: spacing.md,
-                  width: 36, height: 36, borderRadius: 18,
-                  backgroundColor: 'rgba(0,0,0,0.38)',
-                  alignItems: 'center', justifyContent: 'center',
-                }}
-              >
-                <Ionicons name="chevron-back" size={22} color="#fff" />
-              </Pressable>
+              {/* Floating back button — glass circle */}
+              <View style={{
+                position: 'absolute', top: spacing.lg, left: spacing.md,
+                width: 36, height: 36, borderRadius: 18, overflow: 'hidden',
+              }}>
+                <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFillObject} />
+                <LinearGradient
+                  colors={['rgba(255,255,255,0.14)', 'rgba(255,255,255,0.04)']}
+                  start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+                  style={StyleSheet.absoluteFillObject}
+                />
+                <Pressable
+                  onPress={safeGoBack}
+                  hitSlop={8}
+                  style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <Ionicons name="chevron-back" size={22} color="#fff" />
+                </Pressable>
+              </View>
             </View>
           ) : (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.lg, paddingBottom: 0 }}>

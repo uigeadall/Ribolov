@@ -19,6 +19,8 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import type { FeedItem } from '../services/catchSync';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
@@ -49,12 +51,7 @@ function feedStyles(colors: AppColors) {
       bottom: 0,
       left: 0,
       right: 0,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.sm,
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm,
-      backgroundColor: 'rgba(0,0,0,0.42)',
+      overflow: 'hidden',
     },
     avatar: {
       width: 32, height: 32, borderRadius: 16, backgroundColor: colors.primary,
@@ -137,7 +134,7 @@ type Props = {
 };
 
 export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarUrl, socialEnabled, isVisible = true, onPressAuthor, onPressCatch }: Props) {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const styles = useMemo(() => feedStyles(colors), [colors]);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
@@ -281,30 +278,43 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
               >
                 ❤️
               </Animated.Text>
-              {/* Author overlay at bottom of photo */}
-              <Pressable style={styles.photoOverlay} onPress={() => onPressAuthor(item.ownerUid, ownerName)}>
-                <View style={{ position: 'relative' }}>
-                  {isRecent && (
-                    <View style={{
-                      position: 'absolute', top: -2.5, left: -2.5,
-                      width: 37, height: 37, borderRadius: 18.5,
-                      borderWidth: 2.5, borderColor: colors.primary,
-                    }} />
-                  )}
-                  <View style={styles.avatar}>
-                    {avatarUrl ? (
-                      <Image source={{ uri: avatarUrl }} style={styles.avatarImg} contentFit="cover" cachePolicy="memory-disk" />
-                    ) : (
-                      <Text style={styles.avatarText}>{initials}</Text>
+              {/* Author overlay at bottom of photo — glass panel */}
+              <View style={styles.photoOverlay}>
+                <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFillObject} />
+                <LinearGradient
+                  colors={['rgba(0,0,0,0.0)', 'rgba(0,0,0,0.38)']}
+                  start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+                  style={StyleSheet.absoluteFillObject}
+                />
+                {/* Specular top rim */}
+                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(255,255,255,0.22)' }} />
+                <Pressable
+                  style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm }}
+                  onPress={() => onPressAuthor(item.ownerUid, ownerName)}
+                >
+                  <View style={{ position: 'relative' }}>
+                    {isRecent && (
+                      <View style={{
+                        position: 'absolute', top: -2.5, left: -2.5,
+                        width: 37, height: 37, borderRadius: 18.5,
+                        borderWidth: 2.5, borderColor: colors.primary,
+                      }} />
                     )}
+                    <View style={styles.avatar}>
+                      {avatarUrl ? (
+                        <Image source={{ uri: avatarUrl }} style={styles.avatarImg} contentFit="cover" cachePolicy="memory-disk" />
+                      ) : (
+                        <Text style={styles.avatarText}>{initials}</Text>
+                      )}
+                    </View>
                   </View>
-                </View>
-                <View style={styles.meta}>
-                  <Text style={styles.name} numberOfLines={1}>{isMine ? myDisplayName : ownerName}</Text>
-                  <Text style={styles.date}>{formatTimeAgo(item.date)}{item.location?.name ? ` · ${item.location.name}` : ''}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.7)" />
-              </Pressable>
+                  <View style={styles.meta}>
+                    <Text style={styles.name} numberOfLines={1}>{isMine ? myDisplayName : ownerName}</Text>
+                    <Text style={styles.date}>{formatTimeAgo(item.date)}{item.location?.name ? ` · ${item.location.name}` : ''}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.7)" />
+                </Pressable>
+              </View>
             </View>
           </Pressable>
         ) : (
@@ -379,38 +389,56 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
 
         {socialEnabled ? (
           <>
-            {/* ── Inline reaction picker ── */}
+            {/* ── Inline reaction picker — glass pill ── */}
             {showPicker && (
               <Animated.View
                 style={{
-                  flexDirection: 'row', justifyContent: 'space-around',
-                  backgroundColor: colors.card, borderRadius: radius.xl,
-                  borderWidth: 1, borderColor: colors.border,
-                  paddingVertical: spacing.sm, paddingHorizontal: spacing.xs,
+                  borderRadius: radius.xl, overflow: 'hidden',
                   marginTop: spacing.sm,
                   opacity: pickerAnim,
                   transform: [{ scale: pickerAnim.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] }) }],
-                  shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.1, shadowRadius: 8, elevation: 4,
+                  shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: mode === 'dark' ? 0.35 : 0.14, shadowRadius: 14, elevation: 6,
                 }}
               >
-                {(Object.entries(REACTIONS) as [ReactionType, { emoji: string; label: string }][]).map(([type, r]) => (
-                  <Pressable
-                    key={type}
-                    onPress={() => { closePicker(); social.onPickReaction(type); }}
-                    style={{
-                      alignItems: 'center', paddingHorizontal: spacing.sm, paddingVertical: 4,
-                      borderRadius: radius.md,
-                      backgroundColor: social.myReaction === type ? colors.primarySurface : 'transparent',
-                    }}
-                  >
-                    <Text style={{ fontSize: 28 }}>{r.emoji}</Text>
-                    <Text style={{ ...typography.caption, color: social.myReaction === type ? colors.primary : colors.textMuted, marginTop: 2, fontSize: 10 }}>{r.label}</Text>
+                <BlurView
+                  intensity={mode === 'dark' ? 68 : 80}
+                  tint={mode === 'dark' ? 'dark' : 'light'}
+                  style={StyleSheet.absoluteFillObject}
+                />
+                <LinearGradient
+                  colors={mode === 'dark'
+                    ? ['rgba(255,255,255,0.10)', 'rgba(255,255,255,0.04)']
+                    : ['rgba(255,255,255,0.72)', 'rgba(255,255,255,0.30)']}
+                  start={{ x: 0, y: 0 }} end={{ x: 0.4, y: 1 }}
+                  style={StyleSheet.absoluteFillObject}
+                />
+                {/* Glass rim */}
+                <View style={[StyleSheet.absoluteFillObject, {
+                  borderRadius: radius.xl, borderWidth: 1,
+                  borderColor: mode === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.82)',
+                }]} />
+                <View style={{ flexDirection: 'row', justifyContent: 'space-around', paddingVertical: spacing.sm, paddingHorizontal: spacing.xs }}>
+                  {(Object.entries(REACTIONS) as [ReactionType, { emoji: string; label: string }][]).map(([type, r]) => (
+                    <Pressable
+                      key={type}
+                      onPress={() => { closePicker(); social.onPickReaction(type); }}
+                      style={{
+                        alignItems: 'center', paddingHorizontal: spacing.sm, paddingVertical: 4,
+                        borderRadius: radius.md,
+                        backgroundColor: social.myReaction === type
+                          ? (mode === 'dark' ? 'rgba(255,255,255,0.18)' : colors.primarySurface)
+                          : 'transparent',
+                      }}
+                    >
+                      <Text style={{ fontSize: 28 }}>{r.emoji}</Text>
+                      <Text style={{ ...typography.caption, color: social.myReaction === type ? colors.primary : colors.textMuted, marginTop: 2, fontSize: 10 }}>{r.label}</Text>
+                    </Pressable>
+                  ))}
+                  <Pressable onPress={closePicker} style={{ alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.sm }}>
+                    <Ionicons name="close-circle" size={22} color={mode === 'dark' ? 'rgba(255,255,255,0.45)' : colors.textMuted} />
                   </Pressable>
-                ))}
-                <Pressable onPress={closePicker} style={{ alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.sm }}>
-                  <Ionicons name="close-circle" size={22} color={colors.textMuted} />
-                </Pressable>
+                </View>
               </Animated.View>
             )}
 
