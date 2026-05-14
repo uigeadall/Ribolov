@@ -1,16 +1,17 @@
 import React, { useMemo, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Animated } from 'react-native';
+import { View, Text, StyleSheet, Animated, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../services/themeContext';
-import { spacing, typography } from '../theme/typography';
+import { radius, spacing, typography } from '../theme/typography';
 
 type Props = {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
   subtitle?: string;
+  action?: { label: string; onPress: () => void };
 };
 
-export function EmptyState({ icon, title, subtitle }: Props) {
+export function EmptyState({ icon, title, subtitle, action }: Props) {
   const { colors } = useTheme();
   const pulse = useRef(new Animated.Value(1)).current;
   const ring1 = useRef(new Animated.Value(0)).current;
@@ -72,6 +73,18 @@ export function EmptyState({ icon, title, subtitle }: Props) {
           marginTop: spacing.sm,
           lineHeight: 22,
         },
+        actionBtn: {
+          backgroundColor: colors.primary,
+          borderRadius: radius.pill,
+          paddingHorizontal: spacing.xl,
+          paddingVertical: 12,
+          marginTop: spacing.lg,
+        },
+        actionBtnText: {
+          ...typography.bodyBold,
+          color: colors.white,
+          textAlign: 'center',
+        },
       }),
     [colors]
   );
@@ -89,6 +102,11 @@ export function EmptyState({ icon, title, subtitle }: Props) {
       </View>
       <Text style={styles.title}>{title}</Text>
       {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+      {action ? (
+        <Pressable style={styles.actionBtn} onPress={action.onPress}>
+          <Text style={styles.actionBtnText}>{action.label}</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }

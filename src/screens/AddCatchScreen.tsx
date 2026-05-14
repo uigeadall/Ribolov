@@ -155,6 +155,16 @@ export default function AddCatchScreen() {
     tripId: undefined,
   });
 
+  const [lastCatch, setLastCatch] = useState<Catch | null>(null);
+  useEffect(() => {
+    catchesStore.list().then((list) => {
+      if (list.length > 0) {
+        const sorted = [...list].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+        setLastCatch(sorted[0]);
+      }
+    });
+  }, []);
+
   const [recentBaits, setRecentBaits] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [unlockedNow, setUnlockedNow] = useState<Achievement[]>([]);
@@ -547,6 +557,54 @@ export default function AddCatchScreen() {
           <Text style={styles.title}>{editCatchId ? 'Редактирай улов' : 'Нов улов'}</Text>
           <View style={{ width: 28 }} />
         </View>
+
+        {!editCatchId && lastCatch ? (
+          <Pressable
+            onPress={() => {
+              void Haptics.selectionAsync();
+              dispatch({
+                type: 'LOAD_CATCH',
+                payload: {
+                  speciesId: speciesList.some((s) => s.id === lastCatch.speciesId)
+                    ? lastCatch.speciesId
+                    : speciesList[0].id,
+                  weight: lastCatch.weightKg != null ? String(lastCatch.weightKg) : '',
+                  length: lastCatch.lengthCm != null ? String(lastCatch.lengthCm) : '',
+                  bait: lastCatch.bait ?? '',
+                  notes: lastCatch.notes ?? '',
+                  released: !!lastCatch.released,
+                  locationCoords: lastCatch.location
+                    ? { lat: lastCatch.location.latitude, lon: lastCatch.location.longitude }
+                    : null,
+                  locationName: lastCatch.location?.name ?? '',
+                  photoUri: undefined,
+                  cameraVerifiedPhoto: false,
+                },
+              });
+            }}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              paddingHorizontal: spacing.md,
+              paddingVertical: 8,
+              borderRadius: radius.pill,
+              backgroundColor: colors.primarySurface,
+              borderWidth: 1,
+              borderColor: colors.primary,
+              alignSelf: 'flex-start',
+              marginHorizontal: spacing.lg,
+              marginBottom: spacing.sm,
+            }}
+          >
+            <Text
+              style={{ ...typography.small, color: colors.primary, fontWeight: '600', maxWidth: 280 }}
+              numberOfLines={1}
+            >
+              {'🔁 Като последния — ' + lastCatch.speciesName + (lastCatch.weightKg != null ? ' ' + lastCatch.weightKg + 'кг' : '')}
+            </Text>
+          </Pressable>
+        ) : null}
 
         <PhotoSection
           photoUri={form.photoUri}

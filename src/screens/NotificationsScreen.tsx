@@ -96,7 +96,7 @@ function createStyles(colors: AppColors) {
 }
 
 type NotifRowProps = {
-  item: SocialNotification;
+  item: GroupedNotification;
   myUid: string;
   onOpen: (n: SocialNotification) => void;
   onDismiss: () => void;
@@ -119,6 +119,20 @@ function NotifRow({ item, myUid, onOpen, onDismiss, styles, colors }: NotifRowPr
     : item.type === 'comment' ? '#e53935'
     : item.type === 'storyComment' ? '#e53935'
     : '#2E9B5A';
+
+  const isGrouped = (item.groupCount ?? 0) > 0;
+  const groupCount = item.groupCount ?? 0;
+
+  // Build the display line text for grouped vs individual notifications
+  let displayLine: string;
+  if (isGrouped && (item.type === 'like' || item.type === 'storyLike')) {
+    const target = item.type === 'like' ? 'твой улов' : 'твоята история';
+    displayLine = `${item.actorName} и ${groupCount} ${groupCount === 1 ? 'друг' : 'други'} реагираха на ${target}`;
+  } else if (isGrouped && item.type === 'follow') {
+    displayLine = `${groupCount + 1} риболовеца те последваха`;
+  } else {
+    displayLine = '';
+  }
 
   const verb =
     item.type === 'like'
@@ -170,7 +184,10 @@ function NotifRow({ item, myUid, onOpen, onDismiss, styles, colors }: NotifRowPr
         </View>
         <View style={styles.body}>
           <Text style={styles.line}>
-            <Text style={{ fontWeight: '700' }}>{item.actorName}</Text> {verb}.
+            {isGrouped
+              ? displayLine
+              : <><Text style={{ fontWeight: '700' }}>{item.actorName}</Text> {verb}.</>
+            }
           </Text>
           {item.preview ? <Text style={styles.preview} numberOfLines={3}>{item.preview}</Text> : null}
           {item.catchId ? (
@@ -218,6 +235,81 @@ function NotifRow({ item, myUid, onOpen, onDismiss, styles, colors }: NotifRowPr
   );
 }
 
+// ── Grouping ─────────────────────────────────────────────────────────────────
+
+type GroupedNotification = SocialNotification & {
+  groupCount?: number;   // how many were collapsed into this row
+  groupActors?: string[]; // names of actors beyond the first
+};
+
+function getCreatedAtMs(createdAt: unknown): number {
+  if (!createdAt) return 0;
+  if (typeof createdAt === 'object' && createdAt !== null && 'toMillis' in createdAt) {
+    return (createdAt as { toMillis: () => number }).toMillis();
+  }
+  if (typeof createdAt === 'number') return createdAt;
+  return 0;
+}
+
+function groupNotifications(items: SocialNotification[]): GroupedNotification[] {
+  const result: GroupedNotification[] = [];
+  // Track which ids have been consumed into a group
+  const consumed = new Set<string>();
+
+  // Sort newest-first so we always keep the most-recent as the representative
+  const sorted = [...items].sort(
+    (a, b) => getCreatedAtMs(b.createdAt) - getCreatedAtMs(a.createdAt),
+  );
+
+  // ── Follow grouping: if 3+ follow notifications exist, collapse all into one ──
+  const follows = sorted.filter((n) => n.type === 'follow');
+  if (follows.length >= 3) {
+    const [representative, ...rest] = follows;
+    const grouped: GroupedNotification = {
+      ...representative,
+      groupCount: rest.length,
+      groupActors: rest.map((n) => n.actorName),
+    };
+    result.push(grouped);
+    follows.forEach((n) => consumed.add(n.id));
+  }
+
+  // ── Like / storyLike grouping by catchId / storyId ────────────────────────
+  // Build a map: key → list of like-type notifications with the same target
+  const likeGroups = new Map<string, SocialNotification[]>();
+  for (const n of sorted) {
+    if (n.type !== 'like' && n.type !== 'storyLike') continue;
+    const key = n.catchId ?? n.storyId ?? n.id; // fall back to own id so it stays solo
+    if (!likeGroups.has(key)) likeGroups.set(key, []);
+    likeGroups.get(key)!.push(n);
+  }
+
+  for (const [, group] of likeGroups) {
+    if (group.length < 2) continue; // single like — handled below as a plain row
+    const [representative, ...rest] = group;
+    const grouped: GroupedNotification = {
+      ...representative,
+      groupCount: rest.length,
+      groupActors: rest.map((n) => n.actorName),
+    };
+    result.push(grouped);
+    group.forEach((n) => consumed.add(n.id));
+  }
+
+  // ── Everything else (and solo likes / solo follows) ────────────────────────
+  for (const n of sorted) {
+    if (consumed.has(n.id)) continue;
+    result.push({ ...n });
+  }
+
+  // Re-sort the final list by time (newest first)
+  result.sort((a, b) => getCreatedAtMs(b.createdAt) - getCreatedAtMs(a.createdAt));
+
+  return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function NotificationsScreen() {
   const navigation = useAppNavigation();
   const { colors } = useTheme();
@@ -262,6 +354,7 @@ export default function NotificationsScreen() {
 
   const onMarkAll = useCallback(() => {
     if (!user?.uid || unreadCount === 0) return;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setData((prev) => prev ? prev.map((n) => ({ ...n, read: true })) : prev);
     markAllNotificationsRead(user.uid).catch(() => {
       Toast.show({ type: 'error', text1: 'Грешка', text2: 'Неуспешно маркиране.', visibilityTime: 2500 });
@@ -311,7 +404,7 @@ export default function NotificationsScreen() {
         />
       ) : (
         <FlatList
-          data={items}
+          data={groupNotifications(items)}
           keyExtractor={(n) => n.id}
           removeClippedSubviews={Platform.OS === 'android'}
           contentContainerStyle={styles.listContent}

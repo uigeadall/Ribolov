@@ -9,6 +9,7 @@ import { useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { doc, getDoc } from 'firebase/firestore';
 import { Image } from 'expo-image';
 import ViewShot from 'react-native-view-shot';
+import * as Haptics from 'expo-haptics';
 import * as Sharing from 'expo-sharing';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
@@ -182,6 +183,7 @@ export default function CatchDetailScreen() {
     try {
       const uri = await (cardRef.current as any).capture();
       if (await Sharing.isAvailableAsync()) {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         await Sharing.shareAsync(uri, { mimeType: 'image/png' });
       }
     } catch {

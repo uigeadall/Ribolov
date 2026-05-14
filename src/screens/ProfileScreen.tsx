@@ -577,6 +577,25 @@ export default function ProfileScreen() {
   const avatarUri = pickedAvatarUri ?? remotePhotoUrl ?? user?.photoURL ?? undefined;
   const initialLetter = (displayName || user?.email || '?').slice(0, 1).toUpperCase();
 
+  const hasPhoto = !!(avatarUri);
+  const hasDisplayName = !!(displayName.trim() && displayName.trim() !== user?.email);
+  const hasCatch = catches.length > 0;
+  const hasSyncedCatch = catches.some((c) => c.syncedToCloud === true);
+  const completionPct =
+    (hasPhoto ? 25 : 0) +
+    (hasDisplayName ? 25 : 0) +
+    (hasCatch ? 25 : 0) +
+    (hasSyncedCatch ? 25 : 0);
+  const completionHint = !hasPhoto
+    ? 'Добави профилна снимка'
+    : !hasDisplayName
+    ? 'Добави своето име'
+    : !hasCatch
+    ? 'Запиши първия улов'
+    : !hasSyncedCatch
+    ? 'Сподели улов публично'
+    : null;
+
   return (
     <Screen scroll={false} padded={false}>
       <ScrollView
@@ -661,6 +680,33 @@ export default function ProfileScreen() {
               ) : null}
             </LinearGradient>
           )}
+
+          {/* ── Profile completion nudge ── */}
+          {user && !profileLoading && completionPct < 100 ? (
+            <View style={{
+              marginHorizontal: spacing.lg,
+              marginTop: spacing.sm,
+              padding: spacing.md,
+              backgroundColor: colors.primarySurface,
+              borderRadius: radius.md,
+              borderWidth: 1,
+              borderColor: colors.border,
+            }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={{ ...typography.small, color: colors.textMuted }}>Профил {completionPct}% завършен  →</Text>
+                <Text style={{ ...typography.small, color: colors.primary, fontWeight: '700' }}>{completionPct}%</Text>
+              </View>
+              <View style={{ height: 6, backgroundColor: colors.border, borderRadius: 3, marginTop: spacing.xs }}>
+                <View style={{ height: 6, width: `${completionPct}%` as `${number}%`, backgroundColor: colors.primary, borderRadius: 3 }} />
+              </View>
+              {completionHint ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: spacing.xs }}>
+                  <Text style={{ ...typography.small, color: colors.textMuted, flex: 1 }}>{completionHint}</Text>
+                  <Text style={{ ...typography.small, color: colors.textMuted }}> →</Text>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
 
           {/* ── Achievements compact row ── */}
           {catches.length > 0 && (() => {

@@ -166,11 +166,12 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
     });
   };
 
-  // Double-tap to like
+  // Double-tap to like / save
   const lastTapTimeRef = useRef(0);
   const heartOpacity = useRef(new Animated.Value(0)).current;
   const heartScale = useRef(new Animated.Value(0.4)).current;
   const heartY = useRef(new Animated.Value(0)).current;
+  const bookmarkOpacity = useRef(new Animated.Value(0)).current;
 
   const isRecent = useMemo(() => {
     const ms = Date.parse(item.date);
@@ -182,9 +183,20 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
     if (now - lastTapTimeRef.current < 320) {
       lastTapTimeRef.current = 0;
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-      if (socialEnabled && !social.myReaction && !social.likeBusy) {
-        social.onPickReaction('heart');
-        animateReaction();
+      if (socialEnabled && !social.likeBusy) {
+        if (!social.myReaction) {
+          social.onPickReaction('heart');
+          animateReaction();
+        } else {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          void social.onToggleSave();
+          // Pulse bookmark overlay
+          bookmarkOpacity.setValue(1);
+          Animated.sequence([
+            Animated.delay(400),
+            Animated.timing(bookmarkOpacity, { toValue: 0, duration: 350, useNativeDriver: true }),
+          ]).start();
+        }
       }
       heartOpacity.setValue(1);
       heartScale.setValue(0.4);
@@ -226,6 +238,7 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
   ).current;
 
   const openMoreMenu = () => {
+    void Haptics.selectionAsync();
     const options = isMine
       ? ['Докладвай', 'Отказ']
       : ['Докладвай', 'Отказ'];
@@ -277,6 +290,16 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
                 }}
               >
                 ❤️
+              </Animated.Text>
+              {/* Floating double-tap bookmark */}
+              <Animated.Text
+                style={{
+                  position: 'absolute', alignSelf: 'center', top: '30%',
+                  fontSize: 90, pointerEvents: 'none',
+                  opacity: bookmarkOpacity,
+                }}
+              >
+                🔖
               </Animated.Text>
               {/* Author overlay at bottom of photo — glass panel */}
               <View style={styles.photoOverlay}>

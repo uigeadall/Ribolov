@@ -11,7 +11,10 @@ import {
   ScrollView,
   Switch,
   Platform,
+  Modal,
+  Animated,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Swipeable } from 'react-native-gesture-handler';
@@ -400,6 +403,182 @@ function SpeciesChip({ label, selected, onPress, colors, styles }: SpeciesChipPr
   );
 }
 
+const DAY_LABELS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'];
+
+type LogbookCalendarProps = {
+  catches: Catch[];
+  colors: AppColors;
+  onDayPress: (date: string) => void;
+  selectedDay: string | null;
+  calMonth: { year: number; month: number };
+  setCalMonth: React.Dispatch<React.SetStateAction<{ year: number; month: number }>>;
+  personalBests: ReturnType<typeof computePersonalBests>;
+  user: { uid: string } | null;
+  styles: ReturnType<typeof createLogbookStyles>;
+  onOpenCatch: (item: Catch) => void;
+  onDeleteCatch: (item: Catch) => void;
+  bottomPad: number;
+};
+
+function LogbookCalendar({
+  catches, colors, onDayPress, selectedDay, calMonth, setCalMonth,
+  personalBests, user, styles, onOpenCatch, onDeleteCatch, bottomPad,
+}: LogbookCalendarProps) {
+  const daysInMonth = new Date(calMonth.year, calMonth.month + 1, 0).getDate();
+  const firstDow = (new Date(calMonth.year, calMonth.month, 1).getDay() + 6) % 7;
+
+  const catchesByDay = useMemo(() => {
+    const map = new Map<string, Catch[]>();
+    catches.forEach((c) => {
+      const d = c.date.slice(0, 10);
+      if (!map.has(d)) map.set(d, []);
+      map.get(d)!.push(c);
+    });
+    return map;
+  }, [catches]);
+
+  const monthLabel = new Date(calMonth.year, calMonth.month, 1).toLocaleDateString('bg-BG', {
+    month: 'long',
+    year: 'numeric',
+  });
+
+  const goToPrev = () => {
+    setCalMonth((prev) => {
+      const m = prev.month === 0 ? 11 : prev.month - 1;
+      const y = prev.month === 0 ? prev.year - 1 : prev.year;
+      return { year: y, month: m };
+    });
+  };
+
+  const goToNext = () => {
+    setCalMonth((prev) => {
+      const m = prev.month === 11 ? 0 : prev.month + 1;
+      const y = prev.month === 11 ? prev.year + 1 : prev.year;
+      return { year: y, month: m };
+    });
+  };
+
+  const selectedDayCatches: Catch[] = selectedDay
+    ? (catchesByDay.get(selectedDay) ?? [])
+    : (() => {
+        const all: Catch[] = [];
+        for (let d = 1; d <= daysInMonth; d++) {
+          const key = `${calMonth.year}-${String(calMonth.month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+          const cs = catchesByDay.get(key);
+          if (cs) all.push(...cs);
+        }
+        return all.sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+      })();
+
+  const cells: (number | null)[] = [];
+  for (let i = 0; i < firstDow; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  return (
+    <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      {/* Month navigation */}
+      <View style={{
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+        paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
+      }}>
+        <Pressable onPress={goToPrev} hitSlop={8} style={{ padding: spacing.sm }}>
+          <Ionicons name="chevron-back" size={22} color={colors.primary} />
+        </Pressable>
+        <Text style={{ ...typography.h3, color: colors.text, textTransform: 'capitalize' }}>
+          {monthLabel}
+        </Text>
+        <Pressable onPress={goToNext} hitSlop={8} style={{ padding: spacing.sm }}>
+          <Ionicons name="chevron-forward" size={22} color={colors.primary} />
+        </Pressable>
+      </View>
+
+      {/* Day-of-week header */}
+      <View style={{ flexDirection: 'row', paddingHorizontal: spacing.md }}>
+        {DAY_LABELS.map((lbl) => (
+          <View key={lbl} style={{ flex: 1, alignItems: 'center', paddingVertical: spacing.xs }}>
+            <Text style={{ ...typography.small, color: colors.textMuted, fontWeight: '700' }}>{lbl}</Text>
+          </View>
+        ))}
+      </View>
+
+      {/* Calendar grid */}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: spacing.md }}>
+        {cells.map((day, idx) => {
+          if (day === null) {
+            return <View key={`empty-${idx}`} style={{ width: `${100 / 7}%`, height: 52 }} />;
+          }
+          const dateKey = `${calMonth.year}-${String(calMonth.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const hasCatches = catchesByDay.has(dateKey);
+          const isSelected = selectedDay === dateKey;
+          return (
+            <Pressable
+              key={dateKey}
+              onPress={() => { if (hasCatches) onDayPress(dateKey); }}
+              style={{ width: `${100 / 7}%`, alignItems: 'center', paddingVertical: 4 }}
+            >
+              <View style={{
+                width: 36, height: 36, alignItems: 'center', justifyContent: 'center',
+                borderRadius: 18,
+                ...(isSelected ? {
+                  backgroundColor: colors.primarySurface,
+                  borderWidth: 1,
+                  borderColor: colors.primary,
+                } : {}),
+              }}>
+                <Text style={{
+                  ...typography.body,
+                  color: hasCatches ? colors.primary : colors.text,
+                  fontWeight: hasCatches ? '700' : '400',
+                }}>
+                  {day}
+                </Text>
+              </View>
+              {hasCatches ? (
+                <View style={{
+                  width: 5, height: 5, borderRadius: 2.5,
+                  backgroundColor: colors.primary, marginTop: 2,
+                }} />
+              ) : (
+                <View style={{ width: 5, height: 5, marginTop: 2 }} />
+              )}
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {/* Catches for selected day / month */}
+      <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>
+        <Text style={[styles.filterSectionLabel, { marginBottom: spacing.xs }]}>
+          {selectedDay
+            ? `УЛОВИ – ${new Date(selectedDay + 'T12:00:00').toLocaleDateString('bg-BG', { day: 'numeric', month: 'long' })} (${selectedDayCatches.length})`
+            : `ВСИЧКИ ЗА МЕСЕЦА (${selectedDayCatches.length})`}
+        </Text>
+        {selectedDayCatches.length === 0 ? (
+          <Text style={{ ...typography.body, color: colors.textMuted, textAlign: 'center', marginTop: spacing.lg }}>
+            Няма улови
+          </Text>
+        ) : (
+          selectedDayCatches.map((item, i) => (
+            <View key={item.id}>
+              {i > 0 && <View style={{ height: spacing.sm }} />}
+              <CatchListRow
+                item={item}
+                colors={colors}
+                styles={styles}
+                personalBests={personalBests}
+                user={user}
+                onPress={onOpenCatch}
+                onDelete={onDeleteCatch}
+              />
+            </View>
+          ))
+        )}
+        <View style={{ height: bottomPad }} />
+      </View>
+    </ScrollView>
+  );
+}
+
 function LogbookSkeleton({ colors, mode }: { colors: AppColors; mode: 'light' | 'dark' }) {
   const styles = useMemo(() => createLogbookStyles(colors, mode), [colors, mode]);
   return (
@@ -450,6 +629,30 @@ export default function LogbookScreen() {
   const [pickFrom, setPickFrom] = useState(false);
   const [pickTo, setPickTo] = useState(false);
   const [gridView, setGridView] = useState(false);
+  const [calendarView, setCalendarView] = useState(false);
+  const [calMonth, setCalMonth] = useState(() => {
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth() };
+  });
+  const [calSelectedDay, setCalSelectedDay] = useState<string | null>(null);
+
+  const [showCelebration, setShowCelebration] = useState(false);
+  const celebrationShownRef = useRef(false);
+  const celebrationScale = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (showCelebration) {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Animated.spring(celebrationScale, {
+        toValue: 1,
+        useNativeDriver: true,
+        friction: 5,
+        tension: 80,
+      }).start();
+    } else {
+      celebrationScale.setValue(0);
+    }
+  }, [showCelebration, celebrationScale]);
 
   useEffect(() => {
     const id = setTimeout(() => setDebouncedQuery(searchQuery), 250);
@@ -461,6 +664,14 @@ export default function LogbookScreen() {
     const list = await catchesStore.list();
     setItems(list);
     setInitialLoading(false);
+    if (list.length === 1 && !celebrationShownRef.current) {
+      AsyncStorage.getItem('@ribolov/firstCatchCelebrated').then((v) => {
+        if (!v) {
+          setShowCelebration(true);
+          celebrationShownRef.current = true;
+        }
+      }).catch(() => {});
+    }
   }, []);
 
   useFocusEffect(
@@ -698,7 +909,7 @@ export default function LogbookScreen() {
             <SectionHeader hint="ДНЕВНИК" title="Улови" subtitle={subtitle} />
           </View>
           <Pressable
-            onPress={() => setGridView((v) => !v)}
+            onPress={() => { setGridView((v) => !v); setCalendarView(false); }}
             hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel={gridView ? 'Списък' : 'Мрежа'}
@@ -714,6 +925,15 @@ export default function LogbookScreen() {
             style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', marginTop: 2 }}
           >
             <Ionicons name="images-outline" size={20} color={colors.primary} />
+          </Pressable>
+          <Pressable
+            onPress={() => { setCalendarView((v) => !v); setGridView(false); }}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Календар"
+            style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: calendarView ? colors.primarySurface : colors.surfaceAlt, borderWidth: 1, borderColor: calendarView ? colors.primary : colors.border, alignItems: 'center', justifyContent: 'center', marginTop: 2 }}
+          >
+            <Ionicons name="calendar-outline" size={20} color={colors.primary} />
           </Pressable>
           <Pressable
             style={styles.addBtn}
@@ -780,6 +1000,21 @@ export default function LogbookScreen() {
 
         {initialLoading ? (
           <LogbookSkeleton colors={colors} mode={mode} />
+        ) : calendarView && !initialLoading ? (
+          <LogbookCalendar
+            catches={filtered}
+            colors={colors}
+            onDayPress={(date) => setCalSelectedDay((prev) => (prev === date ? null : date))}
+            selectedDay={calSelectedDay}
+            calMonth={calMonth}
+            setCalMonth={setCalMonth}
+            personalBests={personalBests}
+            user={user}
+            styles={styles}
+            onOpenCatch={(c) => navigation.navigate('CatchDetail', { id: c.id })}
+            onDeleteCatch={handleSwipeDelete}
+            bottomPad={bottomPad}
+          />
         ) : items.length === 0 ? (
           <ScrollView
             contentContainerStyle={{
@@ -894,6 +1129,50 @@ export default function LogbookScreen() {
           </View>
         ) : null}
       </View>
+
+      {/* ── First catch celebration modal ── */}
+      <Modal
+        visible={showCelebration}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setShowCelebration(false)}
+      >
+        <View style={{
+          flex: 1, backgroundColor: 'rgba(0,0,0,0.7)',
+          alignItems: 'center', justifyContent: 'center',
+        }}>
+          <View style={{
+            backgroundColor: colors.card, borderRadius: radius.xl,
+            padding: spacing.xl, margin: spacing.lg,
+            alignItems: 'center',
+          }}>
+            <Animated.Text style={{ fontSize: 72, transform: [{ scale: celebrationScale }] }}>
+              🎣
+            </Animated.Text>
+            <Text style={{ ...typography.h1, color: colors.primary, marginTop: spacing.lg, textAlign: 'center' }}>
+              Първи улов!
+            </Text>
+            <Text style={{ ...typography.body, color: colors.textMuted, marginTop: spacing.md, textAlign: 'center', lineHeight: 22 }}>
+              Добре дошъл в дневника! Продължавай да записваш — всеки улов се счита.
+            </Text>
+            <Pressable
+              onPress={() => {
+                setShowCelebration(false);
+                AsyncStorage.setItem('@ribolov/firstCatchCelebrated', '1').catch(() => {});
+              }}
+              style={{
+                marginTop: spacing.xl,
+                backgroundColor: colors.primary,
+                paddingHorizontal: spacing.xl,
+                paddingVertical: spacing.md,
+                borderRadius: radius.pill,
+              }}
+            >
+              <Text style={{ ...typography.bodyBold, color: colors.white }}>Страхотно! 🎉</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </Screen>
   );
 }

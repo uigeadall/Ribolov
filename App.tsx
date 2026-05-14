@@ -13,6 +13,7 @@ import { initObservability } from './src/services/observability';
 import { ensureFirebase } from './src/services/firebase';
 import { initFirebaseAppCheckBridge } from './src/services/firebaseAppCheckBridge';
 import OnboardingScreen from './src/screens/OnboardingScreen';
+import { OfflineBar } from './src/components/OfflineBar';
 
 const ONBOARDED_KEY = '@ribolov/onboarded';
 
@@ -52,6 +53,7 @@ export default function App() {
             <Toast />
           </AuthProvider>
         </ThemeProvider>
+        <OfflineBar />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

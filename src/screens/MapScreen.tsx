@@ -14,6 +14,7 @@ import {
   Animated,
   PanResponder,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { Ionicons } from '@expo/vector-icons';
@@ -139,6 +140,7 @@ export default function MapScreen() {
   const [showCatchMarkers, setShowCatchMarkers] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
   const [catchCountByName, setCatchCountByName] = useState<Map<string, number>>(new Map());
+  const [filterSpecies, setFilterSpecies] = useState<string | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setHintVisible(false), 5000);
@@ -194,6 +196,17 @@ export default function MapScreen() {
     });
     setCatchCountByName(countMap);
   }, []);
+
+  const catchSpeciesList = useMemo(() => {
+    const seen = new Set<string>();
+    catchMarkers.forEach((m) => { if (m.speciesName) seen.add(m.speciesName); });
+    return Array.from(seen).sort();
+  }, [catchMarkers]);
+
+  const filteredCatchMarkers = useMemo(() => {
+    if (!filterSpecies) return catchMarkers;
+    return catchMarkers.filter((m) => m.speciesName === filterSpecies);
+  }, [catchMarkers, filterSpecies]);
 
   useEffect(() => {
     const task = InteractionManager.runAfterInteractions(() => { load(); });
@@ -589,12 +602,17 @@ export default function MapScreen() {
             spots={sortedSpots}
             dams={!showFavoritesOnly && showDams ? DAMS : []}
             rivers={!showFavoritesOnly && showRivers ? RIVERS : []}
-            catchMarkers={showCatchMarkers ? catchMarkers : []}
+            catchMarkers={showCatchMarkers ? filteredCatchMarkers : []}
             pendingCoord={pendingCoord}
             userCoord={userCoord}
             routeLine={routeLine}
             mapType={mapType}
-            onLongPress={(lat, lng) => setPendingCoord({ latitude: lat, longitude: lng })}
+            onLongPress={(lat, lng) => {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+              setPendingCoord({ latitude: lat, longitude: lng });
+              setName('');
+              setDescription('');
+            }}
             onMarkerPress={onMarkerPress}
             onDamPress={onDamPress}
             onRiverPress={onRiverPress}
@@ -605,12 +623,17 @@ export default function MapScreen() {
             spots={sortedSpots}
             dams={!showFavoritesOnly && showDams ? DAMS : []}
             rivers={!showFavoritesOnly && showRivers ? RIVERS : []}
-            catchMarkers={showCatchMarkers ? catchMarkers : []}
+            catchMarkers={showCatchMarkers ? filteredCatchMarkers : []}
             pendingCoord={pendingCoord}
             userCoord={userCoord}
             routeLine={routeLine}
             mapType={mapType}
-            onLongPress={(lat, lng) => setPendingCoord({ latitude: lat, longitude: lng })}
+            onLongPress={(lat, lng) => {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+              setPendingCoord({ latitude: lat, longitude: lng });
+              setName('');
+              setDescription('');
+            }}
             onMarkerPress={onMarkerPress}
             onDamPress={onDamPress}
             onRiverPress={onRiverPress}
@@ -686,6 +709,15 @@ export default function MapScreen() {
               </Pressable>
             ) : null}
           </View>
+        ) : null}
+
+        {showCatchMarkers && catchSpeciesList.length > 1 ? (
+          <SpeciesFilterRow
+            species={catchSpeciesList}
+            selected={filterSpecies}
+            colors={colors}
+            onSelect={(s) => setFilterSpecies((prev) => (prev === s ? null : s))}
+          />
         ) : null}
 
         {routeLine && routeLine.length >= 2 ? (
@@ -970,6 +1002,58 @@ const SpotScrollBar = React.memo(function SpotScrollBar({
                     : ''}
                 </Text>
               </View>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+});
+
+type SpeciesFilterRowProps = {
+  species: string[];
+  selected: string | null;
+  colors: AppColors;
+  onSelect: (s: string) => void;
+};
+
+const SpeciesFilterRow = React.memo(function SpeciesFilterRow({
+  species,
+  selected,
+  colors,
+  onSelect,
+}: SpeciesFilterRowProps) {
+  return (
+    <View style={{ position: 'absolute', left: 0, right: 0, top: 110 }}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: spacing.md, gap: spacing.xs, alignItems: 'center' }}
+        style={{ maxHeight: 44 }}
+      >
+        {species.map((s) => {
+          const active = selected === s;
+          return (
+            <Pressable
+              key={s}
+              onPress={() => onSelect(s)}
+              style={{
+                paddingHorizontal: spacing.md,
+                paddingVertical: 6,
+                borderRadius: radius.pill,
+                backgroundColor: active ? colors.primary : colors.surfaceAlt,
+                borderWidth: 1,
+                borderColor: active ? colors.primary : colors.border,
+                shadowColor: '#000',
+                shadowOpacity: 0.1,
+                shadowRadius: 4,
+                shadowOffset: { width: 0, height: 1 },
+                elevation: 2,
+              }}
+            >
+              <Text style={{ ...typography.small, fontWeight: '600', color: active ? colors.white : colors.text }} numberOfLines={1}>
+                {s}
+              </Text>
             </Pressable>
           );
         })}

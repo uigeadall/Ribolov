@@ -585,6 +585,21 @@ export default function FeedScreen() {
                 <FeedSkeleton />
               ) : hasMore ? (
                 <View style={{ height: spacing.lg }} />
+              ) : !loadingMore && !hasMore && displayedItems.length > 0 ? (
+                <View style={{ alignItems: 'center', paddingVertical: spacing.xxl }}>
+                  <Text style={{ fontSize: 36 }}>🎣</Text>
+                  <Text style={[typography.h3, { color: colors.text, marginTop: spacing.sm, textAlign: 'center' }]}>
+                    Стигна до края на лентата
+                  </Text>
+                  <Text style={[typography.body, { color: colors.textMuted, marginTop: spacing.xs, textAlign: 'center' }]}>
+                    Публикувай и ти — отвори Дневник и сподели улов.
+                  </Text>
+                  <Button
+                    title="Запиши улов"
+                    onPress={() => (navigation as any).navigate('LogbookTab', { screen: 'LogbookList' })}
+                    style={{ marginTop: spacing.lg }}
+                  />
+                </View>
               ) : null
             }
             {...keyboardAwareScrollProps}
