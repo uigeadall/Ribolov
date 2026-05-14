@@ -18,9 +18,12 @@ import AppSplashScreen from './src/components/AppSplashScreen';
 
 const ONBOARDING_KEY = '@ribolov/onboarding_done';
 
+const MIN_SPLASH_MS = 2200;
+
 export default function App() {
   const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
   const [fontsLoaded] = useFonts({ DMSans_400Regular, DMSans_500Medium, DMSans_600SemiBold, DMSans_700Bold });
+  const [minTimeElapsed, setMinTimeElapsed] = useState(false);
 
   useEffect(() => {
     void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
@@ -28,6 +31,8 @@ export default function App() {
     const fb = ensureFirebase();
     if (fb) void initFirebaseAppCheckBridge(fb.app);
     AsyncStorage.getItem(ONBOARDING_KEY).then((v) => setOnboardingDone(v === '1'));
+    const t = setTimeout(() => setMinTimeElapsed(true), MIN_SPLASH_MS);
+    return () => clearTimeout(t);
   }, []);
 
   const handleOnboardingDone = async () => {
@@ -35,7 +40,7 @@ export default function App() {
     setOnboardingDone(true);
   };
 
-  if (onboardingDone === null || !fontsLoaded) return <AppSplashScreen />;
+  if (onboardingDone === null || !fontsLoaded || !minTimeElapsed) return <AppSplashScreen />;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
