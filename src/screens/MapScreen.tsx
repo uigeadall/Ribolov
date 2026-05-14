@@ -13,6 +13,7 @@ import {
   InteractionManager,
   Animated,
   PanResponder,
+  Platform,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
@@ -914,7 +915,11 @@ const MapTopControls = React.memo(function MapTopControls({
   return (
     <View style={styles.topControls}>
       <View style={[styles.mapTypeRow, { overflow: 'hidden' }]}>
-        <BlurView intensity={80} tint={mode === 'dark' ? 'dark' : 'light'} style={StyleSheet.absoluteFillObject} />
+        {Platform.OS === 'ios' ? (
+          <BlurView intensity={80} tint={mode === 'dark' ? 'dark' : 'light'} style={StyleSheet.absoluteFillObject} />
+        ) : (
+          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: mode === 'dark' ? 'rgba(10,25,32,0.92)' : 'rgba(240,250,255,0.95)' }]} />
+        )}
         {(
           [
             { key: 'standard', label: 'Карта' },
@@ -1029,7 +1034,11 @@ const SpotScrollBar = React.memo(function SpotScrollBar({
           const dist = distanceTo(s);
           return (
             <View key={s.id} style={[styles.spotCard, { overflow: 'hidden', backgroundColor: 'transparent', borderLeftWidth: 3, borderLeftColor: waterTypeColor(s.waterType) }]}>
-              <BlurView intensity={75} tint={mode === 'dark' ? 'dark' : 'light'} style={StyleSheet.absoluteFillObject} />
+              {Platform.OS === 'ios' ? (
+                <BlurView intensity={75} tint={mode === 'dark' ? 'dark' : 'light'} style={StyleSheet.absoluteFillObject} />
+              ) : (
+                <View style={[StyleSheet.absoluteFillObject, { backgroundColor: mode === 'dark' ? 'rgba(14,33,41,0.96)' : 'rgba(245,252,255,0.97)' }]} />
+              )}
               <Pressable
                 style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 }}
                 onPress={() => onSpotPress(s)}

@@ -7,7 +7,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Platform, StyleSheet, View, Text } from 'react-native';
+import { Platform, StyleSheet, View, Text, ViewStyle } from 'react-native';
 import MapView, { Circle, Marker, Polyline, type Region } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import type { LeafletMapHandle, LeafletMapProps, LeafletMapType, CatchMapMarker } from './LeafletMap';
@@ -31,11 +31,15 @@ function rnMapType(mt: LeafletMapType): 'standard' | 'satellite' | 'hybrid' {
   return 'standard';
 }
 
+// Extra padding around marker containers prevents bitmap clipping on Android.
+const MARKER_PAD = Platform.OS === 'android' ? 4 : 0;
+const markerPad: ViewStyle = MARKER_PAD > 0 ? { padding: MARKER_PAD } : {};
+
 function SpotPin() {
   return (
-    <View style={{ alignItems: 'center' }}>
+    <View style={[{ alignItems: 'center' }, markerPad]}>
       <View style={styles.spotPlate}>
-        <Ionicons name="fish-outline" size={22} color="#E8F8FF" />
+        <Ionicons name="fish-outline" size={20} color="#E8F8FF" />
       </View>
       <View style={styles.spotTail} />
     </View>
@@ -44,14 +48,14 @@ function SpotPin() {
 
 function DamPin({ name, showLabel }: { name: string; showLabel: boolean }) {
   return (
-    <View style={styles.markerCol} accessibilityLabel={name}>
+    <View style={[styles.markerCol, markerPad]} accessibilityLabel={name}>
       {showLabel ? (
         <View style={[styles.labelBubble, styles.labelDam]}>
           <Text numberOfLines={1} style={styles.labelTextDam}>{name}</Text>
         </View>
       ) : null}
       <View style={[styles.iconPlate, styles.plateDam]}>
-        <Ionicons name="layers-outline" size={24} color="#C8F0E8" />
+        <Ionicons name="layers-outline" size={20} color="#C8F0E8" />
       </View>
       <View style={styles.damTail} />
     </View>
@@ -60,14 +64,14 @@ function DamPin({ name, showLabel }: { name: string; showLabel: boolean }) {
 
 function RiverPin({ name, showLabel }: { name: string; showLabel: boolean }) {
   return (
-    <View style={styles.markerCol} accessibilityLabel={name}>
+    <View style={[styles.markerCol, markerPad]} accessibilityLabel={name}>
       {showLabel ? (
         <View style={[styles.labelBubble, styles.labelRiver]}>
           <Text numberOfLines={1} style={styles.labelTextRiver}>{name}</Text>
         </View>
       ) : null}
       <View style={[styles.iconPlate, styles.plateRiver]}>
-        <Ionicons name="water-outline" size={24} color="#E8FFF2" />
+        <Ionicons name="water-outline" size={20} color="#E8FFF2" />
       </View>
       <View style={styles.riverTail} />
     </View>
@@ -104,13 +108,11 @@ type WaterMarkerProps = {
 const WaterMarker = React.memo(function WaterMarker({
   id, latitude, longitude, name, showLabel, type, onPress,
 }: WaterMarkerProps) {
-  // Key changes when showLabel changes → triggers remount → hook re-arms tracking.
   const resetKey = `${id}-${showLabel ? 1 : 0}`;
   const tracks = useAndroidTracks(resetKey);
 
   return (
     <Marker
-      key={resetKey}
       identifier={id}
       coordinate={{ latitude, longitude }}
       anchor={{ x: 0.5, y: 1 }}
@@ -220,7 +222,7 @@ export const NativeMapView = forwardRef<LeafletMapHandle, LeafletMapProps>(
 
         {visibleDams.map((d) => (
           <WaterMarker
-            key={`dam-${d.id}`}
+            key={`dam-${d.id}-${showWaterLabels ? 1 : 0}`}
             id={`dam-${d.id}`}
             latitude={d.latitude}
             longitude={d.longitude}
@@ -233,7 +235,7 @@ export const NativeMapView = forwardRef<LeafletMapHandle, LeafletMapProps>(
 
         {visibleRivers.map((r) => (
           <WaterMarker
-            key={`river-${r.id}`}
+            key={`river-${r.id}-${showWaterLabels ? 1 : 0}`}
             id={`river-${r.id}`}
             latitude={r.latitude}
             longitude={r.longitude}
