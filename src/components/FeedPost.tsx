@@ -16,6 +16,7 @@ import {
   PanResponder,
   ActionSheetIOS,
   Alert,
+  useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,7 +26,6 @@ import type { FeedItem } from '../services/catchSync';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
-import { Card } from './Card';
 import { REACTIONS, type ReactionType } from '../services/socialFeed';
 import { formatTimeAgo } from '../utils/formatCatchDate';
 import { useAvatarUrl } from '../hooks/useAvatarUrl';
@@ -35,85 +35,103 @@ import * as Haptics from 'expo-haptics';
 
 function feedStyles(colors: AppColors) {
   return StyleSheet.create({
-    // Photo-first card: no padding on the card itself, photo is full-bleed
-    cardInner: { padding: spacing.lg, paddingTop: spacing.sm },
-    // Full-bleed photo at the top
-    photoWrap: {
-      width: '100%',
-      borderTopLeftRadius: radius.lg,
-      borderTopRightRadius: radius.lg,
-      backgroundColor: colors.surfaceAlt,
-      overflow: 'hidden',
+    // Outer wrapper — Instagram-style, no radius, no shadow, full-width
+    postWrap: {
+      backgroundColor: colors.card,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
     },
-    // Author overlay at the bottom of the photo
-    photoOverlay: {
-      position: 'absolute',
-      bottom: 0,
-      left: 0,
-      right: 0,
-      overflow: 'hidden',
+    // ── Header ──
+    postHeader: {
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
     },
     avatar: {
-      width: 32, height: 32, borderRadius: 16, backgroundColor: colors.primary,
-      alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
-      borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.6)',
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+      overflow: 'hidden',
     },
     avatarImg: { width: 32, height: 32 },
     avatarText: { color: colors.white, fontFamily: 'DMSans_700Bold', fontSize: 13 },
-    meta: { flex: 1 },
-    name: { ...typography.bodyBold, color: '#fff', fontSize: 13 },
-    date: { ...typography.small, color: 'rgba(255,255,255,0.75)', marginTop: 1 },
-    // No-photo fallback banner
+    headerMeta: { flex: 1 },
+    headerName: { fontWeight: '700', color: colors.text, fontSize: 14 },
+    headerSub: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
+    // ── No-photo fallback banner ──
     noBanner: {
+      width: '100%',
+      height: 160,
       backgroundColor: colors.primarySurface,
-      borderTopLeftRadius: radius.lg,
-      borderTopRightRadius: radius.lg,
-      paddingHorizontal: spacing.lg,
-      paddingVertical: spacing.md,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    noBannerEmoji: { fontSize: 52, opacity: 0.35 },
+    noBannerSpecies: { ...typography.h3, color: colors.primary, marginTop: 8 },
+    // ── Action bar ──
+    actionBar: {
+      paddingHorizontal: 12,
+      paddingVertical: 8,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: spacing.md,
-      minHeight: 90,
     },
-    noBannerEmoji: { fontSize: 44, opacity: 0.35 },
-    noBannerAuthorRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.xs },
-    header: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.sm },
-    headerName: { ...typography.bodyBold, color: colors.text },
-    headerDate: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
-    // Content below photo
-    photoTitle: { ...typography.bodyBold, color: colors.primary, fontSize: 16, lineHeight: 22, marginBottom: spacing.xs, marginTop: spacing.sm },
-    species: { ...typography.h3, color: colors.text, marginBottom: 2 },
-    stats: { ...typography.body, color: colors.textMuted },
-    notes: { ...typography.body, color: colors.text, marginTop: spacing.sm, lineHeight: 22 },
-    loc: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.sm },
-    locText: { ...typography.caption, color: colors.primary, flex: 1 },
-    socialRow: {
-      flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap',
-      gap: spacing.md, marginTop: spacing.md, paddingTop: spacing.sm,
-      borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border,
+    actionGroup: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 16,
     },
-    socialBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-    socialLbl: { ...typography.caption, color: colors.textMuted, fontWeight: '600' },
-    likedLbl: { ...typography.caption, color: colors.danger, fontWeight: '700' },
-    commentsWrap: { marginTop: spacing.md },
-    commentRow: { marginBottom: spacing.sm },
-    commentAuthor: { ...typography.caption, fontWeight: '700', color: colors.text },
-    commentText: { ...typography.body, color: colors.text, marginTop: 2 },
+    // ── Below action bar ──
+    metaWrap: { paddingHorizontal: 12 },
+    likeCountText: { fontWeight: '700', color: colors.text, fontSize: 13 },
+    captionWrap: { marginTop: 2 },
+    captionName: { fontWeight: '700', color: colors.text, fontSize: 13 },
+    captionText: { color: colors.text, fontSize: 13 },
+    viewCommentsBtn: { marginTop: 4 },
+    viewCommentsText: { color: colors.textMuted, fontSize: 13 },
+    timestamp: { color: colors.textMuted, fontSize: 11, marginTop: 4, marginBottom: 8 },
+    loc: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
+    locText: { color: colors.primary, fontWeight: '600', fontSize: 11 },
+    // ── Comments (inline) ──
+    commentsWrap: { paddingHorizontal: 12, paddingBottom: 4 },
+    commentRow: { marginBottom: 6 },
+    commentAuthor: { fontWeight: '700', color: colors.text, fontSize: 12 },
+    commentText: { color: colors.text, fontSize: 12, marginTop: 1 },
     composer: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm },
     input: {
-      flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md,
-      paddingHorizontal: spacing.sm, paddingVertical: Platform.OS === 'ios' ? 10 : 6,
-      color: colors.text, backgroundColor: colors.background, ...typography.body,
+      flex: 1,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: Platform.OS === 'ios' ? 10 : 6,
+      color: colors.text,
+      backgroundColor: colors.background,
+      ...typography.body,
     },
+    // ── Likers modal ──
     modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
     modalSheet: {
-      backgroundColor: colors.card, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg,
-      padding: spacing.lg, maxHeight: '70%', borderWidth: 1, borderColor: colors.border,
+      backgroundColor: colors.card,
+      borderTopLeftRadius: radius.lg,
+      borderTopRightRadius: radius.lg,
+      padding: spacing.lg,
+      maxHeight: '70%',
+      borderWidth: 1,
+      borderColor: colors.border,
     },
     modalTitle: { ...typography.h3, color: colors.text, marginBottom: spacing.md },
     likerRow: {
-      flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.sm,
-      gap: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: spacing.sm,
+      gap: spacing.sm,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
     },
     likerName: { ...typography.body, color: colors.text, flex: 1 },
   });
@@ -136,15 +154,14 @@ type Props = {
 export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarUrl, socialEnabled, isVisible = true, onPressAuthor, onPressCatch }: Props) {
   const { colors, mode } = useTheme();
   const styles = useMemo(() => feedStyles(colors), [colors]);
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  const { width: screenWidth } = useWindowDimensions();
   const [commentsOpen, setCommentsOpen] = useState(false);
-  const [photoHeight, setPhotoHeight] = useState(260);
   const [viewerUri, setViewerUri] = useState<string | null>(null);
-  const hasExtra = !!(item.bait || (item as Record<string, unknown>).technique || (item as Record<string, unknown>).spotName);
 
   const ownerName = item.ownerName || 'Рибар';
   const initials = ownerName.slice(0, 1).toUpperCase();
   const isMine = Boolean(myUid && item.ownerUid === myUid);
+  const displayName = isMine ? myDisplayName : ownerName;
 
   const avatarUrl = useAvatarUrl({
     ownerUid: item.ownerUid, isMine, myPhotoUrl,
@@ -190,7 +207,6 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
         } else {
           void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           void social.onToggleSave();
-          // Pulse bookmark overlay
           bookmarkOpacity.setValue(1);
           Animated.sequence([
             Animated.delay(400),
@@ -263,22 +279,69 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
     ]).start();
   };
 
+  // Caption text assembled inline
+  const captionBody = [
+    item.speciesName,
+    item.weightKg != null ? `${item.weightKg} кг` : null,
+    item.lengthCm != null ? `${item.lengthCm} см` : null,
+    item.released ? 'пуснат' : null,
+    item.notes ? `— ${item.notes}` : null,
+  ].filter(Boolean).join(' · ').replace(' · —', ' —');
+
+  const photoHeight = Math.round(screenWidth * (5 / 4));
+
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <Card style={{ padding: 0 }}>
-        {/* ── Photo-first: full-bleed image with author overlay ── */}
+      <View style={styles.postWrap}>
+
+        {/* ── Post Header ── */}
+        <View style={styles.postHeader}>
+          {/* Avatar + author info — pressable */}
+          <Pressable
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}
+            onPress={() => onPressAuthor(item.ownerUid, displayName)}
+          >
+            <View style={{ position: 'relative' }}>
+              {isRecent && (
+                <View style={{
+                  position: 'absolute', top: -2.5, left: -2.5,
+                  width: 37, height: 37, borderRadius: 18.5,
+                  borderWidth: 2.5, borderColor: colors.primary,
+                }} />
+              )}
+              <View style={styles.avatar}>
+                {avatarUrl ? (
+                  <Image source={{ uri: avatarUrl }} style={styles.avatarImg} contentFit="cover" cachePolicy="memory-disk" />
+                ) : (
+                  <Text style={styles.avatarText}>{initials}</Text>
+                )}
+              </View>
+            </View>
+            <View style={styles.headerMeta}>
+              <Text style={styles.headerName} numberOfLines={1}>{displayName}</Text>
+              <Text style={styles.headerSub} numberOfLines={1}>
+                {[
+                  item.location?.name ?? null,
+                  formatTimeAgo(item.date),
+                ].filter(Boolean).join(' · ')}
+              </Text>
+            </View>
+          </Pressable>
+          {/* More (···) button */}
+          <Pressable onPress={openMoreMenu} hitSlop={8}>
+            <Ionicons name="ellipsis-horizontal" size={22} color={colors.textMuted} />
+          </Pressable>
+        </View>
+
+        {/* ── Photo area ── */}
         {item.photoUri ? (
           <Pressable onPress={handlePhotoPress}>
-            <View style={[styles.photoWrap, { height: photoHeight }]}>
+            <View style={{ width: '100%', height: photoHeight, backgroundColor: colors.surfaceAlt }}>
               <Image
                 source={{ uri: item.photoUri }}
                 style={StyleSheet.absoluteFillObject}
                 contentFit="cover"
                 cachePolicy="memory-disk"
-                onLayout={(e) => {
-                  const w = e.nativeEvent.layout.width;
-                  if (w > 0) setPhotoHeight(Math.round(w * 0.75));
-                }}
               />
               {/* Floating double-tap heart */}
               <Animated.Text
@@ -301,127 +364,35 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
               >
                 🔖
               </Animated.Text>
-              {/* Author overlay at bottom of photo — glass panel */}
-              <View style={styles.photoOverlay}>
-                <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFillObject} />
-                <LinearGradient
-                  colors={['rgba(0,0,0,0.0)', 'rgba(0,0,0,0.38)']}
-                  start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
-                  style={StyleSheet.absoluteFillObject}
-                />
-                {/* Specular top rim */}
-                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(255,255,255,0.22)' }} />
-                <Pressable
-                  style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm }}
-                  onPress={() => onPressAuthor(item.ownerUid, ownerName)}
-                >
-                  <View style={{ position: 'relative' }}>
-                    {isRecent && (
-                      <View style={{
-                        position: 'absolute', top: -2.5, left: -2.5,
-                        width: 37, height: 37, borderRadius: 18.5,
-                        borderWidth: 2.5, borderColor: colors.primary,
-                      }} />
-                    )}
-                    <View style={styles.avatar}>
-                      {avatarUrl ? (
-                        <Image source={{ uri: avatarUrl }} style={styles.avatarImg} contentFit="cover" cachePolicy="memory-disk" />
-                      ) : (
-                        <Text style={styles.avatarText}>{initials}</Text>
-                      )}
-                    </View>
-                  </View>
-                  <View style={styles.meta}>
-                    <Text style={styles.name} numberOfLines={1}>{isMine ? myDisplayName : ownerName}</Text>
-                    <Text style={styles.date}>{formatTimeAgo(item.date)}{item.location?.name ? ` · ${item.location.name}` : ''}</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.7)" />
-                </Pressable>
-              </View>
             </View>
           </Pressable>
         ) : (
-          // No-photo fallback: species banner with author
-          <Pressable onPress={() => onPressAuthor(item.ownerUid, ownerName)} style={styles.noBanner}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ ...typography.h3, color: colors.primary }} numberOfLines={1}>{item.speciesName}</Text>
-              {item.weightKg != null && (
-                <Text style={{ ...typography.body, color: colors.text, marginTop: 2 }}>{item.weightKg} кг{item.lengthCm != null ? ` · ${item.lengthCm} см` : ''}</Text>
-              )}
-              <View style={styles.noBannerAuthorRow}>
-                <View style={[styles.avatar, { width: 22, height: 22, borderRadius: 11, borderWidth: 1, borderColor: colors.border }]}>
-                  {avatarUrl
-                    ? <Image source={{ uri: avatarUrl }} style={{ width: 22, height: 22 }} contentFit="cover" cachePolicy="memory-disk" />
-                    : <Text style={{ ...typography.small, color: colors.white, fontWeight: '700' }}>{initials}</Text>}
-                </View>
-                <Text style={{ ...typography.caption, color: colors.textMuted }}>{isMine ? myDisplayName : ownerName}</Text>
-                <Text style={{ ...typography.caption, color: colors.textMuted }}>· {formatTimeAgo(item.date)}</Text>
-              </View>
-            </View>
+          /* No-photo fallback banner */
+          <View style={styles.noBanner}>
             <Text style={styles.noBannerEmoji}>🐟</Text>
-          </Pressable>
+            <Text style={styles.noBannerSpecies}>{item.speciesName}</Text>
+          </View>
         )}
+
         <ImageViewer uri={viewerUri ?? ''} visible={!!viewerUri} onClose={() => setViewerUri(null)} />
-
-        {/* ── Content below photo ── */}
-        <View style={styles.cardInner}>
-        {item.photoTitle ? <Text style={styles.photoTitle}>{item.photoTitle}</Text> : null}
-        <Pressable onPress={() => onPressCatch?.(item)} disabled={!onPressCatch} hitSlop={4}>
-          <Text style={styles.species}>{item.speciesName}</Text>
-        </Pressable>
-        <Text style={styles.stats}>
-          {item.weightKg != null ? `${item.weightKg} кг` : '— кг'}
-          {item.lengthCm != null ? ` · ${item.lengthCm} см` : ''}
-          {item.released ? ' · пуснат' : ''}
-        </Text>
-        {item.notes ? <Text style={styles.notes}>{item.notes}</Text> : null}
-        {(item.location?.name || (item.location?.latitude != null && item.location.longitude != null)) ? (
-          <Pressable
-            style={[styles.loc, { backgroundColor: colors.primarySurface, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 3, alignSelf: 'flex-start' }]}
-            hitSlop={8}
-            onPress={() => {
-              const coords = `${item.location!.latitude?.toFixed(6) ?? ''}, ${item.location!.longitude?.toFixed(6) ?? ''}`;
-              Clipboard.setString(item.location!.name ?? coords);
-              if (Platform.OS === 'android') ToastAndroid.show('Копирано', ToastAndroid.SHORT);
-            }}
-          >
-            <Ionicons name="location" size={13} color={colors.primary} />
-            <Text style={[styles.locText, { color: colors.primary, fontWeight: '600', fontSize: 12 }]} numberOfLines={1}>
-              {item.location!.name
-                ? item.location!.name
-                : `${item.location!.latitude!.toFixed(4)}, ${item.location!.longitude!.toFixed(4)}`}
-            </Text>
-          </Pressable>
-        ) : null}
-
-        {hasExtra ? (
-          <>
-            <Pressable onPress={() => setDetailsOpen((v) => !v)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.xs }} hitSlop={8}>
-              <Ionicons name={detailsOpen ? 'chevron-up' : 'chevron-down'} size={13} color={colors.primary} />
-              <Text style={{ ...typography.caption, color: colors.primary }}>{detailsOpen ? 'По-малко' : 'Повече детайли'}</Text>
-            </Pressable>
-            {detailsOpen ? (
-              <View style={{ marginTop: spacing.xs, gap: 4 }}>
-                {item.bait ? <Text style={{ ...typography.caption, color: colors.textMuted }}>🪱 Примамка: <Text style={{ color: colors.text }}>{item.bait}</Text></Text> : null}
-                {(item as Record<string, unknown>).technique ? <Text style={{ ...typography.caption, color: colors.textMuted }}>🎣 Техника: <Text style={{ color: colors.text }}>{String((item as Record<string, unknown>).technique)}</Text></Text> : null}
-                {(item as Record<string, unknown>).spotName ? <Text style={{ ...typography.caption, color: colors.textMuted }}>📍 Спот: <Text style={{ color: colors.text }}>{String((item as Record<string, unknown>).spotName)}</Text></Text> : null}
-              </View>
-            ) : null}
-          </>
-        ) : null}
 
         {socialEnabled ? (
           <>
-            {/* ── Inline reaction picker — glass pill ── */}
+            {/* ── Reaction picker (glass pill) — shown between photo and action bar ── */}
             {showPicker && (
               <Animated.View
                 style={{
-                  borderRadius: radius.xl, overflow: 'hidden',
-                  marginTop: spacing.sm,
+                  borderRadius: radius.xl,
+                  overflow: 'hidden',
+                  marginHorizontal: 12,
+                  marginTop: 8,
                   opacity: pickerAnim,
                   transform: [{ scale: pickerAnim.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] }) }],
-                  shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-                  shadowOpacity: mode === 'dark' ? 0.35 : 0.14, shadowRadius: 14, elevation: 6,
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: mode === 'dark' ? 0.35 : 0.14,
+                  shadowRadius: 14,
+                  elevation: 6,
                 }}
               >
                 <BlurView
@@ -465,167 +436,225 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
               </Animated.View>
             )}
 
-            <View style={styles.socialRow}>
+            {/* ── Action bar ── */}
+            <View style={styles.actionBar}>
+              <View style={styles.actionGroup}>
+                {/* Like */}
+                <Pressable
+                  onPress={() => {
+                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    animateReaction();
+                    if (social.myReaction) social.onPickReaction(social.myReaction);
+                    else openPicker();
+                  }}
+                  onLongPress={openPicker}
+                  disabled={social.likeBusy}
+                  hitSlop={8}
+                  delayLongPress={300}
+                  style={social.likeBusy ? { opacity: 0.5 } : undefined}
+                >
+                  <Animated.View style={{ transform: [{ scale: reactionScale }] }}>
+                    {social.myReaction ? (
+                      <Text style={{ fontSize: 26 }}>{REACTIONS[social.myReaction].emoji}</Text>
+                    ) : (
+                      <Ionicons name="heart-outline" size={26} color={colors.text} />
+                    )}
+                  </Animated.View>
+                </Pressable>
+                {/* Comment */}
+                <Pressable onPress={() => setCommentsOpen((v) => !v)} hitSlop={8}>
+                  <Ionicons name="chatbubble-outline" size={24} color={colors.text} />
+                </Pressable>
+                {/* Share */}
+                <Pressable onPress={social.onShare} hitSlop={8}>
+                  <Ionicons name="paper-plane-outline" size={24} color={colors.text} />
+                </Pressable>
+              </View>
+              {/* Bookmark — right side */}
               <Pressable
-                onPress={() => {
-                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  animateReaction();
-                  if (social.myReaction) social.onPickReaction(social.myReaction);
-                  else openPicker();
-                }}
-                onLongPress={openPicker}
-                disabled={social.likeBusy}
-                style={[styles.socialBtn, social.likeBusy && { opacity: 0.5 }]}
+                onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); social.onToggleSave(); }}
+                disabled={social.saveBusy}
                 hitSlop={8}
-                delayLongPress={300}
+                style={{ marginLeft: 'auto' }}
               >
-                <Animated.View style={{ transform: [{ scale: reactionScale }] }}>
-                  {social.myReaction ? (
-                    <Text style={{ fontSize: 22 }}>{REACTIONS[social.myReaction].emoji}</Text>
-                  ) : (
-                    <Ionicons name="heart-outline" size={22} color={colors.textMuted} />
-                  )}
-                </Animated.View>
-              </Pressable>
-
-              <Pressable onPress={social.openLikers} disabled={social.likeCount === 0} hitSlop={8} style={[styles.socialBtn, { gap: 2 }]}>
-                {social.reactionSummary.slice(0, 3).map((r) => (
-                  <Text key={r.type} style={{ fontSize: 14 }}>{r.emoji}</Text>
-                ))}
-                {social.likeCount > 0 && (
-                  <Text style={[social.myReaction ? styles.likedLbl : styles.socialLbl, { marginLeft: 2 }]}>{social.likeCount}</Text>
-                )}
-              </Pressable>
-
-              <Pressable style={styles.socialBtn} onPress={() => setCommentsOpen((v) => !v)} hitSlop={8}>
-                <Ionicons name={commentsOpen ? 'chatbubble' : 'chatbubble-outline'} size={20} color={commentsOpen ? colors.primary : colors.textMuted} />
-                {social.allComments.length > 0 && <Text style={[styles.socialLbl, commentsOpen && { color: colors.primary }]}>{social.allComments.length}</Text>}
-              </Pressable>
-              <Pressable onPress={social.onShare} style={styles.socialBtn} hitSlop={8}>
-                <Ionicons name="share-outline" size={22} color={colors.primary} />
-              </Pressable>
-              <Pressable onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); social.onToggleSave(); }} disabled={social.saveBusy} style={styles.socialBtn} hitSlop={8}>
                 {social.saveBusy ? (
                   <ActivityIndicator size="small" color={colors.primary} />
                 ) : (
-                  <Ionicons name={social.saved ? 'bookmark' : 'bookmark-outline'} size={22} color={social.saved ? colors.primary : colors.textMuted} />
+                  <Ionicons name={social.saved ? 'bookmark' : 'bookmark-outline'} size={24} color={colors.text} />
                 )}
-              </Pressable>
-              <Pressable onPress={openMoreMenu} style={[styles.socialBtn, { marginLeft: 'auto' }]} hitSlop={8}>
-                <Ionicons name="ellipsis-horizontal" size={20} color={colors.textMuted} />
               </Pressable>
             </View>
 
-            {commentsOpen && <View style={styles.commentsWrap}>
-              {social.allComments.map((c) => {
-                const isReply = !!c.replyToId;
-                const isMyComment = myUid === c.authorUid;
-                const canDelete = isMyComment || isMine;
-                const isEditing = social.editingComment?.id === c.id;
-
-                return (
-                  <View key={c.id} style={[styles.commentRow, isReply && { marginLeft: spacing.xl }]}>
-                    {isReply && (
-                      <Text style={{ ...typography.caption, color: colors.textMuted, marginBottom: 2 }}>
-                        ↩ отговор на {c.replyToName}
-                      </Text>
-                    )}
-                    {isEditing ? (
-                      <View style={{ gap: spacing.xs }}>
-                        <TextInput
-                          value={social.editingComment!.text}
-                          onChangeText={(t) => social.setEditingComment({ id: c.id, text: t })}
-                          style={[styles.input, { flex: undefined }]}
-                          autoFocus multiline maxLength={2000} editable={!social.editBusy}
-                        />
-                        <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-                          <Pressable onPress={social.onSaveEdit} disabled={social.editBusy || !social.editingComment!.text.trim()} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                            {social.editBusy
-                              ? <ActivityIndicator size="small" color={colors.primary} />
-                              : <Ionicons name="checkmark-circle" size={18} color={colors.primary} />}
-                            <Text style={{ ...typography.caption, color: colors.primary, fontWeight: '700' }}>Запази</Text>
-                          </Pressable>
-                          <Pressable onPress={() => social.setEditingComment(null)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                            <Ionicons name="close-circle-outline" size={18} color={colors.textMuted} />
-                            <Text style={{ ...typography.caption, color: colors.textMuted }}>Отказ</Text>
-                          </Pressable>
-                        </View>
-                      </View>
-                    ) : (
-                      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm }}>
-                        <View style={{
-                          width: 26, height: 26, borderRadius: 13,
-                          backgroundColor: colors.primarySurface, borderWidth: 1, borderColor: colors.border,
-                          alignItems: 'center', justifyContent: 'center', marginTop: 2, flexShrink: 0,
-                        }}>
-                          <Text style={{ ...typography.small, color: colors.primary, fontWeight: '700', fontSize: 10 }}>
-                            {c.authorName.slice(0, 1).toUpperCase()}
-                          </Text>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                            <Text style={styles.commentAuthor}>{c.authorName}</Text>
-                            {c.editedAt ? (
-                              <Text style={{ ...typography.caption, color: colors.textMuted, fontSize: 10 }}>(редактиран)</Text>
-                            ) : c.createdAt ? (
-                              <Text style={{ ...typography.caption, color: colors.textMuted, fontSize: 10 }}>{formatTimeAgo(c.createdAt)}</Text>
-                            ) : null}
-                          </View>
-                          <Text style={styles.commentText}>{c.text}</Text>
-                        </View>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingLeft: spacing.sm, paddingTop: 2 }}>
-                          {myUid && (
-                            <Pressable onPress={() => social.setReplyingTo({ id: c.id, name: c.authorName })} hitSlop={8}>
-                              <Text style={{ ...typography.caption, color: colors.primary }}>Отговори</Text>
-                            </Pressable>
-                          )}
-                          {isMyComment && (
-                            <Pressable onPress={() => social.setEditingComment({ id: c.id, text: c.text })} hitSlop={8}>
-                              <Ionicons name="pencil-outline" size={14} color={colors.textMuted} />
-                            </Pressable>
-                          )}
-                          {canDelete && (
-                            <Pressable onPress={() => social.onDeleteComment(c.id)} hitSlop={8}>
-                              <Ionicons name="trash-outline" size={14} color={colors.danger} />
-                            </Pressable>
-                          )}
-                        </View>
-                      </View>
-                    )}
-                  </View>
-                );
-              })}
-
-              {social.replyingTo && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.primarySurface, borderRadius: radius.sm, paddingHorizontal: spacing.sm, paddingVertical: 4, marginBottom: spacing.xs, gap: spacing.sm }}>
-                  <Ionicons name="return-down-forward-outline" size={14} color={colors.primary} />
-                  <Text style={{ ...typography.caption, color: colors.primary, flex: 1 }}>Отговор на {social.replyingTo.name}</Text>
-                  <Pressable onPress={() => social.setReplyingTo(null)} hitSlop={8}>
-                    <Ionicons name="close-circle" size={16} color={colors.textMuted} />
-                  </Pressable>
-                </View>
+            {/* ── Below action bar ── */}
+            <View style={styles.metaWrap}>
+              {/* Like count */}
+              {social.likeCount > 0 && (
+                <Pressable onPress={social.openLikers} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  {social.reactionSummary.slice(0, 3).map((r) => (
+                    <Text key={r.type} style={{ fontSize: 13 }}>{r.emoji}</Text>
+                  ))}
+                  <Text style={styles.likeCountText}>{social.likeCount} {social.likeCount === 1 ? 'харесване' : 'харесвания'}</Text>
+                </Pressable>
               )}
 
-              <View style={styles.composer}>
-                <TextInput
-                  style={styles.input}
-                  placeholder={social.replyingTo ? `Отговор на ${social.replyingTo.name}…` : 'Коментар…'}
-                  placeholderTextColor={colors.textMuted}
-                  value={social.draft}
-                  onChangeText={social.setDraft}
-                  maxLength={2000}
-                  editable={!social.sendBusy}
-                />
-                <Pressable onPress={social.onSendComment} disabled={social.sendBusy || !social.draft.trim()} hitSlop={8}>
-                  {social.sendBusy ? (
-                    <ActivityIndicator size="small" color={colors.primary} />
-                  ) : (
-                    <Ionicons name="send" size={22} color={social.draft.trim() ? colors.primary : colors.textMuted} />
-                  )}
-                </Pressable>
-              </View>
-            </View>}
+              {/* Caption: bold username + catch info */}
+              <Text style={[styles.captionWrap]} numberOfLines={commentsOpen ? undefined : 3}>
+                <Text style={styles.captionName}>{displayName} </Text>
+                <Text style={styles.captionText}>{captionBody}</Text>
+              </Text>
 
+              {/* Location pill (inline, compact) */}
+              {(item.location?.name || (item.location?.latitude != null && item.location.longitude != null)) ? (
+                <Pressable
+                  style={styles.loc}
+                  hitSlop={8}
+                  onPress={() => {
+                    const coords = `${item.location!.latitude?.toFixed(6) ?? ''}, ${item.location!.longitude?.toFixed(6) ?? ''}`;
+                    Clipboard.setString(item.location!.name ?? coords);
+                    if (Platform.OS === 'android') ToastAndroid.show('Копирано', ToastAndroid.SHORT);
+                  }}
+                >
+                  <Ionicons name="location" size={12} color={colors.primary} />
+                  <Text style={styles.locText} numberOfLines={1}>
+                    {item.location!.name
+                      ? item.location!.name
+                      : `${item.location!.latitude!.toFixed(4)}, ${item.location!.longitude!.toFixed(4)}`}
+                  </Text>
+                </Pressable>
+              ) : null}
+
+              {/* View all comments tap */}
+              {social.allComments.length > 0 && !commentsOpen && (
+                <Pressable style={styles.viewCommentsBtn} onPress={() => setCommentsOpen(true)}>
+                  <Text style={styles.viewCommentsText}>
+                    Виж всички {social.allComments.length} {social.allComments.length === 1 ? 'коментар' : 'коментара'}
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+
+            {/* ── Inline comments section ── */}
+            {commentsOpen && (
+              <View style={styles.commentsWrap}>
+                {social.allComments.map((c) => {
+                  const isReply = !!c.replyToId;
+                  const isMyComment = myUid === c.authorUid;
+                  const canDelete = isMyComment || isMine;
+                  const isEditing = social.editingComment?.id === c.id;
+
+                  return (
+                    <View key={c.id} style={[styles.commentRow, isReply && { marginLeft: spacing.xl }]}>
+                      {isReply && (
+                        <Text style={{ ...typography.caption, color: colors.textMuted, marginBottom: 2, fontSize: 11 }}>
+                          ↩ отговор на {c.replyToName}
+                        </Text>
+                      )}
+                      {isEditing ? (
+                        <View style={{ gap: spacing.xs }}>
+                          <TextInput
+                            value={social.editingComment!.text}
+                            onChangeText={(t) => social.setEditingComment({ id: c.id, text: t })}
+                            style={[styles.input, { flex: undefined }]}
+                            autoFocus multiline maxLength={2000} editable={!social.editBusy}
+                          />
+                          <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                            <Pressable onPress={social.onSaveEdit} disabled={social.editBusy || !social.editingComment!.text.trim()} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                              {social.editBusy
+                                ? <ActivityIndicator size="small" color={colors.primary} />
+                                : <Ionicons name="checkmark-circle" size={18} color={colors.primary} />}
+                              <Text style={{ ...typography.caption, color: colors.primary, fontWeight: '700' }}>Запази</Text>
+                            </Pressable>
+                            <Pressable onPress={() => social.setEditingComment(null)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                              <Ionicons name="close-circle-outline" size={18} color={colors.textMuted} />
+                              <Text style={{ ...typography.caption, color: colors.textMuted }}>Отказ</Text>
+                            </Pressable>
+                          </View>
+                        </View>
+                      ) : (
+                        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}>
+                          {/* Small avatar 22×22 */}
+                          <View style={{
+                            width: 22, height: 22, borderRadius: 11,
+                            backgroundColor: colors.primarySurface,
+                            borderWidth: 1, borderColor: colors.border,
+                            alignItems: 'center', justifyContent: 'center',
+                            marginTop: 1, flexShrink: 0,
+                          }}>
+                            <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 9 }}>
+                              {c.authorName.slice(0, 1).toUpperCase()}
+                            </Text>
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                              <Text style={styles.commentAuthor}>{c.authorName}</Text>
+                              {c.editedAt ? (
+                                <Text style={{ color: colors.textMuted, fontSize: 10 }}>(редактиран)</Text>
+                              ) : c.createdAt ? (
+                                <Text style={{ color: colors.textMuted, fontSize: 10 }}>{formatTimeAgo(c.createdAt)}</Text>
+                              ) : null}
+                            </View>
+                            <Text style={styles.commentText}>{c.text}</Text>
+                          </View>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingLeft: spacing.sm, paddingTop: 2 }}>
+                            {myUid && (
+                              <Pressable onPress={() => social.setReplyingTo({ id: c.id, name: c.authorName })} hitSlop={8}>
+                                <Text style={{ color: colors.primary, fontSize: 11 }}>Отговори</Text>
+                              </Pressable>
+                            )}
+                            {isMyComment && (
+                              <Pressable onPress={() => social.setEditingComment({ id: c.id, text: c.text })} hitSlop={8}>
+                                <Ionicons name="pencil-outline" size={13} color={colors.textMuted} />
+                              </Pressable>
+                            )}
+                            {canDelete && (
+                              <Pressable onPress={() => social.onDeleteComment(c.id)} hitSlop={8}>
+                                <Ionicons name="trash-outline" size={13} color={colors.danger} />
+                              </Pressable>
+                            )}
+                          </View>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+
+                {social.replyingTo && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.primarySurface, borderRadius: radius.sm, paddingHorizontal: spacing.sm, paddingVertical: 4, marginBottom: spacing.xs, gap: spacing.sm }}>
+                    <Ionicons name="return-down-forward-outline" size={14} color={colors.primary} />
+                    <Text style={{ ...typography.caption, color: colors.primary, flex: 1 }}>Отговор на {social.replyingTo.name}</Text>
+                    <Pressable onPress={() => social.setReplyingTo(null)} hitSlop={8}>
+                      <Ionicons name="close-circle" size={16} color={colors.textMuted} />
+                    </Pressable>
+                  </View>
+                )}
+
+                <View style={styles.composer}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder={social.replyingTo ? `Отговор на ${social.replyingTo.name}…` : 'Коментар…'}
+                    placeholderTextColor={colors.textMuted}
+                    value={social.draft}
+                    onChangeText={social.setDraft}
+                    maxLength={2000}
+                    editable={!social.sendBusy}
+                  />
+                  <Pressable onPress={social.onSendComment} disabled={social.sendBusy || !social.draft.trim()} hitSlop={8}>
+                    {social.sendBusy ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      <Ionicons name="send" size={22} color={social.draft.trim() ? colors.primary : colors.textMuted} />
+                    )}
+                  </Pressable>
+                </View>
+              </View>
+            )}
+
+            {/* ── Timestamp ── */}
+            <View style={{ paddingHorizontal: 12 }}>
+              <Text style={styles.timestamp}>{formatTimeAgo(item.date)}</Text>
+            </View>
+
+            {/* ── Likers modal ── */}
             <Modal
               visible={social.likersOpen}
               animationType="slide"
@@ -666,9 +695,35 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
               </Pressable>
             </Modal>
           </>
-        ) : null}
-        </View>
-      </Card>
+        ) : (
+          /* Social disabled: just show caption below the photo */
+          <View style={styles.metaWrap}>
+            <Text style={[styles.captionWrap]} numberOfLines={3}>
+              <Text style={styles.captionName}>{displayName} </Text>
+              <Text style={styles.captionText}>{captionBody}</Text>
+            </Text>
+            {(item.location?.name || (item.location?.latitude != null && item.location.longitude != null)) ? (
+              <Pressable
+                style={styles.loc}
+                hitSlop={8}
+                onPress={() => {
+                  const coords = `${item.location!.latitude?.toFixed(6) ?? ''}, ${item.location!.longitude?.toFixed(6) ?? ''}`;
+                  Clipboard.setString(item.location!.name ?? coords);
+                  if (Platform.OS === 'android') ToastAndroid.show('Копирано', ToastAndroid.SHORT);
+                }}
+              >
+                <Ionicons name="location" size={12} color={colors.primary} />
+                <Text style={styles.locText} numberOfLines={1}>
+                  {item.location!.name
+                    ? item.location!.name
+                    : `${item.location!.latitude!.toFixed(4)}, ${item.location!.longitude!.toFixed(4)}`}
+                </Text>
+              </Pressable>
+            ) : null}
+            <Text style={styles.timestamp}>{formatTimeAgo(item.date)}</Text>
+          </View>
+        )}
+      </View>
     </KeyboardAvoidingView>
   );
 }

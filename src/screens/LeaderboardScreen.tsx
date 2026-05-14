@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   TextInput,
+  Animated,
 } from 'react-native';
 import { useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
@@ -191,38 +192,92 @@ function createStyles(colors: AppColors, mode: 'light' | 'dark') {
 type WaterModalTab = 'all' | 'dams' | 'rivers';
 
 function Podium({ rows, colors }: { rows: LeaderboardRow[]; colors: AppColors }) {
-  const cols = [
-    { row: rows[1], medal: '🥈', color: '#A8A8A8', pedH: 52, fontSize: 26 },
-    { row: rows[0], medal: '🥇', color: '#FFB800', pedH: 76, fontSize: 30, crown: true },
-    { row: rows[2] ?? null, medal: '🥉', color: '#B87333', pedH: 36, fontSize: 22 },
+  if (rows.length < 3) return null;
+
+  // Podium columns: [2nd, 1st, 3rd] — display order left→center→right
+  const COLS: Array<{
+    row: LeaderboardRow;
+    medal: string;
+    bgColor: string;
+    fullHeight: number;
+    position: string;
+  }> = [
+    { row: rows[1], medal: '🥈', bgColor: '#C0C0C0', fullHeight: 80, position: '2' },
+    { row: rows[0], medal: '🥇', bgColor: '#FFD700', fullHeight: 110, position: '1' },
+    { row: rows[2], medal: '🥉', bgColor: '#CD7F32', fullHeight: 60, position: '3' },
   ];
+
+  // Staggered animation: 2nd first (0ms), then 1st (120ms), then 3rd (240ms)
+  const animVals = useRef(COLS.map(() => new Animated.Value(0))).current;
+
+  useEffect(() => {
+    animVals.forEach((av) => av.setValue(0));
+    const anims = COLS.map((col, i) =>
+      Animated.timing(animVals[i], {
+        toValue: col.fullHeight,
+        duration: 500,
+        delay: i * 120,
+        useNativeDriver: false,
+      })
+    );
+    Animated.parallel(anims).start();
+  // We only want this to run on mount
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows]);
+
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.sm, gap: spacing.sm }}>
-      {cols.map(({ row, medal, color, pedH, fontSize, crown }, idx) => {
-        if (!row) return <View key={idx} style={{ flex: 1 }} />;
-        return (
+    <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.sm }}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm }}>
+        {COLS.map((col, idx) => (
           <View key={idx} style={{ flex: 1, alignItems: 'center' }}>
-            {crown && <Text style={{ fontSize: 18, marginBottom: 2 }}>👑</Text>}
-            <Text style={{ fontSize }}>{medal}</Text>
-            <Text style={{ ...typography.small, color: colors.text, fontWeight: '700', textAlign: 'center', marginTop: 4, lineHeight: 16 }} numberOfLines={2}>
-              {row.ownerName}
-            </Text>
-            <Text style={{ ...typography.caption, color: colors.textMuted, marginTop: 2, textAlign: 'center' }}>
-              {row.totalKg.toFixed(1)} кг
-            </Text>
+            {/* Crown only for 1st place (index 1 in display order) */}
+            {idx === 1 && <Text style={{ fontSize: 18, marginBottom: 2 }}>👑</Text>}
+
+            {/* Avatar circle */}
             <View style={{
-              width: '100%', height: pedH, marginTop: spacing.sm,
-              backgroundColor: color + '28',
-              borderTopLeftRadius: 6, borderTopRightRadius: 6,
-              borderTopWidth: 2, borderLeftWidth: 1, borderRightWidth: 1,
-              borderColor: color,
-              alignItems: 'center', justifyContent: 'center',
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              backgroundColor: col.bgColor + '33',
+              borderWidth: 2,
+              borderColor: col.bgColor,
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: spacing.xs,
             }}>
-              <Text style={{ fontWeight: '800', fontSize: 18, color }}>{idx === 0 ? '2' : idx === 1 ? '1' : '3'}</Text>
+              <Text style={{ fontSize: 14, fontWeight: '800', color: col.bgColor }}>
+                {col.row.ownerName.charAt(0).toUpperCase()}
+              </Text>
             </View>
+
+            {/* Name */}
+            <Text style={{ ...typography.small, color: colors.text, fontWeight: '700', textAlign: 'center', lineHeight: 14 }} numberOfLines={2}>
+              {col.row.ownerName}
+            </Text>
+
+            {/* Medal emoji */}
+            <Text style={{ fontSize: idx === 1 ? 22 : 18, marginTop: 2 }}>{col.medal}</Text>
+
+            {/* Animated podium block */}
+            <Animated.View style={{
+              width: '100%',
+              height: animVals[idx],
+              backgroundColor: col.bgColor,
+              borderTopLeftRadius: 6,
+              borderTopRightRadius: 6,
+              marginTop: spacing.xs,
+              alignItems: 'center',
+              justifyContent: 'center',
+              overflow: 'hidden',
+            }}>
+              <Text style={{ fontWeight: '800', fontSize: 18, color: '#fff' }}>{col.position}</Text>
+              <Text style={{ fontSize: 10, color: '#fff', opacity: 0.9, textAlign: 'center', paddingHorizontal: 2 }} numberOfLines={1}>
+                {col.row.totalKg.toFixed(1)} кг
+              </Text>
+            </Animated.View>
           </View>
-        );
-      })}
+        ))}
+      </View>
     </View>
   );
 }
@@ -436,7 +491,7 @@ export default function LeaderboardScreen() {
           data={rows}
           keyExtractor={(item) => item.ownerUid}
           contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl }}
-          ListHeaderComponent={rows.length >= 2 ? <Podium rows={rows} colors={colors} /> : null}
+          ListHeaderComponent={rows.length >= 3 ? <Podium rows={rows} colors={colors} /> : null}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => reload(true)} tintColor={colors.primary} />}
           renderItem={({ item }) => (
             <Pressable

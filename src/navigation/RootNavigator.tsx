@@ -24,6 +24,8 @@ import {
 } from './types';
 import { useNotificationNavigation } from '../hooks/useNotificationNavigation';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Location from 'expo-location';
+import { catchesStore } from '../storage/storage';
 
 import HomeScreen from '../screens/HomeScreen';
 import LogbookScreen from '../screens/LogbookScreen';
@@ -177,6 +179,28 @@ function TabNavigator() {
   const { colors, mode } = useTheme();
   const insets = useSafeAreaInsets();
   const [feedBadge, setFeedBadge] = React.useState<string | undefined>(undefined);
+  const [mapBadge, setMapBadge] = React.useState<string | undefined>(undefined);
+
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const catches = await catchesStore.list();
+        const nearby = catches.filter((c) => {
+          if (!c.location?.latitude || !c.location?.longitude) return false;
+          const dlat = c.location.latitude - loc.coords.latitude;
+          const dlng = c.location.longitude - loc.coords.longitude;
+          const dist = Math.sqrt(dlat * dlat + dlng * dlng) * 111;
+          return dist < 50;
+        });
+        if (nearby.length > 0) {
+          setMapBadge(String(nearby.length));
+        }
+      } catch {}
+    })();
+  }, []);
 
   React.useEffect(() => {
     AsyncStorage.getItem('@ribolov/feedLastVisit')
@@ -303,7 +327,14 @@ function TabNavigator() {
           tabPress: (e) => { e.preventDefault(); navigation.navigate('LogbookTab', { screen: 'LogbookList' }); },
         })}
       />
-      <Tabs.Screen name="MapTab" component={MapScreenWrapped} options={{ title: 'Карта' }} />
+      <Tabs.Screen
+        name="MapTab"
+        component={MapScreenWrapped}
+        options={{ title: 'Карта', tabBarBadge: mapBadge }}
+        listeners={() => ({
+          tabPress: () => { setMapBadge(undefined); },
+        })}
+      />
       <Tabs.Screen
         name="FeedTab"
         component={FeedNavigator}

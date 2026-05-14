@@ -32,6 +32,13 @@ import type { FeedItem } from '../services/catchSync';
 
 type R = RouteProp<LogbookStackParamList, 'CatchDetail'>;
 
+const CATCH_ACCENTS = ['#1A7A9C', '#2E9B5A', '#0E4D64', '#7BB7CC', '#006E8A', '#C49A00'];
+function speciesAccent(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
+  return CATCH_ACCENTS[Math.abs(h) % CATCH_ACCENTS.length];
+}
+
 function CatchDetailSkeleton() {
   return (
     <>
@@ -257,12 +264,17 @@ export default function CatchDetailScreen() {
               </View>
             </View>
           ) : (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.lg, paddingBottom: 0 }}>
+            <LinearGradient
+              colors={[speciesAccent(item.speciesName), speciesAccent(item.speciesName) + '99']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.lg, paddingTop: spacing.xl, paddingBottom: spacing.lg }}
+            >
               <Pressable onPress={safeGoBack} hitSlop={8}>
-                <Ionicons name="chevron-back" size={28} color={colors.primary} />
+                <Ionicons name="chevron-back" size={28} color="#fff" />
               </Pressable>
-              <Text style={styles.title} numberOfLines={1}>{item.speciesName}</Text>
-            </View>
+              <Text style={{ ...typography.h2, color: '#fff', flex: 1 }} numberOfLines={1}>{item.speciesName}</Text>
+            </LinearGradient>
           )}
 
           <View style={{ padding: spacing.lg, paddingBottom: spacing.xxl }}>

@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { LinearGradient } from 'expo-linear-gradient';
 import Toast from 'react-native-toast-message';
 import {
   View,
@@ -14,8 +13,10 @@ import {
   Modal,
   Keyboard,
   RefreshControl,
+  Dimensions,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -27,6 +28,7 @@ import { Button } from '../components/Button';
 import { MenuRow } from '../components/MenuRow';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
+import { accentPresets, type AccentTheme } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
 import { shadowCard } from '../theme/shadows';
 import { useAuth, type DeleteAccountCredential } from '../services/authContext';
@@ -37,7 +39,6 @@ import { handleError } from '../utils/handleError';
 import { ensureFirebase } from '../services/firebase';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 import { catchesStore } from '../storage/storage';
-import { LiquidBlobBg } from '../components/LiquidBlobBg';
 import type { Catch } from '../types';
 import * as Haptics from 'expo-haptics';
 import { useUnreadNotifCount } from '../hooks/useUnreadNotifCount';
@@ -49,59 +50,12 @@ import {
   deleteProfileAvatar,
   refreshOwnerPhotoOnPublicCatches,
 } from '../services/cloudSync';
+import { getFollowing } from '../services/social';
+import { fetchMyGroups, type Group, CATEGORY_LABELS } from '../services/groups';
 
-type ProfileTopBarProps = {
-  mode: 'light' | 'dark';
-  user: { uid?: string } | null;
-  styles: { topBar: object; topBarTitle: object; topBarRight: object; themeToggle: object; themeIconHit: object; topBarSignOut: object; topBarSignOutText: object };
-  onToggleMode: () => void;
-  onSignOut: () => void;
-};
+const SW = Dimensions.get('window').width;
 
-const ProfileTopBar = React.memo(function ProfileTopBar({
-  mode, user, styles, onToggleMode, onSignOut,
-}: ProfileTopBarProps) {
-  return (
-    <View style={styles.topBar}>
-      <Text style={styles.topBarTitle}>Профил</Text>
-      <View style={styles.topBarRight}>
-        <View style={styles.themeToggle}>
-          <Pressable
-            style={styles.themeIconHit}
-            onPress={() => { if (mode === 'dark') { void Haptics.selectionAsync(); onToggleMode(); } }}
-            accessibilityRole="button"
-            accessibilityLabel="Светла тема"
-            hitSlop={8}
-          >
-            <Ionicons
-              name="sunny-outline"
-              size={22}
-              color={mode === 'light' ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.45)'}
-            />
-          </Pressable>
-          <Pressable
-            style={styles.themeIconHit}
-            onPress={() => { if (mode === 'light') { void Haptics.selectionAsync(); onToggleMode(); } }}
-            accessibilityRole="button"
-            accessibilityLabel="Тъмна тема"
-            hitSlop={8}
-          >
-            <Ionicons
-              name="moon-outline"
-              size={21}
-              color={mode === 'dark' ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.45)'}
-            />
-          </Pressable>
-        </View>
-        {user ? (
-          <Pressable style={styles.topBarSignOut} onPress={onSignOut} hitSlop={12}>
-            <Text style={styles.topBarSignOutText}>Изход</Text>
-          </Pressable>
-        ) : null}
-      </View>
-    </View>
-  );
-});
+// ─── DeleteAccountModal ────────────────────────────────────────────────────────
 
 type DeleteAccountModalProps = {
   visible: boolean;
@@ -164,24 +118,33 @@ const DeleteAccountModal = React.memo(function DeleteAccountModal({
   );
 });
 
+// ─── Main component ────────────────────────────────────────────────────────────
+
 export default function ProfileScreen() {
   const navigation = useAppNavigation();
-  const { colors, mode, toggleMode } = useTheme();
+  const insets = useSafeAreaInsets();
+  const { colors, mode, toggleMode, accent, setAccent } = useTheme();
   const { user, configured, loading: authLoading, signOut, deleteAccount } = useAuth();
 
   const [catches, setCatches] = useState<Catch[]>([]);
   useEffect(() => { catchesStore.list().then(setCatches).catch(() => {}); }, []);
 
-  const BADGES = useMemo(() => [
-    { id: 'first', emoji: '🎣', label: 'Първи улов', earned: catches.length >= 1 },
-    { id: 'ten', emoji: '🏅', label: '10 улова', earned: catches.length >= 10 },
-    { id: 'fifty', emoji: '🥇', label: '50 улова', earned: catches.length >= 50 },
-    { id: 'century', emoji: '💯', label: '100 улова', earned: catches.length >= 100 },
-    { id: 'species5', emoji: '🐠', label: '5 вида', earned: new Set(catches.map((c) => c.speciesId)).size >= 5 },
-    { id: 'tenkg', emoji: '⚖️', label: '10 кг', earned: catches.reduce((s, c) => s + (c.weightKg ?? 0), 0) >= 10 },
-    { id: 'release', emoji: '♻️', label: 'Пуснал риба', earned: catches.some((c) => c.released) },
-    { id: 'photo5', emoji: '📸', label: 'Фотограф', earned: catches.filter((c) => c.photoUri).length >= 5 },
-  ], [catches]);
+  const [friends, setFriends] = useState<{ uid: string; displayName: string; photoUrl?: string }[]>([]);
+  const [myGroups, setMyGroups] = useState<Group[]>([]);
+  useEffect(() => {
+    if (!user?.uid || !configured) return;
+    getFollowing(user.uid).then(async (list) => {
+      setFriends(list);
+      const enriched = await Promise.all(
+        list.map(async (f) => {
+          const s = await getUserPublicSummary(f.uid).catch(() => null);
+          return { ...f, photoUrl: s?.photoUrl ?? undefined };
+        })
+      );
+      setFriends(enriched);
+    }).catch(() => {});
+    fetchMyGroups(user.uid).then(setMyGroups).catch(() => {});
+  }, [user?.uid, configured]);
 
   const [displayName, setDisplayName] = useState('');
   const [city, setCity] = useState('');
@@ -191,6 +154,8 @@ export default function ProfileScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [profileLoading, setProfileLoading] = useState(false);
   const [pubExpanded, setPubExpanded] = useState(false);
+  const [accentPickerExpanded, setAccentPickerExpanded] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [remotePhotoUrl, setRemotePhotoUrl] = useState<string | undefined>();
   const [pickedAvatarUri, setPickedAvatarUri] = useState<string | undefined>();
   // Resized base64 data URL — small enough for Firestore, used for save + persistent display
@@ -261,94 +226,127 @@ export default function ProfileScreen() {
           paddingBottom: spacing.xxl,
           backgroundColor: colors.background,
         },
+        // ── Top bar ──
         topBar: {
           flexDirection: 'row',
           alignItems: 'center',
-          justifyContent: 'space-between',
-          backgroundColor: colors.primary,
+          backgroundColor: colors.card,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: colors.border,
+          paddingTop: 0, // applied inline with insets
           paddingHorizontal: spacing.lg,
-          paddingVertical: spacing.sm + 2,
+          paddingBottom: spacing.sm,
         },
-        topBarTitle: { ...typography.bodyBold, fontSize: 17, color: colors.white },
-        topBarRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-        themeToggle: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-        themeIconHit: { paddingVertical: spacing.xs, paddingHorizontal: spacing.sm },
-        topBarSignOut: { paddingVertical: spacing.xs, paddingLeft: spacing.xs },
-        topBarSignOutText: { ...typography.bodyBold, fontSize: 14, color: 'rgba(255,255,255,0.92)' },
-        bodyPad: { paddingHorizontal: spacing.lg },
-        identityRow: {
-          flexDirection: 'row',
+        topBarCenter: {
+          flex: 1,
+          textAlign: 'center',
+          ...typography.bodyBold,
+          fontSize: 17,
+          color: colors.text,
+        },
+        topBarRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+        topBarIconHit: { padding: spacing.xs },
+        notifBadgeWrap: { position: 'relative' },
+        notifBadge: {
+          position: 'absolute',
+          top: 2,
+          right: 2,
+          minWidth: 14,
+          height: 14,
+          borderRadius: 7,
+          backgroundColor: colors.danger,
           alignItems: 'center',
-          gap: spacing.md,
+          justifyContent: 'center',
+          paddingHorizontal: 2,
+        },
+        notifBadgeText: {
+          color: colors.white,
+          fontSize: 9,
+          fontWeight: '700',
+          lineHeight: 14,
+        },
+        // ── Profile header ──
+        profileHeader: {
+          backgroundColor: colors.card,
+          paddingHorizontal: spacing.lg,
           paddingTop: spacing.md,
           paddingBottom: spacing.md,
         },
-        avatarRing: {
-          width: 76,
-          height: 76,
-          borderRadius: 38,
-          padding: 3,
-          backgroundColor: colors.card,
-          position: 'relative',
-          ...shadowCard(mode),
-        },
-        avatarInner: {
-          flex: 1,
-          borderRadius: 35,
-          overflow: 'hidden',
+        headerRow1: { flexDirection: 'row', alignItems: 'center' },
+        avatarWrap: {
+          width: 90,
+          height: 90,
+          borderRadius: 45,
           backgroundColor: colors.primaryDark,
           alignItems: 'center',
           justifyContent: 'center',
+          overflow: 'hidden',
+          position: 'relative',
         },
         avatarImg: { width: '100%', height: '100%' },
-        avatarLetter: { color: colors.white, fontSize: 28, fontWeight: '700' },
+        avatarLetter: { color: colors.white, fontSize: 34, fontWeight: '700' },
         avatarBadge: {
           position: 'absolute',
           bottom: 0,
           right: 0,
-          width: 26,
-          height: 26,
-          borderRadius: 13,
+          width: 28,
+          height: 28,
+          borderRadius: 14,
           backgroundColor: colors.accent,
           alignItems: 'center',
           justifyContent: 'center',
           borderWidth: 2,
           borderColor: colors.card,
         },
-        identityTextCol: { flex: 1, minWidth: 0 },
-        identityName: { ...typography.bodyBold, fontSize: 18, color: colors.text },
-        identityEmail: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
-        previewLink: {
+        statsRow: {
+          flex: 1,
           flexDirection: 'row',
+          justifyContent: 'space-around',
+          paddingLeft: spacing.md,
+        },
+        statCol: { alignItems: 'center' },
+        statNum: { fontSize: 20, fontWeight: '700', color: colors.text },
+        statLabel: { ...typography.small, color: colors.textMuted, marginTop: 2 },
+        headerRow2: { marginTop: spacing.sm },
+        headerName: { ...typography.bodyBold, fontSize: 15, color: colors.text },
+        headerCity: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
+        headerBio: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
+        headerButtons: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
+        outlinedBtn: {
+          flex: 1,
           alignItems: 'center',
-          gap: 4,
-          alignSelf: 'flex-start',
+          borderWidth: 1,
+          borderColor: colors.border,
+          borderRadius: radius.md,
+          paddingVertical: 7,
+        },
+        outlinedBtnText: { ...typography.caption, fontWeight: '700', color: colors.text },
+        // ── Photo grid ──
+        gridDivider: {
+          height: StyleSheet.hairlineWidth,
+          backgroundColor: colors.border,
           marginTop: spacing.sm,
-          paddingVertical: 2,
         },
-        previewLinkText: { ...typography.small, fontWeight: '700', color: colors.primary },
-        guestBlock: {
-          alignItems: 'center',
-          paddingVertical: spacing.lg,
+        gridCell: {
+          width: SW / 3,
+          height: SW / 3,
         },
-        guestIconWrap: {
-          width: 56,
-          height: 56,
-          borderRadius: 28,
-          backgroundColor: colors.primarySurface,
+        gridEmpty: {
           alignItems: 'center',
           justifyContent: 'center',
-          marginBottom: spacing.sm,
+          paddingVertical: spacing.xl,
+          backgroundColor: colors.card,
         },
-        guestTitle: { ...typography.bodyBold, fontSize: 17, color: colors.text, textAlign: 'center' },
-        guestSub: {
-          ...typography.caption,
-          color: colors.textMuted,
-          textAlign: 'center',
-          marginTop: spacing.xs,
-          lineHeight: 18,
-          paddingHorizontal: spacing.sm,
-        },
+        gridEmptyText: { ...typography.caption, color: colors.textMuted, marginTop: spacing.sm, textAlign: 'center' },
+        // ── Completion nudge ──
+        nudge: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, backgroundColor: colors.card },
+        nudgeRow: { flexDirection: 'row', justifyContent: 'space-between' },
+        nudgeText: { ...typography.small, color: colors.textMuted },
+        nudgePercent: { ...typography.small, color: colors.primary, fontWeight: '700' },
+        nudgeBar: { height: 4, backgroundColor: colors.border, borderRadius: 2, marginTop: spacing.xs },
+        nudgeFill: { height: 4, borderRadius: 2, backgroundColor: colors.primary },
+        nudgeHint: { ...typography.small, color: colors.textMuted, marginTop: spacing.xs, paddingBottom: spacing.sm },
+        // ── Warnings ──
         warnBanner: {
           flexDirection: 'row',
           gap: spacing.sm,
@@ -357,10 +355,12 @@ export default function ProfileScreen() {
           padding: spacing.md,
           borderRadius: radius.md,
           marginBottom: spacing.md,
+          marginHorizontal: spacing.lg,
           borderWidth: 1,
           borderColor: colors.border,
         },
         warnText: { ...typography.caption, color: colors.text, flex: 1, lineHeight: 18 },
+        // ── Public profile edit panel ──
         panel: {
           backgroundColor: colors.card,
           borderRadius: radius.md,
@@ -368,6 +368,7 @@ export default function ProfileScreen() {
           borderColor: colors.cardEdge,
           padding: spacing.md,
           marginBottom: spacing.md,
+          marginHorizontal: spacing.lg,
           ...shadowCard(mode),
         },
         panelTitle: { ...typography.bodyBold, fontSize: 15, color: colors.text },
@@ -380,9 +381,7 @@ export default function ProfileScreen() {
           marginBottom: spacing.xs,
           letterSpacing: 0.3,
         },
-        fieldLabelFirst: {
-          marginTop: spacing.sm,
-        },
+        fieldLabelFirst: { marginTop: spacing.sm },
         input: {
           backgroundColor: colors.surfaceAlt,
           borderWidth: 1,
@@ -393,6 +392,7 @@ export default function ProfileScreen() {
           fontSize: 15,
           color: colors.text,
         },
+        // ── Modal ──
         modalBackdrop: {
           flex: 1,
           backgroundColor: 'rgba(0,0,0,0.48)',
@@ -422,6 +422,53 @@ export default function ProfileScreen() {
           marginTop: spacing.md,
         },
         modalActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
+        // ── Settings drawer ──
+        settingsBackdrop: {
+          flex: 1,
+          backgroundColor: 'rgba(0,0,0,0.45)',
+          justifyContent: 'flex-end',
+        },
+        settingsSheet: {
+          backgroundColor: colors.card,
+          borderTopLeftRadius: radius.xl,
+          borderTopRightRadius: radius.xl,
+          paddingBottom: 32,
+          maxHeight: '88%',
+          ...shadowCard(mode),
+        },
+        settingsHandle: {
+          width: 36,
+          height: 4,
+          borderRadius: 2,
+          backgroundColor: colors.border,
+          alignSelf: 'center',
+          marginTop: spacing.sm,
+          marginBottom: spacing.xs,
+        },
+        settingsHeader: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: spacing.lg,
+          paddingVertical: spacing.sm,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: colors.border,
+        },
+        settingsTitle: { ...typography.bodyBold, fontSize: 16, color: colors.text, flex: 1 },
+        settingsCloseBtn: { padding: spacing.xs },
+        settingsSignOut: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: spacing.sm,
+          padding: spacing.md,
+          paddingHorizontal: spacing.lg,
+        },
+        settingsSignOutText: { ...typography.bodyBold, fontSize: 15, color: colors.danger },
+        settingsDivider: {
+          height: StyleSheet.hairlineWidth,
+          backgroundColor: colors.border,
+          marginHorizontal: spacing.lg,
+          marginVertical: spacing.xs,
+        },
         menuCardTitle: {
           ...typography.small,
           fontWeight: '700',
@@ -436,9 +483,83 @@ export default function ProfileScreen() {
           paddingHorizontal: spacing.xs,
           marginBottom: spacing.sm,
         },
+        // ── Social sections ──
+        sectionWrap: {
+          backgroundColor: colors.card,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: colors.border,
+          paddingBottom: spacing.md,
+        },
+        sectionHeader: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: spacing.lg,
+          paddingTop: spacing.md,
+          paddingBottom: spacing.sm,
+        },
+        sectionTitle: { ...typography.bodyBold, fontSize: 14, color: colors.text, flex: 1 },
+        sectionAction: { ...typography.small, color: colors.primary, fontWeight: '600' },
+        friendItem: { alignItems: 'center', marginLeft: spacing.lg, width: 60 },
+        friendAvatar: {
+          width: 52,
+          height: 52,
+          borderRadius: 26,
+          backgroundColor: colors.primaryDark,
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginBottom: spacing.xs,
+        },
+        friendAvatarText: { color: colors.white, fontSize: 20, fontWeight: '700' },
+        friendName: { ...typography.small, color: colors.text, textAlign: 'center', fontSize: 11 },
+        emptySection: {
+          paddingHorizontal: spacing.lg,
+          paddingBottom: spacing.md,
+        },
+        emptySectionText: { ...typography.caption, color: colors.textMuted },
+        clubRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: spacing.lg,
+          paddingVertical: spacing.sm,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: colors.border,
+        },
+        clubIconWrap: {
+          width: 40,
+          height: 40,
+          borderRadius: 10,
+          backgroundColor: colors.primarySurface,
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginRight: spacing.sm,
+        },
+        clubName: { ...typography.bodyBold, fontSize: 14, color: colors.text, flex: 1 },
+        clubMeta: { ...typography.small, color: colors.textMuted, marginTop: 2 },
+        // ── Guest ──
+        guestBlock: { alignItems: 'center', paddingVertical: spacing.lg, paddingHorizontal: spacing.lg },
+        guestIconWrap: {
+          width: 56,
+          height: 56,
+          borderRadius: 28,
+          backgroundColor: colors.primarySurface,
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginBottom: spacing.sm,
+        },
+        guestTitle: { ...typography.bodyBold, fontSize: 17, color: colors.text, textAlign: 'center' },
+        guestSub: {
+          ...typography.caption,
+          color: colors.textMuted,
+          textAlign: 'center',
+          marginTop: spacing.xs,
+          lineHeight: 18,
+          paddingHorizontal: spacing.sm,
+        },
       }),
     [colors, mode]
   );
+
+  // ── Handlers ───────────────────────────────────────────────────────────────
 
   const onSignOut = () => {
     Alert.alert('Изход', 'Сигурен ли си?', [
@@ -467,14 +588,13 @@ export default function ProfileScreen() {
     });
     if (!res.canceled && res.assets[0]) {
       const picked = res.assets[0];
-      // Resize to 80×80 — ~2-4 KB base64, safe to embed in Firestore catch documents
       const manipulated = await ImageManipulator.manipulateAsync(
         picked.uri,
         [{ resize: { width: 80, height: 80 } }],
         { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG, base64: true },
       );
-      setPickedAvatarUri(manipulated.uri);        // file URI → shown by expo-image immediately
-      setPickedAvatarDataUrl(                      // data URL → stored in Firestore on save
+      setPickedAvatarUri(manipulated.uri);
+      setPickedAvatarDataUrl(
         manipulated.base64 ? `data:image/jpeg;base64,${manipulated.base64}` : null
       );
     }
@@ -494,7 +614,6 @@ export default function ProfileScreen() {
         if (pickedAvatarDataUrl) {
           patch.photoUrl = pickedAvatarDataUrl;
         } else {
-          // Fallback: upload to Firebase Storage
           patch.photoUrl = await uploadProfileAvatar(user.uid, pickedAvatarUri);
           usedStorageUpload = true;
         }
@@ -508,7 +627,6 @@ export default function ProfileScreen() {
       try {
         await pushUserProfilePublic(user.uid, patch);
       } catch (writeErr) {
-        // If Storage was used and Firestore write failed, clean up the orphaned file
         if (usedStorageUpload) {
           deleteProfileAvatar(user.uid).catch(() => {});
         }
@@ -516,11 +634,9 @@ export default function ProfileScreen() {
       }
       const urlForAuth = patch.photoUrl?.trim();
       const fb = ensureFirebase();
-      // Firebase Auth photoURL has a ~1 KB limit — skip it for base64 data URLs
       if (urlForAuth && !urlForAuth.startsWith('data:') && fb?.auth.currentUser) {
         await updateProfile(fb.auth.currentUser, { photoURL: urlForAuth });
       }
-      // Update ownerPhotoUrl on all existing public catches (best-effort, non-blocking)
       if (urlForAuth) {
         refreshOwnerPhotoOnPublicCatches(user.uid, urlForAuth).catch(() => {});
       }
@@ -573,6 +689,8 @@ export default function ProfileScreen() {
     });
   };
 
+  // ── Derived values ─────────────────────────────────────────────────────────
+
   const unreadNotifs = useUnreadNotifCount(user?.uid);
   const avatarUri = pickedAvatarUri ?? remotePhotoUrl ?? user?.photoURL ?? undefined;
   const initialLetter = (displayName || user?.email || '?').slice(0, 1).toUpperCase();
@@ -596,8 +714,65 @@ export default function ProfileScreen() {
     ? 'Сподели улов публично'
     : null;
 
+  const catchStatsCount = catches.length;
+  const catchStatsSpecies = new Set(catches.map((c) => c.speciesId)).size;
+  const catchStatsKg = catches.reduce((s, c) => s + (c.weightKg ?? 0), 0).toFixed(1);
+
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+
   return (
     <Screen scroll={false} padded={false}>
+      {/* ── Top bar ── */}
+      <View style={[styles.topBar, { paddingTop: insets.top }]}>
+        <Pressable
+          onPress={() => { void Haptics.selectionAsync(); setSettingsOpen(true); }}
+          style={styles.topBarIconHit}
+          accessibilityRole="button"
+          accessibilityLabel="Меню"
+          hitSlop={8}
+        >
+          <Ionicons name="menu-outline" size={24} color={colors.text} />
+        </Pressable>
+
+        <Text style={styles.topBarCenter} numberOfLines={1}>
+          {displayName.trim() || 'Рибар'}
+        </Text>
+
+        <View style={styles.topBarRight}>
+          {/* Notifications bell with badge */}
+          <Pressable
+            onPress={() => navigation.navigate('Notifications')}
+            style={[styles.topBarIconHit, styles.notifBadgeWrap]}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Известия"
+          >
+            <Ionicons name="notifications-outline" size={23} color={colors.text} />
+            {unreadNotifs > 0 ? (
+              <View style={styles.notifBadge}>
+                <Text style={styles.notifBadgeText}>{unreadNotifs > 99 ? '99+' : unreadNotifs}</Text>
+              </View>
+            ) : null}
+          </Pressable>
+
+          {/* Light / dark toggle */}
+          <Pressable
+            onPress={() => { void Haptics.selectionAsync(); toggleMode(); }}
+            style={styles.topBarIconHit}
+            accessibilityRole="button"
+            accessibilityLabel={mode === 'dark' ? 'Светла тема' : 'Тъмна тема'}
+            hitSlop={8}
+          >
+            <Ionicons
+              name={mode === 'dark' ? 'sunny-outline' : 'moon-outline'}
+              size={22}
+              color={colors.text}
+            />
+          </Pressable>
+        </View>
+      </View>
+
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -611,177 +786,127 @@ export default function ProfileScreen() {
           />
         }
       >
-        <ProfileTopBar
-          mode={mode}
-          user={user}
-          styles={styles}
-          onToggleMode={toggleMode}
-          onSignOut={onSignOut}
-        />
-
-        <View style={styles.bodyPad}>
-          {!user ? (
-            <View style={styles.guestBlock}>
-              <View style={styles.guestIconWrap}>
-                <Ionicons name="fish-outline" size={26} color={colors.primary} />
-              </View>
-              <Text style={styles.guestTitle}>Твоят риболовен профил</Text>
-              <Text style={styles.guestSub}>
-                Влез за синхронизация, лента и видимо име и снимка в профила.
-              </Text>
-              <Button title="Вход / Регистрация" onPress={() => navigation.navigate('Auth')} style={{ marginTop: spacing.md }} />
+        {/* ── Guest state ── */}
+        {!user ? (
+          <View style={styles.guestBlock}>
+            <View style={styles.guestIconWrap}>
+              <Ionicons name="fish-outline" size={26} color={colors.primary} />
             </View>
-          ) : profileLoading ? (
-            <View style={[styles.identityRow, { justifyContent: 'center', paddingVertical: spacing.md }]}>
-              <ActivityIndicator color={colors.primary} />
-            </View>
-          ) : (
-            <LinearGradient
-              colors={[colors.primaryDark, colors.primary, colors.accent]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={{ alignItems: 'center', paddingTop: spacing.xl, paddingBottom: spacing.xl, paddingHorizontal: spacing.lg, marginHorizontal: -spacing.lg, overflow: 'hidden' }}
-            >
-              <LiquidBlobBg />
-              <Pressable
-                onPress={configured ? pickProfileAvatar : undefined}
-                disabled={!configured}
-                accessibilityRole={configured ? 'button' : 'image'}
-                accessibilityLabel={configured ? 'Промени снимка на профила' : 'Аватар'}
-              >
-                <View style={{ width: 96, height: 96, borderRadius: 48, padding: 3, backgroundColor: 'rgba(255,255,255,0.3)', position: 'relative' }}>
-                  <View style={{ flex: 1, borderRadius: 45, overflow: 'hidden', backgroundColor: colors.primaryDark, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={styles.guestTitle}>Твоят риболовен профил</Text>
+            <Text style={styles.guestSub}>
+              Влез за синхронизация, лента и видимо име и снимка в профила.
+            </Text>
+            <Button title="Вход / Регистрация" onPress={() => navigation.navigate('Auth')} style={{ marginTop: spacing.md }} />
+          </View>
+        ) : profileLoading ? (
+          <View style={{ justifyContent: 'center', alignItems: 'center', paddingVertical: spacing.xl }}>
+            <ActivityIndicator color={colors.primary} />
+          </View>
+        ) : (
+          <>
+            {/* ── Profile header ── */}
+            <View style={styles.profileHeader}>
+              {/* Row 1: Avatar + Stats */}
+              <View style={styles.headerRow1}>
+                <Pressable
+                  onPress={configured ? pickProfileAvatar : undefined}
+                  disabled={!configured}
+                  accessibilityRole={configured ? 'button' : 'image'}
+                  accessibilityLabel={configured ? 'Промени снимка на профила' : 'Аватар'}
+                >
+                  <View style={styles.avatarWrap}>
                     {avatarUri ? (
-                      <Image source={{ uri: avatarUri }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
+                      <Image source={{ uri: avatarUri }} style={styles.avatarImg} contentFit="cover" />
                     ) : (
-                      <Text style={{ color: colors.white, fontSize: 36, fontWeight: '700' }}>{initialLetter}</Text>
+                      <Text style={styles.avatarLetter}>{initialLetter}</Text>
                     )}
+                    {configured ? (
+                      <View style={styles.avatarBadge} pointerEvents="none">
+                        <Ionicons name="camera" size={13} color={colors.white} />
+                      </View>
+                    ) : null}
                   </View>
-                  {configured ? (
-                    <View style={[styles.avatarBadge, { width: 30, height: 30, borderRadius: 15 }]} pointerEvents="none">
-                      <Ionicons name="camera" size={15} color={colors.white} />
-                    </View>
-                  ) : null}
-                </View>
-              </Pressable>
-              <Text style={{ ...typography.h2, color: '#fff', marginTop: spacing.md, letterSpacing: -0.3 }} numberOfLines={1}>
-                {displayName.trim() || user.displayName || 'Рибар'}
-              </Text>
-              {user.email ? (
-                <Text style={{ ...typography.caption, color: 'rgba(255,255,255,0.72)', marginTop: 2 }} numberOfLines={1}>
-                  {user.email}
-                </Text>
-              ) : null}
-              {configured ? (
-                <Pressable style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.sm, backgroundColor: 'rgba(255,255,255,0.18)', paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.pill }} onPress={openPublicPreview} hitSlop={8}>
-                  <Ionicons name="eye-outline" size={14} color="rgba(255,255,255,0.9)" />
-                  <Text style={{ ...typography.small, fontWeight: '700', color: 'rgba(255,255,255,0.9)' }}>Как те виждат другите</Text>
                 </Pressable>
-              ) : null}
-            </LinearGradient>
-          )}
 
-          {/* ── Profile completion nudge ── */}
-          {user && !profileLoading && completionPct < 100 ? (
-            <View style={{
-              marginHorizontal: spacing.lg,
-              marginTop: spacing.sm,
-              padding: spacing.md,
-              backgroundColor: colors.primarySurface,
-              borderRadius: radius.md,
-              borderWidth: 1,
-              borderColor: colors.border,
-            }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={{ ...typography.small, color: colors.textMuted }}>Профил {completionPct}% завършен  →</Text>
-                <Text style={{ ...typography.small, color: colors.primary, fontWeight: '700' }}>{completionPct}%</Text>
+                {/* Stats */}
+                <View style={styles.statsRow}>
+                  <View style={styles.statCol}>
+                    <Text style={styles.statNum}>{catchStatsCount}</Text>
+                    <Text style={styles.statLabel}>улова</Text>
+                  </View>
+                  <View style={styles.statCol}>
+                    <Text style={styles.statNum}>{catchStatsSpecies}</Text>
+                    <Text style={styles.statLabel}>вида</Text>
+                  </View>
+                  <View style={styles.statCol}>
+                    <Text style={styles.statNum}>{catchStatsKg}</Text>
+                    <Text style={styles.statLabel}>кг</Text>
+                  </View>
+                </View>
               </View>
-              <View style={{ height: 6, backgroundColor: colors.border, borderRadius: 3, marginTop: spacing.xs }}>
-                <View style={{ height: 6, width: `${completionPct}%` as `${number}%`, backgroundColor: colors.primary, borderRadius: 3 }} />
+
+              {/* Row 2: Name, city, bio */}
+              <View style={styles.headerRow2}>
+                <Text style={styles.headerName} numberOfLines={1}>
+                  {displayName.trim() || user.displayName || 'Рибар'}
+                </Text>
+                {city.trim() ? (
+                  <Text style={styles.headerCity} numberOfLines={1}>📍 {city.trim()}</Text>
+                ) : null}
+                {bio.trim() ? (
+                  <Text style={styles.headerBio} numberOfLines={2}>{bio.trim()}</Text>
+                ) : null}
               </View>
-              {completionHint ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: spacing.xs }}>
-                  <Text style={{ ...typography.small, color: colors.textMuted, flex: 1 }}>{completionHint}</Text>
-                  <Text style={{ ...typography.small, color: colors.textMuted }}> →</Text>
+
+              {/* Row 3: Action buttons */}
+              {configured ? (
+                <View style={styles.headerButtons}>
+                  <Pressable
+                    style={({ pressed }) => [styles.outlinedBtn, pressed && { opacity: 0.7 }]}
+                    onPress={() => { void Haptics.selectionAsync(); setPubExpanded(true); }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Редактирай профил"
+                  >
+                    <Text style={styles.outlinedBtnText}>Редактирай профил</Text>
+                  </Pressable>
+                  <Pressable
+                    style={({ pressed }) => [styles.outlinedBtn, pressed && { opacity: 0.7 }]}
+                    onPress={openPublicPreview}
+                    accessibilityRole="button"
+                    accessibilityLabel="Публичен изглед"
+                  >
+                    <Text style={styles.outlinedBtnText}>Публичен изглед</Text>
+                  </Pressable>
                 </View>
               ) : null}
-            </View>
-          ) : null}
 
-          {/* ── Achievements compact row ── */}
-          {catches.length > 0 && (() => {
-            const earned = BADGES.filter((b) => b.earned);
-            const pct = (earned.length / BADGES.length) * 100;
-            return (
-              <Pressable
-                onPress={() => { void Haptics.selectionAsync(); navigation.navigate('Achievements'); }}
-                style={({ pressed }) => ({
-                  marginTop: spacing.md,
-                  marginBottom: spacing.xs,
-                  backgroundColor: colors.card,
-                  borderRadius: radius.md,
-                  borderWidth: 1,
-                  borderColor: colors.cardEdge,
-                  padding: spacing.md,
-                  opacity: pressed ? 0.75 : 1,
-                  ...shadowCard(mode),
-                })}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm }}>
-                  <Ionicons name="trophy-outline" size={15} color={colors.primary} style={{ marginRight: spacing.xs }} />
-                  <Text style={{ ...typography.bodyBold, fontSize: 13, color: colors.text, flex: 1 }}>Постижения</Text>
-                  <Text style={{ ...typography.small, color: colors.textMuted, marginRight: spacing.xs }}>
-                    {earned.length}/{BADGES.length}
-                  </Text>
-                  <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
-                </View>
-                <View style={{ height: 4, backgroundColor: colors.border, borderRadius: 2, overflow: 'hidden', marginBottom: spacing.sm }}>
-                  <View style={{ width: `${pct}%`, height: 4, backgroundColor: colors.primary, borderRadius: 2 }} />
-                </View>
-                <View style={{ flexDirection: 'row', gap: spacing.xs }}>
-                  {earned.slice(0, 5).map((b) => (
-                    <Text key={b.id} style={{ fontSize: 18 }}>{b.emoji}</Text>
-                  ))}
-                  {earned.length === 0 && (
-                    <Text style={{ ...typography.caption, color: colors.textMuted }}>Още няма спечелени — започни да ловиш!</Text>
-                  )}
-                </View>
-              </Pressable>
-            );
-          })()}
-
-          {!configured && user ? (
-            <View style={styles.warnBanner}>
-              <Ionicons name="cloud-offline-outline" size={18} color={colors.textMuted} />
-              <Text style={styles.warnText}>
-                Облакът не е активен — настрой Firebase, за да редактираш снимка и онлайн профил.
-              </Text>
-            </View>
-          ) : null}
-
-          {user && configured ? (
-            <View style={[styles.panel, { padding: 0, overflow: 'hidden' }]}>
-              <Pressable
-                onPress={() => { void Haptics.selectionAsync(); setPubExpanded((v) => !v); }}
-                style={{ flexDirection: 'row', alignItems: 'center', padding: spacing.md }}
-              >
-                <Ionicons name="person-circle-outline" size={18} color={colors.primary} style={{ marginRight: spacing.sm }} />
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.panelTitle}>Публичен профил</Text>
-                  {!pubExpanded && (displayName.trim() || city.trim()) ? (
-                    <Text style={styles.panelSub} numberOfLines={1}>
-                      {[displayName.trim(), city.trim()].filter(Boolean).join(' · ')}
-                    </Text>
+              {/* Completion nudge — compact, inside header card */}
+              {completionPct < 100 ? (
+                <View style={styles.nudge}>
+                  <View style={styles.nudgeRow}>
+                    <Text style={styles.nudgeText}>Профил {completionPct}% завършен</Text>
+                    <Text style={styles.nudgePercent}>{completionPct}%</Text>
+                  </View>
+                  <View style={styles.nudgeBar}>
+                    <View style={[styles.nudgeFill, { width: `${completionPct}%` as `${number}%` }]} />
+                  </View>
+                  {completionHint ? (
+                    <Text style={styles.nudgeHint}>{completionHint} →</Text>
                   ) : null}
                 </View>
-                <Ionicons
-                  name={pubExpanded ? 'chevron-up' : 'chevron-down'}
-                  size={16}
-                  color={colors.textMuted}
-                />
-              </Pressable>
+              ) : null}
+            </View>
 
-              {pubExpanded ? (
+            {/* ── Public profile edit (inline) ── */}
+            {pubExpanded && configured ? (
+              <View style={[styles.panel, { padding: 0, overflow: 'hidden', marginTop: spacing.sm }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', padding: spacing.md }}>
+                  <Ionicons name="person-circle-outline" size={18} color={colors.primary} style={{ marginRight: spacing.sm }} />
+                  <Text style={[styles.panelTitle, { flex: 1 }]}>Редактирай профил</Text>
+                  <Pressable onPress={() => setPubExpanded(false)} hitSlop={8}>
+                    <Ionicons name="close" size={18} color={colors.textMuted} />
+                  </Pressable>
+                </View>
                 <View style={{ paddingHorizontal: spacing.md, paddingBottom: spacing.md, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
                   <Text style={[styles.fieldLabel, styles.fieldLabelFirst]}>Име</Text>
                   <TextInput
@@ -791,7 +916,6 @@ export default function ProfileScreen() {
                     value={displayName}
                     onChangeText={setDisplayName}
                   />
-
                   <Text style={styles.fieldLabel}>Град или регион</Text>
                   <TextInput
                     style={styles.input}
@@ -800,7 +924,6 @@ export default function ProfileScreen() {
                     value={city}
                     onChangeText={setCity}
                   />
-
                   <Text style={styles.fieldLabel}>За теб</Text>
                   <TextInput
                     style={[styles.input, { minHeight: 72, textAlignVertical: 'top', paddingTop: spacing.sm + 4 }]}
@@ -810,49 +933,237 @@ export default function ProfileScreen() {
                     onChangeText={setBio}
                     multiline
                   />
-
                   <Button title="Запази промените" onPress={savePublicProfile} loading={profileSaving} style={{ marginTop: spacing.md }} />
                 </View>
-              ) : null}
-            </View>
-          ) : null}
-
-          <Text style={styles.menuCardTitle}>Още</Text>
-          <Card style={styles.menuCardWrap}>
-            <MenuRow dense icon="stats-chart-outline" title="Статистики" onPress={() => navigation.navigate('Stats')} showDivider />
-            <MenuRow dense icon="trophy-outline" title="Лични рекорди" onPress={() => navigation.navigate('PersonalBests')} showDivider />
-            <MenuRow dense icon="people-outline" title="Клубове" onPress={() => navigation.navigate('Groups')} showDivider />
-            <MenuRow dense icon="newspaper-outline" title="Лента" onPress={() => navigation.navigate('Feed')} showDivider />
-            <MenuRow dense icon="images-outline" title="Седмични и месечни класации" onPress={() => navigation.navigate('Classics')} showDivider />
-            <MenuRow dense icon="bookmark-outline" title="Запазени" onPress={() => navigation.navigate('SavedPosts')} showDivider />
-            <MenuRow dense icon="notifications-outline" title="Известия" onPress={() => navigation.navigate('Notifications')} showDivider rightBadge={unreadNotifs || undefined} />
-            <MenuRow dense icon="people-outline" title="Приятели" onPress={() => navigation.navigate('Friends')} showDivider />
-            <MenuRow dense icon="trophy-outline" title="Постижения" onPress={() => navigation.navigate('Achievements')} showDivider />
-            <MenuRow dense icon="calendar-outline" title="Излети" onPress={() => navigation.navigate('Trips')} showDivider />
-            <MenuRow dense icon="ribbon-outline" title="Турнири" onPress={() => navigation.navigate('Tournaments')} showDivider />
-            <MenuRow dense icon="podium-outline" title="Класирания" onPress={() => navigation.navigate('Leaderboard')} showDivider />
-            <MenuRow dense icon="chatbubbles-outline" title="Съобщения" onPress={() => navigation.navigate('Chats')} showDivider />
-            <MenuRow dense icon="bulb-outline" title="Инсайти" onPress={() => navigation.navigate('Insights')} showDivider />
-            <MenuRow
-              dense
-              icon="document-text-outline"
-              title="Правна информация"
-              onPress={() => navigation.navigate('LegalInfo')}
-              showDivider={!!user}
-            />
-            {user ? (
-              <MenuRow
-                dense
-                destructive
-                icon="trash-outline"
-                title="Изтриване на акаунта"
-                onPress={() => setDeleteModalVisible(true)}
-              />
+              </View>
             ) : null}
-          </Card>
-        </View>
+
+            {/* ── Cloud warning ── */}
+            {!configured ? (
+              <View style={styles.warnBanner}>
+                <Ionicons name="cloud-offline-outline" size={18} color={colors.textMuted} />
+                <Text style={styles.warnText}>
+                  Облакът не е активен — настрой Firebase, за да редактираш снимка и онлайн профил.
+                </Text>
+              </View>
+            ) : null}
+
+            {/* ── Friends ── */}
+            <View style={styles.sectionWrap}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Приятели</Text>
+                <Pressable onPress={() => navigation.navigate('Friends')} hitSlop={8}>
+                  <Text style={styles.sectionAction}>Виж всички</Text>
+                </Pressable>
+              </View>
+              {friends.length > 0 ? (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ paddingRight: spacing.lg }}
+                >
+                  {friends.map((f) => (
+                    <Pressable
+                      key={f.uid}
+                      style={({ pressed }) => [styles.friendItem, pressed && { opacity: 0.7 }]}
+                      onPress={() => navigation.navigate('UserPublicProfile', { uid: f.uid, displayName: f.displayName })}
+                    >
+                      <View style={styles.friendAvatar}>
+                        {f.photoUrl ? (
+                          <Image source={{ uri: f.photoUrl }} style={{ width: '100%', height: '100%', borderRadius: 26 }} contentFit="cover" />
+                        ) : (
+                          <Text style={styles.friendAvatarText}>
+                            {(f.displayName || '?').slice(0, 1).toUpperCase()}
+                          </Text>
+                        )}
+                      </View>
+                      <Text style={styles.friendName} numberOfLines={1}>{f.displayName}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              ) : (
+                <View style={styles.emptySection}>
+                  <Text style={styles.emptySectionText}>Все още няма приятели — намери рибари от лентата!</Text>
+                </View>
+              )}
+            </View>
+
+            {/* ── Clubs ── */}
+            <View style={[styles.sectionWrap, { marginTop: spacing.sm }]}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Клубове</Text>
+                <Pressable onPress={() => navigation.navigate('Groups')} hitSlop={8}>
+                  <Text style={styles.sectionAction}>Виж всички</Text>
+                </Pressable>
+              </View>
+              {myGroups.length > 0 ? (
+                myGroups.map((g) => (
+                  <Pressable
+                    key={g.id}
+                    style={({ pressed }) => [styles.clubRow, pressed && { opacity: 0.7 }]}
+                    onPress={() => navigation.navigate('GroupDetail', { groupId: g.id, groupName: g.name })}
+                  >
+                    <View style={styles.clubIconWrap}>
+                      <Ionicons name="people-outline" size={20} color={colors.primary} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.clubName} numberOfLines={1}>{g.name}</Text>
+                      <Text style={styles.clubMeta}>{CATEGORY_LABELS[g.category]} · {g.memberCount} члена</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                  </Pressable>
+                ))
+              ) : (
+                <View style={styles.emptySection}>
+                  <Text style={styles.emptySectionText}>Все още не членуваш в клуб — намери такъв в секция Клубове!</Text>
+                </View>
+              )}
+            </View>
+          </>
+        )}
       </ScrollView>
 
+      {/* ── Settings drawer (Modal bottom sheet) ── */}
+      <Modal
+        visible={settingsOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setSettingsOpen(false)}
+      >
+        <View style={styles.settingsBackdrop}>
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setSettingsOpen(false)} accessibilityLabel="Затвори" />
+          <View style={styles.settingsSheet}>
+            <View style={styles.settingsHandle} />
+            {/* Header */}
+            <View style={styles.settingsHeader}>
+              <Text style={styles.settingsTitle}>Настройки</Text>
+              <Pressable style={styles.settingsCloseBtn} onPress={() => setSettingsOpen(false)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Затвори">
+                <Ionicons name="close" size={22} color={colors.textMuted} />
+              </Pressable>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              {/* Sign out */}
+              {user ? (
+                <Pressable
+                  style={({ pressed }) => [styles.settingsSignOut, pressed && { opacity: 0.7 }]}
+                  onPress={() => { setSettingsOpen(false); onSignOut(); }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Изход"
+                >
+                  <Ionicons name="log-out-outline" size={20} color={colors.danger} />
+                  <Text style={styles.settingsSignOutText}>Изход</Text>
+                </Pressable>
+              ) : null}
+
+              <View style={styles.settingsDivider} />
+
+              {/* Accent theme picker */}
+              <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xs }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm }}>
+                  <Ionicons name="color-palette-outline" size={16} color={colors.primary} style={{ marginRight: spacing.xs }} />
+                  <Text style={{ ...typography.bodyBold, fontSize: 14, color: colors.text }}>Цветова тема</Text>
+                  {!accentPickerExpanded ? (
+                    <Text style={{ ...typography.small, color: colors.textMuted, marginLeft: spacing.sm }}>
+                      {accentPresets[accent].emoji} {accentPresets[accent].label}
+                    </Text>
+                  ) : null}
+                  <Pressable onPress={() => { void Haptics.selectionAsync(); setAccentPickerExpanded((v) => !v); }} style={{ marginLeft: 'auto' }} hitSlop={8}>
+                    <Ionicons name={accentPickerExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} />
+                  </Pressable>
+                </View>
+                {accentPickerExpanded ? (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={{ gap: spacing.sm, flexDirection: 'row', paddingBottom: spacing.sm }}
+                  >
+                    {(Object.keys(accentPresets) as AccentTheme[]).map((key) => {
+                      const preset = accentPresets[key];
+                      const selected = accent === key;
+                      return (
+                        <Pressable
+                          key={key}
+                          onPress={() => { void Haptics.selectionAsync(); setAccent(key); }}
+                          accessibilityRole="button"
+                          accessibilityLabel={preset.label}
+                          accessibilityState={{ selected }}
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: spacing.xs,
+                            paddingVertical: 8,
+                            paddingHorizontal: 12,
+                            borderRadius: 20,
+                            borderWidth: 1.5,
+                            borderColor: selected ? colors.primary : colors.border,
+                            backgroundColor: selected ? colors.primarySurface : 'transparent',
+                          }}
+                        >
+                          <Text style={{ fontSize: 15 }}>{preset.emoji}</Text>
+                          <Text style={{
+                            ...typography.small,
+                            fontWeight: selected ? '700' : '400',
+                            color: selected ? colors.primary : colors.textMuted,
+                          }}>
+                            {preset.label}
+                          </Text>
+                          {selected ? (
+                            <Ionicons name="checkmark" size={14} color={colors.primary} />
+                          ) : (
+                            <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: preset.light.primary }} />
+                          )}
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                ) : null}
+              </View>
+
+              <View style={styles.settingsDivider} />
+
+              {/* Menu rows */}
+              <View style={{ paddingHorizontal: spacing.xs, paddingVertical: 2, marginHorizontal: spacing.xs }}>
+                <Text style={[styles.menuCardTitle, { paddingHorizontal: spacing.sm, paddingTop: spacing.sm }]}>Навигация</Text>
+                <Card style={styles.menuCardWrap}>
+                  <MenuRow dense icon="stats-chart-outline" title="Статистики" onPress={() => { setSettingsOpen(false); navigation.navigate('Stats'); }} showDivider />
+                  <MenuRow dense icon="trophy-outline" title="Лични рекорди" onPress={() => { setSettingsOpen(false); navigation.navigate('PersonalBests'); }} showDivider />
+                  <MenuRow dense icon="people-outline" title="Клубове" onPress={() => { setSettingsOpen(false); navigation.navigate('Groups'); }} showDivider />
+                  <MenuRow dense icon="newspaper-outline" title="Лента" onPress={() => { setSettingsOpen(false); navigation.navigate('Feed'); }} showDivider />
+                  <MenuRow dense icon="images-outline" title="Седмични и месечни класации" onPress={() => { setSettingsOpen(false); navigation.navigate('Classics'); }} showDivider />
+                  <MenuRow dense icon="bookmark-outline" title="Запазени" onPress={() => { setSettingsOpen(false); navigation.navigate('SavedPosts'); }} showDivider />
+                  <MenuRow dense icon="notifications-outline" title="Известия" onPress={() => { setSettingsOpen(false); navigation.navigate('Notifications'); }} showDivider rightBadge={unreadNotifs || undefined} />
+                  <MenuRow dense icon="people-outline" title="Приятели" onPress={() => { setSettingsOpen(false); navigation.navigate('Friends'); }} showDivider />
+                  <MenuRow dense icon="trophy-outline" title="Постижения" onPress={() => { setSettingsOpen(false); navigation.navigate('Achievements'); }} showDivider />
+                  <MenuRow dense icon="calendar-outline" title="Излети" onPress={() => { setSettingsOpen(false); navigation.navigate('Trips'); }} showDivider />
+                  <MenuRow dense icon="ribbon-outline" title="Турнири" onPress={() => { setSettingsOpen(false); navigation.navigate('Tournaments'); }} showDivider />
+                  <MenuRow dense icon="podium-outline" title="Класирания" onPress={() => { setSettingsOpen(false); navigation.navigate('Leaderboard'); }} showDivider />
+                  <MenuRow dense icon="chatbubbles-outline" title="Съобщения" onPress={() => { setSettingsOpen(false); navigation.navigate('Chats'); }} showDivider />
+                  <MenuRow dense icon="bulb-outline" title="Инсайти" onPress={() => { setSettingsOpen(false); navigation.navigate('Insights'); }} showDivider />
+                  <MenuRow
+                    dense
+                    icon="document-text-outline"
+                    title="Правна информация"
+                    onPress={() => { setSettingsOpen(false); navigation.navigate('LegalInfo'); }}
+                    showDivider={!!user}
+                  />
+                  {user ? (
+                    <MenuRow
+                      dense
+                      destructive
+                      icon="trash-outline"
+                      title="Изтриване на акаунта"
+                      onPress={() => { setSettingsOpen(false); setDeleteModalVisible(true); }}
+                    />
+                  ) : null}
+                </Card>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Delete account modal ── */}
       {user ? (
         <DeleteAccountModal
           visible={deleteModalVisible}

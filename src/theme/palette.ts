@@ -72,3 +72,43 @@ export const darkColors: AppColors = {
 
 /** Fallback за ErrorBoundary извън ThemeProvider */
 export const lightColorsLegacy = lightColors;
+
+export type AccentTheme = 'ocean' | 'forest' | 'sunset' | 'nordic' | 'midnight';
+
+export const accentPresets: Record<AccentTheme, {
+  label: string;
+  emoji: string;
+  light: Pick<AppColors, 'primary' | 'primaryLight' | 'primaryDark' | 'primarySurface' | 'accent'>;
+  dark: Pick<AppColors, 'primary' | 'primaryLight' | 'primaryDark' | 'primarySurface' | 'accent'>;
+}> = {
+  ocean: {
+    label: 'Океан',
+    emoji: '🌊',
+    light: { primary: '#006E8A', primaryLight: '#0094B8', primaryDark: '#004F64', primarySurface: '#D4EBF3', accent: '#00A86A' },
+    dark:  { primary: '#00C4E8', primaryLight: '#33D4F0', primaryDark: '#0098B8', primarySurface: '#082030', accent: '#00D98E' },
+  },
+  forest: {
+    label: 'Гора',
+    emoji: '🌲',
+    light: { primary: '#2D6A4F', primaryLight: '#40916C', primaryDark: '#1B4332', primarySurface: '#D8F3DC', accent: '#52B788' },
+    dark:  { primary: '#52B788', primaryLight: '#74C69D', primaryDark: '#40916C', primarySurface: '#081C0E', accent: '#95D5B2' },
+  },
+  sunset: {
+    label: 'Залез',
+    emoji: '🌅',
+    light: { primary: '#C05621', primaryLight: '#DD6B20', primaryDark: '#9C4221', primarySurface: '#FEEBC8', accent: '#D69E2E' },
+    dark:  { primary: '#F6AD55', primaryLight: '#FBD38D', primaryDark: '#ED8936', primarySurface: '#2D1A08', accent: '#ECC94B' },
+  },
+  nordic: {
+    label: 'Нордик',
+    emoji: '❄️',
+    light: { primary: '#2B6CB0', primaryLight: '#3182CE', primaryDark: '#2C5282', primarySurface: '#EBF8FF', accent: '#805AD5' },
+    dark:  { primary: '#63B3ED', primaryLight: '#90CDF4', primaryDark: '#4299E1', primarySurface: '#0A1A2B', accent: '#B794F4' },
+  },
+  midnight: {
+    label: 'Полунощ',
+    emoji: '🌙',
+    light: { primary: '#553C9A', primaryLight: '#6B46C1', primaryDark: '#44337A', primarySurface: '#FAF5FF', accent: '#D53F8C' },
+    dark:  { primary: '#B794F4', primaryLight: '#D6BCFA', primaryDark: '#9F7AEA', primarySurface: '#1A0B2E', accent: '#F687B3' },
+  },
+};

@@ -9,7 +9,10 @@ import {
   Pressable,
   ScrollView,
   InteractionManager,
+  Animated,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
 import { useFocusEffect } from '@react-navigation/native';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
@@ -183,13 +186,17 @@ type WeatherCardProps = {
   onOpenMap: () => void;
   pressureTrend: 'up' | 'down' | 'stable';
   mode: 'light' | 'dark';
+  fullBleed?: boolean;
 };
 
 const WeatherCard = React.memo(function WeatherCard({
-  weather, weatherStatus, locLabel, colors, styles, onRetry, onOpenMap, pressureTrend, mode,
+  weather, weatherStatus, locLabel, colors, styles, onRetry, onOpenMap, pressureTrend, mode, fullBleed,
 }: WeatherCardProps) {
+  const fullBleedStyle = fullBleed
+    ? { marginHorizontal: -spacing.xl, borderRadius: 0 }
+    : undefined;
   return (
-    <Card style={styles.weatherCard}>
+    <Card style={[styles.weatherCard, fullBleedStyle]}>
       {weather?.weatherCode != null && (
         <LinearGradient
           colors={weatherMoodColors(weather.weatherCode)}
@@ -410,6 +417,10 @@ export default function HomeScreen() {
   const [unreadMsgs, setUnreadMsgs] = useState(0);
   const [unreadNotifs, setUnreadNotifs] = useState(0);
   const [bestSpot, setBestSpot] = useState<{ name: string; count: number } | null>(null);
+  const [recentCatches, setRecentCatches] = useState<Catch[]>([]);
+
+  const fabScale = useRef(new Animated.Value(1)).current;
+  const insets = useSafeAreaInsets();
 
   const loadStats = useCallback(async () => {
     const list = await catchesStore.list();
@@ -511,6 +522,26 @@ export default function HomeScreen() {
     }, [loadStats, loadWeather])
   );
 
+  // Load recent catches on mount
+  useEffect(() => {
+    catchesStore.list()
+      .then((all) => setRecentCatches([...all].reverse().slice(0, 5)))
+      .catch(() => {});
+  }, []);
+
+  // Pulse animation for FAB
+  useEffect(() => {
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.delay(2000),
+        Animated.timing(fabScale, { toValue: 1.08, duration: 300, useNativeDriver: true }),
+        Animated.timing(fabScale, { toValue: 1, duration: 300, useNativeDriver: true }),
+      ])
+    );
+    pulse.start();
+    return () => pulse.stop();
+  }, [fabScale]);
+
   // Live badge counts — wait for Firebase to be configured before subscribing
   useEffect(() => {
     if (!user || !configured) return;
@@ -539,6 +570,7 @@ export default function HomeScreen() {
   );
 
   return (
+    <View style={{ flex: 1 }}>
     <Screen
       scroll
       scrollProps={{
@@ -608,7 +640,65 @@ export default function HomeScreen() {
         onOpenMap={() => navigation.navigate('MapTab')}
         pressureTrend={pressureTrend}
         mode={mode}
+        fullBleed
       />
+
+      {/* ── Recent catches strip ── */}
+      {recentCatches.length > 0 && (
+        <View style={{ marginBottom: spacing.xl }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, marginBottom: spacing.sm }}>
+            <Text style={{ fontSize: 11, letterSpacing: 1, color: colors.textMuted, fontWeight: '600', textTransform: 'uppercase' }}>НЕДАВНИ УЛОВИ</Text>
+            <Pressable onPress={() => navigation.navigate('LogbookTab', { screen: 'LogbookList' })} hitSlop={8}>
+              <Text style={{ fontSize: 12, color: colors.primary, fontWeight: '600' }}>Виж всички →</Text>
+            </Pressable>
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.sm }}
+          >
+            {recentCatches.map((c) => (
+              <Pressable
+                key={c.id}
+                onPress={() => navigation.navigate('LogbookTab', { screen: 'CatchDetail', params: { id: c.id } })}
+                style={{
+                  width: 110,
+                  height: 140,
+                  borderRadius: radius.md,
+                  overflow: 'hidden',
+                  backgroundColor: c.photoUri ? colors.card : colors.primarySurface,
+                }}
+              >
+                {c.photoUri ? (
+                  <>
+                    <Image
+                      source={{ uri: c.photoUri }}
+                      contentFit="cover"
+                      style={StyleSheet.absoluteFillObject}
+                    />
+                    <LinearGradient
+                      colors={['transparent', 'rgba(0,0,0,0.65)']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 0, y: 1 }}
+                      style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 70, justifyContent: 'flex-end', padding: spacing.sm }}
+                    >
+                      <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }} numberOfLines={1}>{c.speciesName}</Text>
+                      {c.weightKg != null && (
+                        <Text style={{ color: '#fff', fontSize: 11 }}>{c.weightKg} кг</Text>
+                      )}
+                    </LinearGradient>
+                  </>
+                ) : (
+                  <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.sm }}>
+                    <Text style={{ fontSize: 28 }}>🐟</Text>
+                    <Text style={{ fontSize: 11, color: colors.text, fontWeight: '600', textAlign: 'center', marginTop: 4 }} numberOfLines={2}>{c.speciesName}</Text>
+                  </View>
+                )}
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+      )}
 
       {(forecast.length > 0 || weatherStatus === 'loading') ? (
         <ForecastSection
@@ -823,5 +913,38 @@ export default function HomeScreen() {
 
       <View style={{ height: spacing.md }} />
     </Screen>
+
+    {/* ── Floating Action Button ── */}
+    <Animated.View
+      style={{
+        position: 'absolute',
+        right: spacing.lg,
+        bottom: insets.bottom + spacing.lg,
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        backgroundColor: colors.primary,
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.25,
+        shadowRadius: 8,
+        elevation: 8,
+        transform: [{ scale: fabScale }],
+      }}
+    >
+      <Pressable
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
+          navigation.navigate('LogbookTab', { screen: 'AddCatch', params: {} });
+        }}
+        style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' }}
+        android_ripple={{ color: 'rgba(255,255,255,0.3)', borderless: true, radius: 28 }}
+      >
+        <Ionicons name="add" size={28} color={colors.white} />
+      </Pressable>
+    </Animated.View>
+    </View>
   );
 }

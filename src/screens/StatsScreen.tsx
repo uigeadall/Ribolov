@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Pressable, RefreshControl, Modal, Animated } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Pressable, RefreshControl, Modal, Animated, useWindowDimensions } from 'react-native';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { Ionicons } from '@expo/vector-icons';
@@ -40,6 +40,103 @@ function speciesColor(name: string): string {
 }
 
 const MONTH_LABELS = ['Яну', 'Фев', 'Мар', 'Апр', 'Май', 'Юни', 'Юли', 'Авг', 'Сеп', 'Окт', 'Ное', 'Дек'];
+
+const CHART_COLORS = ['#1A7A9C', '#2E9B5A', '#E8A020', '#C93030', '#7B4F9C', '#6E6E6E'];
+
+// ── Chart 1: Animated monthly bar chart (last 6 months) ──────────────────────
+type MonthBar = { label: string; count: number };
+
+function MonthlyBarChart({ months, maxCount, primaryColor }: {
+  months: MonthBar[];
+  maxCount: number;
+  primaryColor: string;
+}) {
+  const { colors } = useTheme();
+  const { width } = useWindowDimensions();
+  // Account for screen horizontal padding (spacing.lg * 2) + Card padding (spacing.md * 2)
+  const availableWidth = width - spacing.lg * 2 - spacing.md * 2;
+  const barWidth = Math.floor(availableWidth / 6) - 8;
+  const MAX_H = 80;
+
+  // One animated value per bar
+  const animVals = useRef<Animated.Value[]>(months.map(() => new Animated.Value(0))).current;
+
+  useEffect(() => {
+    animVals.forEach((av) => av.setValue(0));
+    const animations = months.map((m, i) => {
+      const targetH = m.count > 0 ? Math.max((m.count / Math.max(maxCount, 1)) * MAX_H, 4) : 0;
+      return Animated.timing(animVals[i], {
+        toValue: targetH,
+        duration: 600,
+        delay: i * 60,
+        useNativeDriver: false,
+      });
+    });
+    Animated.parallel(animations).start();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [months, maxCount]);
+
+  return (
+    <Card style={{ marginBottom: spacing.md }}>
+      <Text style={{ ...typography.h3, color: colors.text, marginBottom: spacing.md }}>Улови по месеци</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: MAX_H + 32 }}>
+        {months.map((m, i) => (
+          <View key={i} style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-end' }}>
+            {m.count > 0 && (
+              <Text style={{ fontSize: 9, fontWeight: '700', color: primaryColor, marginBottom: 2 }}>
+                {m.count}
+              </Text>
+            )}
+            <Animated.View
+              style={{
+                width: barWidth,
+                height: animVals[i],
+                backgroundColor: primaryColor,
+                borderTopLeftRadius: 3,
+                borderTopRightRadius: 3,
+              }}
+            />
+            <Text style={{ fontSize: 9, color: colors.textMuted, marginTop: 4, textAlign: 'center' }}>{m.label}</Text>
+          </View>
+        ))}
+      </View>
+    </Card>
+  );
+}
+
+// ── Chart 2: Species stacked horizontal bar + legend ─────────────────────────
+type SpeciesSegment = { name: string; count: number; color: string };
+
+function SpeciesDonutChart({ segments, total }: { segments: SpeciesSegment[]; total: number }) {
+  const { colors } = useTheme();
+  return (
+    <Card style={{ marginBottom: spacing.md }}>
+      <Text style={{ ...typography.h3, color: colors.text, marginBottom: spacing.md }}>Разпределение по видове</Text>
+      {/* Stacked bar */}
+      <View style={{ flexDirection: 'row', height: 20, borderRadius: 10, overflow: 'hidden', marginBottom: spacing.md }}>
+        {segments.map((seg, i) => (
+          <View
+            key={i}
+            style={{
+              flex: seg.count / total,
+              backgroundColor: seg.color,
+            }}
+          />
+        ))}
+      </View>
+      {/* Legend */}
+      <View style={{ gap: spacing.sm }}>
+        {segments.map((seg, i) => (
+          <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+            <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: seg.color }} />
+            <Text style={{ ...typography.caption, color: colors.text, flex: 1 }} numberOfLines={1}>{seg.name}</Text>
+            <Text style={{ ...typography.caption, fontWeight: '700', color: seg.color }}>{seg.count}</Text>
+          </View>
+        ))}
+      </View>
+    </Card>
+  );
+}
 
 export default function StatsScreen() {
   const { colors, mode } = useTheme();
@@ -155,7 +252,33 @@ export default function StatsScreen() {
       .filter((p) => p.bestKg > 0 || p.bestCm > 0)
       .sort((a, b) => b.bestKg - a.bestKg);
 
-    return { totalWeight, avgWeight, released, speciesMap, topSpecies, monthly, maxMonthly, maxSpecies, n: catches.length, calCells, currentStreak, longestStreak, activeDaysThisYear, pbList };
+    // Last 6 months for the new animated bar chart
+    const monthly6: { label: string; count: number }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const yr = d.getFullYear();
+      const mo = d.getMonth();
+      const count = catches.filter((c) => {
+        const cd = new Date(c.date);
+        return cd.getFullYear() === yr && cd.getMonth() === mo;
+      }).length;
+      monthly6.push({ label: MONTH_LABELS[mo], count });
+    }
+    const maxMonthly6 = Math.max(...monthly6.map((m) => m.count), 1);
+
+    // Species segments for donut / stacked bar (top 5 + "Други")
+    const sortedSpecies = [...speciesMap.entries()].sort((a, b) => b[1] - a[1]);
+    const top5 = sortedSpecies.slice(0, 5);
+    const otherCount = sortedSpecies.slice(5).reduce((s, [, n]) => s + n, 0);
+    const speciesSegments: { name: string; count: number; color: string }[] = top5.map(([name, count], i) => ({
+      name,
+      count,
+      color: CHART_COLORS[i] ?? '#888',
+    }));
+    if (otherCount > 0) speciesSegments.push({ name: 'Други', count: otherCount, color: CHART_COLORS[5] });
+    const speciesTotal = speciesSegments.reduce((s, seg) => s + seg.count, 0);
+
+    return { totalWeight, avgWeight, released, speciesMap, topSpecies, monthly, maxMonthly, maxSpecies, n: catches.length, calCells, currentStreak, longestStreak, activeDaysThisYear, pbList, monthly6, maxMonthly6, speciesSegments, speciesTotal };
   }, [catches]);
 
   const styles = useMemo(() => StyleSheet.create({
@@ -289,6 +412,21 @@ export default function StatsScreen() {
           </View>
           <Text style={{ fontSize: 52, opacity: mode === 'dark' ? 0.6 : 0.9 }}>🎣</Text>
         </View>
+
+        {/* Chart 1: Animated monthly bar chart (last 6 months) */}
+        <MonthlyBarChart
+          months={stats!.monthly6}
+          maxCount={stats!.maxMonthly6}
+          primaryColor={colors.primary}
+        />
+
+        {/* Chart 2: Species stacked bar + legend */}
+        {stats!.speciesSegments.length > 0 && (
+          <SpeciesDonutChart
+            segments={stats!.speciesSegments}
+            total={stats!.speciesTotal}
+          />
+        )}
 
         {/* Summary numbers */}
         <View style={styles.statGrid}>

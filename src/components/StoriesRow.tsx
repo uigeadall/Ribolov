@@ -106,6 +106,27 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
     });
   }, []);
 
+  // Keep refs up-to-date so PanResponder (created once) always calls the latest callbacks
+  const goNextRef = useRef(goNext);
+  const goPrevRef = useRef(goPrev);
+  useEffect(() => { goNextRef.current = goNext; }, [goNext]);
+  useEffect(() => { goPrevRef.current = goPrev; }, [goPrev]);
+
+  // Horizontal slide animation for swipe transitions
+  const swipeX = useRef(new Animated.Value(0)).current;
+
+  const animateAndGo = useCallback((direction: 'left' | 'right') => {
+    const toValue = direction === 'left' ? -SW : SW;
+    Animated.timing(swipeX, { toValue, duration: 220, useNativeDriver: true }).start(() => {
+      swipeX.setValue(0);
+      if (direction === 'left') goNextRef.current();
+      else goPrevRef.current();
+    });
+  }, [swipeX]);
+
+  // Reset swipe position when story changes
+  useEffect(() => { swipeX.setValue(0); }, [viewingIndex, swipeX]);
+
   // Start/reset progress bar when viewing changes
   useEffect(() => {
     setImageError(false);
@@ -118,21 +139,32 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
       useNativeDriver: false,
     });
     progressTimer.current = anim;
-    anim.start(({ finished }) => { if (finished) goNext(); });
+    anim.start(({ finished }) => { if (finished) goNextRef.current(); });
     return () => { anim.stop(); };
-  }, [viewingIndex, progressAnim, goNext]);
+  }, [viewingIndex, progressAnim]);
 
-  // Swipe gesture handler
+  // Swipe gesture — fix: use refs so closure is always fresh
   const panResponder = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dy) > 10 || Math.abs(gs.dx) > 10,
+      onMoveShouldSetPanResponder: (_, gs) =>
+        Math.abs(gs.dx) > 8 && Math.abs(gs.dx) > Math.abs(gs.dy) * 1.5,
+      onPanResponderMove: (_, gs) => {
+        swipeX.setValue(gs.dx * 0.4);
+      },
       onPanResponderRelease: (_, gs) => {
-        if (Math.abs(gs.dy) > Math.abs(gs.dx) && gs.dy > 80) {
+        if (gs.dy > 90 && Math.abs(gs.dy) > Math.abs(gs.dx)) {
+          Animated.timing(swipeX, { toValue: 0, duration: 120, useNativeDriver: true }).start();
           setViewingIndex(-1);
-        } else if (Math.abs(gs.dx) > Math.abs(gs.dy)) {
-          if (gs.dx < -50) goNext();
-          else if (gs.dx > 50) goPrev();
+        } else if (gs.dx < -60) {
+          animateAndGo('left');
+        } else if (gs.dx > 60) {
+          animateAndGo('right');
+        } else {
+          Animated.spring(swipeX, { toValue: 0, useNativeDriver: true, tension: 180, friction: 20 }).start();
         }
+      },
+      onPanResponderTerminate: () => {
+        Animated.spring(swipeX, { toValue: 0, useNativeDriver: true }).start();
       },
     })
   ).current;
@@ -237,29 +269,46 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
                   </View>
                 ))}
               </View>
-              {viewing.mediaUrl && viewing.mediaType !== 'video' && !imageError ? (
-                <Image
-                  source={{ uri: viewing.mediaUrl }}
-                  style={styles.viewerMedia}
-                  contentFit="contain"
-                  onError={() => setImageError(true)}
+
+              {/* Animated media container — slides on swipe */}
+              <Animated.View style={[{ flex: 1 }, { transform: [{ translateX: swipeX }] }]}>
+                {viewing.mediaUrl && viewing.mediaType !== 'video' && !imageError ? (
+                  <Image
+                    source={{ uri: viewing.mediaUrl }}
+                    style={styles.viewerMedia}
+                    contentFit="contain"
+                    onError={() => setImageError(true)}
+                  />
+                ) : viewing.mediaUrl && viewing.mediaType !== 'video' && imageError ? (
+                  <View style={[styles.viewerMedia, { alignItems: 'center', justifyContent: 'center' }]}>
+                    <Text style={{ fontSize: 72 }}>{viewing.emoji ?? '🎣'}</Text>
+                  </View>
+                ) : viewing.mediaUrl && viewing.mediaType === 'video' ? (
+                  <View style={[styles.viewerMedia, { alignItems: 'center', justifyContent: 'center' }]}>
+                    <Ionicons name="videocam" size={64} color="rgba(255,255,255,0.4)" />
+                    <Pressable onPress={() => Linking.openURL(viewing.mediaUrl!).catch(() => {})} style={{ marginTop: spacing.lg, backgroundColor: colors.primary, paddingHorizontal: spacing.xl, paddingVertical: spacing.md, borderRadius: radius.pill }}>
+                      <Text style={{ ...typography.bodyBold, color: '#fff' }}>▶ Гледай видеото</Text>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <View style={[styles.viewerMedia, { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary }]}>
+                    <Text style={{ fontSize: 80 }}>{viewing.emoji ?? '🎣'}</Text>
+                  </View>
+                )}
+              </Animated.View>
+
+              {/* Left tap zone — previous story */}
+              {viewingIndex > 0 ? (
+                <Pressable
+                  style={{ position: 'absolute', left: 0, top: insets.top + 48, bottom: 220, width: SW * 0.32, zIndex: 10 }}
+                  onPress={() => animateAndGo('right')}
                 />
-              ) : viewing.mediaUrl && viewing.mediaType !== 'video' && imageError ? (
-                <View style={[styles.viewerMedia, { alignItems: 'center', justifyContent: 'center' }]}>
-                  <Text style={{ fontSize: 72 }}>{viewing.emoji ?? '🎣'}</Text>
-                </View>
-              ) : viewing.mediaUrl && viewing.mediaType === 'video' ? (
-                <View style={[styles.viewerMedia, { alignItems: 'center', justifyContent: 'center' }]}>
-                  <Ionicons name="videocam" size={64} color="rgba(255,255,255,0.4)" />
-                  <Pressable onPress={() => Linking.openURL(viewing.mediaUrl!).catch(() => {})} style={{ marginTop: spacing.lg, backgroundColor: colors.primary, paddingHorizontal: spacing.xl, paddingVertical: spacing.md, borderRadius: radius.pill }}>
-                    <Text style={{ ...typography.bodyBold, color: '#fff' }}>▶ Гледа�� видеото</Text>
-                  </Pressable>
-                </View>
-              ) : (
-                <View style={[styles.viewerMedia, { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary }]}>
-                  <Text style={{ fontSize: 80 }}>{viewing.emoji ?? '🎣'}</Text>
-                </View>
-              )}
+              ) : null}
+              {/* Right tap zone — next story */}
+              <Pressable
+                style={{ position: 'absolute', right: 0, top: insets.top + 48, bottom: 220, width: SW * 0.45, zIndex: 10 }}
+                onPress={() => animateAndGo('left')}
+              />
 
               {viewer.flyingEmojis.map((fe) => (
                 <FlyingEmojiView key={fe.id} item={fe} onDone={() => viewer.removeFlyingEmoji(fe.id)} />

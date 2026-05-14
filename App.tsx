@@ -15,10 +15,10 @@ import { initFirebaseAppCheckBridge } from './src/services/firebaseAppCheckBridg
 import OnboardingScreen from './src/screens/OnboardingScreen';
 import { OfflineBar } from './src/components/OfflineBar';
 
-const ONBOARDED_KEY = '@ribolov/onboarded';
+const ONBOARDING_KEY = '@ribolov/onboarding_done';
 
 export default function App() {
-  const [onboarded, setOnboarded] = useState<boolean | null>(null);
+  const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
   const [fontsLoaded] = useFonts({ DMSans_400Regular, DMSans_500Medium, DMSans_600SemiBold, DMSans_700Bold });
 
   useEffect(() => {
@@ -26,23 +26,23 @@ export default function App() {
     initObservability();
     const fb = ensureFirebase();
     if (fb) void initFirebaseAppCheckBridge(fb.app);
-    AsyncStorage.getItem(ONBOARDED_KEY).then((v) => setOnboarded(v === 'true'));
+    AsyncStorage.getItem(ONBOARDING_KEY).then((v) => setOnboardingDone(v === '1'));
   }, []);
 
   const handleOnboardingDone = async () => {
-    await AsyncStorage.setItem(ONBOARDED_KEY, 'true');
-    setOnboarded(true);
+    await AsyncStorage.setItem(ONBOARDING_KEY, '1');
+    setOnboardingDone(true);
   };
 
   // Still loading the onboarding flag or fonts — render nothing to avoid flash
-  if (onboarded === null || !fontsLoaded) return null;
+  if (onboardingDone === null || !fontsLoaded) return null;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <ThemeProvider>
           <AuthProvider>
-            {onboarded ? (
+            {onboardingDone ? (
               <>
                 <RootNavigator />
                 <StatusBar style="auto" />

@@ -11,6 +11,9 @@ import {
   Alert,
   ActivityIndicator,
   Linking,
+  Animated,
+  StyleProp,
+  ViewStyle,
 } from 'react-native';
 import { useRoute, RouteProp } from '@react-navigation/native';
 import { useAppNavigation } from '../navigation/useAppNavigation';
@@ -537,6 +540,18 @@ export default function AddCatchScreen() {
     }
   };
 
+  // ── Step indicator ────────────────────────────────────────────────────────
+  const currentStep = useMemo(() => {
+    const hasMedia = !!form.photoUri;
+    const speciesName = selectedSpecies?.nameBg ?? '';
+    const hasDetails = !!(speciesName.trim() && form.weight.trim());
+    const hasLocation = !!(form.locationName?.trim() || form.locationCoords);
+    if (hasDetails && hasLocation) return 4;
+    if (hasDetails) return 3;
+    if (hasMedia || speciesName.trim()) return 2;
+    return 1;
+  }, [form.photoUri, selectedSpecies, form.weight, form.locationName, form.locationCoords]);
+
   if (editCatchId && !editLoaded) {
     return (
       <Screen>
@@ -557,6 +572,10 @@ export default function AddCatchScreen() {
           <Text style={styles.title}>{editCatchId ? 'Редактирай улов' : 'Нов улов'}</Text>
           <View style={{ width: 28 }} />
         </View>
+
+        {!editCatchId ? (
+          <StepIndicator currentStep={currentStep} colors={colors} />
+        ) : null}
 
         {!editCatchId && lastCatch ? (
           <Pressable
@@ -854,6 +873,108 @@ export default function AddCatchScreen() {
 }
 
 // ─── Local sub-components ─────────────────────────────────────────────────────
+
+const STEP_LABELS = ['Снимка', 'Детайли', 'Местоположение', 'Преглед'];
+const STEP_COUNT = 4;
+const CIRCLE_SIZE = 10;
+
+type StepIndicatorProps = {
+  currentStep: number;
+  colors: AppColors;
+};
+
+function StepIndicator({ currentStep, colors }: StepIndicatorProps) {
+  const animRef = useRef(new Animated.Value(currentStep)).current;
+
+  useEffect(() => {
+    Animated.timing(animRef, {
+      toValue: currentStep,
+      duration: 280,
+      useNativeDriver: false,
+    }).start();
+  }, [currentStep, animRef]);
+
+  return (
+    <View
+      style={{
+        paddingHorizontal: spacing.lg,
+        paddingVertical: spacing.md,
+        backgroundColor: colors.card,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: colors.border,
+        marginBottom: spacing.md,
+        marginHorizontal: -spacing.lg,
+      }}
+    >
+      {/* Circles + connecting lines */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm }}>
+        {STEP_LABELS.map((_, i) => {
+          const step = i + 1;
+          const isActive = step <= currentStep;
+          const circleStyle: StyleProp<ViewStyle> = isActive
+            ? {
+                width: CIRCLE_SIZE,
+                height: CIRCLE_SIZE,
+                borderRadius: CIRCLE_SIZE / 2,
+                backgroundColor: colors.primary,
+              }
+            : {
+                width: CIRCLE_SIZE,
+                height: CIRCLE_SIZE,
+                borderRadius: CIRCLE_SIZE / 2,
+                backgroundColor: 'transparent',
+                borderWidth: 2,
+                borderColor: colors.border,
+              };
+
+          return (
+            <React.Fragment key={step}>
+              <View style={circleStyle} />
+              {i < STEP_COUNT - 1 ? (
+                <View style={{ flex: 1, height: 2, backgroundColor: colors.border }}>
+                  <Animated.View
+                    style={{
+                      height: 2,
+                      backgroundColor: colors.primary,
+                      width: animRef.interpolate({
+                        inputRange: [step, step + 1],
+                        outputRange: ['0%', '100%'],
+                        extrapolate: 'clamp',
+                      }),
+                    }}
+                  />
+                </View>
+              ) : null}
+            </React.Fragment>
+          );
+        })}
+      </View>
+
+      {/* Labels */}
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+        {STEP_LABELS.map((label, i) => {
+          const step = i + 1;
+          const isActive = step === currentStep;
+          return (
+            <Text
+              key={step}
+              style={{
+                fontSize: 10,
+                color: isActive ? colors.primary : colors.textMuted,
+                fontWeight: isActive ? '700' : '400',
+                textAlign: i === 0 ? 'left' : i === STEP_COUNT - 1 ? 'right' : 'center',
+                flex: 1,
+              }}
+              numberOfLines={1}
+            >
+              {label}
+            </Text>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
 
 type PhotoSectionProps = {
   photoUri: string | undefined;

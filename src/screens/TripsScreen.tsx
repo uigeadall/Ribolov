@@ -185,40 +185,59 @@ export default function TripsScreen() {
             subtitle="Попълни формата горе или добави бележка след риболов."
           />
         }
-        ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
         renderItem={({ item }) => {
           const catchCount = catchCountByTrip.get(item.id) ?? 0;
+          const tripDate = new Date(item.dateIso);
+          const dateBadge = tripDate.toLocaleDateString('bg-BG', { day: 'numeric', month: 'short', year: 'numeric' });
           return (
             <Pressable onPress={() => navigation.navigate('TripDetail', { id: item.id })}>
-              <Card style={{ borderLeftWidth: 3, borderLeftColor: colors.primary }}>
-                <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md }}>
-                  <View style={{ width: 42, height: 42, borderRadius: radius.md, backgroundColor: colors.primarySurface, alignItems: 'center', justifyContent: 'center' }}>
-                    <Ionicons name="boat-outline" size={22} color={colors.primary} />
+              <View style={{
+                borderRadius: radius.lg,
+                overflow: 'hidden',
+                backgroundColor: colors.card,
+                marginBottom: spacing.md,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.08,
+                shadowRadius: 6,
+                elevation: 3,
+              }}>
+                {/* Coloured accent strip */}
+                <View style={{ height: 4, backgroundColor: colors.primary }} />
+
+                <View style={{ padding: spacing.md }}>
+                  {/* Date badge */}
+                  <View style={{ alignSelf: 'flex-start', backgroundColor: colors.primarySurface, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: spacing.xs, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border }}>
+                    <Text style={{ ...typography.small, color: colors.primary, fontWeight: '700' }}>{dateBadge}</Text>
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ ...typography.bodyBold, color: colors.text }}>{item.title}</Text>
-                    <Text style={{ ...typography.caption, color: colors.textMuted }}>
-                      {new Date(item.dateIso).toLocaleDateString('bg-BG', { day: 'numeric', month: 'long', year: 'numeric' })}
-                    </Text>
-                    {item.notes ? (
-                      <Text style={{ ...typography.small, color: colors.textMuted, marginTop: 2 }} numberOfLines={1}>{item.notes}</Text>
-                    ) : null}
-                  </View>
-                  <View style={{ alignItems: 'flex-end', gap: spacing.xs }}>
-                    {catchCount > 0 ? (
-                      <View style={{ backgroundColor: colors.primarySurface, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 2, borderWidth: 1, borderColor: colors.border }}>
-                        <Text style={{ ...typography.small, color: colors.primary, fontWeight: '700' }}>🎣 {catchCount}</Text>
-                      </View>
-                    ) : null}
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-                      <Pressable hitSlop={8} onPress={() => confirmDelete(item)}>
-                        <Ionicons name="trash-outline" size={18} color={colors.danger} />
-                      </Pressable>
-                      <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+
+                  {/* Trip name */}
+                  <Text style={{ ...typography.bodyBold, color: colors.text, fontSize: 16, marginBottom: spacing.xs }}>{item.title}</Text>
+
+                  {/* Notes snippet */}
+                  {item.notes ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.sm }}>
+                      <Ionicons name="document-text-outline" size={13} color={colors.textMuted} />
+                      <Text style={{ ...typography.small, color: colors.textMuted, flex: 1 }} numberOfLines={1}>{item.notes}</Text>
                     </View>
+                  ) : null}
+
+                  {/* Bottom row: catches chip + delete */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.xs }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, backgroundColor: colors.primarySurface, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 3, borderWidth: 1, borderColor: colors.border }}>
+                      <Ionicons name="fish-outline" size={13} color={colors.primary} />
+                      <Text style={{ ...typography.small, color: colors.primary, fontWeight: '700' }}>{catchCount} улова</Text>
+                    </View>
+
+                    <View style={{ flex: 1 }} />
+
+                    <Pressable hitSlop={8} onPress={() => confirmDelete(item)}>
+                      <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                    </Pressable>
+                    <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
                   </View>
                 </View>
-              </Card>
+              </View>
             </Pressable>
           );
         }}

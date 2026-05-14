@@ -14,8 +14,10 @@ import {
   Animated,
   PanResponder,
 } from 'react-native';
+import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { Ionicons } from '@expo/vector-icons';
 import { useRoute, useFocusEffect } from '@react-navigation/native';
@@ -93,8 +95,25 @@ function haversineKm(
   return 2 * R * Math.asin(Math.sqrt(x));
 }
 
+function bearingDeg(
+  from: { latitude: number; longitude: number },
+  to: { latitude: number; longitude: number }
+): number {
+  const dLon = ((to.longitude - from.longitude) * Math.PI) / 180;
+  const lat1 = (from.latitude * Math.PI) / 180;
+  const lat2 = (to.latitude * Math.PI) / 180;
+  const y = Math.sin(dLon) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+function bearingLabel(deg: number): string {
+  const dirs = ['С', 'СИ', 'И', 'ЮИ', 'Ю', 'ЮЗ', 'З', 'СЗ'];
+  return dirs[Math.round(deg / 45) % 8];
+}
+
 export default function MapScreen() {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const styles = useMemo(() => createMapStyles(colors), [colors]);
   const waterTypeColor = (t: Spot['waterType']) =>
     WATER_TYPES.find((x) => x.id === t)?.color ?? colors.primary;
@@ -260,6 +279,13 @@ export default function MapScreen() {
     });
     return list;
   }, [spots, showFavoritesOnly, userCoord]);
+
+  const spotCenter = useMemo(() => {
+    if (sortedSpots.length === 0) return null;
+    const avgLat = sortedSpots.reduce((s, x) => s + x.latitude, 0) / sortedSpots.length;
+    const avgLng = sortedSpots.reduce((s, x) => s + x.longitude, 0) / sortedSpots.length;
+    return { latitude: avgLat, longitude: avgLng };
+  }, [sortedSpots]);
 
   const distanceTo = useCallback(
     (s: Spot) =>
@@ -642,6 +668,7 @@ export default function MapScreen() {
 
         <MapTopControls
           colors={colors}
+          mode={mode}
           mapType={mapType}
           showDams={showDams}
           showRivers={showRivers}
@@ -711,6 +738,19 @@ export default function MapScreen() {
           </View>
         ) : null}
 
+        {sortedSpots.length > 1 && spotCenter ? (
+          <Pressable
+            style={[styles.fab, { bottom: 130 + 48 + spacing.sm + 40 + spacing.sm + 56 }]}
+            onPress={() => {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              mapRef.current?.flyTo(spotCenter.latitude, spotCenter.longitude, 9);
+            }}
+            accessibilityLabel="Виж всички спотове"
+          >
+            <Ionicons name="contract-outline" size={22} color={colors.primary} />
+          </Pressable>
+        ) : null}
+
         {showCatchMarkers && catchSpeciesList.length > 1 ? (
           <SpeciesFilterRow
             species={catchSpeciesList}
@@ -738,8 +778,10 @@ export default function MapScreen() {
             userCoord={userCoord}
             catchCountByName={catchCountByName}
             colors={colors}
+            mode={mode}
             waterTypeColor={waterTypeColor}
             onSpotPress={flyToSpot}
+            onSpotLongPress={(s) => recordCatchAt({ latitude: s.latitude, longitude: s.longitude, name: s.name })}
           />
         ) : null}
       </View>
@@ -833,6 +875,7 @@ export default function MapScreen() {
 
 type MapTopControlsProps = {
   colors: AppColors;
+  mode: 'light' | 'dark';
   mapType: LeafletMapType;
   showDams: boolean;
   showRivers: boolean;
@@ -851,6 +894,7 @@ type MapTopControlsProps = {
 
 const MapTopControls = React.memo(function MapTopControls({
   colors,
+  mode,
   mapType,
   showDams,
   showRivers,
@@ -869,7 +913,8 @@ const MapTopControls = React.memo(function MapTopControls({
   const styles = useMemo(() => createMapStyles(colors), [colors]);
   return (
     <View style={styles.topControls}>
-      <View style={styles.mapTypeRow}>
+      <View style={[styles.mapTypeRow, { overflow: 'hidden' }]}>
+        <BlurView intensity={80} tint={mode === 'dark' ? 'dark' : 'light'} style={StyleSheet.absoluteFillObject} />
         {(
           [
             { key: 'standard', label: 'Карта' },
@@ -953,8 +998,10 @@ type SpotScrollBarProps = {
   userCoord: { latitude: number; longitude: number } | null;
   catchCountByName: Map<string, number>;
   colors: AppColors;
+  mode: 'light' | 'dark';
   waterTypeColor: (t: Spot['waterType']) => string;
   onSpotPress: (s: Spot) => void;
+  onSpotLongPress: (s: Spot) => void;
 };
 
 const SpotScrollBar = React.memo(function SpotScrollBar({
@@ -962,8 +1009,10 @@ const SpotScrollBar = React.memo(function SpotScrollBar({
   userCoord,
   catchCountByName,
   colors,
+  mode,
   waterTypeColor,
   onSpotPress,
+  onSpotLongPress,
 }: SpotScrollBarProps) {
   const styles = useMemo(() => createMapStyles(colors), [colors]);
   const distanceTo = (s: Spot) =>
@@ -979,30 +1028,38 @@ const SpotScrollBar = React.memo(function SpotScrollBar({
         {spots.map((s) => {
           const dist = distanceTo(s);
           return (
-            <Pressable key={s.id} style={[styles.spotCard, { borderLeftWidth: 3, borderLeftColor: waterTypeColor(s.waterType) }]} onPress={() => onSpotPress(s)}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                {s.isFavorite ? <Ionicons name="star" size={14} color="#E8B923" /> : null}
-                <Ionicons
-                  name={WATER_TYPES.find((x) => x.id === s.waterType)?.ion ?? 'water-outline'}
-                  size={15}
-                  color={waterTypeColor(s.waterType)}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.spotName} numberOfLines={1}>
-                  {s.name}
-                </Text>
-                <Text style={styles.spotMeta}>
-                  {waterTypeLabel(s.waterType)}
-                  {dist !== null
-                    ? ` · ${dist < 1 ? `${Math.round(dist * 1000)} м` : `${dist.toFixed(1)} км`}`
-                    : ''}
-                  {(catchCountByName.get(s.name) ?? 0) > 0
-                    ? ` · 🎣 ${catchCountByName.get(s.name)}`
-                    : ''}
-                </Text>
-              </View>
-            </Pressable>
+            <View key={s.id} style={[styles.spotCard, { overflow: 'hidden', backgroundColor: 'transparent', borderLeftWidth: 3, borderLeftColor: waterTypeColor(s.waterType) }]}>
+              <BlurView intensity={75} tint={mode === 'dark' ? 'dark' : 'light'} style={StyleSheet.absoluteFillObject} />
+              <Pressable
+                style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 }}
+                onPress={() => onSpotPress(s)}
+                onLongPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); onSpotLongPress(s); }}
+                delayLongPress={400}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  {s.isFavorite ? <Ionicons name="star" size={14} color="#E8B923" /> : null}
+                  <Ionicons
+                    name={WATER_TYPES.find((x) => x.id === s.waterType)?.ion ?? 'water-outline'}
+                    size={15}
+                    color={waterTypeColor(s.waterType)}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.spotName} numberOfLines={1}>
+                    {s.name}
+                  </Text>
+                  <Text style={styles.spotMeta}>
+                    {waterTypeLabel(s.waterType)}
+                    {dist !== null
+                      ? ` · ${dist < 1 ? `${Math.round(dist * 1000)} м` : `${dist.toFixed(1)} км`}`
+                      : ''}
+                    {(catchCountByName.get(s.name) ?? 0) > 0
+                      ? ` · 🎣 ${catchCountByName.get(s.name)}`
+                      : ''}
+                  </Text>
+                </View>
+              </Pressable>
+            </View>
           );
         })}
       </ScrollView>
@@ -1257,7 +1314,21 @@ const WaterBodySheet = React.memo(function WaterBodySheet({
             <ScrollView showsVerticalScrollIndicator={false}>
               {selectedWater ? (
                 <>
-                  <View style={{ height: 3, backgroundColor: headerColor, borderRadius: 2, marginBottom: spacing.md }} />
+                  <LinearGradient
+                    colors={[headerColor, headerColor + '44']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={{ borderRadius: radius.md, padding: spacing.sm, marginBottom: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}
+                  >
+                    <Ionicons
+                      name={selectedWater?.kind === 'river' ? 'git-branch-outline' : 'layers-outline'}
+                      size={18}
+                      color={colors.white}
+                    />
+                    <Text style={{ ...typography.small, color: colors.white, fontWeight: '700', opacity: 0.9 }}>
+                      {selectedWater?.kind === 'river' ? 'Река' : 'Язовир'}
+                    </Text>
+                  </LinearGradient>
                   <View style={styles.damHeader}>
                     <View
                       style={[
@@ -1837,6 +1908,14 @@ const SpotSheet = React.memo(function SpotSheet({
                 </Text>
               </View>
             ) : null}
+            {spot && userCoord ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Ionicons name="compass-outline" size={14} color={colors.textMuted} />
+                <Text style={styles.modalCoords}>
+                  {bearingLabel(bearingDeg(userCoord, { latitude: spot.latitude, longitude: spot.longitude }))}
+                </Text>
+              </View>
+            ) : null}
           </View>
           <Button
             title="Запиши улов от тук"
@@ -1874,7 +1953,7 @@ function createMapStyles(colors: AppColors) {
     },
     mapTypeRow: {
       flexDirection: 'row',
-      backgroundColor: colors.white,
+      backgroundColor: 'transparent',
       borderRadius: radius.pill,
       padding: 4,
       shadowColor: '#000',
@@ -2065,10 +2144,6 @@ function createMapStyles(colors: AppColors) {
     routeClearFabText: { ...typography.caption, color: colors.primary, fontWeight: '600' },
     spotList: { position: 'absolute', bottom: spacing.md, left: 0, right: 0 },
     spotCard: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.sm,
-      backgroundColor: colors.white,
       paddingHorizontal: spacing.md,
       paddingVertical: spacing.sm,
       borderRadius: radius.md,

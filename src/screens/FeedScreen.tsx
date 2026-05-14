@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { View, Text, StyleSheet, FlatList, Pressable, RefreshControl, Platform, TextInput, Animated, ActionSheetIOS, Alert } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Pressable, Platform, Animated, ActionSheetIOS, Alert } from 'react-native';
 import { Image } from 'expo-image';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,11 +12,12 @@ import { Button } from '../components/Button';
 import { FeedPost, FeedItem } from '../components/FeedPost';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
-import { radius, spacing, typography } from '../theme/typography';
+import { spacing, typography } from '../theme/typography';
 import { fetchPublicFeed, getFollowing, getUserPublicSummary, type FeedPage } from '../services/cloudSync';
 import type { DocumentSnapshot } from 'firebase/firestore';
 import { getBlockedUids } from '../services/blockUser';
 import { StoriesRow } from '../components/StoriesRow';
+import { FishingRefreshControl } from '../components/FishingRefreshControl';
 import { FeedSkeleton } from '../components/FeedSkeleton';
 import { useAuth } from '../services/authContext';
 import { formatFirebaseError } from '../services/firebaseErrors';
@@ -31,84 +31,39 @@ type FeedScope = 'all' | 'following';
 
 function createStyles(colors: AppColors) {
   return StyleSheet.create({
-    hero: {
+    topBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.card,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
       paddingHorizontal: spacing.lg,
-      paddingBottom: spacing.lg,
-      overflow: 'hidden',
+      paddingBottom: spacing.sm,
+    },
+    topBarTitle: {
+      ...typography.h2,
+      color: colors.text,
+      flex: 1,
+      letterSpacing: -0.5,
+    },
+    iconBtn: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    segmentRow: {
+      flexDirection: 'row',
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.border,
     },
-    heroTitleRow: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      gap: spacing.sm,
-    },
-    heroTitleBlock: {
+    segmentTab: {
       flex: 1,
-      minWidth: 0,
-    },
-    heroIconWrap: {
-      width: 40,
-      height: 40,
-      borderRadius: radius.md,
-      backgroundColor: colors.card,
+      paddingVertical: 12,
       alignItems: 'center',
-      justifyContent: 'center',
-      borderWidth: 1,
-      borderColor: colors.border,
-      marginTop: 2,
     },
-    heroTitle: { ...typography.h1, color: colors.text },
-    heroSubtitle: {
-      ...typography.body,
-      color: colors.textMuted,
-      marginTop: spacing.xs,
-      lineHeight: 22,
-    },
-    header: {
-      flexDirection: 'row',
-      justifyContent: 'flex-start',
-      alignItems: 'center',
-      marginBottom: spacing.md,
-      gap: spacing.sm,
-    },
-    backBtn: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      backgroundColor: colors.card,
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    segmentWrap: {
-      marginHorizontal: spacing.lg,
-      marginTop: spacing.xl,
-      marginBottom: spacing.sm,
-    },
-    segment: {
-      flexDirection: 'row',
-      backgroundColor: colors.card,
-      borderRadius: radius.pill,
-      padding: 4,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    segmentBtn: {
-      flex: 1,
-      paddingVertical: 11,
-      alignItems: 'center',
-      borderRadius: radius.pill,
-      flexDirection: 'row',
-      justifyContent: 'center',
-      gap: 6,
-    },
-    segmentBtnActive: { backgroundColor: colors.primary },
-    segmentText: { ...typography.caption, fontWeight: '700', color: colors.textMuted },
-    segmentTextActive: { color: colors.white },
-    listContent: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xxl },
-    listGap: { height: spacing.lg },
+    listContent: { paddingBottom: spacing.xxl },
     warnTitle: { ...typography.h3, color: colors.text },
     warnBody: { ...typography.body, color: colors.textMuted, marginTop: spacing.sm, lineHeight: 22 },
     centerMsg: { ...typography.body, color: colors.textMuted, textAlign: 'center', marginTop: spacing.md },
@@ -119,18 +74,10 @@ export default function FeedScreen() {
   const navigation = useAppNavigation();
   const insets = useSafeAreaInsets();
   const { user, configured } = useAuth();
-  const { colors, mode } = useTheme();
+  const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
-  const heroGradient = (mode === 'dark'
-    ? ['#0A1E2A', '#0C2230', '#0E2535']
-    : ['#B8DFF0', '#D5EEF8', '#EAF5FB']) as [string, string, string];
   const unreadNotifCount = useUnreadNotifCount(user?.uid);
-
-  const heroTopStyle = useMemo(
-    () => ({ paddingTop: insets.top + spacing.md }),
-    [insets.top]
-  );
 
   const [items, setItems] = useState<FeedItem[]>([]);
   const [myPhotoUrl, setMyPhotoUrl] = useState<string | undefined>();
@@ -142,10 +89,7 @@ export default function FeedScreen() {
   const flatListRef = useRef<FlatList<FeedItem>>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const scrollTopAnim = useRef(new Animated.Value(0)).current;
-  const [searchQuery, setSearchQuery] = useState('');
   const scrollY = useRef(new Animated.Value(0)).current;
-  const heroTitleOpacity = scrollY.interpolate({ inputRange: [0, 50], outputRange: [1, 0], extrapolate: 'clamp' });
-  const heroTitleHeight = scrollY.interpolate({ inputRange: [0, 60], outputRange: [56, 0], extrapolate: 'clamp' });
 
   useEffect(() => {
     mountedRef.current = true;
@@ -158,6 +102,7 @@ export default function FeedScreen() {
       .then((v) => { if (v) setMyPhotoUrl(v); })
       .catch(() => {});
   }, [user?.uid]);
+
   const [scope, setScope] = useState<FeedScope>('all');
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -192,8 +137,6 @@ export default function FeedScreen() {
       prefetchBatch(next);
       setLastDoc(page.lastDoc);
       setHasMore(scope === 'all' ? page.hasMore : false);
-      // Batch-fetch avatars for posts that don't carry ownerPhotoUrl,
-      // so FeedPost never needs its own Firestore read.
       const missingUids = [...new Set(
         next
           .filter((i) => !i.ownerPhotoUrl && i.ownerUid && i.ownerUid !== user.uid)
@@ -268,18 +211,9 @@ export default function FeedScreen() {
   const socialEnabled = !!user && !!configured;
 
   const displayedItems = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    const filtered = q
-      ? items.filter(
-          (i) =>
-            i.speciesName.toLowerCase().includes(q) ||
-            (i.ownerName ?? '').toLowerCase().includes(q) ||
-            (i.location?.name ?? '').toLowerCase().includes(q),
-        )
-      : items;
     const seen = new Set<string>();
-    return filtered.filter((i) => { if (seen.has(i.id)) return false; seen.add(i.id); return true; });
-  }, [items, searchQuery]);
+    return items.filter((i) => { if (seen.has(i.id)) return false; seen.add(i.id); return true; });
+  }, [items]);
 
   const renderItem = useCallback(({ item }: { item: FeedItem }) => (
     <FeedPost
@@ -295,7 +229,8 @@ export default function FeedScreen() {
     />
   ), [user?.uid, myDisplayName, myPhotoUrl, avatarMap, socialEnabled, visibleIds, onPressAuthor, onPressCatch]);
 
-  const ItemSeparator = useCallback(() => <View style={styles.listGap} />, [styles.listGap]);
+  // No separator — each post has its own bottom border
+  const ItemSeparator = useCallback(() => null, []);
 
   const onScroll = Animated.event(
     [{ nativeEvent: { contentOffset: { y: scrollY } } }],
@@ -354,23 +289,22 @@ export default function FeedScreen() {
     }
   }, [navigation]);
 
-  const Header = () => (
-    <View style={styles.header}>
-      <Pressable onPress={() => navigation.goBack()} hitSlop={8} style={styles.backBtn}>
-        <Ionicons name="chevron-back" size={22} color={colors.primary} />
-      </Pressable>
-      <View style={{ flex: 1 }} />
+  /** Minimal Instagram-style top bar, shared across all states */
+  const TopBar = () => (
+    <View style={[styles.topBar, { paddingTop: insets.top + spacing.sm }]}>
+      <Text style={styles.topBarTitle}>Лента</Text>
+      {/* Notifications */}
       <Pressable
         onPress={() => navigation.navigate('Notifications')}
         hitSlop={8}
-        style={styles.backBtn}
+        style={styles.iconBtn}
         accessibilityLabel="Известия"
       >
         <View style={{ position: 'relative' }}>
           <Ionicons
             name={unreadNotifCount > 0 ? 'notifications' : 'notifications-outline'}
-            size={22}
-            color={colors.primary}
+            size={24}
+            color={colors.text}
           />
           {unreadNotifCount > 0 && (
             <View style={{
@@ -386,34 +320,47 @@ export default function FeedScreen() {
           )}
         </View>
       </Pressable>
+      {/* Search */}
       <Pressable
         onPress={() => navigation.navigate('Search')}
         hitSlop={8}
-        style={styles.backBtn}
+        style={styles.iconBtn}
         accessibilityLabel="Търси"
       >
-        <Ionicons name="search-outline" size={22} color={colors.primary} />
+        <Ionicons name="search-outline" size={24} color={colors.text} />
       </Pressable>
-      <Pressable onPress={openOverflow} hitSlop={8} style={styles.backBtn} accessibilityLabel="Още">
-        <Ionicons name="ellipsis-horizontal" size={22} color={colors.primary} />
+      {/* Overflow */}
+      <Pressable onPress={openOverflow} hitSlop={8} style={styles.iconBtn} accessibilityLabel="Още">
+        <Ionicons name="ellipsis-horizontal" size={24} color={colors.text} />
       </Pressable>
     </View>
   );
 
+  /** ListHeaderComponent: stories row + scope tabs */
+  const ListHeader = useMemo(() => (
+    <>
+      <StoriesRow />
+      <View style={styles.segmentRow}>
+        <Pressable
+          onPress={() => { if (scope !== 'all') { setItems([]); setScope('all'); void Haptics.selectionAsync(); } }}
+          style={[styles.segmentTab, { borderBottomWidth: 2, borderBottomColor: scope === 'all' ? colors.primary : 'transparent' }]}
+        >
+          <Ionicons name="grid-outline" size={22} color={scope === 'all' ? colors.primary : colors.textMuted} />
+        </Pressable>
+        <Pressable
+          onPress={() => { if (scope !== 'following') { setItems([]); setScope('following'); void Haptics.selectionAsync(); } }}
+          style={[styles.segmentTab, { borderBottomWidth: 2, borderBottomColor: scope === 'following' ? colors.primary : 'transparent' }]}
+        >
+          <Ionicons name="people-outline" size={22} color={scope === 'following' ? colors.primary : colors.textMuted} />
+        </Pressable>
+      </View>
+    </>
+  ), [scope, colors, styles]);
+
   if (!configured) {
     return (
       <Screen padded={false} safeAreaEdges={['left', 'right']}>
-        <LinearGradient colors={heroGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.hero, heroTopStyle]}>
-          <Header />
-          <View style={styles.heroTitleRow}>
-            <View style={styles.heroIconWrap}>
-              <Ionicons name="newspaper-outline" size={22} color={colors.primary} />
-            </View>
-            <View style={styles.heroTitleBlock}>
-              <Text style={styles.heroTitle}>Лента</Text>
-            </View>
-          </View>
-        </LinearGradient>
+        <TopBar />
         <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg }}>
           <Card>
             <Text style={styles.warnTitle}>Социалната част изисква Firebase</Text>
@@ -430,17 +377,7 @@ export default function FeedScreen() {
   if (!user) {
     return (
       <Screen padded={false} safeAreaEdges={['left', 'right']}>
-        <LinearGradient colors={heroGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.hero, heroTopStyle]}>
-          <Header />
-          <View style={styles.heroTitleRow}>
-            <View style={styles.heroIconWrap}>
-              <Ionicons name="newspaper-outline" size={22} color={colors.primary} />
-            </View>
-            <View style={styles.heroTitleBlock}>
-              <Text style={styles.heroTitle}>Лента</Text>
-            </View>
-          </View>
-        </LinearGradient>
+        <TopBar />
         <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg }}>
           <Card>
             <Text style={styles.warnTitle}>Влез в акаунта си</Text>
@@ -454,102 +391,44 @@ export default function FeedScreen() {
 
   return (
     <Screen padded={false} safeAreaEdges={['left', 'right']}>
-      <LinearGradient colors={heroGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.hero, heroTopStyle]}>
-        <Header />
-        <Animated.View style={{ opacity: heroTitleOpacity, height: heroTitleHeight, overflow: 'hidden' }}>
-          <View style={styles.heroTitleRow}>
-            <View style={styles.heroIconWrap}>
-              <Ionicons name="fish-outline" size={22} color={colors.primary} />
-            </View>
-            <View style={styles.heroTitleBlock}>
-              <Text style={styles.heroTitle}>Лента</Text>
-              <Text style={styles.heroSubtitle}>Споделени улови от общността</Text>
-            </View>
-          </View>
-        </Animated.View>
-        {/* Inline search bar */}
-        <View style={{
-          flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-          backgroundColor: colors.card, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border,
-          paddingHorizontal: spacing.md, paddingVertical: Platform.OS === 'ios' ? 8 : 4,
-          marginTop: spacing.sm,
-        }}>
-          <Ionicons name="search-outline" size={16} color={colors.textMuted} />
-          <TextInput
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder="Вид, автор или място…"
-            placeholderTextColor={colors.textMuted}
-            style={{ flex: 1, ...typography.body, color: colors.text, padding: 0 }}
-            returnKeyType="search"
-          />
-          {searchQuery.length > 0 && (
-            <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
-              <Ionicons name="close-circle" size={16} color={colors.textMuted} />
-            </Pressable>
-          )}
-        </View>
-      </LinearGradient>
-
-      <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 4 }}>
-        <Text style={{ ...typography.overline, color: colors.textMuted, letterSpacing: 1 }}>ИСТОРИИ</Text>
-      </View>
-      <StoriesRow />
-
-      <View style={styles.segmentWrap}>
-        <View style={styles.segment}>
-          <Pressable
-            onPress={() => { if (scope !== 'all') { setItems([]); setScope('all'); void Haptics.selectionAsync(); } }}
-            style={[styles.segmentBtn, scope === 'all' && styles.segmentBtnActive]}
-          >
-            <Ionicons
-              name="globe-outline"
-              size={16}
-              color={scope === 'all' ? colors.white : colors.textMuted}
-            />
-            <Text style={[styles.segmentText, scope === 'all' && styles.segmentTextActive]}>Всички</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => { if (scope !== 'following') { setItems([]); setScope('following'); void Haptics.selectionAsync(); } }}
-            style={[styles.segmentBtn, scope === 'following' && styles.segmentBtnActive]}
-          >
-            <Ionicons
-              name="people-outline"
-              size={16}
-              color={scope === 'following' ? colors.white : colors.textMuted}
-            />
-            <Text style={[styles.segmentText, scope === 'following' && styles.segmentTextActive]}>Следвани</Text>
-          </Pressable>
-        </View>
-      </View>
+      <TopBar />
 
       {loading && items.length === 0 ? (
-        <FeedSkeleton />
+        <>
+          {ListHeader}
+          <FeedSkeleton />
+        </>
       ) : error && items.length === 0 ? (
-        <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg }}>
-          <Card>
-            <Text style={styles.warnTitle}>Неуспешно зареждане</Text>
-            <Text style={styles.warnBody}>{error}</Text>
-            <Button title="Опитай отново" onPress={() => load()} style={{ marginTop: spacing.md }} />
-          </Card>
-        </View>
+        <>
+          {ListHeader}
+          <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg }}>
+            <Card>
+              <Text style={styles.warnTitle}>Неуспешно зареждане</Text>
+              <Text style={styles.warnBody}>{error}</Text>
+              <Button title="Опитай отново" onPress={() => load()} style={{ marginTop: spacing.md }} />
+            </Card>
+          </View>
+        </>
       ) : items.length === 0 ? (
-        <View style={{ flex: 1, justifyContent: 'center' }}>
-          <EmptyState
-            icon="layers-outline"
-            title={scope === 'following' ? 'Няма публикации от следваните' : 'Тук още е тихо'}
-            subtitle={
-              scope === 'following'
-                ? 'Следвай риболовци от „Приятели“, за да виждаш само техните публични улове тук.'
-                : 'Когато други споделят улов, ще го виждаш тук. Сподели и твоя — Дневник → улов → „Сподели публично".'
-            }
-          />
-          {scope === 'following' ? (
-            <View style={{ paddingHorizontal: spacing.xl, marginTop: spacing.md }}>
-              <Button title="Към приятели" onPress={() => navigation.navigate('Friends')} />
-            </View>
-          ) : null}
-        </View>
+        <>
+          {ListHeader}
+          <View style={{ flex: 1, justifyContent: 'center' }}>
+            <EmptyState
+              icon="layers-outline"
+              title={scope === 'following' ? 'Няма публикации от следваните' : 'Тук още е тихо'}
+              subtitle={
+                scope === 'following'
+                  ? 'Следвай риболовци от „Приятели", за да виждаш само техните публични улови тук.'
+                  : 'Когато други споделят улов, ще го виждаш тук. Сподели и твоя — Дневник → улов → „Сподели публично".'
+              }
+            />
+            {scope === 'following' ? (
+              <View style={{ paddingHorizontal: spacing.xl, marginTop: spacing.md }}>
+                <Button title="Към приятели" onPress={() => navigation.navigate('Friends')} />
+              </View>
+            ) : null}
+          </View>
+        </>
       ) : (
         <View style={{ flex: 1 }}>
           <FlatList
@@ -557,8 +436,9 @@ export default function FeedScreen() {
             data={displayedItems}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.listContent}
+            ListHeaderComponent={ListHeader}
             refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+              <FishingRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
             }
             ItemSeparatorComponent={ItemSeparator}
             showsVerticalScrollIndicator={false}
@@ -571,15 +451,7 @@ export default function FeedScreen() {
             windowSize={5}
             initialNumToRender={6}
             updateCellsBatchingPeriod={50}
-            ListEmptyComponent={
-              searchQuery.trim() ? (
-                <View style={{ alignItems: 'center', paddingVertical: spacing.xxl }}>
-                  <Ionicons name="search-outline" size={36} color={colors.textMuted} />
-                  <Text style={[styles.centerMsg, { marginTop: spacing.sm }]}>Няма резултати за „{searchQuery}"</Text>
-                  <Text style={[styles.centerMsg, { fontSize: 12, marginTop: spacing.xs }]}>Търсиш сред заредените публикации</Text>
-                </View>
-              ) : null
-            }
+            ListEmptyComponent={null}
             ListFooterComponent={
               loadingMore ? (
                 <FeedSkeleton />

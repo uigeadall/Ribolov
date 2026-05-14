@@ -8,7 +8,10 @@ import {
   RefreshControl,
   Alert,
   FlatList,
+  Dimensions,
 } from 'react-native';
+
+const SW = Dimensions.get('window').width;
 import { useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
@@ -296,6 +299,7 @@ export default function UserPublicProfileScreen() {
   const [followBusy, setFollowBusy] = useState(false);
   const [catches, setCatches] = useState<FeedItem[]>([]);
   const [blocked, setBlocked] = useState(false);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
   const isSelf = user?.uid === uid;
 
@@ -600,20 +604,84 @@ export default function UserPublicProfileScreen() {
         </>
       ) : null}
 
-      {/* ── Feed section header ── */}
+      {/* ── Feed section header with view toggle ── */}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Публична лента</Text>
-        {catches.length > 0 ? (
-          <View style={styles.sectionBadge}>
-            <Text style={styles.sectionBadgeText}>{catches.length}</Text>
-          </View>
-        ) : null}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+          {catches.length > 0 ? (
+            <View style={styles.sectionBadge}>
+              <Text style={styles.sectionBadgeText}>{catches.length}</Text>
+            </View>
+          ) : null}
+          {catches.length > 0 ? (
+            <View style={{ flexDirection: 'row', borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, overflow: 'hidden' }}>
+              <Pressable
+                onPress={() => setViewMode('grid')}
+                style={{
+                  paddingHorizontal: spacing.sm,
+                  paddingVertical: 4,
+                  backgroundColor: viewMode === 'grid' ? colors.primary : colors.card,
+                  borderBottomWidth: viewMode === 'grid' ? 2 : 0,
+                  borderBottomColor: colors.primary,
+                }}
+              >
+                <Ionicons name="grid-outline" size={16} color={viewMode === 'grid' ? colors.white : colors.textMuted} />
+              </Pressable>
+              <Pressable
+                onPress={() => setViewMode('list')}
+                style={{
+                  paddingHorizontal: spacing.sm,
+                  paddingVertical: 4,
+                  backgroundColor: viewMode === 'list' ? colors.primary : colors.card,
+                  borderBottomWidth: viewMode === 'list' ? 2 : 0,
+                  borderBottomColor: colors.primary,
+                }}
+              >
+                <Ionicons name="list-outline" size={16} color={viewMode === 'list' ? colors.white : colors.textMuted} />
+              </Pressable>
+            </View>
+          ) : null}
+        </View>
       </View>
 
       {catches.length === 0 ? (
         <View style={styles.emptyFeed}>
           <Ionicons name="fish-outline" size={40} color={colors.textMuted} />
           <Text style={styles.emptyText}>Няма споделени улови все още.</Text>
+        </View>
+      ) : null}
+
+      {/* ── Grid view ── */}
+      {viewMode === 'grid' && catches.length > 0 ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+          {catches.map((item) => (
+            <Pressable
+              key={item.id}
+              onPress={() => navigation.navigate('CatchDetail', { id: item.id })}
+              style={{
+                width: SW / 3,
+                height: SW / 3,
+                borderRightWidth: StyleSheet.hairlineWidth,
+                borderBottomWidth: StyleSheet.hairlineWidth,
+                borderColor: colors.border,
+                backgroundColor: colors.primarySurface,
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'hidden',
+              }}
+            >
+              {item.photoUri ? (
+                <Image
+                  source={{ uri: item.photoUri }}
+                  style={{ width: SW / 3, height: SW / 3 }}
+                  contentFit="cover"
+                  cachePolicy="memory-disk"
+                />
+              ) : (
+                <Text style={{ fontSize: 28 }}>🐟</Text>
+              )}
+            </Pressable>
+          ))}
         </View>
       ) : null}
     </View>
@@ -637,8 +705,8 @@ export default function UserPublicProfileScreen() {
       </View>
 
       <FlatList
-        data={catches}
-        extraData={{ photoUrl, summaryName, city, bio, following, followerCount }}
+        data={viewMode === 'list' ? catches : []}
+        extraData={{ photoUrl, summaryName, city, bio, following, followerCount, viewMode }}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={ListHeader}
         contentContainerStyle={{ paddingBottom: spacing.xxl + insets.bottom }}

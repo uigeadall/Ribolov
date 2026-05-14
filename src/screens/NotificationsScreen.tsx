@@ -315,6 +315,7 @@ export default function NotificationsScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const { user, configured } = useAuth();
+  const [notifTab, setNotifTab] = useState<'all' | 'likes' | 'comments'>('all');
 
   const { data, loading, setData } = useFirestoreSubscription<SocialNotification[]>(
     (cb) => {
@@ -365,6 +366,54 @@ export default function NotificationsScreen() {
     setData((prev) => prev ? prev.filter((n) => n.id !== id) : prev);
   }, [setData]);
 
+  const tabDefs: { key: 'all' | 'likes' | 'comments'; label: string }[] = [
+    { key: 'all', label: 'Всички' },
+    { key: 'likes', label: 'Харесвания' },
+    { key: 'comments', label: 'Коментари' },
+  ];
+
+  const filteredItems = useMemo(() => {
+    if (notifTab === 'likes') return items.filter((n) => n.type === 'like' || n.type === 'storyLike');
+    if (notifTab === 'comments') return items.filter((n) => n.type === 'comment' || n.type === 'storyComment');
+    return items;
+  }, [items, notifTab]);
+
+  const TabBar = (
+    <View style={{
+      flexDirection: 'row',
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    }}>
+      {tabDefs.map((tab) => {
+        const active = notifTab === tab.key;
+        return (
+          <Pressable
+            key={tab.key}
+            style={{
+              flex: 1,
+              paddingVertical: 12,
+              alignItems: 'center',
+              borderBottomWidth: active ? 2 : 0,
+              borderBottomColor: active ? colors.primary : 'transparent',
+            }}
+            onPress={() => {
+              void Haptics.selectionAsync();
+              setNotifTab(tab.key);
+            }}
+          >
+            <Text style={{
+              ...typography.body,
+              color: active ? colors.primary : colors.textMuted,
+              fontWeight: active ? '700' : '400',
+            }}>
+              {tab.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+
   if (!configured || !user) {
     return (
       <Screen padded={false}>
@@ -374,6 +423,7 @@ export default function NotificationsScreen() {
           </Pressable>
           <Text style={styles.title}>Известия</Text>
         </View>
+        {TabBar}
         <EmptyState icon="notifications-outline" title="Налични след вход" subtitle="Влез с Firebase акаунт, за да виждаш известия от лентата." />
       </Screen>
     );
@@ -394,17 +444,24 @@ export default function NotificationsScreen() {
         ) : null}
       </View>
 
+      {TabBar}
+
       {loading ? (
         <NotifSkeleton />
-      ) : items.length === 0 ? (
+      ) : filteredItems.length === 0 ? (
         <EmptyState
           icon="notifications-off-outline"
           title="Няма известия"
-          subtitle="Когато някой хареса или коментира твой улов, или те последва, ще се появи тук."
+          subtitle={notifTab === 'all'
+            ? "Когато някой хареса или коментира твой улов, или те последва, ще се появи тук."
+            : notifTab === 'likes'
+              ? "Нямаш харесвания все още."
+              : "Нямаш коментари все още."
+          }
         />
       ) : (
         <FlatList
-          data={groupNotifications(items)}
+          data={groupNotifications(filteredItems)}
           keyExtractor={(n) => n.id}
           removeClippedSubviews={Platform.OS === 'android'}
           contentContainerStyle={styles.listContent}

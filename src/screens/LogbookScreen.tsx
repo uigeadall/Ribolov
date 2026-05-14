@@ -6,13 +6,13 @@ import {
   FlatList,
   SectionList,
   Pressable,
-  RefreshControl,
   TextInput,
   ScrollView,
   Switch,
   Platform,
   Modal,
   Animated,
+  Share,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
@@ -39,6 +39,7 @@ import { Catch } from '../types';
 import { speciesList } from '../data/species';
 import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
 import * as Haptics from 'expo-haptics';
+import { FishingRefreshControl } from '../components/FishingRefreshControl';
 
 const CATCH_ACCENTS = ['#1A7A9C', '#2E9B5A', '#0E4D64', '#7BB7CC', '#006E8A', '#C49A00'];
 function speciesAccent(name: string): string {
@@ -97,7 +98,7 @@ function createLogbookStyles(colors: AppColors, mode: 'light' | 'dark') {
       borderColor: colors.border,
       alignItems: 'center',
     },
-    statNum: { ...typography.h3, fontSize: 22, color: colors.primary, letterSpacing: -0.5 },
+    statNum: { ...typography.h3, fontSize: 22, color: colors.primary, letterSpacing: -1 },
     statLbl: { ...typography.small, color: colors.textMuted, marginTop: 2, textAlign: 'center' },
     filtersCardInner: {
       gap: spacing.md,
@@ -248,99 +249,136 @@ type CatchListRowProps = {
   user: { uid: string } | null;
   onPress: (item: Catch) => void;
   onDelete: (item: Catch) => void;
+  onEdit: (item: Catch) => void;
 };
 
 const CatchListRow = React.memo(function CatchListRow({
-  item, colors, styles, personalBests, user, onPress, onDelete,
+  item, colors, styles, personalBests, user, onPress, onDelete, onEdit,
 }: CatchListRowProps) {
+  const isPB = isPersonalBestCatch(item, personalBests);
+  const accent = speciesAccent(item.speciesName);
+
+  const renderRightActions = () => (
+    <View style={{ flexDirection: 'row', alignItems: 'stretch', marginBottom: spacing.sm }}>
+      <Pressable
+        onPress={() => { void Haptics.selectionAsync(); onEdit(item); }}
+        style={{ backgroundColor: colors.primary, width: 80, alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: radius.md, marginRight: spacing.xs }}
+      >
+        <Ionicons name="pencil-outline" size={20} color={colors.white} />
+        <Text style={{ color: colors.white, fontSize: 11, fontWeight: '700' }}>Редактирай</Text>
+      </Pressable>
+      <Pressable
+        onPress={() => { void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); onDelete(item); }}
+        style={{ backgroundColor: colors.danger, width: 80, alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: radius.md }}
+      >
+        <Ionicons name="trash-outline" size={20} color={colors.white} />
+        <Text style={{ color: colors.white, fontSize: 11, fontWeight: '700' }}>Изтрий</Text>
+      </Pressable>
+    </View>
+  );
+
+  const renderLeftActions = () => (
+    <Pressable
+      onPress={() => {
+        void Haptics.selectionAsync();
+        void Share.share({ message: `${item.speciesName} - ${item.weightKg ?? '—'}кг` });
+      }}
+      style={{ backgroundColor: colors.accent, width: 80, alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: radius.md, marginBottom: spacing.sm, marginRight: spacing.xs }}
+    >
+      <Ionicons name="share-outline" size={20} color={colors.white} />
+      <Text style={{ color: colors.white, fontSize: 11, fontWeight: '700' }}>Сподели</Text>
+    </Pressable>
+  );
+
   return (
     <Swipeable
-      renderRightActions={() => (
-        <Pressable
-          onPress={() => { void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); onDelete(item); }}
-          style={{ backgroundColor: colors.danger, justifyContent: 'center', alignItems: 'center', width: 76, borderRadius: radius.md, marginBottom: spacing.sm }}
-        >
-          <Ionicons name="trash-outline" size={22} color={colors.white} />
-          <Text style={{ color: colors.white, fontSize: 11, fontWeight: '700', marginTop: 2 }}>Изтрий</Text>
-        </Pressable>
-      )}
+      renderRightActions={renderRightActions}
+      renderLeftActions={renderLeftActions}
       overshootRight={false}
+      overshootLeft={false}
     >
       <Pressable
         onPress={() => onPress(item)}
         android_ripple={{ color: `${colors.primary}18` }}
         style={({ pressed }) => (pressed && Platform.OS === 'ios' ? { opacity: 0.92 } : undefined)}
       >
-        <Card style={{ padding: 0, overflow: 'hidden' }}>
-          <View style={{ flexDirection: 'row', alignItems: 'stretch' }}>
-          <View style={{ width: 4, backgroundColor: speciesAccent(item.speciesName) }} />
-          <View style={[styles.row, { flex: 1, padding: spacing.sm + 2 }]}>
-            <View>
-              {item.photoUri ? (
-                <Image source={{ uri: item.photoUri }} style={styles.thumb} contentFit="cover" />
-              ) : (
-                <View style={[styles.thumb, styles.thumbPlaceholder]}>
-                  <Ionicons name="fish-outline" size={30} color={colors.primary} />
-                </View>
-              )}
-              {(item.extraPhotoUris?.length ?? 0) > 0 ? (
-                <View style={{ position: 'absolute', bottom: 4, right: 4, backgroundColor: 'rgba(0,0,0,0.62)', borderRadius: 8, paddingHorizontal: 5, paddingVertical: 2 }}>
-                  <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>+{item.extraPhotoUris!.length}</Text>
+        <View style={{
+          flexDirection: 'row',
+          height: 90,
+          borderRadius: radius.md,
+          backgroundColor: colors.card,
+          borderWidth: 1,
+          borderColor: colors.cardEdge ?? colors.border,
+          overflow: 'hidden',
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.07,
+          shadowRadius: 3,
+          elevation: 2,
+        }}>
+          {/* Left accent bar */}
+          <View style={{ width: 4, backgroundColor: accent }} />
+
+          {/* Center content */}
+          <View style={{ flex: 1, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, justifyContent: 'center' }}>
+            {/* Species + PB badge */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: colors.text, flex: 1 }} numberOfLines={1}>
+                {item.speciesName}
+              </Text>
+              {isPB ? (
+                <View style={{ backgroundColor: '#FFD70022', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: '#C49A0055' }}>
+                  <Text style={{ color: '#C49A00', fontSize: 9, fontWeight: '700', letterSpacing: 0.5 }}>⭐ РЕКОРД</Text>
                 </View>
               ) : null}
             </View>
-            <View style={styles.itemBody}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-                <Text style={styles.itemTitle} numberOfLines={1}>{item.speciesName}</Text>
-                {isPersonalBestCatch(item, personalBests) ? (
-                  <View style={{ backgroundColor: '#FFD70022', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: '#C49A0055' }}>
-                    <Text style={{ color: '#C49A00', fontSize: 9, fontWeight: '700', letterSpacing: 0.5 }}>РЕКОРД</Text>
-                  </View>
-                ) : null}
-              </View>
-              {item.photoTitle ? (
-                <Text style={styles.photoTitleLine} numberOfLines={1}>
-                  „{item.photoTitle}"
-                </Text>
-              ) : null}
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap', marginTop: 3 }}>
-                {item.weightKg != null && (() => {
-                  const ac = speciesAccent(item.speciesName);
-                  return (
-                    <View style={{ backgroundColor: ac + '1A', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 7, borderWidth: 1, borderColor: ac + '44' }}>
-                      <Text style={{ color: ac, fontSize: 11, fontWeight: '700' }}>{item.weightKg} кг</Text>
-                    </View>
-                  );
-                })()}
-                {item.lengthCm != null && (
-                  <Text style={[styles.itemMeta, { marginTop: 0 }]}>{item.lengthCm} см</Text>
-                )}
-                <Text style={[styles.itemMeta, { marginTop: 0 }]}>{new Date(item.date).toLocaleDateString('bg-BG')}</Text>
-              </View>
+
+            {/* Weight hero */}
+            <Text style={{ fontSize: 20, fontWeight: '700', color: colors.primary, letterSpacing: -0.5, marginTop: 2 }}>
+              {item.weightKg != null ? `${item.weightKg} кг` : '— кг'}
+            </Text>
+
+            {/* Meta row: date + location + released */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
+              <Text style={{ fontSize: 12, color: colors.textMuted }}>
+                {new Date(item.date).toLocaleDateString('bg-BG')}
+              </Text>
               {item.location?.name ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
-                  <Ionicons name="location-outline" size={14} color={colors.textMuted} />
-                  <Text style={styles.itemMeta} numberOfLines={1}>
+                <>
+                  <Text style={{ fontSize: 12, color: colors.textMuted }}>·</Text>
+                  <Ionicons name="location-outline" size={12} color={colors.textMuted} />
+                  <Text style={{ fontSize: 12, color: colors.textMuted }} numberOfLines={1}>
                     {item.location.name}
                   </Text>
-                </View>
+                </>
               ) : null}
-            </View>
-            <View style={styles.rowTrail}>
               {item.released ? (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>Пуснат</Text>
+                <View style={{ backgroundColor: colors.accent + '18', paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.accent + '55' }}>
+                  <Text style={{ color: colors.accent, fontSize: 10, fontWeight: '700' }}>пуснат</Text>
                 </View>
               ) : null}
               {user && !item.syncedToCloud ? (
-                <Ionicons name="cloud-upload-outline" size={16} color={colors.textMuted} />
+                <Ionicons name="cloud-upload-outline" size={13} color={colors.textMuted} />
               ) : null}
-              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
             </View>
           </View>
-          <View style={{ width: 3, backgroundColor: colors.danger + '28' }} />
+
+          {/* Right photo or placeholder */}
+          <View style={{ width: 60, height: 70, alignSelf: 'center', marginRight: spacing.sm, borderRadius: radius.sm, overflow: 'hidden' }}>
+            {item.photoUri ? (
+              <Image source={{ uri: item.photoUri }} style={{ width: 60, height: 70 }} contentFit="cover" />
+            ) : (
+              <View style={{ width: 60, height: 70, backgroundColor: colors.primarySurface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm }}>
+                <Ionicons name="fish-outline" size={28} color={colors.primary} />
+              </View>
+            )}
+            {(item.extraPhotoUris?.length ?? 0) > 0 ? (
+              <View style={{ position: 'absolute', bottom: 3, right: 3, backgroundColor: 'rgba(0,0,0,0.62)', borderRadius: 6, paddingHorizontal: 4, paddingVertical: 1 }}>
+                <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>+{item.extraPhotoUris!.length}</Text>
+              </View>
+            ) : null}
           </View>
-        </Card>
+        </View>
       </Pressable>
     </Swipeable>
   );
@@ -417,12 +455,13 @@ type LogbookCalendarProps = {
   styles: ReturnType<typeof createLogbookStyles>;
   onOpenCatch: (item: Catch) => void;
   onDeleteCatch: (item: Catch) => void;
+  onEditCatch: (item: Catch) => void;
   bottomPad: number;
 };
 
 function LogbookCalendar({
   catches, colors, onDayPress, selectedDay, calMonth, setCalMonth,
-  personalBests, user, styles, onOpenCatch, onDeleteCatch, bottomPad,
+  personalBests, user, styles, onOpenCatch, onDeleteCatch, onEditCatch, bottomPad,
 }: LogbookCalendarProps) {
   const daysInMonth = new Date(calMonth.year, calMonth.month + 1, 0).getDate();
   const firstDow = (new Date(calMonth.year, calMonth.month, 1).getDay() + 6) % 7;
@@ -569,6 +608,7 @@ function LogbookCalendar({
                 user={user}
                 onPress={onOpenCatch}
                 onDelete={onDeleteCatch}
+                onEdit={onEditCatch}
               />
             </View>
           ))
@@ -596,6 +636,23 @@ function LogbookSkeleton({ colors, mode }: { colors: AppColors; mode: 'light' | 
       ))}
     </View>
   );
+}
+
+function useCountUp(target: number, duration = 800): number {
+  const [val, setVal] = React.useState(0);
+  React.useEffect(() => {
+    if (target === 0) { setVal(0); return; }
+    const start = Date.now();
+    const tick = () => {
+      const elapsed = Date.now() - start;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setVal(Math.round(eased * target));
+      if (progress < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }, [target, duration]);
+  return val;
 }
 
 export default function LogbookScreen() {
@@ -635,6 +692,7 @@ export default function LogbookScreen() {
     return { year: now.getFullYear(), month: now.getMonth() };
   });
   const [calSelectedDay, setCalSelectedDay] = useState<string | null>(null);
+  const [chipFilter, setChipFilter] = useState<string | null>(null);
 
   const [showCelebration, setShowCelebration] = useState(false);
   const celebrationShownRef = useRef(false);
@@ -690,6 +748,7 @@ export default function LogbookScreen() {
     const q = debouncedQuery.trim().toLowerCase();
     return items.filter((c) => {
       if (speciesId && c.speciesId !== speciesId) return false;
+      if (chipFilter && c.speciesName !== chipFilter) return false;
       if (releasedOnly && !c.released) return false;
       const t = new Date(c.date).getTime();
       if (dateFrom && t < startOfDay(dateFrom)) return false;
@@ -700,10 +759,32 @@ export default function LogbookScreen() {
       }
       return true;
     });
-  }, [items, debouncedQuery, speciesId, releasedOnly, dateFrom, dateTo]);
+  }, [items, debouncedQuery, speciesId, chipFilter, releasedOnly, dateFrom, dateTo]);
 
   const totalKg = filtered.reduce((s, i) => s + (i.weightKg ?? 0), 0);
   const personalBests = useMemo(() => computePersonalBests(items), [items]);
+  const uniqueSpeciesCount = useMemo(
+    () => new Set(items.map((c) => c.speciesId ?? c.speciesName)).size,
+    [items]
+  );
+
+  const speciesChipList = useMemo(
+    () => [...new Set(items.map((c) => c.speciesName))].sort((a, b) => a.localeCompare(b, 'bg')),
+    [items]
+  );
+
+  const animatedCount = useCountUp(filtered.length);
+  const animatedKgInt = useCountUp(Math.round(totalKg * 10));
+  const animatedKg = (animatedKgInt / 10).toFixed(1);
+
+  const handleStatsLongPress = useCallback(() => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const statsText =
+      `Общо улови: ${items.length}\n` +
+      `Видове: ${uniqueSpeciesCount}\n` +
+      `Общо кг: ${items.reduce((s, c) => s + (c.weightKg ?? 0), 0).toFixed(1)}`;
+    void Share.share({ message: `🎣 Моята риболовна статистика\n\n${statsText}` });
+  }, [items, uniqueSpeciesCount]);
 
   const sections = useMemo(() => {
     const sorted = [...filtered].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
@@ -743,6 +824,10 @@ export default function LogbookScreen() {
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     undoTimerRef.current = setTimeout(() => setPendingDelete(null), 4000);
   }, []);
+
+  const handleSwipeEdit = useCallback((catchItem: Catch) => {
+    navigation.navigate('AddCatch', { editCatchId: catchItem.id });
+  }, [navigation]);
 
   const handleUndoDelete = useCallback(async () => {
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
@@ -786,9 +871,10 @@ export default function LogbookScreen() {
         user={user}
         onPress={(c) => navigation.navigate('CatchDetail', { id: c.id })}
         onDelete={handleSwipeDelete}
+        onEdit={handleSwipeEdit}
       />
     ),
-    [gridView, colors, styles, personalBests, user, navigation, handleSwipeDelete]
+    [gridView, colors, styles, personalBests, user, navigation, handleSwipeDelete, handleSwipeEdit]
   );
 
   const filtersCard = (
@@ -946,18 +1032,18 @@ export default function LogbookScreen() {
           </Pressable>
         </View>
 
-        <View style={styles.statsRow}>
+        <Pressable style={styles.statsRow} onLongPress={handleStatsLongPress} delayLongPress={400}>
           <View style={styles.statBox}>
-            <Text style={styles.statNum}>{filtered.length}</Text>
+            <Text style={styles.statNum}>{animatedCount}</Text>
             <Text style={styles.statLbl}>
               {filtersActive ? `от ${items.length} записа` : items.length === 1 ? 'запис' : 'записа'}
             </Text>
           </View>
           <View style={styles.statBox}>
-            <Text style={styles.statNum}>{totalKg.toFixed(1)}</Text>
+            <Text style={styles.statNum}>{animatedKg}</Text>
             <Text style={styles.statLbl}>{filtersActive ? 'кг в избора' : 'кг общо'}</Text>
           </View>
-        </View>
+        </Pressable>
 
         {filtersCard}
 
@@ -998,6 +1084,59 @@ export default function LogbookScreen() {
           </>
         ) : null}
 
+        {/* ── Species quick-filter chips ── */}
+        {!initialLoading && speciesChipList.length >= 2 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingVertical: spacing.xs, gap: spacing.xs, alignItems: 'center' }}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Pressable
+              onPress={() => { void Haptics.selectionAsync(); setChipFilter(null); }}
+              accessibilityRole="button"
+              android_ripple={{ color: `${colors.primary}22` }}
+              style={({ pressed }) => ({
+                paddingHorizontal: spacing.md,
+                paddingVertical: 6,
+                borderRadius: radius.pill,
+                backgroundColor: chipFilter === null ? colors.primary : colors.card,
+                borderWidth: 1,
+                borderColor: chipFilter === null ? colors.primary : colors.border,
+                marginRight: spacing.xs,
+                opacity: pressed && Platform.OS === 'ios' ? 0.85 : 1,
+              })}
+            >
+              <Text style={{ fontSize: 12, fontWeight: '600', color: chipFilter === null ? colors.white : colors.text }}>
+                Всички
+              </Text>
+            </Pressable>
+            {speciesChipList.map((name) => (
+              <Pressable
+                key={name}
+                onPress={() => { void Haptics.selectionAsync(); setChipFilter((prev) => (prev === name ? null : name)); }}
+                accessibilityRole="button"
+                android_ripple={{ color: `${colors.primary}22` }}
+                style={({ pressed }) => ({
+                  paddingHorizontal: spacing.md,
+                  paddingVertical: 6,
+                  borderRadius: radius.pill,
+                  backgroundColor: chipFilter === name ? colors.primary : colors.card,
+                  borderWidth: 1,
+                  borderColor: chipFilter === name ? colors.primary : colors.border,
+                  marginRight: spacing.xs,
+                  maxWidth: 220,
+                  opacity: pressed && Platform.OS === 'ios' ? 0.85 : 1,
+                })}
+              >
+                <Text style={{ fontSize: 12, fontWeight: '600', color: chipFilter === name ? colors.white : colors.text }} numberOfLines={1}>
+                  {name}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        ) : null}
+
         {initialLoading ? (
           <LogbookSkeleton colors={colors} mode={mode} />
         ) : calendarView && !initialLoading ? (
@@ -1013,6 +1152,7 @@ export default function LogbookScreen() {
             styles={styles}
             onOpenCatch={(c) => navigation.navigate('CatchDetail', { id: c.id })}
             onDeleteCatch={handleSwipeDelete}
+            onEditCatch={handleSwipeEdit}
             bottomPad={bottomPad}
           />
         ) : items.length === 0 ? (
@@ -1058,7 +1198,7 @@ export default function LogbookScreen() {
                 РЕЗУЛТАТИ ({filtered.length})
               </Text>
             }
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+            refreshControl={<FishingRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
             ListFooterComponent={<View style={styles.listFooterPad} />}
             maxToRenderPerBatch={10}
             windowSize={5}
@@ -1072,7 +1212,7 @@ export default function LogbookScreen() {
             keyExtractor={(item) => item.id}
             removeClippedSubviews={Platform.OS === 'android'}
             contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: bottomPad }}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+            refreshControl={<FishingRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
             ItemSeparatorComponent={CatchSeparator}
             stickySectionHeadersEnabled={false}
             renderSectionHeader={({ section }) => (
