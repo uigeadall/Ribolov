@@ -4,18 +4,23 @@ import {
   setDoc,
   getDoc,
   getDocs,
+  deleteDoc,
   query,
   orderBy,
   limit,
   where,
+  documentId,
   serverTimestamp,
   deleteField,
   startAfter,
   writeBatch,
   type DocumentSnapshot,
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, getDownloadURL, deleteObject } from 'firebase/storage';
+import { getIdToken } from 'firebase/auth';
+import * as FileSystem from 'expo-file-system/legacy';
 import { requireFirebase } from './firebase';
+import { getFirebaseWebConfig } from './firebaseConfig';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
 import { getCloudinaryUploadConfig, uploadImageToCloudinary } from './cloudinaryConfig';
 import type { Catch } from '../types';
@@ -38,6 +43,25 @@ export type FeedPage = {
 };
 
 const CLOUDINARY_PREFIX = 'cloudinary:';
+
+const _ownerPhotoCache = new Map<string, { url: string; at: number }>();
+const OWNER_PHOTO_TTL = 5 * 60 * 1000;
+const _feedInflight = new Map<string, Promise<FeedPage>>();
+
+async function fetchOwnerPhoto(
+  fb: ReturnType<typeof requireFirebase>,
+  uid: string,
+): Promise<string> {
+  const cached = _ownerPhotoCache.get(uid);
+  if (cached && Date.now() - cached.at < OWNER_PHOTO_TTL) return cached.url;
+  const snap = await getDoc(doc(fb.db, 'users', uid));
+  const url =
+    snap.exists() && typeof snap.data()?.photoUrl === 'string'
+      ? String(snap.data()?.photoUrl).trim()
+      : '';
+  _ownerPhotoCache.set(uid, { url, at: Date.now() });
+  return url;
+}
 
 function isRemote(uri?: string) {
   return !!uri && /^https?:\/\//i.test(uri.trim());
@@ -62,7 +86,7 @@ async function waitForResizedUrl(
   storage: ReturnType<typeof requireFirebase>['storage'],
   originalPath: string,
   suffix: string,
-  maxWaitMs = 25_000
+  maxWaitMs = 6_000
 ): Promise<string | null> {
   const resizedPath = originalPath.replace(/\.[^.]+$/, `${suffix}.webp`);
   const deadline = Date.now() + maxWaitMs;
@@ -76,39 +100,80 @@ async function waitForResizedUrl(
   return null;
 }
 
-export async function ensureCatchPhotoUploadedForCloud(c: Catch, ownerUid: string): Promise<Catch> {
-  const uri = c.photoUri?.trim();
-  if (!uri || isRemote(uri)) return c;
-  const cloud = getCloudinaryUploadConfig();
-  if (cloud) {
-    const { secureUrl, publicId } = await withRetry(() =>
-      uploadImageToCloudinary(uri, cloud.cloudName, cloud.uploadPreset)
-    );
-    return { ...c, photoUri: secureUrl, photoStoragePath: `${CLOUDINARY_PREFIX}${publicId}` };
-  }
-  const fb = requireFirebase();
+async function uploadLocalPhotoToStorage(
+  fb: ReturnType<typeof requireFirebase>,
+  uri: string,
+  storagePath: string,
+): Promise<string> {
   const extMatch = uri.split('?')[0].match(/\.(jpg|jpeg|png|webp)$/i);
   const ext = extMatch ? extMatch[1].toLowerCase() : 'jpg';
   const contentType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-  const path = `publicCatchPhotos/${ownerUid}/${c.id}/${Date.now()}.${ext}`;
-  const storageRef = ref(fb.storage, path);
-  const url = await withRetry(async () => {
-    const resp = await fetch(uri);
-    const blob = await resp.blob();
-    await uploadBytes(storageRef, blob, { contentType });
+  const storageRef = ref(fb.storage, storagePath);
+  return withRetry(async () => {
+    const currentUser = fb.auth.currentUser;
+    if (!currentUser) throw new Error('Не сте влезли в профила');
+    const token = await getIdToken(currentUser);
+    const { storageBucket } = getFirebaseWebConfig();
+    const result = await FileSystem.uploadAsync(
+      `https://firebasestorage.googleapis.com/v0/b/${storageBucket}/o?uploadType=media&name=${encodeURIComponent(storagePath)}`,
+      uri,
+      {
+        httpMethod: 'POST',
+        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': contentType },
+      },
+    );
+    if (result.status < 200 || result.status >= 300) {
+      throw new Error(`Storage upload HTTP ${result.status}: ${result.body.slice(0, 200)}`);
+    }
     return getDownloadURL(storageRef);
   });
-  const resizedUrl = await waitForResizedUrl(fb.storage, path, '_1200x1200');
-  return { ...c, photoUri: resizedUrl ?? url, photoStoragePath: path };
+}
+
+export async function ensureCatchPhotoUploadedForCloud(c: Catch, ownerUid: string): Promise<Catch> {
+  const uri = c.photoUri?.trim();
+  const cloud = getCloudinaryUploadConfig();
+  let updated = { ...c };
+
+  if (uri && !isRemote(uri)) {
+    if (cloud) {
+      const { secureUrl, publicId } = await withRetry(() =>
+        uploadImageToCloudinary(uri, cloud.cloudName, cloud.uploadPreset)
+      );
+      updated = { ...updated, photoUri: secureUrl, photoStoragePath: `${CLOUDINARY_PREFIX}${publicId}` };
+    } else {
+      const fb = requireFirebase();
+      const extMatch = uri.split('?')[0].match(/\.(jpg|jpeg|png|webp)$/i);
+      const ext = extMatch ? extMatch[1].toLowerCase() : 'jpg';
+      const path = `publicCatchPhotos/${ownerUid}/${c.id}/${Date.now()}.${ext}`;
+      const url = await uploadLocalPhotoToStorage(fb, uri, path);
+      const resizedUrl = await waitForResizedUrl(fb.storage, path, '_1200x1200');
+      updated = { ...updated, photoUri: resizedUrl ?? url, photoStoragePath: path };
+    }
+  }
+
+  // Upload any extra photos that are still local file:// URIs
+  const extras = updated.extraPhotoUris;
+  if (extras && extras.length > 0 && extras.some((u) => u && !isRemote(u))) {
+    const fb = requireFirebase();
+    const uploadedExtras = await Promise.all(
+      extras.map(async (extraUri, idx) => {
+        if (!extraUri || isRemote(extraUri)) return extraUri;
+        const extMatch = extraUri.split('?')[0].match(/\.(jpg|jpeg|png|webp)$/i);
+        const ext = extMatch ? extMatch[1].toLowerCase() : 'jpg';
+        const path = `publicCatchPhotos/${ownerUid}/${c.id}/extra_${idx}_${Date.now()}.${ext}`;
+        return uploadLocalPhotoToStorage(fb, extraUri, path);
+      })
+    );
+    updated = { ...updated, extraPhotoUris: uploadedExtras };
+  }
+
+  return updated;
 }
 
 export async function pushCatch(c: Catch, ownerUid: string, ownerName: string, isPublic: boolean) {
   const fb = requireFirebase();
-  const userSnap = await getDoc(doc(fb.db, 'users', ownerUid));
-  const rawPhoto =
-    userSnap.exists() && typeof userSnap.data()?.photoUrl === 'string'
-      ? String(userSnap.data()?.photoUrl).trim()
-      : '';
+  const rawPhoto = await fetchOwnerPhoto(fb, ownerUid);
   const ownerPhotoPatch =
     rawPhoto !== '' ? { ownerPhotoUrl: rawPhoto } : { ownerPhotoUrl: deleteField() };
   const rawPayload: Record<string, unknown> = {
@@ -119,11 +184,99 @@ export async function pushCatch(c: Catch, ownerUid: string, ownerName: string, i
     isPublic: !!isPublic,
     syncedAt: serverTimestamp(),
     ...ownerPhotoPatch,
+    // deleteField() ensures these are removed from Firestore when absent, not left stale by merge:true
+    photoUri: c.photoUri ?? deleteField(),
+    photoStoragePath: c.photoStoragePath ?? deleteField(),
+    photoTitle: c.photoTitle ?? deleteField(),
+    extraPhotoUris: c.extraPhotoUris ?? deleteField(),
   };
   const payload = stripUndefinedForFirestore(rawPayload);
   await setDoc(doc(fb.db, 'users', ownerUid, 'catches', c.id), payload, { merge: true });
   if (isPublic) {
     await setDoc(doc(fb.db, 'publicCatches', c.id), payload, { merge: true });
+  } else {
+    // Remove from public feed if the catch was previously shared.
+    await deleteDoc(doc(fb.db, 'publicCatches', c.id)).catch(() => {});
+  }
+}
+
+/**
+ * Best-effort delete of a Firebase Storage file. Skips Cloudinary paths.
+ */
+export async function deleteStoragePath(storagePath: string | undefined): Promise<void> {
+  if (!storagePath || storagePath.startsWith(CLOUDINARY_PREFIX)) return;
+  const fb = requireFirebase();
+  await deleteObject(ref(fb.storage, storagePath)).catch(() => {});
+}
+
+/**
+ * Permanently deletes a catch from everywhere: user's private doc, public feed doc,
+ * and the photo file in Storage. Use when the user deletes a catch from their logbook.
+ */
+export async function deleteCatchEverywhere(catchId: string, ownerUid: string): Promise<void> {
+  const fb = requireFirebase();
+
+  // Read storage path + extra photos before deleting the doc
+  let storagePath: string | undefined;
+  let extraPhotoUris: string[] | undefined;
+  try {
+    const snap = await getDoc(doc(fb.db, 'users', ownerUid, 'catches', catchId));
+    if (snap.exists()) {
+      const data = snap.data() as { photoStoragePath?: string; extraPhotoUris?: string[] };
+      storagePath = data.photoStoragePath;
+      extraPhotoUris = data.extraPhotoUris;
+    }
+  } catch { /* ignore */ }
+
+  await Promise.all([
+    deleteDoc(doc(fb.db, 'users', ownerUid, 'catches', catchId)).catch(() => {}),
+    deleteDoc(doc(fb.db, 'publicCatches', catchId)).catch(() => {}),
+  ]);
+
+  if (storagePath && !storagePath.startsWith(CLOUDINARY_PREFIX)) {
+    await deleteObject(ref(fb.storage, storagePath)).catch(() => {});
+  }
+  if (extraPhotoUris && extraPhotoUris.length > 0) {
+    // Extra photos may live in Storage under publicCatchPhotos — try to derive path from URL
+    for (const url of extraPhotoUris) {
+      if (!url || !url.includes('firebasestorage.googleapis.com')) continue;
+      try {
+        const m = decodeURIComponent(url).match(/\/o\/([^?]+)/);
+        if (m?.[1]) await deleteObject(ref(fb.storage, m[1])).catch(() => {});
+      } catch { /* ignore */ }
+    }
+  }
+}
+
+export async function removeFromPublicFeed(catchId: string, ownerUid: string): Promise<void> {
+  const fb = requireFirebase();
+  await Promise.all([
+    deleteDoc(doc(fb.db, 'publicCatches', catchId)),
+    setDoc(doc(fb.db, 'users', ownerUid, 'catches', catchId), { isPublic: false }, { merge: true }),
+  ]);
+}
+
+export async function deletePhotoFromFeedPost(catchId: string, ownerUid: string): Promise<void> {
+  const fb = requireFirebase();
+
+  // Read storage path before clearing so we can delete the file
+  const snap = await getDoc(doc(fb.db, 'publicCatches', catchId));
+  const storagePath = snap.exists() ? (snap.data()?.photoStoragePath as string | undefined) : undefined;
+
+  const photoFields = {
+    photoUri: deleteField(),
+    photoStoragePath: deleteField(),
+    photoTitle: deleteField(),
+    extraPhotoUris: deleteField(),
+  };
+  await Promise.all([
+    setDoc(doc(fb.db, 'publicCatches', catchId), photoFields, { merge: true }),
+    setDoc(doc(fb.db, 'users', ownerUid, 'catches', catchId), photoFields, { merge: true }),
+  ]);
+
+  // Delete the actual file from Storage (skip Cloudinary — it manages its own lifecycle)
+  if (storagePath && !storagePath.startsWith('cloudinary:')) {
+    await deleteObject(ref(fb.storage, storagePath)).catch(() => {});
   }
 }
 
@@ -132,7 +285,43 @@ export async function fetchPublicFeed(
   afterDoc?: DocumentSnapshot | null,
   ownerUids?: string[]
 ): Promise<FeedPage> {
+  const key = `${maxItems}:${afterDoc?.id ?? ''}:${(ownerUids ?? []).sort().join(',')}`;
+  const inflight = _feedInflight.get(key);
+  if (inflight) return inflight;
+  const p = _fetchPublicFeedImpl(maxItems, afterDoc, ownerUids);
+  _feedInflight.set(key, p);
+  p.finally(() => _feedInflight.delete(key));
+  return p;
+}
+
+async function _fetchPublicFeedImpl(
+  maxItems = 20,
+  afterDoc?: DocumentSnapshot | null,
+  ownerUids?: string[]
+): Promise<FeedPage> {
   const fb = requireFirebase();
+
+  // Firestore 'in' operator is limited to 30 values — chunk when the list is larger.
+  if (ownerUids && ownerUids.length > 30) {
+    const allItems: CloudCatch[] = [];
+    const CHUNK = 30;
+    for (let i = 0; i < ownerUids.length; i += CHUNK) {
+      const chunk = ownerUids.slice(i, i + CHUNK);
+      const snap = await getDocs(
+        query(
+          collection(fb.db, 'publicCatches'),
+          where('ownerUid', 'in', chunk),
+          orderBy('date', 'desc'),
+          limit(maxItems + 1),
+        ),
+      );
+      snap.docs.forEach((d) => allItems.push(d.data() as CloudCatch));
+    }
+    allItems.sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
+    const hasMore = allItems.length > maxItems;
+    return { items: allItems.slice(0, maxItems), lastDoc: null, hasMore };
+  }
+
   const constraints: Parameters<typeof query>[1][] = [
     orderBy('date', 'desc'),
     limit(maxItems + 1),
@@ -153,11 +342,16 @@ export async function fetchPublicCatchesByIds(ids: string[]): Promise<CloudCatch
   const fb = requireFirebase();
   if (ids.length === 0) return [];
   const uniq = [...new Set(ids)];
-  const snaps = await Promise.all(uniq.map((id) => getDoc(doc(fb.db, 'publicCatches', id))));
-  const byId = new Map<string, CloudCatch>();
-  for (const s of snaps) {
-    if (s.exists()) byId.set(s.id, s.data() as CloudCatch);
+  const CHUNK = 10;
+  const results: CloudCatch[] = [];
+  for (let i = 0; i < uniq.length; i += CHUNK) {
+    const chunk = uniq.slice(i, i + CHUNK);
+    const snap = await getDocs(
+      query(collection(fb.db, 'publicCatches'), where(documentId(), 'in', chunk)),
+    );
+    snap.docs.forEach((d) => results.push(d.data() as CloudCatch));
   }
+  const byId = new Map(results.map((c) => [c.id, c]));
   return uniq.map((id) => byId.get(id)).filter((c): c is CloudCatch => c != null);
 }
 
@@ -186,10 +380,11 @@ export async function fetchPublicCatchesByOwner(ownerUid: string, maxItems = 40)
 }
 
 export async function refreshOwnerPhotoOnPublicCatches(uid: string, photoUrl: string): Promise<void> {
+  _ownerPhotoCache.set(uid, { url: photoUrl, at: Date.now() });
   const fb = requireFirebase();
   try {
     const snap = await getDocs(
-      query(collection(fb.db, 'publicCatches'), where('ownerUid', '==', uid))
+      query(collection(fb.db, 'publicCatches'), where('ownerUid', '==', uid), limit(500))
     );
     if (snap.empty) return;
     const CHUNK = 400;

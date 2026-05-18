@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, FlatList, Pressable, Alert, Platform } from 're
 import { Swipeable } from 'react-native-gesture-handler';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { EmptyState } from '../components/EmptyState';
@@ -56,16 +57,6 @@ function NotifSkeleton() {
 
 function createStyles(colors: AppColors) {
   return StyleSheet.create({
-    header: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: spacing.lg,
-      paddingVertical: spacing.md,
-      gap: spacing.sm,
-    },
-    title: { ...typography.h2, color: colors.text, flex: 1 },
-    markAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-    markAllText: { ...typography.caption, color: colors.primary, fontWeight: '700' },
     row: {
       flexDirection: 'row',
       gap: spacing.md,
@@ -240,6 +231,7 @@ function NotifRow({ item, myUid, onOpen, onDismiss, styles, colors }: NotifRowPr
 type GroupedNotification = SocialNotification & {
   groupCount?: number;   // how many were collapsed into this row
   groupActors?: string[]; // names of actors beyond the first
+  groupIds?: string[];    // all notification ids in the group (including the representative)
 };
 
 function getCreatedAtMs(createdAt: unknown): number {
@@ -269,6 +261,7 @@ function groupNotifications(items: SocialNotification[]): GroupedNotification[] 
       ...representative,
       groupCount: rest.length,
       groupActors: rest.map((n) => n.actorName),
+      groupIds: follows.map((n) => n.id),
     };
     result.push(grouped);
     follows.forEach((n) => consumed.add(n.id));
@@ -279,7 +272,7 @@ function groupNotifications(items: SocialNotification[]): GroupedNotification[] 
   const likeGroups = new Map<string, SocialNotification[]>();
   for (const n of sorted) {
     if (n.type !== 'like' && n.type !== 'storyLike') continue;
-    const key = n.catchId ?? n.storyId ?? n.id; // fall back to own id so it stays solo
+    const key = n.catchId || n.storyId || n.id; // catchId can be '' for non-catch notifs
     if (!likeGroups.has(key)) likeGroups.set(key, []);
     likeGroups.get(key)!.push(n);
   }
@@ -291,6 +284,7 @@ function groupNotifications(items: SocialNotification[]): GroupedNotification[] 
       ...representative,
       groupCount: rest.length,
       groupActors: rest.map((n) => n.actorName),
+      groupIds: group.map((n) => n.id),
     };
     result.push(grouped);
     group.forEach((n) => consumed.add(n.id));
@@ -312,9 +306,49 @@ function groupNotifications(items: SocialNotification[]): GroupedNotification[] 
 
 export default function NotificationsScreen() {
   const navigation = useAppNavigation();
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const { user, configured } = useAuth();
+
+  const heroColors: [string, string, string] = mode === 'dark'
+    ? ['#0A1E38', '#050C1A', '#030810']
+    : ['#2B87CE', '#1570B8', '#0D559A'];
+  const waveColor = mode === 'dark' ? '#0E1628' : '#FFFFFF';
+
+  const S = useMemo(() => StyleSheet.create({
+    hero: { paddingBottom: 28 + 16 },
+    heroInner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingTop: 16,
+      paddingBottom: 8,
+      gap: 8,
+    },
+    heroTitle: {
+      flex: 1,
+      fontSize: 22,
+      fontWeight: '700',
+      color: '#fff',
+      textAlign: 'center',
+    },
+    backBtn: {
+      width: 40, height: 40,
+      borderRadius: 20,
+      backgroundColor: 'rgba(255,255,255,0.15)',
+      alignItems: 'center', justifyContent: 'center',
+    },
+    markAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    markAllText: { fontSize: 13, color: '#fff', fontWeight: '700' },
+    wave: {
+      borderTopLeftRadius: 28,
+      borderTopRightRadius: 28,
+      marginTop: -28,
+      flex: 1,
+      backgroundColor: waveColor,
+      overflow: 'hidden',
+    },
+  }), [waveColor]);
   const [notifTab, setNotifTab] = useState<'all' | 'likes' | 'comments'>('all');
 
   const { data, loading, setData } = useFirestoreSubscription<SocialNotification[]>(
@@ -356,15 +390,32 @@ export default function NotificationsScreen() {
   const onMarkAll = useCallback(() => {
     if (!user?.uid || unreadCount === 0) return;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setData((prev) => prev ? prev.map((n) => ({ ...n, read: true })) : prev);
+    // Capture previous state so we can roll back if the write fails.
+    let previousUnreadIds: string[] = [];
+    setData((prev) => {
+      if (!prev) return prev;
+      previousUnreadIds = prev.filter((n) => !n.read).map((n) => n.id);
+      return prev.map((n) => ({ ...n, read: true }));
+    });
     markAllNotificationsRead(user.uid).catch(() => {
+      // Roll back optimistic update — restore the unread state.
+      setData((prev) => {
+        if (!prev) return prev;
+        const ids = new Set(previousUnreadIds);
+        return prev.map((n) => ids.has(n.id) ? { ...n, read: false } : n);
+      });
       Toast.show({ type: 'error', text1: 'Грешка', text2: 'Неуспешно маркиране.', visibilityTime: 2500 });
     });
   }, [user?.uid, unreadCount, setData]);
 
-  const onDismiss = useCallback((id: string) => {
-    setData((prev) => prev ? prev.filter((n) => n.id !== id) : prev);
-  }, [setData]);
+  const onDismiss = useCallback((ids: string[]) => {
+    if (!user?.uid || ids.length === 0) return;
+    const idSet = new Set(ids);
+    setData((prev) => prev ? prev.filter((n) => !idSet.has(n.id)) : prev);
+    // Mark them read in Firestore so they don't reappear on the next snapshot
+    // and so the unread badge updates accordingly.
+    ids.forEach((id) => { markNotificationRead(user.uid, id).catch(() => {}); });
+  }, [setData, user?.uid]);
 
   const tabDefs: { key: 'all' | 'likes' | 'comments'; label: string }[] = [
     { key: 'all', label: 'Всички' },
@@ -377,6 +428,8 @@ export default function NotificationsScreen() {
     if (notifTab === 'comments') return items.filter((n) => n.type === 'comment' || n.type === 'storyComment');
     return items;
   }, [items, notifTab]);
+
+  const groupedItems = useMemo(() => groupNotifications(filteredItems), [filteredItems]);
 
   const TabBar = (
     <View style={{
@@ -414,70 +467,77 @@ export default function NotificationsScreen() {
     </View>
   );
 
+  const HeroSection = (
+    <View style={S.hero}>
+      <LinearGradient colors={heroColors} style={StyleSheet.absoluteFillObject} pointerEvents="none" />
+      <View style={S.heroInner}>
+        <Pressable onPress={() => navigation.goBack()} hitSlop={8} style={S.backBtn}>
+          <Ionicons name="chevron-back" size={24} color="#fff" />
+        </Pressable>
+        <Text style={S.heroTitle}>Известия</Text>
+        {unreadCount > 0 ? (
+          <Pressable onPress={onMarkAll} style={S.markAllBtn} hitSlop={8}>
+            <Ionicons name="checkmark-done-outline" size={18} color="#fff" />
+            <Text style={S.markAllText}>Прочетени</Text>
+          </Pressable>
+        ) : (
+          <View style={{ width: 40 }} />
+        )}
+      </View>
+    </View>
+  );
+
   if (!configured || !user) {
     return (
-      <Screen padded={false}>
-        <View style={styles.header}>
-          <Pressable onPress={() => navigation.goBack()} hitSlop={8}>
-            <Ionicons name="chevron-back" size={28} color={colors.primary} />
-          </Pressable>
-          <Text style={styles.title}>Известия</Text>
+      <Screen padded={false} avoidKeyboard={false}>
+        {HeroSection}
+        <View style={S.wave}>
+          {TabBar}
+          <EmptyState icon="notifications-outline" title="Налични след вход" subtitle="Влез с Firebase акаунт, за да виждаш известия от лентата." />
         </View>
-        {TabBar}
-        <EmptyState icon="notifications-outline" title="Налични след вход" subtitle="Влез с Firebase акаунт, за да виждаш известия от лентата." />
       </Screen>
     );
   }
 
   return (
-    <Screen padded={false}>
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={8}>
-          <Ionicons name="chevron-back" size={28} color={colors.primary} />
-        </Pressable>
-        <Text style={styles.title}>Известия</Text>
-        {unreadCount > 0 ? (
-          <Pressable onPress={onMarkAll} style={styles.markAllBtn} hitSlop={8}>
-            <Ionicons name="checkmark-done-outline" size={18} color={colors.primary} />
-            <Text style={styles.markAllText}>Всички прочетени</Text>
-          </Pressable>
-        ) : null}
+    <Screen padded={false} avoidKeyboard={false}>
+      {HeroSection}
+      <View style={S.wave}>
+        {TabBar}
+
+        {loading ? (
+          <NotifSkeleton />
+        ) : filteredItems.length === 0 ? (
+          <EmptyState
+            icon="notifications-off-outline"
+            title="Няма известия"
+            subtitle={notifTab === 'all'
+              ? "Когато някой хареса или коментира твой улов, или те последва, ще се появи тук."
+              : notifTab === 'likes'
+                ? "Нямаш харесвания все още."
+                : "Нямаш коментари все още."
+            }
+          />
+        ) : (
+          <FlatList
+            data={groupedItems}
+            keyExtractor={(n) => n.id}
+            removeClippedSubviews={Platform.OS === 'android'}
+            contentContainerStyle={styles.listContent}
+            ItemSeparatorComponent={() => <View style={styles.sep} />}
+            renderItem={({ item }) => (
+              <NotifRow
+                item={item}
+                myUid={user.uid}
+                onOpen={onOpen}
+                onDismiss={() => onDismiss(item.groupIds ?? [item.id])}
+                styles={styles}
+                colors={colors}
+              />
+            )}
+          />
+        )}
       </View>
-
-      {TabBar}
-
-      {loading ? (
-        <NotifSkeleton />
-      ) : filteredItems.length === 0 ? (
-        <EmptyState
-          icon="notifications-off-outline"
-          title="Няма известия"
-          subtitle={notifTab === 'all'
-            ? "Когато някой хареса или коментира твой улов, или те последва, ще се появи тук."
-            : notifTab === 'likes'
-              ? "Нямаш харесвания все още."
-              : "Нямаш коментари все още."
-          }
-        />
-      ) : (
-        <FlatList
-          data={groupNotifications(filteredItems)}
-          keyExtractor={(n) => n.id}
-          removeClippedSubviews={Platform.OS === 'android'}
-          contentContainerStyle={styles.listContent}
-          ItemSeparatorComponent={() => <View style={styles.sep} />}
-          renderItem={({ item }) => (
-            <NotifRow
-              item={item}
-              myUid={user.uid}
-              onOpen={onOpen}
-              onDismiss={() => onDismiss(item.id)}
-              styles={styles}
-              colors={colors}
-            />
-          )}
-        />
-      )}
     </Screen>
   );
 }

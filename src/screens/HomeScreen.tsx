@@ -5,32 +5,25 @@ import {
   Text,
   StyleSheet,
   ActivityIndicator,
-  RefreshControl,
   Pressable,
   ScrollView,
   InteractionManager,
-  Animated,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FishingRefreshControl } from '../components/FishingRefreshControl';
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect } from '@react-navigation/native';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { useAuth } from '../services/authContext';
-import { Card } from '../components/Card';
 import { WeatherIcon } from '../components/WeatherIcon';
-import { StarRatingBar } from '../components/StarRatingBar';
-import { Button } from '../components/Button';
-import { SectionHeader } from '../components/SectionHeader';
-import { ListRow } from '../components/ListRow';
 import { useTheme } from '../services/themeContext';
-import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchWeather, fetchForecast, windDirectionLabel, type WeatherSnapshot, type ForecastDay } from '../services/weather';
 import { catchesStore } from '../storage/storage';
 import { fetchRankedClassicPhotos, periodStartIso, type RankedClassicPhoto } from '../services/classicsContest';
+import { speciesList } from '../data/species';
 import { scheduleForecastNotificationIfGood } from '../services/pushNotifications';
 import { subscribeUnreadMessagesCount } from '../services/cloudSync';
 import { subscribeMyNotifications } from '../services/socialFeed';
@@ -39,424 +32,420 @@ import { Skeleton } from '../components/Skeleton';
 import { Image } from 'expo-image';
 import type { Catch } from '../types/index';
 import { useAppNavigation } from '../navigation/useAppNavigation';
-import { LiquidBlobBg } from '../components/LiquidBlobBg';
-import { useCountUp } from '../hooks/useCountUp';
+import { ScalePressable } from '../components/ScalePressable';
 
 const FALLBACK_COORD = { latitude: 42.6977, longitude: 23.3219 };
+const WAVE = 32;
 
-function moonPhaseEmoji(name: string): string {
-  const n = (name ?? '').toLowerCase();
-  if (n.includes('нова') || n.includes('new')) return '🌑';
-  if (n.includes('пълн') || n.includes('full')) return '🌕';
-  if ((n.includes('нараст') || n.includes('wax') || n.includes('first')) && (n.includes('четв') || n.includes('quarter'))) return '🌓';
-  if ((n.includes('нам') || n.includes('wan') || n.includes('last')) && (n.includes('четв') || n.includes('quarter'))) return '🌗';
-  if (n.includes('нараст') || n.includes('wax')) return '🌔';
-  if (n.includes('нам') || n.includes('wan')) return '🌘';
-  return '🌕';
-}
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-function greetingBg(): string {
+function greeting(): string {
   const h = new Date().getHours();
   if (h < 12) return 'Добро утро';
   if (h < 18) return 'Добър ден';
   return 'Добър вечер';
 }
 
-function weatherMoodColors(code: number): [string, string] {
-  if (code <= 1) return ['rgba(255,183,0,0.09)', 'transparent'];
-  if (code <= 3) return ['rgba(255,210,80,0.06)', 'transparent'];
-  if (code <= 49) return ['rgba(150,180,220,0.07)', 'transparent'];
-  if (code <= 67) return ['rgba(30,90,200,0.09)', 'transparent'];
-  if (code <= 77) return ['rgba(180,220,255,0.09)', 'transparent'];
-  if (code <= 82) return ['rgba(30,90,200,0.09)', 'transparent'];
-  return ['rgba(90,20,180,0.09)', 'transparent'];
+function fishingLabel(rating: number) {
+  if (rating >= 4) return { text: 'Перфектно за риболов', color: '#34C97A' };
+  if (rating >= 3) return { text: 'Добри условия', color: '#F5C842' };
+  return { text: 'Умерени условия', color: '#F5890A' };
 }
 
-function createHomeStyles(colors: AppColors) {
-  return StyleSheet.create({
-    weatherCard: {
-      marginBottom: spacing.md,
-      overflow: 'hidden',
-    },
-    weatherTop: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      gap: spacing.md,
-    },
-    weatherTemp: { ...typography.h1, fontSize: 34, color: colors.text, letterSpacing: -1 },
-    weatherDesc: { ...typography.body, color: colors.textMuted, marginTop: 4 },
-    weatherRatingCol: { alignItems: 'flex-end' },
-    ratingLabel: { ...typography.small, color: colors.textMuted, marginTop: 6 },
-    weatherDetails: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: spacing.md,
-      marginTop: spacing.lg,
-      paddingTop: spacing.md,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: colors.border,
-    },
-    detailItem: { flexDirection: 'row', alignItems: 'center', gap: 8, minWidth: '45%' },
-    detailVal: { ...typography.body, color: colors.text, flex: 1 },
-    detailLbl: { ...typography.small, color: colors.textMuted },
-    weatherHint: { ...typography.caption, color: colors.textMuted, marginTop: spacing.md, lineHeight: 20 },
-    statsRow: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.sm },
-    statBox: {
-      flex: 1,
-      borderRadius: radius.md,
-      paddingVertical: spacing.md + 4,
-      paddingHorizontal: spacing.md,
-      borderWidth: 1,
-      borderColor: colors.glassBorder,
-      alignItems: 'center',
-      overflow: 'hidden',
-    },
-    statNum: { ...typography.h2, fontSize: 26, color: colors.primary, letterSpacing: -0.5 },
-    statLbl: { ...typography.caption, color: colors.textMuted, marginTop: 4, textAlign: 'center' },
-    heroRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.md },
-    heroIconWrap: {
-      width: 52,
-      height: 52,
-      borderRadius: 26,
-      backgroundColor: colors.primary,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    heroTitle: { ...typography.h2, color: colors.text, letterSpacing: -0.3 },
-    heroDate: { ...typography.caption, color: colors.textMuted, marginTop: 2, textTransform: 'capitalize' },
-    heroFoot: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.sm,
-      marginTop: spacing.sm,
-      paddingTop: spacing.sm,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: colors.border,
-    },
-    heroFootText: { ...typography.caption, color: colors.textMuted, flex: 1, lineHeight: 18 },
-    lastCatchRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.xs,
-      marginBottom: spacing.sm,
-    },
-    lastCatchText: { ...typography.caption, color: colors.textMuted, flex: 1 },
-    forecastDayCard: {
-      paddingVertical: spacing.md,
-      paddingHorizontal: spacing.sm + 2,
-      borderRadius: radius.md,
-      backgroundColor: colors.card,
-      borderWidth: 1,
-      borderColor: colors.border,
-      alignItems: 'center',
-      minWidth: 62,
-      gap: 4,
-    },
-    forecastDayCardBest: {
-      backgroundColor: colors.primarySurface,
-      borderColor: colors.primary,
-    },
-    forecastDayLabel: { ...typography.caption, color: colors.textMuted, fontWeight: '600' },
-    forecastDayLabelBest: { color: colors.primary },
-    forecastDayTemp: { ...typography.caption, color: colors.text, fontWeight: '600' },
-    feedCard: {
-      marginBottom: spacing.xl,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.md,
-    },
-    feedIconWrap: {
-      width: 44,
-      height: 44,
-      borderRadius: radius.md,
-      backgroundColor: colors.primarySurface,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
+function moonPhaseEmoji(name: string): string {
+  const n = (name ?? '').toLowerCase();
+  if (n.includes('нова') || n.includes('new')) return '🌑';
+  if (n.includes('пълн') || n.includes('full')) return '🌕';
+  if ((n.includes('нараст') || n.includes('wax')) && n.includes('четв')) return '🌓';
+  if ((n.includes('нам') || n.includes('wan')) && n.includes('четв')) return '🌗';
+  return '🌕';
+}
+
+function getSeasonSuggestions(weatherCode: number, month: number): string[] {
+  const season =
+    month >= 3 && month <= 5 ? 'пролет' :
+    month >= 6 && month <= 8 ? 'лято' :
+    month >= 9 && month <= 11 ? 'есен' : 'зима';
+
+  const matched = speciesList.filter((s) => s.bestSeason.toLowerCase().includes(season));
+
+  // Boost predators when weather is clear/partly cloudy (weatherCode 0-3)
+  const clearDay = weatherCode <= 3;
+  const sorted = [...matched].sort((a, b) => {
+    const aBoost = clearDay && a.category === 'predator' ? 1 : 0;
+    const bBoost = clearDay && b.category === 'predator' ? 1 : 0;
+    return bBoost - aBoost;
   });
+
+  return sorted.slice(0, 3).map((s) => s.nameBg);
 }
 
-type WeatherCardProps = {
-  weather: WeatherSnapshot | null;
-  weatherStatus: 'idle' | 'loading' | 'error';
-  locLabel: string;
-  colors: ReturnType<typeof useTheme>['colors'];
-  styles: ReturnType<typeof createHomeStyles>;
-  onRetry: () => void;
-  onOpenMap: () => void;
-  pressureTrend: 'up' | 'down' | 'stable';
-  mode: 'light' | 'dark';
-  fullBleed?: boolean;
+// ── Feature grid config ───────────────────────────────────────────────────────
+
+type Feature = {
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+  label: string;
+  sub: string;
+  g: [string, string];
 };
 
-const WeatherCard = React.memo(function WeatherCard({
-  weather, weatherStatus, locLabel, colors, styles, onRetry, onOpenMap, pressureTrend, mode, fullBleed,
-}: WeatherCardProps) {
-  const fullBleedStyle = fullBleed
-    ? { marginHorizontal: -spacing.xl, borderRadius: 0 }
-    : undefined;
-  return (
-    <Card style={[styles.weatherCard, fullBleedStyle]}>
-      {weather?.weatherCode != null && (
-        <LinearGradient
-          colors={weatherMoodColors(weather.weatherCode)}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFillObject}
-          pointerEvents="none"
-        />
-      )}
-      {weatherStatus === 'loading' && !weather ? (
-        <View style={{ gap: spacing.md }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-            <Skeleton width={54} height={54} borderRadius={27} />
-            <View style={{ flex: 1, gap: spacing.sm }}>
-              <Skeleton height={30} width="45%" />
-              <Skeleton height={14} width="70%" />
-            </View>
-            <Skeleton width={72} height={42} />
-          </View>
-          <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
-            <Skeleton width="100%" height={32} />
-            <Skeleton width="45%" height={32} />
-            <Skeleton width="45%" height={32} />
-            <Skeleton width="45%" height={32} />
-            <Skeleton width="45%" height={32} />
-          </View>
-        </View>
-      ) : weatherStatus === 'error' || !weather ? (
-        <View>
-          <Text style={{ ...typography.body, color: colors.text }}>
-            Няма връзка с прогнозата. Провери интернет и опитай отново.
-          </Text>
-          <Button title="Опитай отново" variant="secondary" onPress={onRetry} style={{ marginTop: spacing.md }} />
-        </View>
-      ) : (
-        <>
-          <Text style={{ ...typography.caption, color: colors.textMuted, marginBottom: spacing.sm }}>{locLabel}</Text>
-          <View style={styles.weatherTop}>
-            <WeatherIcon weatherCode={weather.weatherCode} size={54} color={colors.primary} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.weatherTemp}>{weather.temperatureC}°C</Text>
-              <Text style={styles.weatherDesc}>
-                {weather.description} · усеща се {weather.feelsLikeC}°
-              </Text>
-            </View>
-            <View style={styles.weatherRatingCol}>
-              <StarRatingBar rating={weather.fishingRating} color={colors.accent} emptyColor={colors.border} size={14} />
-              <Text style={styles.ratingLabel}>риболовен индекс</Text>
-            </View>
-          </View>
-          <View style={styles.weatherDetails}>
-            <View style={[styles.detailItem, { minWidth: '100%' }]}>
-              <Ionicons name="flag-outline" size={18} color={colors.textMuted} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.detailVal}>
-                  {weather.windKmh} км/ч {windDirectionLabel(weather.windDirection)}
-                </Text>
-                <Text style={styles.detailLbl}>вятър</Text>
-              </View>
-            </View>
-            <View style={styles.detailItem}>
-              <Ionicons name="speedometer-outline" size={18} color={colors.textMuted} />
-              <View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  <Text style={styles.detailVal}>{weather.pressureHpa} hPa</Text>
-                  {pressureTrend !== 'stable' && (
-                    <Ionicons
-                      name={pressureTrend === 'up' ? 'arrow-up' : 'arrow-down'}
-                      size={13}
-                      color={pressureTrend === 'up' ? '#2E9B5A' : '#e53935'}
-                    />
-                  )}
-                </View>
-                <Text style={styles.detailLbl}>налягане</Text>
-              </View>
-            </View>
-            <View style={styles.detailItem}>
-              <Ionicons name="water-outline" size={18} color={colors.textMuted} />
-              <View>
-                <Text style={styles.detailVal}>{weather.humidity}%</Text>
-                <Text style={styles.detailLbl}>влажност</Text>
-              </View>
-            </View>
-            <View style={styles.detailItem}>
-              <Ionicons name="rainy-outline" size={18} color={colors.textMuted} />
-              <View>
-                <Text style={styles.detailVal}>{weather.precipitationProbability}%</Text>
-                <Text style={styles.detailLbl}>дъжд</Text>
-              </View>
-            </View>
-            <View style={styles.detailItem}>
-              <Ionicons name="sunny-outline" size={18} color={colors.textMuted} />
-              <View>
-                <Text style={styles.detailVal}>UV {weather.uvIndex}</Text>
-                <Text style={styles.detailLbl}>UV индекс</Text>
-              </View>
-            </View>
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm }}>
-            <Text style={{ fontSize: 20 }}>{moonPhaseEmoji(weather.moonPhaseName)}</Text>
-            <Text style={[styles.weatherHint, { marginTop: 0, flex: 1 }]}>{weather.moonPhaseName}</Text>
-          </View>
-          <Text style={styles.weatherHint}>
-            На картата можеш да избереш язовир или река и да видиш прогноза за точното място и следващите 7 дни.
-          </Text>
-          <Button
-            title="Отвори картата"
-            variant="secondary"
-            compact
-            onPress={onOpenMap}
-            style={{ marginTop: spacing.md, alignSelf: 'flex-start' }}
-          />
-        </>
-      )}
-    </Card>
-  );
+const FEATURES: Feature[] = [
+  { icon: 'map',            label: 'Карта',      sub: 'Язовири и реки',     g: ['#2A8FD4', '#0D559A'] },
+  { icon: 'book',           label: 'Дневник',    sub: 'Твоите улови',       g: ['#2E9B5A', '#1B5E35'] },
+  { icon: 'fish',           label: 'Видове',     sub: 'Описания и сезони',  g: ['#7B52AB', '#4A2D80'] },
+  { icon: 'trophy',         label: 'Класации',   sub: 'Топ рибари',         g: ['#C49A00', '#7A5800'] },
+  { icon: 'people',         label: 'Групи',      sub: 'Риболовни клубове',  g: ['#E06400', '#8A3000'] },
+  { icon: 'newspaper',      label: 'Лента',      sub: 'Общност',            g: ['#0A7A8A', '#054050'] },
+];
+
+// ── Styles ────────────────────────────────────────────────────────────────────
+
+const S = StyleSheet.create({
+  // ─── Hero ────────────────────────────────────────────────────────
+  hero: { paddingBottom: WAVE + 100, overflow: 'hidden' },
+  heroBg: { ...StyleSheet.absoluteFillObject },
+  heroInner: { paddingHorizontal: spacing.xl, paddingTop: spacing.xs },
+
+  heroBar: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between', marginBottom: spacing.xl,
+  },
+  heroBrand: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  heroLogoWrap: {
+    width: 38, height: 38, borderRadius: 13,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.45)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  heroAppName: {
+    color: '#fff', fontSize: 19,
+    fontFamily: 'Nunito_800ExtraBold', letterSpacing: -0.3,
+  },
+  heroAppSub: {
+    color: 'rgba(255,255,255,0.52)', fontSize: 9,
+    fontFamily: 'Nunito_700Bold', letterSpacing: 1.8, textTransform: 'uppercase',
+  },
+  heroIcons: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+
+  // Split layout: left (60%) + right (40%)
+  heroSplit: {
+    flexDirection: 'row', alignItems: 'flex-start',
+    marginBottom: spacing.lg,
+  },
+  heroLeft: { flex: 3, paddingRight: spacing.md },
+  heroRight: { flex: 2, alignItems: 'flex-end' },
+
+  heroGreeting: {
+    color: '#fff', fontSize: 26,
+    fontFamily: 'Nunito_800ExtraBold', letterSpacing: -0.6,
+    marginBottom: 4,
+  },
+  heroDate: {
+    color: 'rgba(255,255,255,0.6)', fontSize: 12,
+    fontFamily: 'Nunito_600SemiBold', letterSpacing: 0.3,
+    textTransform: 'capitalize', marginBottom: spacing.md,
+  },
+  heroLocBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)',
+    borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5,
+    alignSelf: 'flex-start',
+  },
+  heroLocText: {
+    color: 'rgba(255,255,255,0.85)', fontSize: 10,
+    fontFamily: 'Nunito_600SemiBold',
+  },
+
+  // Right column weather
+  heroTempNum: {
+    color: '#fff', fontSize: 48,
+    fontFamily: 'Nunito_800ExtraBold', letterSpacing: -2,
+    lineHeight: 52,
+  },
+  heroFishingLabel: {
+    fontSize: 10, fontFamily: 'Nunito_700Bold',
+    marginTop: 4, textAlign: 'right',
+  },
+
+  // Meta row (wind / humidity / moon) as glass pills
+  heroMetaRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)',
+    borderRadius: 18, paddingHorizontal: 16, paddingVertical: 10,
+    marginTop: spacing.sm,
+  },
+  heroMetaItem: {
+    flex: 1, flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'center', gap: 5,
+  },
+  heroMetaDivider: {
+    width: 1, height: 18,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+  },
+  heroMetaText: {
+    color: 'rgba(255,255,255,0.82)', fontSize: 11,
+    fontFamily: 'Nunito_600SemiBold',
+  },
+
+  // ─── Wave ────────────────────────────────────────────────────────
+  wave: {
+    borderTopLeftRadius: WAVE, borderTopRightRadius: WAVE,
+    marginTop: -WAVE, paddingTop: spacing.xl,
+  },
+
+  // ─── Section headers ─────────────────────────────────────────────
+  sectionRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: spacing.xl, marginBottom: spacing.sm, marginTop: spacing.md,
+  },
+  sectionLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  sectionAccent: {
+    width: 3, height: 16, borderRadius: 2,
+  },
+  sectionLabel: {
+    fontSize: 11, fontFamily: 'Nunito_700Bold',
+    letterSpacing: 1.2, textTransform: 'uppercase',
+  },
+  sectionLink: { fontSize: 12, fontFamily: 'Nunito_700Bold' },
+
+  // ─── Big CTA card ────────────────────────────────────────────────
+  ctaCard: {
+    marginHorizontal: spacing.xl, marginBottom: spacing.md,
+    borderRadius: 22, height: 80, overflow: 'hidden',
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: spacing.xl, gap: spacing.md,
+    shadowColor: '#E06400', shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.45, shadowRadius: 16, elevation: 8,
+  },
+  ctaCardText: {
+    color: '#fff', fontSize: 18,
+    fontFamily: 'Nunito_800ExtraBold', letterSpacing: -0.4,
+  },
+  ctaCardSub: {
+    color: 'rgba(255,255,255,0.72)', fontSize: 12,
+    fontFamily: 'Nunito_600SemiBold', marginTop: 2,
+  },
+
+  // Small pill shortcut buttons
+  pillRow: {
+    flexDirection: 'row', gap: spacing.sm,
+    marginHorizontal: spacing.xl, marginBottom: spacing.xl,
+  },
+  pillBtn: {
+    flex: 1, height: 76,
+    borderRadius: 18, overflow: 'hidden',
+    alignItems: 'center', justifyContent: 'center', gap: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  pillBtnText: { fontSize: 11, fontFamily: 'Nunito_700Bold', color: '#fff' },
+
+  // ─── Stats bento grid ────────────────────────────────────────────
+  bentoPad: { paddingHorizontal: spacing.xl, marginBottom: spacing.xl },
+  bentoRow: { flexDirection: 'row', gap: spacing.sm },
+  bentoLeft: {
+    flex: 1, borderRadius: 18, padding: spacing.lg,
+    borderWidth: 1.5, minHeight: 150,
+    justifyContent: 'flex-end', overflow: 'hidden',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1, shadowRadius: 8, elevation: 4,
+  },
+  bentoRight: { flex: 1, gap: spacing.sm },
+  bentoSmall: {
+    flex: 1, borderRadius: 18, padding: spacing.md,
+    borderWidth: 1.5, justifyContent: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1, shadowRadius: 8, elevation: 4,
+  },
+  bentoFishIcon: {
+    position: 'absolute', top: spacing.md, right: spacing.md,
+  },
+  bentoBigNum: {
+    fontSize: 30, fontFamily: 'Nunito_800ExtraBold', letterSpacing: -0.8,
+  },
+  bentoLabel: {
+    fontSize: 11, fontFamily: 'Nunito_600SemiBold', marginTop: 2,
+  },
+  bentoSmallNum: {
+    fontSize: 22, fontFamily: 'Nunito_800ExtraBold', letterSpacing: -0.5,
+  },
+  bentoSmallLabel: {
+    fontSize: 10, fontFamily: 'Nunito_600SemiBold', marginTop: 1,
+  },
+
+  // ─── Dark weather card ───────────────────────────────────────────
+  weatherCard: {
+    marginHorizontal: spacing.xl, marginBottom: spacing.sm,
+    borderRadius: 20, overflow: 'hidden',
+    padding: 14,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.28, shadowRadius: 14, elevation: 8,
+  },
+  weatherCardBg: { ...StyleSheet.absoluteFillObject },
+  wcTempRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 10 },
+  wcTemp: { fontSize: 46, fontFamily: 'Nunito_800ExtraBold', color: '#fff', letterSpacing: -2, lineHeight: 52 },
+  wcDesc: { fontSize: 13, fontFamily: 'Nunito_600SemiBold', color: 'rgba(255,255,255,0.65)', marginTop: 3, lineHeight: 18 },
+  wcLocRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 14 },
+  wcLocText: { fontSize: 11, fontFamily: 'Nunito_400Regular', color: 'rgba(255,255,255,0.45)' },
+  wcFishRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderWidth: 1, borderRadius: 14,
+    paddingHorizontal: 12, paddingVertical: 10, marginBottom: 12,
+  },
+  wcFishTitle: { fontSize: 11, fontFamily: 'Nunito_700Bold', color: '#fff' },
+  wcFishLabel: { fontSize: 10, fontFamily: 'Nunito_600SemiBold', marginTop: 1 },
+  wcRatingDots: { flexDirection: 'row', gap: 4, alignItems: 'center' },
+  wcDot: { width: 7, height: 7, borderRadius: 3.5 },
+  wcGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  wcStat: {
+    flex: 1, minWidth: '47%' as const,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderRadius: 12, padding: 10,
+  },
+  wcStatHeader: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 },
+  wcStatLabel: { fontSize: 8, fontFamily: 'Nunito_700Bold', color: 'rgba(255,255,255,0.45)', letterSpacing: 0.8 },
+  wcStatValue: { fontSize: 20, fontFamily: 'Nunito_800ExtraBold', color: '#fff', letterSpacing: -0.5 },
+  wcStatUnit: { fontSize: 12, fontFamily: 'Nunito_600SemiBold', color: 'rgba(255,255,255,0.55)' },
+  wcStatSub: { fontSize: 9, fontFamily: 'Nunito_400Regular', color: 'rgba(255,255,255,0.45)', marginTop: 2 },
+
+  // ─── Forecast strip ──────────────────────────────────────────────
+  forecastScroll: { marginBottom: spacing.sm },
+  fcCard: { alignItems: 'center', paddingVertical: 8, paddingHorizontal: 7, borderRadius: 13, minWidth: 52, gap: 2 },
+  fcDay: { fontSize: 10, fontFamily: 'Nunito_700Bold' },
+  fcDate: { fontSize: 8, fontFamily: 'Nunito_400Regular' },
+  fcTemp: { fontSize: 12, fontFamily: 'Nunito_700Bold' },
+
+  // ─── Recent catch cards ──────────────────────────────────────────
+  catchCard: {
+    width: 120, height: 160, borderRadius: 18, overflow: 'hidden',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18, shadowRadius: 10, elevation: 6,
+  },
+  catchEmpty: {
+    flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.sm,
+  },
+
+  // ─── Feature tiles (horizontal scroll) ──────────────────────────
+  featureScroll: { marginBottom: spacing.xl },
+  featureTile: {
+    width: 130, height: 110, borderRadius: 20,
+    overflow: 'hidden', justifyContent: 'space-between',
+    padding: spacing.md,
+  },
+  featureLabel: {
+    fontSize: 13, fontFamily: 'Nunito_800ExtraBold', color: '#fff',
+  },
+  featureSub: {
+    fontSize: 10, fontFamily: 'Nunito_400Regular',
+    color: 'rgba(255,255,255,0.72)', marginTop: 1,
+  },
+
+  // ─── Classics card ───────────────────────────────────────────────
+  classicsCard: {
+    marginHorizontal: spacing.xl, marginBottom: spacing.xl,
+    borderRadius: 24, overflow: 'hidden', height: 200,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.22, shadowRadius: 16, elevation: 8,
+  },
+  classicsOverlay: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    height: 130, justifyContent: 'flex-end', padding: spacing.md,
+  },
+  classicsOwner: {
+    fontSize: 11, fontFamily: 'Nunito_600SemiBold',
+    color: 'rgba(255,255,255,0.65)',
+  },
+  classicsTitle: {
+    fontSize: 16, fontFamily: 'Nunito_800ExtraBold',
+    color: '#fff', marginTop: 2, marginBottom: 8,
+  },
+  classicsActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  classicsLike: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
+  },
+  classicsVote: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20,
+  },
+  classicsBadge: {
+    position: 'absolute', top: spacing.md, left: spacing.md,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#FFD700',
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, elevation: 4,
+  },
+
+  // ─── Personal best — cinematic ───────────────────────────────────
+  pbCard: {
+    marginHorizontal: spacing.xl, marginBottom: spacing.xl,
+    borderRadius: 24, overflow: 'hidden',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2, shadowRadius: 14, elevation: 8,
+  },
+  pbCoverImage: { width: '100%', height: 120 },
+  pbGradient: {
+    position: 'absolute', left: 0, right: 0, top: 0, height: 120,
+  },
+  pbNoCover: {
+    height: 120, alignItems: 'center', justifyContent: 'center',
+  },
+  pbBody: {
+    flexDirection: 'row', alignItems: 'center',
+    padding: spacing.lg, gap: spacing.md,
+  },
+  pbStats: { flex: 1 },
+  pbSpecies: {
+    fontSize: 15, fontFamily: 'Nunito_700Bold',
+  },
+  pbWeight: {
+    fontSize: 13, fontFamily: 'Nunito_600SemiBold', marginTop: 2,
+  },
+  pbDate: {
+    fontSize: 11, fontFamily: 'Nunito_400Regular', marginTop: 2,
+  },
 });
 
-type ForecastSectionProps = {
-  forecast: ForecastDay[];
-  weatherStatus: 'idle' | 'loading' | 'error';
-  colors: ReturnType<typeof useTheme>['colors'];
-  styles: ReturnType<typeof createHomeStyles>;
-  onNavigate: () => void;
-};
-
-const ForecastSection = React.memo(function ForecastSection({
-  forecast, weatherStatus, colors, styles, onNavigate,
-}: ForecastSectionProps) {
-  return (
-    <>
-      <SectionHeader hint="ПРОГНОЗА" title="Следващите 7 дни" subtitle="Дни с по-висок индекс са по-добри за риболов." />
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.sm, paddingBottom: spacing.xl }}
-      >
-        {forecast.length === 0 && weatherStatus === 'loading'
-          ? [0, 1, 2, 3, 4, 5, 6].map((i) => <Skeleton key={i} width={66} height={114} style={{ marginRight: 0 }} />)
-          : forecast.map((day) => {
-              const isBest = day.fishingRating >= 4;
-              const dateLabel = new Date(day.dateIso).toLocaleDateString('bg-BG', { day: 'numeric', month: 'short' });
-              return (
-                <Pressable
-                  key={day.dateIso}
-                  style={[styles.forecastDayCard, isBest && styles.forecastDayCardBest]}
-                  onPress={onNavigate}
-                >
-                  <Text style={[styles.forecastDayLabel, isBest && styles.forecastDayLabelBest]}>
-                    {day.dayLabel}
-                  </Text>
-                  <Text style={{ ...typography.caption, color: colors.textMuted, fontSize: 9 }}>
-                    {dateLabel}
-                  </Text>
-                  <Text style={{ fontSize: 18 }}>
-                    {day.fishingRating >= 4 ? '🎣' : day.precipProbability > 60 ? '🌧' : day.fishingRating <= 2 ? '😐' : '🐟'}
-                  </Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 2, height: 18 }}>
-                    {[1, 2, 3, 4, 5].map((i) => (
-                      <View
-                        key={i}
-                        style={{
-                          width: 4,
-                          height: 4 + (i / 5) * 12,
-                          borderRadius: 2,
-                          backgroundColor: i <= day.fishingRating
-                            ? (isBest ? colors.primary : colors.primary + 'BB')
-                            : colors.border,
-                        }}
-                      />
-                    ))}
-                  </View>
-                  <Text style={styles.forecastDayTemp}>{day.maxTempC}°</Text>
-                  {day.precipProbability > 20 ? (
-                    <Text style={{ ...typography.caption, color: colors.textMuted }}>{day.precipProbability}%💧</Text>
-                  ) : null}
-                </Pressable>
-              );
-            })}
-      </ScrollView>
-      {forecast.length > 0 ? (
-        <Pressable
-          onPress={onNavigate}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.lg, marginTop: -spacing.sm, marginBottom: spacing.md }}
-        >
-          <Ionicons name="calendar-outline" size={15} color={colors.primary} />
-          <Text style={{ ...typography.caption, color: colors.primary, fontWeight: '600' }}>Планирай излет за конкретен водоем</Text>
-          <Ionicons name="chevron-forward" size={13} color={colors.primary} />
-        </Pressable>
-      ) : null}
-    </>
-  );
-});
+// ── Main component ────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
   const navigation = useAppNavigation();
   const { colors, mode } = useTheme();
   const { user, configured } = useAuth();
   const firstName = user?.displayName?.trim().split(/\s+/)[0] || 'рибарю';
-  const styles = useMemo(() => createHomeStyles(colors), [colors]);
 
   const lastFetchRef = useRef<number>(0);
-  const [weather, setWeather] = useState<WeatherSnapshot | null>(null);
+  const [weather, setWeather]           = useState<WeatherSnapshot | null>(null);
   const [weatherStatus, setWeatherStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const [pressureTrend, setPressureTrend] = useState<'up' | 'down' | 'stable'>('stable');
-  const [locLabel, setLocLabel] = useState<string>('София (примерно)');
-  const [totalCatches, setTotalCatches] = useState(0);
-  const [weekCatches, setWeekCatches] = useState(0);
-  const animatedTotal = useCountUp(totalCatches);
-  const animatedWeek = useCountUp(weekCatches);
-  const [lastCatch, setLastCatch] = useState<Catch | null>(null);
+  const [locLabel, setLocLabel]         = useState('София (примерно)');
   const [bestThisMonth, setBestThisMonth] = useState<Catch | null>(null);
-  const [daysSinceCatch, setDaysSinceCatch] = useState<number | null>(null);
-  const [topClassic, setTopClassic] = useState<RankedClassicPhoto | null>(null);
-  const [forecast, setForecast] = useState<ForecastDay[]>([]);
-  const [refreshing, setRefreshing] = useState(false);
-  const [unreadMsgs, setUnreadMsgs] = useState(0);
+  const [topClassic, setTopClassic]     = useState<RankedClassicPhoto | null>(null);
+  const [forecast, setForecast]         = useState<ForecastDay[]>([]);
+  const [refreshing, setRefreshing]     = useState(false);
+  const [unreadMsgs, setUnreadMsgs]     = useState(0);
   const [unreadNotifs, setUnreadNotifs] = useState(0);
-  const [bestSpot, setBestSpot] = useState<{ name: string; count: number } | null>(null);
   const [recentCatches, setRecentCatches] = useState<Catch[]>([]);
-
-  const fabScale = useRef(new Animated.Value(1)).current;
-  const insets = useSafeAreaInsets();
+  // ── Data loading ────────────────────────────────────────────────
 
   const loadStats = useCallback(async () => {
     const list = await catchesStore.list();
-    setTotalCatches(list.length);
-    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const n = list.filter((c) => {
-      const t = Date.parse(c.date);
-      return !Number.isNaN(t) && t >= weekAgo;
-    }).length;
-    setWeekCatches(n);
-    const sorted = [...list].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
-    const latest = sorted[0] ?? null;
-    setLastCatch(latest);
-    if (latest) {
-      const ms = Date.parse(latest.date);
-      setDaysSinceCatch(isNaN(ms) ? null : Math.floor((Date.now() - ms) / 86_400_000));
-    } else {
-      setDaysSinceCatch(null);
-    }
-    // Personal best this calendar month
+
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-    const monthCatches = list.filter((c) => {
-      const t = Date.parse(c.date);
-      return !isNaN(t) && t >= monthStart;
-    });
-    const best = monthCatches.reduce<Catch | null>(
-      (m, c) => (!m || (c.weightKg ?? 0) > (m.weightKg ?? 0) ? c : m),
-      null
+    const monthList  = list.filter((c) => { const t = Date.parse(c.date); return !isNaN(t) && t >= monthStart; });
+    setBestThisMonth(
+      monthList.reduce<Catch | null>((best, c) => (!best || (c.weightKg ?? 0) > (best.weightKg ?? 0) ? c : best), null)
     );
-    setBestThisMonth(best);
-    const locMap = new Map<string, number>();
-    list.forEach((c) => { if (c.location?.name) locMap.set(c.location.name, (locMap.get(c.location.name) ?? 0) + 1); });
-    const topSpot = [...locMap.entries()].sort((a, b) => b[1] - a[1])[0];
-    setBestSpot(topSpot ? { name: topSpot[0], count: topSpot[1] } : null);
-    // Load top classic in background (best-effort)
+
+    setRecentCatches([...list].sort((a, b) => Date.parse(b.date) - Date.parse(a.date)).slice(0, 6));
+
     fetchRankedClassicPhotos(periodStartIso('week'), { maxCandidates: 20, resultLimit: 1 })
       .then((r) => setTopClassic(r[0] ?? null))
       .catch(() => {});
@@ -464,487 +453,568 @@ export default function HomeScreen() {
 
   const loadWeather = useCallback(async () => {
     setWeatherStatus('loading');
-    let lat = FALLBACK_COORD.latitude;
-    let lng = FALLBACK_COORD.longitude;
-    let label = 'София (примерно)';
-
+    let lat = FALLBACK_COORD.latitude, lng = FALLBACK_COORD.longitude, label = 'София (примерно)';
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status === 'granted') {
         const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        lat = pos.coords.latitude;
-        lng = pos.coords.longitude;
-        label = 'При теб сега';
+        lat = pos.coords.latitude; lng = pos.coords.longitude; label = 'Твоето местоположение';
       }
-    } catch {
-      /* fallback coords */
-    }
-
+    } catch { /* use fallback */ }
     setLocLabel(label);
-
     try {
       const [w, days] = await Promise.all([
         fetchWeather(lat, lng),
         fetchForecast(lat, lng).catch(() => [] as ForecastDay[]),
       ]);
-      setWeather(w);
-      setForecast(days);
-      setWeatherStatus('idle');
-      // Barometric trend
-      AsyncStorage.getItem('@ribolov/lastPressure')
-        .then((v) => {
-          const last = v ? parseFloat(v) : null;
-          if (last !== null) {
-            const diff = w.pressureHpa - last;
-            setPressureTrend(diff > 1.5 ? 'up' : diff < -1.5 ? 'down' : 'stable');
-          }
-          AsyncStorage.setItem('@ribolov/lastPressure', String(w.pressureHpa)).catch(() => {});
-        })
-        .catch(() => {});
+      setWeather(w); setForecast(days); setWeatherStatus('idle');
+      AsyncStorage.getItem('@ribolov/lastPressure').then((v) => {
+        const last = v ? parseFloat(v) : null;
+        if (last !== null) {
+          const diff = w.pressureHpa - last;
+          setPressureTrend(diff > 1.5 ? 'up' : diff < -1.5 ? 'down' : 'stable');
+        }
+        AsyncStorage.setItem('@ribolov/lastPressure', String(w.pressureHpa)).catch(() => {});
+      }).catch(() => {});
       scheduleForecastNotificationIfGood(days).catch(() => {});
-    } catch {
-      setWeather(null);
-      setWeatherStatus('error');
-    }
+    } catch { setWeather(null); setWeatherStatus('error'); }
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      const STALE_MS = 5 * 60 * 1000;
-      const task = InteractionManager.runAfterInteractions(() => {
-        const now = Date.now();
-        if (now - lastFetchRef.current < STALE_MS) return;
-        lastFetchRef.current = now;
-        loadStats();
-        loadWeather();
-      });
-      return () => task.cancel();
-    }, [loadStats, loadWeather])
-  );
+  useFocusEffect(useCallback(() => {
+    const STALE = 5 * 60 * 1000;
+    const task = InteractionManager.runAfterInteractions(() => {
+      const now = Date.now();
+      if (now - lastFetchRef.current < STALE) return;
+      lastFetchRef.current = now;
+      loadStats(); loadWeather();
+    });
+    return () => task.cancel();
+  }, [loadStats, loadWeather]));
 
-  // Load recent catches on mount
-  useEffect(() => {
-    catchesStore.list()
-      .then((all) => setRecentCatches([...all].reverse().slice(0, 5)))
-      .catch(() => {});
-  }, []);
-
-  // Pulse animation for FAB
-  useEffect(() => {
-    const pulse = Animated.loop(
-      Animated.sequence([
-        Animated.delay(2000),
-        Animated.timing(fabScale, { toValue: 1.08, duration: 300, useNativeDriver: true }),
-        Animated.timing(fabScale, { toValue: 1, duration: 300, useNativeDriver: true }),
-      ])
-    );
-    pulse.start();
-    return () => pulse.stop();
-  }, [fabScale]);
-
-  // Live badge counts — wait for Firebase to be configured before subscribing
   useEffect(() => {
     if (!user || !configured) return;
-    const unsubMsgs = subscribeUnreadMessagesCount(user.uid, setUnreadMsgs);
-    const unsubNotifs = subscribeMyNotifications(user.uid, (items) =>
+    const unsubMsgs   = subscribeUnreadMessagesCount(user.uid, setUnreadMsgs);
+    const unsubNotifs  = subscribeMyNotifications(user.uid, (items) =>
       setUnreadNotifs(items.filter((n) => !n.read).length)
     );
     return () => { unsubMsgs(); unsubNotifs(); };
   }, [user, configured]);
 
   const onRefresh = async () => {
-    lastFetchRef.current = 0; // bypass cache on explicit pull-to-refresh
+    lastFetchRef.current = 0;
     setRefreshing(true);
     await Promise.all([loadStats(), loadWeather()]);
     setRefreshing(false);
   };
 
-  const dateStr = useMemo(
-    () =>
-      new Date().toLocaleDateString('bg-BG', {
-        weekday: 'long',
-        day: 'numeric',
-        month: 'long',
-      }),
-    []
-  );
+  // ── Derived values ──────────────────────────────────────────────
+
+  const dateStr = useMemo(() =>
+    new Date().toLocaleDateString('bg-BG', { weekday: 'long', day: 'numeric', month: 'long' }), []);
+
+  const heroGrad: [string, string, string] = mode === 'dark'
+    ? ['#0A1E38', '#050C1A', '#030810']
+    : ['#4EAEE0', '#1E7CC4', '#0D559A'];
+
+  const waveColor  = mode === 'dark' ? '#080E1A' : '#F2F8FF';
+  const cardBg     = mode === 'dark' ? '#0E1E35' : '#FFFFFF';
+  const cardBorder = mode === 'dark' ? 'rgba(74,168,232,0.15)' : 'rgba(21,112,184,0.10)';
+  const textColor  = colors.text;
+  const mutedColor = colors.textMuted;
+  const primary    = colors.primary;
+  const accent     = colors.accent;
+
+  const fLabel = weather ? fishingLabel(weather.fishingRating) : null;
+
+  // ── Feature navigation ──────────────────────────────────────────
+
+  const featureActions = useMemo(() => [
+    () => navigation.navigate('MapTab'),
+    () => navigation.navigate('LogbookTab', { screen: 'LogbookList' }),
+    () => navigation.navigate('ProfileTab', { screen: 'Species', params: { screen: 'SpeciesList' } }),
+    () => navigation.navigate('ProfileTab', { screen: 'Leaderboard' }),
+    () => navigation.navigate('ProfileTab', { screen: 'Groups' }),
+    () => navigation.navigate('FeedTab', { screen: 'FeedList' }),
+  ], [navigation]);
+
+  // ── Render ──────────────────────────────────────────────────────
 
   return (
-    <View style={{ flex: 1 }}>
     <Screen
-      scroll
-      scrollProps={{
-        refreshControl: (
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
-        ),
-      }}
+      scroll padded={false}
+      scrollProps={{ refreshControl: <FishingRefreshControl refreshing={refreshing} onRefresh={onRefresh} /> }}
     >
-      <LinearGradient
-        colors={[colors.primaryDark, colors.primary, colors.primaryLight]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={{ borderRadius: radius.xl, marginBottom: spacing.md, padding: spacing.lg, overflow: 'hidden' }}
-      >
-        <LiquidBlobBg />
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ ...typography.overline, color: 'rgba(255,255,255,0.65)', marginBottom: 4 }}>RIBOLOV</Text>
-            <Text style={{ ...typography.h2, color: '#fff', letterSpacing: -0.3 }}>{greetingBg()}, {firstName}!</Text>
-            <Text style={{ ...typography.caption, color: 'rgba(255,255,255,0.7)', marginTop: 2, textTransform: 'capitalize' }}>{dateStr}</Text>
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: 2 }}>
-            <Pressable onPress={() => navigation.navigate('ProfileTab', { screen: 'Chats' })} hitSlop={10}>
-              <BadgeIcon name="chatbubble-outline" size={24} color="rgba(255,255,255,0.9)" count={unreadMsgs} />
-            </Pressable>
-            <Pressable onPress={() => navigation.navigate('ProfileTab', { screen: 'Notifications' })} hitSlop={10}>
-              <BadgeIcon name="notifications-outline" size={24} color="rgba(255,255,255,0.9)" count={unreadNotifs} />
-            </Pressable>
-          </View>
-        </View>
 
-        {lastCatch ? (
-          <View style={[styles.lastCatchRow, { marginTop: spacing.md, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.2)', paddingTop: spacing.sm }]}>
-            <Ionicons name="time-outline" size={13} color="rgba(255,255,255,0.65)" />
-            <Text style={[styles.lastCatchText, { color: 'rgba(255,255,255,0.8)' }]} numberOfLines={1}>
-              Последен: {lastCatch.speciesName}
-              {lastCatch.weightKg != null ? ` · ${lastCatch.weightKg} кг` : ''}
-              {' · '}{new Date(lastCatch.date).toLocaleDateString('bg-BG')}
-            </Text>
-          </View>
-        ) : null}
+      {/* ════════════════════════════════════════
+          HERO — split layout
+      ════════════════════════════════════════ */}
+      <View style={S.hero}>
+        <LinearGradient colors={heroGrad} start={{ x: 0.3, y: 0 }} end={{ x: 0.7, y: 1 }} style={S.heroBg} pointerEvents="none" />
+        <View style={S.heroInner}>
 
-        <Pressable
-          onPress={() => navigation.navigate('LogbookTab', { screen: 'AddCatch' })}
-          style={({ pressed }) => ({
-            marginTop: spacing.md,
-            backgroundColor: pressed ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.2)',
-            borderWidth: 1,
-            borderColor: 'rgba(255,255,255,0.4)',
-            borderRadius: radius.lg,
-            paddingVertical: spacing.md + 2,
-            alignItems: 'center',
-          })}
-        >
-          <Text style={{ ...typography.bodyBold, color: '#fff', fontSize: 16 }}>🎣  Запиши улов</Text>
-        </Pressable>
-      </LinearGradient>
-
-      <SectionHeader hint="ПРОГНОЗА" title="Време сега" subtitle="Подходящо за бърз излет край теб или избран водоем от картата." />
-      <WeatherCard
-        weather={weather}
-        weatherStatus={weatherStatus}
-        locLabel={locLabel}
-        colors={colors}
-        styles={styles}
-        onRetry={loadWeather}
-        onOpenMap={() => navigation.navigate('MapTab')}
-        pressureTrend={pressureTrend}
-        mode={mode}
-        fullBleed
-      />
-
-      {/* ── Recent catches strip ── */}
-      {recentCatches.length > 0 && (
-        <View style={{ marginBottom: spacing.xl }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, marginBottom: spacing.sm }}>
-            <Text style={{ fontSize: 11, letterSpacing: 1, color: colors.textMuted, fontWeight: '600', textTransform: 'uppercase' }}>НЕДАВНИ УЛОВИ</Text>
-            <Pressable onPress={() => navigation.navigate('LogbookTab', { screen: 'LogbookList' })} hitSlop={8}>
-              <Text style={{ fontSize: 12, color: colors.primary, fontWeight: '600' }}>Виж всички →</Text>
-            </Pressable>
-          </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.sm }}
-          >
-            {recentCatches.map((c) => (
-              <Pressable
-                key={c.id}
-                onPress={() => navigation.navigate('LogbookTab', { screen: 'CatchDetail', params: { id: c.id } })}
-                style={{
-                  width: 110,
-                  height: 140,
-                  borderRadius: radius.md,
-                  overflow: 'hidden',
-                  backgroundColor: c.photoUri ? colors.card : colors.primarySurface,
-                }}
-              >
-                {c.photoUri ? (
-                  <>
-                    <Image
-                      source={{ uri: c.photoUri }}
-                      contentFit="cover"
-                      style={StyleSheet.absoluteFillObject}
-                    />
-                    <LinearGradient
-                      colors={['transparent', 'rgba(0,0,0,0.65)']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 0, y: 1 }}
-                      style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 70, justifyContent: 'flex-end', padding: spacing.sm }}
-                    >
-                      <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }} numberOfLines={1}>{c.speciesName}</Text>
-                      {c.weightKg != null && (
-                        <Text style={{ color: '#fff', fontSize: 11 }}>{c.weightKg} кг</Text>
-                      )}
-                    </LinearGradient>
-                  </>
-                ) : (
-                  <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.sm }}>
-                    <Text style={{ fontSize: 28 }}>🐟</Text>
-                    <Text style={{ fontSize: 11, color: colors.text, fontWeight: '600', textAlign: 'center', marginTop: 4 }} numberOfLines={2}>{c.speciesName}</Text>
-                  </View>
-                )}
+          {/* App bar */}
+          <View style={S.heroBar}>
+            <View style={S.heroBrand}>
+              <View style={S.heroLogoWrap}>
+                <Ionicons name="fish-outline" size={20} color="#fff" />
+              </View>
+              <View>
+                <Text style={S.heroAppName}>РИБОЛОВ</Text>
+                <Text style={S.heroAppSub}>Твоят дневник</Text>
+              </View>
+            </View>
+            <View style={S.heroIcons}>
+              <Pressable onPress={() => navigation.navigate('ProfileTab', { screen: 'Chats' })} hitSlop={12}>
+                <BadgeIcon name="chatbubble-outline" size={23} color="rgba(255,255,255,0.9)" count={unreadMsgs} />
               </Pressable>
-            ))}
-          </ScrollView>
-        </View>
-      )}
-
-      {(forecast.length > 0 || weatherStatus === 'loading') ? (
-        <ForecastSection
-          forecast={forecast}
-          weatherStatus={weatherStatus}
-          colors={colors}
-          styles={styles}
-          onNavigate={() => navigation.navigate('ProfileTab', { screen: 'TripPlanner' })}
-        />
-      ) : null}
-
-      <SectionHeader hint="ДНЕВНИК" title="Твоите улови" subtitle="Брой записи на устройството — синхронизацията е от профила, ако си влязъл." />
-      <Card style={{ marginBottom: spacing.xl }}>
-        <View style={styles.statsRow}>
-          <View style={styles.statBox}>
-            <LinearGradient
-              colors={mode === 'dark' ? ['rgba(0,196,232,0.12)', 'rgba(0,196,232,0.03)'] : [colors.primarySurface, 'rgba(212,235,243,0.35)']}
-              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-              style={StyleSheet.absoluteFillObject}
-            />
-            <Ionicons name="archive-outline" size={20} color={colors.primary} style={{ marginBottom: 6 }} />
-            <Text style={styles.statNum}>{animatedTotal}</Text>
-            <Text style={styles.statLbl}>общо записа</Text>
-          </View>
-          <View style={styles.statBox}>
-            <LinearGradient
-              colors={mode === 'dark' ? ['rgba(0,196,232,0.12)', 'rgba(0,196,232,0.03)'] : [colors.primarySurface, 'rgba(212,235,243,0.35)']}
-              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-              style={StyleSheet.absoluteFillObject}
-            />
-            <Ionicons name="time-outline" size={20} color={colors.primary} style={{ marginBottom: 6 }} />
-            <Text style={styles.statNum}>{animatedWeek}</Text>
-            <Text style={styles.statLbl}>последни 7 дни</Text>
-          </View>
-        </View>
-        <Button
-          title="Дневник — всички улови"
-          variant="secondary"
-          compact
-          onPress={() => navigation.navigate('LogbookTab', { screen: 'LogbookList' })}
-          style={{ marginTop: spacing.md }}
-        />
-      </Card>
-
-      {bestSpot ? (
-        <Pressable onPress={() => navigation.navigate('MapTab')} style={{ marginBottom: spacing.xl }}>
-          <Card style={{ borderLeftWidth: 3, borderLeftColor: colors.primary }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-              <View style={{ width: 40, height: 40, borderRadius: radius.md, backgroundColor: colors.primarySurface, alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name="location" size={20} color={colors.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ ...typography.overline, color: colors.textMuted, marginBottom: 2 }}>НАЙ-ДОБЪР СПОТ</Text>
-                <Text style={{ ...typography.bodyBold, color: colors.text }} numberOfLines={1}>{bestSpot.name}</Text>
-                <Text style={{ ...typography.caption, color: colors.textMuted }}>
-                  {bestSpot.count} {bestSpot.count === 1 ? 'улов' : 'улова'} записани тук
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-            </View>
-          </Card>
-        </Pressable>
-      ) : null}
-
-      {/* ── Classics preview ── */}
-      <SectionHeader hint="КЛАСИКИ" title="Снимка на седмицата" subtitle="Гласувай с харесване · най-много харесвания печели." />
-      <Pressable
-        onPress={() => navigation.navigate('ProfileTab', { screen: 'Classics' })}
-        style={{ marginBottom: spacing.xl, borderRadius: radius.xl, overflow: 'hidden' }}
-        android_ripple={{ color: 'rgba(0,0,0,0.12)' }}
-      >
-        {topClassic?.item.photoUri ? (
-          <View style={{ height: 260 }}>
-            <Image source={{ uri: topClassic.item.photoUri }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
-            {/* Cinematic bottom gradient */}
-            <LinearGradient
-              colors={['transparent', 'rgba(0,0,0,0.82)']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-              style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 150, justifyContent: 'flex-end', padding: spacing.md }}
-            >
-              <Text style={{ ...typography.small, color: 'rgba(255,255,255,0.68)', fontWeight: '600', letterSpacing: 0.2 }}>
-                {topClassic.item.ownerName ?? 'Рибар'}
-              </Text>
-              <Text style={{ ...typography.h3, color: '#fff', marginTop: 2 }} numberOfLines={2}>
-                {topClassic.item.photoTitle ?? topClassic.item.speciesName}
-              </Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: spacing.sm }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radius.pill }}>
-                  <Ionicons name="heart" size={13} color="#ff6b6b" />
-                  <Text style={{ ...typography.caption, color: '#fff', fontWeight: '700' }}>{topClassic.likes}</Text>
-                </View>
-                <View style={{ flex: 1 }} />
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.primary, paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.pill }}>
-                  <Ionicons name="heart-outline" size={13} color="#fff" />
-                  <Text style={{ ...typography.small, color: '#fff', fontWeight: '700' }}>Гласувай</Text>
-                </View>
-              </View>
-            </LinearGradient>
-            {/* Gold winner badge */}
-            <View style={{ position: 'absolute', top: spacing.md, left: spacing.md, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#FFD700', paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.pill, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.35, shadowRadius: 6, elevation: 5 }}>
-              <Text style={{ fontSize: 14 }}>🥇</Text>
-              <Text style={{ fontSize: 11, fontWeight: '800', color: '#2a1800', letterSpacing: 0.7 }}>ПОБЕДИТЕЛ</Text>
+              <Pressable onPress={() => navigation.navigate('ProfileTab', { screen: 'Notifications' })} hitSlop={12}>
+                <BadgeIcon name="notifications-outline" size={23} color="rgba(255,255,255,0.9)" count={unreadNotifs} />
+              </Pressable>
             </View>
           </View>
-        ) : (
+
+          {/* Split: left greeting + right weather temp */}
+          <View style={S.heroSplit}>
+
+            {/* Left 60% */}
+            <View style={S.heroLeft}>
+              <Text style={S.heroGreeting}>{greeting()},{'\n'}{firstName}!</Text>
+              <Text style={S.heroDate}>{dateStr}</Text>
+              <View style={S.heroLocBadge}>
+                <Ionicons name="location-outline" size={11} color="rgba(255,255,255,0.8)" />
+                <Text style={S.heroLocText} numberOfLines={1}>{locLabel}</Text>
+              </View>
+            </View>
+
+            {/* Right 40% — temperature + weather icon + fishing label */}
+            <View style={S.heroRight}>
+              {weatherStatus === 'loading' && !weather ? (
+                <ActivityIndicator color="rgba(255,255,255,0.7)" style={{ marginTop: 8 }} />
+              ) : weather ? (
+                <>
+                  <WeatherIcon weatherCode={weather.weatherCode} size={36} color="rgba(255,255,255,0.9)" />
+                  <Text style={S.heroTempNum}>{weather.temperatureC}°</Text>
+                  {fLabel && (
+                    <Text style={[S.heroFishingLabel, { color: fLabel.color }]} numberOfLines={2}>
+                      {fLabel.text}
+                    </Text>
+                  )}
+                </>
+              ) : null}
+            </View>
+          </View>
+
+          {/* Meta row: wind / humidity / moon — full width glass bar */}
+          {weather && (
+            <View style={S.heroMetaRow}>
+              <View style={S.heroMetaItem}>
+                <Ionicons name="flag-outline" size={13} color="rgba(255,255,255,0.75)" />
+                <Text style={S.heroMetaText}>{weather.windKmh} км/ч</Text>
+              </View>
+              <View style={S.heroMetaDivider} />
+              <View style={S.heroMetaItem}>
+                <Ionicons name="water-outline" size={13} color="rgba(255,255,255,0.75)" />
+                <Text style={S.heroMetaText}>{weather.humidity}%</Text>
+              </View>
+              <View style={S.heroMetaDivider} />
+              <View style={S.heroMetaItem}>
+                <Text style={S.heroMetaText}>{moonPhaseEmoji(weather.moonPhaseName)}</Text>
+                <Text style={S.heroMetaText}>{weather.moonPhaseName}</Text>
+              </View>
+            </View>
+          )}
+          {weatherStatus === 'loading' && !weather && (
+            <View style={[S.heroMetaRow, { justifyContent: 'center' }]}>
+              <ActivityIndicator color="rgba(255,255,255,0.5)" size="small" />
+            </View>
+          )}
+        </View>
+      </View>
+
+      {/* ════════════════════════════════════════
+          CONTENT — rises over hero (wave effect)
+      ════════════════════════════════════════ */}
+      <View style={[S.wave, { backgroundColor: waveColor }]}>
+
+        {/* ── Big CTA card ── */}
+        <ScalePressable
+          style={S.ctaCard}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
+            navigation.navigate('LogbookTab', { screen: 'AddCatch', params: {} });
+          }}
+          android_ripple={{ color: 'rgba(255,255,255,0.25)' }}
+        >
           <LinearGradient
-            colors={['#7A5800', '#C49A00', '#E8C832']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={{ borderRadius: radius.xl, padding: spacing.xl, flexDirection: 'row', alignItems: 'center', gap: spacing.lg, minHeight: 110 }}
-          >
-            <View style={{ flex: 1 }}>
-              <Text style={{ ...typography.overline, color: 'rgba(42,24,0,0.6)', marginBottom: 4 }}>КЛАСИКИ ТАЗИ СЕДМИЦА</Text>
-              <Text style={{ ...typography.h3, color: '#2a1800' }}>Сподели улов и спечели!</Text>
-              <Text style={{ ...typography.caption, color: 'rgba(42,24,0,0.65)', marginTop: spacing.xs, lineHeight: 18 }}>
-                Гласувай за най-добрата снимка
-              </Text>
-            </View>
-            <Text style={{ fontSize: 52, opacity: 0.9 }}>🏆</Text>
-          </LinearGradient>
-        )}
-      </Pressable>
+            colors={['#F5A020', '#E05E00']}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFillObject}
+          />
+          <Ionicons name="add-circle-outline" size={32} color="#fff" />
+          <View style={{ flex: 1 }}>
+            <Text style={S.ctaCardText}>Запиши нов улов</Text>
+            <Text style={S.ctaCardSub}>Добави улов в дневника</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={22} color="rgba(255,255,255,0.7)" />
+        </ScalePressable>
 
-      {/* ── Personal best this month ── */}
-      {bestThisMonth ? (
-        <>
-          <SectionHeader hint="ЛИЧЕН РЕКОРД" title="Най-голям улов този месец" />
-          <Pressable
-            onPress={() => navigation.navigate('LogbookTab', { screen: 'LogbookList' })}
-            style={{ marginBottom: spacing.xl, borderRadius: radius.xl, overflow: 'hidden' }}
-          >
-            {bestThisMonth.photoUri ? (
-              <View style={{ height: 140 }}>
-                <Image source={{ uri: bestThisMonth.photoUri }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
-                <LinearGradient
-                  colors={['transparent', 'rgba(0,0,0,0.78)']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 0, y: 1 }}
-                  style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 90, justifyContent: 'flex-end', padding: spacing.md }}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-                    <Text style={{ fontSize: 18 }}>🏆</Text>
-                    <View>
-                      <Text style={{ ...typography.bodyBold, color: '#fff' }}>{bestThisMonth.speciesName}</Text>
-                      <Text style={{ ...typography.caption, color: 'rgba(255,255,255,0.72)' }}>
-                        {bestThisMonth.weightKg != null ? `${bestThisMonth.weightKg} кг` : '—'}
-                        {bestThisMonth.lengthCm != null ? ` · ${bestThisMonth.lengthCm} см` : ''}
-                      </Text>
-                    </View>
-                  </View>
-                </LinearGradient>
+        {/* ── Pill shortcut row ── */}
+        <View style={S.pillRow}>
+          <ScalePressable style={S.pillBtn} onPress={() => navigation.navigate('MapTab')}>
+            <LinearGradient colors={['#2E9FE6', '#0D559A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFillObject} />
+            <Ionicons name="compass" size={26} color="#fff" />
+            <Text style={S.pillBtnText}>Места</Text>
+          </ScalePressable>
+          <ScalePressable style={S.pillBtn} onPress={() => navigation.navigate('FeedTab', { screen: 'FeedList' })}>
+            <LinearGradient colors={['#F5A020', '#E05E00']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFillObject} />
+            <Ionicons name="telescope" size={26} color="#fff" />
+            <Text style={S.pillBtnText}>Лента</Text>
+          </ScalePressable>
+          <ScalePressable style={S.pillBtn} onPress={() => navigation.navigate('FeedTab', { screen: 'Friends' })}>
+            <LinearGradient colors={['#3AC47D', '#1A7A45']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFillObject} />
+            <Ionicons name="people" size={26} color="#fff" />
+            <Text style={S.pillBtnText}>Приятели</Text>
+          </ScalePressable>
+        </View>
+
+        {/* ── Dark weather card ── */}
+        {(weather || weatherStatus === 'loading') && (
+          <>
+            <View style={S.sectionRow}>
+              <View style={S.sectionLeft}>
+                <View style={[S.sectionAccent, { backgroundColor: primary }]} />
+                <Text style={[S.sectionLabel, { color: mutedColor }]}>Прогноза</Text>
               </View>
-            ) : (
-              <Card style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-                <View style={{ width: 52, height: 52, borderRadius: radius.md, backgroundColor: colors.primarySurface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 26 }}>🏆</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ ...typography.bodyBold, color: colors.text }}>{bestThisMonth.speciesName}</Text>
-                  <Text style={{ ...typography.body, color: colors.textMuted, marginTop: 2 }}>
-                    {bestThisMonth.weightKg != null ? `${bestThisMonth.weightKg} кг` : '—'}
-                    {bestThisMonth.lengthCm != null ? ` · ${bestThisMonth.lengthCm} см` : ''}
-                    {' · '}{new Date(bestThisMonth.date).toLocaleDateString('bg-BG', { day: 'numeric', month: 'short' })}
+              <Pressable onPress={() => navigation.navigate('MapTab')} hitSlop={8}>
+                <Text style={[S.sectionLink, { color: primary }]}>Виж на картата →</Text>
+              </Pressable>
+            </View>
+
+            {/* ── Species suggestions tip ── */}
+            {weather && (() => {
+              const suggestions = getSeasonSuggestions(weather.weatherCode, new Date().getMonth() + 1);
+              return suggestions.length > 0 ? (
+                <View style={{
+                  marginHorizontal: spacing.xl,
+                  marginBottom: spacing.sm,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                  backgroundColor: mode === 'dark' ? 'rgba(78,174,224,0.10)' : 'rgba(21,112,184,0.07)',
+                  borderRadius: 20,
+                  paddingHorizontal: 12,
+                  paddingVertical: 7,
+                  borderWidth: 1,
+                  borderColor: mode === 'dark' ? 'rgba(78,174,224,0.18)' : 'rgba(21,112,184,0.14)',
+                }}>
+                  <Text style={{ fontSize: 13 }}>🎣</Text>
+                  <Text
+                    style={{ fontSize: 11, fontFamily: 'Nunito_600SemiBold', color: mutedColor, flex: 1 }}
+                    numberOfLines={1}
+                  >
+                    {'Добри условия за: ' + suggestions.join(' · ')}
                   </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-              </Card>
+              ) : null;
+            })()}
+
+            <Pressable style={S.weatherCard} onPress={() => navigation.navigate('MapTab')}>
+              {/* Always dark blue background */}
+              <LinearGradient
+                colors={['#0A1828', '#0D2240']}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                style={S.weatherCardBg}
+              />
+
+              {weatherStatus === 'loading' && !weather ? (
+                <View style={{ gap: 10 }}>
+                  <Skeleton height={48} width="60%" />
+                  <Skeleton height={74} width="100%" style={{ borderRadius: 14 }} />
+                </View>
+              ) : weather ? (
+                <>
+                  {/* Top shimmer */}
+                  <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, backgroundColor: 'rgba(255,255,255,0.13)' }} />
+
+                  {/* Temperature row */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+                    <View style={{ backgroundColor: 'rgba(255,255,255,0.11)', borderRadius: 14, padding: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)' }}>
+                      <WeatherIcon weatherCode={weather.weatherCode} size={32} color="#fff" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 2 }}>
+                        <Text style={{ fontSize: 40, fontFamily: 'Nunito_800ExtraBold', color: '#fff', letterSpacing: -2, lineHeight: 44 }}>{weather.temperatureC}</Text>
+                        <Text style={{ fontSize: 17, fontFamily: 'Nunito_600SemiBold', color: 'rgba(255,255,255,0.55)', marginBottom: 7 }}>°C</Text>
+                      </View>
+                      <Text style={{ fontSize: 12, fontFamily: 'Nunito_600SemiBold', color: 'rgba(255,255,255,0.65)' }}>{weather.description} · Усеща се {weather.feelsLikeC}°</Text>
+                    </View>
+                    {/* Fishing score pill — top-right */}
+                    {fLabel && (
+                      <View style={{ alignItems: 'center', gap: 3 }}>
+                        <View style={{ backgroundColor: fLabel.color + '28', borderRadius: 10, borderWidth: 1, borderColor: fLabel.color + '55', paddingHorizontal: 8, paddingVertical: 4 }}>
+                          <Text style={{ fontSize: 15, fontFamily: 'Nunito_800ExtraBold', color: fLabel.color }}>{weather.fishingRating}<Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>/5</Text></Text>
+                        </View>
+                        <View style={{ flexDirection: 'row', gap: 3 }}>
+                          {[1,2,3,4,5].map(i => (
+                            <View key={i} style={{ width: 10, height: 3, borderRadius: 1.5, backgroundColor: i <= weather.fishingRating ? fLabel.color : 'rgba(255,255,255,0.15)' }} />
+                          ))}
+                        </View>
+                        <Text style={{ fontSize: 8, fontFamily: 'Nunito_600SemiBold', color: fLabel.color }}>{fLabel.text}</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Stats — single horizontal row of 4 */}
+                  <View style={{ flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', overflow: 'hidden' }}>
+                    {[
+                      { iconName: 'flag' as const,         iconColor: '#52A8F0', bg: 'rgba(82,168,240,0.18)',   label: 'ВЯТЪР',    value: `${weather.windKmh}`, unit: 'км/ч', sub: windDirectionLabel(weather.windDirection) },
+                      { iconName: 'speedometer' as const,  iconColor: '#50C8B4', bg: 'rgba(80,200,180,0.18)',   label: 'НАЛЯГАНЕ', value: `${weather.pressureHpa}`, unit: 'hPa', sub: pressureTrend === 'up' ? 'Расте ↑' : pressureTrend === 'down' ? 'Пада ↓' : 'Стабилно' },
+                      { iconName: 'rainy' as const,        iconColor: '#64AAE6', bg: 'rgba(100,170,230,0.18)',  label: 'ДЪЖД',     value: `${weather.precipitationProbability}`, unit: '%', sub: 'вероятност' },
+                    ].map(({ iconName, iconColor, bg, label, value, unit, sub }, idx) => (
+                      <React.Fragment key={label}>
+                        <View style={{ flex: 1, alignItems: 'center', paddingVertical: 10, paddingHorizontal: 4, gap: 3 }}>
+                          <View style={{ width: 26, height: 26, borderRadius: 8, backgroundColor: bg, alignItems: 'center', justifyContent: 'center' }}>
+                            <Ionicons name={iconName} size={13} color={iconColor} />
+                          </View>
+                          <Text style={{ fontSize: 8, fontFamily: 'Nunito_700Bold', color: 'rgba(255,255,255,0.38)', letterSpacing: 0.5 }}>{label}</Text>
+                          <Text style={{ fontSize: 14, fontFamily: 'Nunito_800ExtraBold', color: '#fff', letterSpacing: -0.3 }} numberOfLines={1}>{value}<Text style={{ fontSize: 9, fontFamily: 'Nunito_400Regular', color: 'rgba(255,255,255,0.45)' }}>{unit}</Text></Text>
+                          <Text style={{ fontSize: 9, fontFamily: 'Nunito_400Regular', color: 'rgba(255,255,255,0.38)' }} numberOfLines={1}>{sub}</Text>
+                        </View>
+                        <View style={{ width: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginVertical: 8 }} />
+                      </React.Fragment>
+                    ))}
+                    {/* Moon cell */}
+                    <View style={{ flex: 1, alignItems: 'center', paddingVertical: 10, paddingHorizontal: 4, gap: 3 }}>
+                      <View style={{ width: 26, height: 26, borderRadius: 8, backgroundColor: 'rgba(160,120,220,0.2)', alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ fontSize: 13 }}>{moonPhaseEmoji(weather.moonPhaseName)}</Text>
+                      </View>
+                      <Text style={{ fontSize: 8, fontFamily: 'Nunito_700Bold', color: 'rgba(255,255,255,0.38)', letterSpacing: 0.5 }}>ЛУНА</Text>
+                      <Text style={{ fontSize: 14, fontFamily: 'Nunito_800ExtraBold', color: '#fff' }} numberOfLines={1}>{weather.humidity}<Text style={{ fontSize: 9, color: 'rgba(255,255,255,0.45)', fontFamily: 'Nunito_400Regular' }}>%</Text></Text>
+                      <Text style={{ fontSize: 9, fontFamily: 'Nunito_400Regular', color: 'rgba(255,255,255,0.38)' }} numberOfLines={1}>{weather.moonPhaseName.split(' ').slice(0, -1).join(' ')}</Text>
+                    </View>
+                  </View>
+                </>
+              ) : null}
+            </Pressable>
+
+            {/* 7-day forecast */}
+            {(forecast.length > 0 || weatherStatus === 'loading') && (
+              <ScrollView
+                horizontal showsHorizontalScrollIndicator={false}
+                style={[S.forecastScroll, { marginBottom: spacing.xl }]}
+                contentContainerStyle={{ paddingHorizontal: spacing.xl, gap: spacing.sm, paddingBottom: 4 }}
+              >
+                {forecast.length === 0
+                  ? [0,1,2,3,4,5,6].map((i) => <Skeleton key={i} width={52} height={88} style={{ borderRadius: 13 }} />)
+                  : forecast.map((day) => {
+                      const best = day.fishingRating >= 4;
+                      const fl = fishingLabel(day.fishingRating);
+                      return (
+                        <ScalePressable
+                          key={day.dateIso}
+                          style={[S.fcCard, {
+                            backgroundColor: best ? primary + '18' : cardBg,
+                            borderWidth: 1.5,
+                            borderColor: best ? primary : cardBorder,
+                          }]}
+                          onPress={() => navigation.navigate('ProfileTab', { screen: 'TripPlanner' })}
+                        >
+                          <Text style={[S.fcDay, { color: best ? primary : textColor }]}>{day.dayLabel}</Text>
+                          <Text style={[S.fcDate, { color: mutedColor }]}>
+                            {new Date(day.dateIso).toLocaleDateString('bg-BG', { day: 'numeric', month: 'numeric' })}
+                          </Text>
+                          <WeatherIcon weatherCode={day.weatherCode} size={20} color={best ? primary : textColor} />
+                          <Text style={[S.fcTemp, { color: textColor }]}>{day.maxTempC}°</Text>
+                          <View style={{ flexDirection: 'row', gap: 2 }}>
+                            {[1,2,3,4,5].map(i => (
+                              <View key={i} style={{ width: 4, height: 3, borderRadius: 1.5, backgroundColor: i <= day.fishingRating ? fl.color : (mode === 'dark' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)') }} />
+                            ))}
+                          </View>
+                          {day.precipProbability > 20 && (
+                            <Text style={{ fontSize: 8, fontFamily: 'Nunito_400Regular', color: mutedColor }}>{day.precipProbability}% 💧</Text>
+                          )}
+                        </ScalePressable>
+                      );
+                    })}
+              </ScrollView>
             )}
-          </Pressable>
-        </>
-      ) : null}
+          </>
+        )}
 
-      {/* ── Activity prompt ── */}
-      {daysSinceCatch !== null && daysSinceCatch > 2 ? (
-        <>
-          <SectionHeader hint="АКТИВНОСТ" title={daysSinceCatch === 0 ? 'Улов днес!' : `${daysSinceCatch} ${daysSinceCatch === 1 ? 'ден' : 'дни'} без улов`} />
-          <Card style={{ marginBottom: spacing.xl }}>
-            <Text style={{ ...typography.body, color: colors.textMuted, lineHeight: 22 }}>
-              {daysSinceCatch < 7
-                ? 'Готов ли си за следващия излет? Провери прогнозата в картата.'
-                : daysSinceCatch < 30
-                ? 'Мина доста — може би е ред за риболов. Лентата чака твоя улов!'
-                : 'Над месец без запис. Скочи на водата и запиши следващия улов.'}
-            </Text>
-            <Button
-              title="Виж прогнозата"
-              variant="secondary"
-              compact
-              onPress={() => navigation.navigate('MapTab')}
-              style={{ marginTop: spacing.md, alignSelf: 'flex-start' }}
-            />
-          </Card>
-        </>
-      ) : null}
+        {/* ── Recent catches ── */}
+        {recentCatches.length > 0 && (
+          <>
+            <View style={S.sectionRow}>
+              <View style={S.sectionLeft}>
+                <View style={[S.sectionAccent, { backgroundColor: primary }]} />
+                <Text style={[S.sectionLabel, { color: mutedColor }]}>Недавни улови</Text>
+              </View>
+              <Pressable onPress={() => navigation.navigate('LogbookTab', { screen: 'LogbookList' })} hitSlop={8}>
+                <Text style={[S.sectionLink, { color: primary }]}>Виж всички →</Text>
+              </Pressable>
+            </View>
+            <ScrollView
+              horizontal showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: spacing.xl, gap: spacing.sm, paddingBottom: spacing.xl }}
+            >
+              {recentCatches.map((c) => (
+                <Pressable
+                  key={c.id}
+                  style={[S.catchCard, { backgroundColor: c.photoUri ? 'transparent' : (mode === 'dark' ? '#0E1E35' : colors.primarySurface) }]}
+                  onPress={() => navigation.navigate('LogbookTab', { screen: 'CatchDetail', params: { id: c.id } })}
+                >
+                  {c.photoUri ? (
+                    <>
+                      <Image source={{ uri: c.photoUri }} contentFit="cover" style={StyleSheet.absoluteFillObject} />
+                      <LinearGradient
+                        colors={['transparent', 'rgba(0,0,0,0.75)']}
+                        start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+                        style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 80, justifyContent: 'flex-end', padding: 10 }}
+                      >
+                        <Text style={{ color: '#fff', fontSize: 11, fontFamily: 'Nunito_700Bold' }} numberOfLines={1}>{c.speciesName}</Text>
+                        {c.weightKg != null && <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 10 }}>{c.weightKg} кг</Text>}
+                      </LinearGradient>
+                    </>
+                  ) : (
+                    <View style={S.catchEmpty}>
+                      <Text style={{ fontSize: 28 }}>🐟</Text>
+                      <Text style={{ fontSize: 10, color: textColor, fontFamily: 'Nunito_600SemiBold', textAlign: 'center', marginTop: 4 }} numberOfLines={2}>{c.speciesName}</Text>
+                    </View>
+                  )}
+                </Pressable>
+              ))}
+            </ScrollView>
+          </>
+        )}
 
-      <SectionHeader hint="НАВИГАЦИЯ" title="Полезни секции" subtitle="Директни връзки към основните функции." />
-      <ListRow
-        icon="images-outline"
-        iconTint={colors.accent}
-        title="Седмични и месечни класации"
-        subtitle="Класики, награди и снимка на седмицата"
-        onPress={() => navigation.navigate('ProfileTab', { screen: 'Classics' })}
-      />
-      <ListRow
-        icon="fish-outline"
-        iconTint={colors.primary}
-        title="Видове риби"
-        subtitle="Описания, сезони, съвети и въжени възли"
-        onPress={() => navigation.navigate('ProfileTab', { screen: 'Species', params: { screen: 'SpeciesList' } })}
-      />
+        {/* ── Classics highlight ── */}
+        {topClassic?.item.photoUri && (
+          <>
+            <View style={S.sectionRow}>
+              <View style={S.sectionLeft}>
+                <View style={[S.sectionAccent, { backgroundColor: '#FFD700' }]} />
+                <Text style={[S.sectionLabel, { color: mutedColor }]}>Снимка на седмицата</Text>
+              </View>
+              <Pressable onPress={() => navigation.navigate('ProfileTab', { screen: 'Classics' })} hitSlop={8}>
+                <Text style={[S.sectionLink, { color: primary }]}>Класики →</Text>
+              </Pressable>
+            </View>
+            <Pressable style={S.classicsCard} onPress={() => navigation.navigate('ProfileTab', { screen: 'Classics' })}>
+              <Image source={{ uri: topClassic.item.photoUri }} contentFit="cover" style={StyleSheet.absoluteFillObject} />
+              <LinearGradient colors={['transparent', 'rgba(0,0,0,0.85)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={S.classicsOverlay}>
+                <Text style={S.classicsOwner}>{topClassic.item.ownerName ?? 'Рибар'}</Text>
+                <Text style={S.classicsTitle} numberOfLines={1}>{topClassic.item.photoTitle ?? topClassic.item.speciesName}</Text>
+                <View style={S.classicsActions}>
+                  <View style={S.classicsLike}>
+                    <Ionicons name="heart" size={12} color="#ff6b6b" />
+                    <Text style={{ fontSize: 12, fontFamily: 'Nunito_700Bold', color: '#fff' }}>{topClassic.likes}</Text>
+                  </View>
+                  <View style={[S.classicsVote, { backgroundColor: accent }]}>
+                    <Ionicons name="heart-outline" size={12} color="#fff" />
+                    <Text style={{ fontSize: 12, fontFamily: 'Nunito_700Bold', color: '#fff' }}>Гласувай</Text>
+                  </View>
+                </View>
+              </LinearGradient>
+              <View style={S.classicsBadge}>
+                <Text style={{ fontSize: 13 }}>🥇</Text>
+                <Text style={{ fontSize: 10, fontFamily: 'Nunito_800ExtraBold', color: '#2a1800' }}>ПОБЕДИТЕЛ</Text>
+              </View>
+            </Pressable>
+          </>
+        )}
 
-      <View style={{ height: spacing.md }} />
+        {/* ── Personal best — cinematic card ── */}
+        {bestThisMonth && (
+          <>
+            <View style={S.sectionRow}>
+              <View style={S.sectionLeft}>
+                <View style={[S.sectionAccent, { backgroundColor: accent }]} />
+                <Text style={[S.sectionLabel, { color: mutedColor }]}>Личен рекорд — този месец</Text>
+              </View>
+            </View>
+            <Pressable
+              style={[S.pbCard, { backgroundColor: cardBg }]}
+              onPress={() => navigation.navigate('LogbookTab', { screen: 'LogbookList' })}
+            >
+              {bestThisMonth.photoUri ? (
+                <>
+                  <Image
+                    source={{ uri: bestThisMonth.photoUri }}
+                    style={S.pbCoverImage}
+                    contentFit="cover"
+                  />
+                  <LinearGradient
+                    colors={['rgba(0,0,0,0.05)', 'rgba(0,0,0,0.55)']}
+                    start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+                    style={S.pbGradient}
+                  />
+                </>
+              ) : (
+                <LinearGradient
+                  colors={[primary + '33', primary + '11']}
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                  style={S.pbNoCover}
+                >
+                  <Text style={{ fontSize: 44 }}>🏆</Text>
+                  {bestThisMonth.weightKg != null && (
+                    <Text style={{ fontSize: 22, fontFamily: 'Nunito_800ExtraBold', color: accent, marginTop: 4 }}>
+                      {bestThisMonth.weightKg} кг
+                    </Text>
+                  )}
+                </LinearGradient>
+              )}
+              <View style={[S.pbBody, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: cardBorder }]}>
+                <View style={S.pbStats}>
+                  <Text style={[S.pbSpecies, { color: textColor }]}>{bestThisMonth.speciesName}</Text>
+                  <Text style={[S.pbWeight, { color: accent }]}>
+                    {bestThisMonth.weightKg != null ? `${bestThisMonth.weightKg} кг` : '—'}
+                    {bestThisMonth.lengthCm != null ? ` · ${bestThisMonth.lengthCm} см` : ''}
+                  </Text>
+                  <Text style={[S.pbDate, { color: mutedColor }]}>
+                    {new Date(bestThisMonth.date).toLocaleDateString('bg-BG', { day: 'numeric', month: 'long' })}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={mutedColor} />
+              </View>
+            </Pressable>
+          </>
+        )}
+
+        {/* ── Feature tiles — horizontal scroll ── */}
+        <View style={S.sectionRow}>
+          <View style={S.sectionLeft}>
+            <View style={[S.sectionAccent, { backgroundColor: primary }]} />
+            <Text style={[S.sectionLabel, { color: mutedColor }]}>Бърз достъп</Text>
+          </View>
+        </View>
+        <ScrollView
+          horizontal showsHorizontalScrollIndicator={false}
+          style={S.featureScroll}
+          contentContainerStyle={{ paddingLeft: spacing.xl, paddingRight: spacing.xl, gap: spacing.sm, paddingBottom: 4 }}
+        >
+          {FEATURES.map((f, i) => (
+            <ScalePressable
+              key={f.label}
+              style={S.featureTile}
+              onPress={featureActions[i]}
+              android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
+            >
+              <LinearGradient
+                colors={f.g}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFillObject}
+              />
+              <Ionicons name={`${f.icon}-outline` as any} size={28} color="#fff" />
+              <View>
+                <Text style={S.featureLabel}>{f.label}</Text>
+                <Text style={S.featureSub} numberOfLines={1}>{f.sub}</Text>
+              </View>
+            </ScalePressable>
+          ))}
+        </ScrollView>
+
+        <View style={{ height: spacing.xxl }} />
+      </View>
     </Screen>
-
-    {/* ── Floating Action Button ── */}
-    <Animated.View
-      style={{
-        position: 'absolute',
-        right: spacing.lg,
-        bottom: insets.bottom + spacing.lg,
-        width: 56,
-        height: 56,
-        borderRadius: 28,
-        backgroundColor: colors.primary,
-        alignItems: 'center',
-        justifyContent: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.25,
-        shadowRadius: 8,
-        elevation: 8,
-        transform: [{ scale: fabScale }],
-      }}
-    >
-      <Pressable
-        onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
-          navigation.navigate('LogbookTab', { screen: 'AddCatch', params: {} });
-        }}
-        style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' }}
-        android_ripple={{ color: 'rgba(255,255,255,0.3)', borderless: true, radius: 28 }}
-      >
-        <Ionicons name="add" size={28} color={colors.white} />
-      </Pressable>
-    </Animated.View>
-    </View>
   );
 }

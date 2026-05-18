@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { View, Text, StyleSheet, FlatList, Pressable, Platform, Animated, ActionSheetIOS, Alert } from 'react-native';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 
+import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
@@ -13,7 +15,7 @@ import { FeedPost, FeedItem } from '../components/FeedPost';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { spacing, typography } from '../theme/typography';
-import { fetchPublicFeed, getFollowing, getUserPublicSummary, type FeedPage } from '../services/cloudSync';
+import { fetchPublicFeed, deletePhotoFromFeedPost, removeFromPublicFeed, getFollowing, getUserPublicSummary, type FeedPage } from '../services/cloudSync';
 import type { DocumentSnapshot } from 'firebase/firestore';
 import { getBlockedUids } from '../services/blockUser';
 import { StoriesRow } from '../components/StoriesRow';
@@ -87,9 +89,16 @@ export default function FeedScreen() {
   const mountedRef = useRef(true);
   const loadingMoreRef = useRef(false);
   const flatListRef = useRef<FlatList<FeedItem>>(null);
+  // Persisted between load/loadMore so pagination passes same ownerUids filter
+  const followingUidsRef = useRef<string[]>([]);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const scrollTopAnim = useRef(new Animated.Value(0)).current;
   const scrollY = useRef(new Animated.Value(0)).current;
+  const [headerHeight, setHeaderHeight] = useState(0);
+
+  // diffClamp: goes up when scrolling down (max 300), down when scrolling up (min 0)
+  const clampedScroll = useRef(Animated.diffClamp(scrollY, 0, 300)).current;
+  const headerTranslate = useRef(Animated.multiply(clampedScroll, -1)).current;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -122,17 +131,27 @@ export default function FeedScreen() {
     if (!configured || !user) return;
     setLoading(true);
     setError(null);
+    const scopeAtRequest = scope;
     try {
-      const [page, followingRows, blockedUids] = await Promise.all([
-        scope === 'all' ? fetchPublicFeed(20) : fetchPublicFeed(100),
+      const [followingRows, blockedUids] = await Promise.all([
         getFollowing(user.uid),
         getBlockedUids(user.uid),
       ]);
-      const followingSet = new Set(followingRows.map((f) => f.uid));
-      let next = page.items.filter((i) => !blockedUids.has(i.ownerUid));
+
+      let page: FeedPage;
       if (scope === 'following') {
-        next = next.filter((i) => followingSet.has(i.ownerUid));
+        const uids = followingRows.map((f) => f.uid).filter((uid) => !blockedUids.has(uid));
+        followingUidsRef.current = uids;
+        page = uids.length > 0 ? await fetchPublicFeed(20, null, uids) : { items: [], lastDoc: null, hasMore: false };
+      } else {
+        followingUidsRef.current = [];
+        page = await fetchPublicFeed(20);
       }
+
+      // Drop the result if the component unmounted or scope changed while we were waiting.
+      if (!mountedRef.current || scopeAtRequest !== scope) return;
+
+      let next = page.items.filter((i) => !blockedUids.has(i.ownerUid));
       setItems(next);
       prefetchBatch(next);
       setLastDoc(page.lastDoc);
@@ -159,10 +178,12 @@ export default function FeedScreen() {
       }
     } catch (e: unknown) {
       captureException(e);
-      setError(formatFirebaseError(e));
+      if (mountedRef.current) setError(formatFirebaseError(e));
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (mountedRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [configured, user, scope, prefetchBatch]);
 
@@ -170,9 +191,14 @@ export default function FeedScreen() {
     if (!configured || !user || !hasMore || loadingMoreRef.current || !lastDoc) return;
     loadingMoreRef.current = true;
     setLoadingMore(true);
+    // Capture scope at request time so a mid-flight scope switch can be detected on return.
+    const scopeAtRequest = scope;
     try {
       const blockedUids = await getBlockedUids(user.uid);
-      const page = await fetchPublicFeed(20, lastDoc);
+      const ownerUids = followingUidsRef.current.length > 0 ? followingUidsRef.current : undefined;
+      const page = await fetchPublicFeed(20, lastDoc, ownerUids);
+      // If the user switched scope or unmounted while this was inflight, drop the result.
+      if (!mountedRef.current || scopeAtRequest !== scope) return;
       const next = page.items.filter((i) => !blockedUids.has(i.ownerUid));
       setItems((prev) => {
         const existingIds = new Set(prev.map((i) => i.id));
@@ -188,11 +214,31 @@ export default function FeedScreen() {
       loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  }, [configured, user, hasMore, lastDoc, prefetchBatch]);
+  }, [configured, user, hasMore, lastDoc, prefetchBatch, scope]);
+
+  const lastLoadRef = useRef<number>(0);
+  const loadRef = useRef(load);
+  useEffect(() => { loadRef.current = load; }, [load]);
 
   useEffect(() => {
-    if (user && configured) load();
+    if (user && configured) {
+      load();
+      lastLoadRef.current = Date.now();
+    }
   }, [load, user, configured]);
+
+  // Refresh feed when returning to this tab if data is >= 30s old.
+  // This catches the case where a catch was just shared publicly from AddCatch
+  // (cloud sync runs in the background after navigation, so the feed needs a refresh).
+  useFocusEffect(
+    useCallback(() => {
+      if (!user || !configured) return;
+      if (Date.now() - lastLoadRef.current >= 8_000) {
+        loadRef.current();
+        lastLoadRef.current = Date.now();
+      }
+    }, [user, configured])
+  );
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -215,6 +261,43 @@ export default function FeedScreen() {
     return items.filter((i) => { if (seen.has(i.id)) return false; seen.add(i.id); return true; });
   }, [items]);
 
+  const onDeletePhoto = useCallback(async (feedItem: FeedItem) => {
+    if (!user) return;
+    Alert.alert('Изтрий снимката', 'Сигурен ли си? Снимката ще бъде премахната от публикацията.', [
+      { text: 'Отказ', style: 'cancel' },
+      {
+        text: 'Изтрий', style: 'destructive', onPress: async () => {
+          try {
+            await deletePhotoFromFeedPost(feedItem.id, user.uid);
+            setItems((prev) => prev.map((i) => i.id === feedItem.id
+              ? { ...i, photoUri: undefined, photoStoragePath: undefined, photoTitle: undefined, extraPhotoUris: undefined }
+              : i
+            ));
+          } catch {
+            Alert.alert('Грешка', 'Снимката не можа да бъде изтрита. Опитай отново.');
+          }
+        },
+      },
+    ]);
+  }, [user]);
+
+  const onRemovePost = useCallback(async (feedItem: FeedItem) => {
+    if (!user) return;
+    Alert.alert('Премахни от лентата', 'Публикацията ще бъде скрита от лентата на всички. Уловът остава в дневника ти.', [
+      { text: 'Отказ', style: 'cancel' },
+      {
+        text: 'Премахни', style: 'destructive', onPress: async () => {
+          try {
+            await removeFromPublicFeed(feedItem.id, user.uid);
+            setItems((prev) => prev.filter((i) => i.id !== feedItem.id));
+          } catch {
+            Alert.alert('Грешка', 'Публикацията не можа да бъде премахната. Опитай отново.');
+          }
+        },
+      },
+    ]);
+  }, [user]);
+
   const renderItem = useCallback(({ item }: { item: FeedItem }) => (
     <FeedPost
       item={item}
@@ -226,8 +309,10 @@ export default function FeedScreen() {
       socialEnabled={socialEnabled}
       isVisible={visibleIds.has(item.id)}
       onPressAuthor={onPressAuthor}
+      onDeletePhoto={onDeletePhoto}
+      onRemovePost={onRemovePost}
     />
-  ), [user?.uid, myDisplayName, myPhotoUrl, avatarMap, socialEnabled, visibleIds, onPressAuthor, onPressCatch]);
+  ), [user?.uid, myDisplayName, myPhotoUrl, avatarMap, socialEnabled, visibleIds, onPressAuthor, onPressCatch, onDeletePhoto, onRemovePost]);
 
   // No separator — each post has its own bottom border
   const ItemSeparator = useCallback(() => null, []);
@@ -289,79 +374,67 @@ export default function FeedScreen() {
     }
   }, [navigation]);
 
-  /** Minimal Instagram-style top bar, shared across all states */
-  const TopBar = () => (
-    <View style={[styles.topBar, { paddingTop: insets.top + spacing.sm }]}>
-      <Text style={styles.topBarTitle}>Лента</Text>
-      {/* Notifications */}
-      <Pressable
-        onPress={() => navigation.navigate('Notifications')}
-        hitSlop={8}
-        style={styles.iconBtn}
-        accessibilityLabel="Известия"
-      >
-        <View style={{ position: 'relative' }}>
-          <Ionicons
-            name={unreadNotifCount > 0 ? 'notifications' : 'notifications-outline'}
-            size={24}
-            color={colors.text}
-          />
-          {unreadNotifCount > 0 && (
-            <View style={{
-              position: 'absolute', top: -4, right: -6,
-              backgroundColor: '#e53935', borderRadius: 8,
-              minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center',
-              paddingHorizontal: 3,
-            }}>
-              <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700', lineHeight: 12 }}>
-                {unreadNotifCount > 99 ? '99+' : unreadNotifCount}
-              </Text>
-            </View>
-          )}
-        </View>
-      </Pressable>
-      {/* Search */}
-      <Pressable
-        onPress={() => navigation.navigate('Search')}
-        hitSlop={8}
-        style={styles.iconBtn}
-        accessibilityLabel="Търси"
-      >
-        <Ionicons name="search-outline" size={24} color={colors.text} />
-      </Pressable>
-      {/* Overflow */}
-      <Pressable onPress={openOverflow} hitSlop={8} style={styles.iconBtn} accessibilityLabel="Още">
-        <Ionicons name="ellipsis-horizontal" size={24} color={colors.text} />
-      </Pressable>
-    </View>
-  );
+  const glassBtn = {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)',
+    alignItems: 'center' as const, justifyContent: 'center' as const,
+  };
 
-  /** ListHeaderComponent: stories row + scope tabs */
-  const ListHeader = useMemo(() => (
-    <>
-      <StoriesRow />
-      <View style={styles.segmentRow}>
+  const Hero = (
+    <LinearGradient
+      colors={['#0A2550', '#1570B8', '#1A8FE3']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={{ paddingTop: insets.top + 8, paddingBottom: 52, paddingHorizontal: spacing.lg }}
+    >
+      {/* Title + action buttons */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Text style={{ fontSize: 28, fontWeight: '800', color: '#fff', flex: 1, letterSpacing: -0.5 }}>Лента</Text>
+        <Pressable onPress={() => navigation.navigate('Notifications')} hitSlop={8} style={glassBtn} accessibilityLabel="Известия">
+          <View style={{ position: 'relative' }}>
+            <Ionicons name={unreadNotifCount > 0 ? 'notifications' : 'notifications-outline'} size={22} color="#fff" />
+            {unreadNotifCount > 0 && (
+              <View style={{ position: 'absolute', top: -4, right: -6, backgroundColor: '#e53935', borderRadius: 8, minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 }}>
+                <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700', lineHeight: 12 }}>
+                  {unreadNotifCount > 99 ? '99+' : unreadNotifCount}
+                </Text>
+              </View>
+            )}
+          </View>
+        </Pressable>
+        <Pressable onPress={() => navigation.navigate('Search')} hitSlop={8} style={glassBtn} accessibilityLabel="Търси">
+          <Ionicons name="search-outline" size={22} color="#fff" />
+        </Pressable>
+        <Pressable onPress={openOverflow} hitSlop={8} style={glassBtn} accessibilityLabel="Още">
+          <Ionicons name="ellipsis-horizontal" size={22} color="#fff" />
+        </Pressable>
+      </View>
+
+      {/* Scope tabs */}
+      <View style={{ flexDirection: 'row', marginTop: spacing.md, backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', overflow: 'hidden' }}>
         <Pressable
           onPress={() => { if (scope !== 'all') { setItems([]); setScope('all'); void Haptics.selectionAsync(); } }}
-          style={[styles.segmentTab, { borderBottomWidth: 2, borderBottomColor: scope === 'all' ? colors.primary : 'transparent' }]}
+          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, backgroundColor: scope === 'all' ? 'rgba(255,255,255,0.2)' : 'transparent', borderRadius: 12 }}
         >
-          <Ionicons name="grid-outline" size={22} color={scope === 'all' ? colors.primary : colors.textMuted} />
+          <Ionicons name="grid-outline" size={18} color="#fff" />
+          <Text style={{ fontSize: 13, fontWeight: '700', color: '#fff' }}>Всички</Text>
         </Pressable>
         <Pressable
           onPress={() => { if (scope !== 'following') { setItems([]); setScope('following'); void Haptics.selectionAsync(); } }}
-          style={[styles.segmentTab, { borderBottomWidth: 2, borderBottomColor: scope === 'following' ? colors.primary : 'transparent' }]}
+          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, backgroundColor: scope === 'following' ? 'rgba(255,255,255,0.2)' : 'transparent', borderRadius: 12 }}
         >
-          <Ionicons name="people-outline" size={22} color={scope === 'following' ? colors.primary : colors.textMuted} />
+          <Ionicons name="people-outline" size={18} color="#fff" />
+          <Text style={{ fontSize: 13, fontWeight: '700', color: '#fff' }}>Следвани</Text>
         </Pressable>
       </View>
-    </>
-  ), [scope, colors, styles]);
+    </LinearGradient>
+  );
 
-  if (!configured) {
-    return (
-      <Screen padded={false} safeAreaEdges={['left', 'right']}>
-        <TopBar />
-        <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg }}>
+  const waveContent = (() => {
+    if (!configured) {
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg, paddingTop: headerHeight + spacing.lg }}>
           <Card>
             <Text style={styles.warnTitle}>Социалната част изисква Firebase</Text>
             <Text style={styles.warnBody}>
@@ -370,148 +443,155 @@ export default function FeedScreen() {
             </Text>
           </Card>
         </View>
-      </Screen>
-    );
-  }
-
-  if (!user) {
-    return (
-      <Screen padded={false} safeAreaEdges={['left', 'right']}>
-        <TopBar />
-        <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg }}>
+      );
+    }
+    if (!user) {
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg, paddingTop: headerHeight + spacing.lg }}>
           <Card>
             <Text style={styles.warnTitle}>Влез в акаунта си</Text>
             <Text style={styles.warnBody}>За да видиш улова на други риболовци, трябва да си влязъл.</Text>
             <Button title="Вход / Регистрация" onPress={() => navigation.navigate('Auth')} style={{ marginTop: spacing.md }} />
           </Card>
         </View>
-      </Screen>
-    );
-  }
-
-  return (
-    <Screen padded={false} safeAreaEdges={['left', 'right']}>
-      <TopBar />
-
-      {loading && items.length === 0 ? (
-        <>
-          {ListHeader}
-          <FeedSkeleton />
-        </>
-      ) : error && items.length === 0 ? (
-        <>
-          {ListHeader}
-          <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg }}>
-            <Card>
-              <Text style={styles.warnTitle}>Неуспешно зареждане</Text>
-              <Text style={styles.warnBody}>{error}</Text>
-              <Button title="Опитай отново" onPress={() => load()} style={{ marginTop: spacing.md }} />
-            </Card>
-          </View>
-        </>
-      ) : items.length === 0 ? (
-        <>
-          {ListHeader}
-          <View style={{ flex: 1, justifyContent: 'center' }}>
-            <EmptyState
-              icon="layers-outline"
-              title={scope === 'following' ? 'Няма публикации от следваните' : 'Тук още е тихо'}
-              subtitle={
-                scope === 'following'
-                  ? 'Следвай риболовци от „Приятели", за да виждаш само техните публични улови тук.'
-                  : 'Когато други споделят улов, ще го виждаш тук. Сподели и твоя — Дневник → улов → „Сподели публично".'
-              }
-            />
-            {scope === 'following' ? (
-              <View style={{ paddingHorizontal: spacing.xl, marginTop: spacing.md }}>
-                <Button title="Към приятели" onPress={() => navigation.navigate('Friends')} />
-              </View>
-            ) : null}
-          </View>
-        </>
-      ) : (
-        <View style={{ flex: 1 }}>
-          <FlatList
-            ref={flatListRef}
-            data={displayedItems}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.listContent}
-            ListHeaderComponent={ListHeader}
-            refreshControl={
-              <FishingRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+      );
+    }
+    if (loading && items.length === 0) {
+      return <View style={{ paddingTop: headerHeight }}><FeedSkeleton /></View>;
+    }
+    if (error && items.length === 0) {
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', padding: spacing.lg, paddingTop: headerHeight + spacing.lg }}>
+          <Card>
+            <Text style={styles.warnTitle}>Неуспешно зареждане</Text>
+            <Text style={styles.warnBody}>{error}</Text>
+            <Button title="Опитай отново" onPress={() => load()} style={{ marginTop: spacing.md }} />
+          </Card>
+        </View>
+      );
+    }
+    if (items.length === 0) {
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', paddingTop: headerHeight }}>
+          <EmptyState
+            icon="layers-outline"
+            title={scope === 'following' ? 'Няма публикации от следваните' : 'Тук още е тихо'}
+            subtitle={
+              scope === 'following'
+                ? 'Следвай риболовци от „Приятели", за да виждаш само техните публични улови тук.'
+                : 'Когато други споделят улов, ще го виждаш тук. Сподели и твоя — Дневник → улов → „Сподели публично".'
             }
-            ItemSeparatorComponent={ItemSeparator}
-            showsVerticalScrollIndicator={false}
-            onEndReached={loadMore}
-            onEndReachedThreshold={0.4}
-            onScroll={onScroll}
-            scrollEventThrottle={16}
-            removeClippedSubviews={Platform.OS === 'android'}
-            maxToRenderPerBatch={8}
-            windowSize={5}
-            initialNumToRender={6}
-            updateCellsBatchingPeriod={50}
-            ListEmptyComponent={null}
-            ListFooterComponent={
-              loadingMore ? (
-                <FeedSkeleton />
-              ) : hasMore ? (
-                <View style={{ height: spacing.lg }} />
-              ) : !loadingMore && !hasMore && displayedItems.length > 0 ? (
-                <View style={{ alignItems: 'center', paddingVertical: spacing.xxl }}>
-                  <Text style={{ fontSize: 36 }}>🎣</Text>
-                  <Text style={[typography.h3, { color: colors.text, marginTop: spacing.sm, textAlign: 'center' }]}>
-                    Стигна до края на лентата
-                  </Text>
-                  <Text style={[typography.body, { color: colors.textMuted, marginTop: spacing.xs, textAlign: 'center' }]}>
-                    Публикувай и ти — отвори Дневник и сподели улов.
-                  </Text>
-                  <Button
-                    title="Запиши улов"
-                    onPress={() => (navigation as any).navigate('LogbookTab', { screen: 'LogbookList' })}
-                    style={{ marginTop: spacing.lg }}
-                  />
-                </View>
-              ) : null
-            }
-            {...keyboardAwareScrollProps}
-            renderItem={renderItem}
-            onViewableItemsChanged={onViewableItemsChanged}
-            viewabilityConfig={viewabilityConfig}
           />
-          <Animated.View
-            pointerEvents={showScrollTop ? 'auto' : 'none'}
+          {scope === 'following' ? (
+            <View style={{ paddingHorizontal: spacing.xl, marginTop: spacing.md }}>
+              <Button title="Към приятели" onPress={() => navigation.navigate('Friends')} />
+            </View>
+          ) : null}
+        </View>
+      );
+    }
+    return (
+      <View style={{ flex: 1 }}>
+        <FlatList
+          ref={flatListRef}
+          data={displayedItems}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={[styles.listContent, { paddingTop: headerHeight }]}
+          refreshControl={<FishingRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          ItemSeparatorComponent={ItemSeparator}
+          showsVerticalScrollIndicator={false}
+          onEndReached={loadMore}
+          onEndReachedThreshold={0.4}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          removeClippedSubviews={Platform.OS === 'android'}
+          maxToRenderPerBatch={8}
+          windowSize={5}
+          initialNumToRender={6}
+          updateCellsBatchingPeriod={50}
+          ListEmptyComponent={null}
+          ListFooterComponent={
+            loadingMore ? (
+              <FeedSkeleton />
+            ) : hasMore ? (
+              <View style={{ height: spacing.lg }} />
+            ) : !loadingMore && !hasMore && displayedItems.length > 0 ? (
+              <View style={{ alignItems: 'center', paddingVertical: spacing.xxl }}>
+                <Text style={{ fontSize: 36 }}>🎣</Text>
+                <Text style={[typography.h3, { color: colors.text, marginTop: spacing.sm, textAlign: 'center' }]}>
+                  Стигна до края на лентата
+                </Text>
+                <Text style={[typography.body, { color: colors.textMuted, marginTop: spacing.xs, textAlign: 'center' }]}>
+                  Публикувай и ти — отвори Дневник и сподели улов.
+                </Text>
+                <Button
+                  title="Запиши улов"
+                  onPress={() => (navigation as any).navigate('LogbookTab', { screen: 'LogbookList' })}
+                  style={{ marginTop: spacing.lg }}
+                />
+              </View>
+            ) : null
+          }
+          {...keyboardAwareScrollProps}
+          renderItem={renderItem}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={viewabilityConfig}
+        />
+        <Animated.View
+          pointerEvents={showScrollTop ? 'auto' : 'none'}
+          style={{
+            position: 'absolute',
+            bottom: spacing.xl,
+            alignSelf: 'center',
+            opacity: scrollTopAnim,
+            transform: [{ scale: scrollTopAnim.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1] }) }],
+          }}
+        >
+          <Pressable
+            onPress={scrollToTop}
             style={{
-              position: 'absolute',
-              bottom: spacing.xl,
-              alignSelf: 'center',
-              opacity: scrollTopAnim,
-              transform: [{ scale: scrollTopAnim.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1] }) }],
+              backgroundColor: colors.primary,
+              borderRadius: 20,
+              paddingHorizontal: spacing.md,
+              paddingVertical: spacing.sm,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.25,
+              shadowRadius: 4,
+              elevation: 6,
             }}
           >
-            <Pressable
-              onPress={scrollToTop}
-              style={{
-                backgroundColor: colors.primary,
-                borderRadius: 20,
-                paddingHorizontal: spacing.md,
-                paddingVertical: spacing.sm,
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 6,
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.25,
-                shadowRadius: 4,
-                elevation: 6,
-              }}
-            >
-              <Ionicons name="arrow-up" size={16} color={colors.white} />
-              <Text style={{ ...typography.small, color: colors.white, fontWeight: '700' }}>Нагоре</Text>
-            </Pressable>
-          </Animated.View>
+            <Ionicons name="arrow-up" size={16} color={colors.white} />
+            <Text style={{ ...typography.small, color: colors.white, fontWeight: '700' }}>Нагоре</Text>
+          </Pressable>
+        </Animated.View>
+      </View>
+    );
+  })();
+
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      {/* Collapsible header — slides up on scroll, re-appears on scroll back */}
+      <Animated.View
+        style={{
+          position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
+          transform: [{ translateY: headerTranslate }],
+        }}
+        onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
+      >
+        {Hero}
+        <View style={{ backgroundColor: colors.background, borderTopLeftRadius: 32, borderTopRightRadius: 32, marginTop: -32 }}>
+          <StoriesRow />
         </View>
-      )}
-    </Screen>
+      </Animated.View>
+
+      {/* Full-screen content — each branch handles its own paddingTop */}
+      <View style={{ flex: 1 }}>
+        {waveContent}
+      </View>
+    </View>
   );
 }

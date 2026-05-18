@@ -91,7 +91,8 @@
       "expo-font",
       "expo-web-browser",
       "expo-apple-authentication",
-      "@sentry/react-native"
+      "@sentry/react-native",
+      "expo-sqlite"
     ],
     "extra": {
       "eas": {

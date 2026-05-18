@@ -102,7 +102,26 @@ function fishRating(p: {
   return Math.max(1, Math.min(5, Math.round(s)));
 }
 
+const _weatherCache = new Map<string, { data: WeatherSnapshot; at: number }>();
+const _forecastCache = new Map<string, { data: ForecastDay[]; at: number }>();
+const WEATHER_TTL = 10 * 60 * 1000;
+
+async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
+  let last: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try { return await fn(); } catch (e) {
+      last = e;
+      if (i < attempts - 1) await new Promise(r => setTimeout(r, 1000 * 2 ** i));
+    }
+  }
+  throw last;
+}
+
 export async function fetchWeather(latitude: number, longitude: number): Promise<WeatherSnapshot> {
+  const key = `${latitude.toFixed(3)}_${longitude.toFixed(3)}`;
+  const hit = _weatherCache.get(key);
+  if (hit && Date.now() - hit.at < WEATHER_TTL) return hit.data;
+
   const url =
     `https://api.open-meteo.com/v1/forecast` +
     `?latitude=${latitude}&longitude=${longitude}` +
@@ -111,61 +130,66 @@ export async function fetchWeather(latitude: number, longitude: number): Promise
     `&hourly=uv_index,precipitation_probability` +
     `&forecast_days=1&timezone=auto`;
 
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Времето: HTTP ${res.status}`);
-  const json = await res.json();
-  if (!json?.current) throw new Error('Времето: неочакван формат на отговора');
+  const result = await withRetry(async () => {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Времето: HTTP ${res.status}`);
+    const json = await res.json();
+    if (!json?.current) throw new Error('Времето: неочакван формат на отговора');
 
-  const c = json.current as {
-    time: string;
-    temperature_2m: number;
-    apparent_temperature: number;
-    relative_humidity_2m: number;
-    weather_code: number;
-    surface_pressure: number;
-    wind_speed_10m: number;
-    wind_direction_10m: number;
-    wind_gusts_10m: number;
-    cloud_cover: number;
-  };
+    const c = json.current as {
+      time: string;
+      temperature_2m: number;
+      apparent_temperature: number;
+      relative_humidity_2m: number;
+      weather_code: number;
+      surface_pressure: number;
+      wind_speed_10m: number;
+      wind_direction_10m: number;
+      wind_gusts_10m: number;
+      cloud_cover: number;
+    };
 
-  // Намираме текущия час в hourly масива
-  const hourlyTimes: string[] = json.hourly?.time ?? [];
-  const hourlyIdx = hourlyTimes.findIndex((t: string) => t === c.time);
-  const uvIndex: number = hourlyIdx >= 0 ? (json.hourly.uv_index[hourlyIdx] ?? 0) : 0;
-  const precipProb: number = hourlyIdx >= 0 ? (json.hourly.precipitation_probability[hourlyIdx] ?? 0) : 0;
+    // Намираме текущия час в hourly масива
+    const hourlyTimes: string[] = json.hourly?.time ?? [];
+    const hourlyIdx = hourlyTimes.findIndex((t: string) => t === c.time);
+    const uvIndex: number = hourlyIdx >= 0 ? (json.hourly.uv_index[hourlyIdx] ?? 0) : 0;
+    const precipProb: number = hourlyIdx >= 0 ? (json.hourly.precipitation_probability[hourlyIdx] ?? 0) : 0;
 
-  const moon = calcMoonPhase(new Date());
-  const code = c.weather_code;
-  const windKmh = Math.round(c.wind_speed_10m * 10) / 10;
-  const windGustKmh = Math.round(c.wind_gusts_10m * 10) / 10;
+    const moon = calcMoonPhase(new Date());
+    const code = c.weather_code;
+    const windKmh = Math.round(c.wind_speed_10m * 10) / 10;
+    const windGustKmh = Math.round(c.wind_gusts_10m * 10) / 10;
 
-  return {
-    weatherCode: code,
-    temperatureC: Math.round(c.temperature_2m * 10) / 10,
-    feelsLikeC: Math.round(c.apparent_temperature * 10) / 10,
-    description: wmoLabel(code),
-    fishingRating: fishRating({
-      code,
+    return {
+      weatherCode: code,
+      temperatureC: Math.round(c.temperature_2m * 10) / 10,
+      feelsLikeC: Math.round(c.apparent_temperature * 10) / 10,
+      description: wmoLabel(code),
+      fishingRating: fishRating({
+        code,
+        windKmh,
+        windGustKmh,
+        pressureHpa: c.surface_pressure,
+        cloudCover: c.cloud_cover,
+        uvIndex,
+        moonPhase: moon.phase,
+        precipProbability: precipProb,
+      }),
       windKmh,
       windGustKmh,
-      pressureHpa: c.surface_pressure,
-      cloudCover: c.cloud_cover,
-      uvIndex,
+      windDirection: Math.round(c.wind_direction_10m),
+      pressureHpa: Math.round(c.surface_pressure * 10) / 10,
+      humidity: Math.round(c.relative_humidity_2m),
+      cloudCover: Math.round(c.cloud_cover),
+      uvIndex: Math.round(uvIndex * 10) / 10,
+      precipitationProbability: Math.round(precipProb),
       moonPhase: moon.phase,
-      precipProbability: precipProb,
-    }),
-    windKmh,
-    windGustKmh,
-    windDirection: Math.round(c.wind_direction_10m),
-    pressureHpa: Math.round(c.surface_pressure * 10) / 10,
-    humidity: Math.round(c.relative_humidity_2m),
-    cloudCover: Math.round(c.cloud_cover),
-    uvIndex: Math.round(uvIndex * 10) / 10,
-    precipitationProbability: Math.round(precipProb),
-    moonPhase: moon.phase,
-    moonPhaseName: moon.name,
-  };
+      moonPhaseName: moon.name,
+    };
+  });
+
+  _weatherCache.set(key, { data: result, at: Date.now() });
+  return result;
 }
 
 const WIND_LABELS = ['С', 'СИ', 'И', 'ЮИ', 'Ю', 'ЮЗ', 'З', 'СЗ'];
@@ -188,44 +212,53 @@ export type ForecastDay = {
 const DAY_NAMES_BG = ['Нд', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
 
 export async function fetchForecast(latitude: number, longitude: number): Promise<ForecastDay[]> {
+  const key = `${latitude.toFixed(3)}_${longitude.toFixed(3)}`;
+  const hit = _forecastCache.get(key);
+  if (hit && Date.now() - hit.at < WEATHER_TTL) return hit.data;
+
   const url =
     `https://api.open-meteo.com/v1/forecast` +
     `?latitude=${latitude}&longitude=${longitude}` +
     `&daily=weather_code,temperature_2m_max,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max,cloud_cover_mean` +
     `&forecast_days=7&timezone=auto`;
 
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Прогноза: HTTP ${res.status}`);
-  const json = await res.json();
+  const result = await withRetry(async () => {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Прогноза: HTTP ${res.status}`);
+    const json = await res.json();
 
-  const dates: string[] = json.daily?.time ?? [];
-  return dates.map((dateStr, i) => {
-    const date = new Date(dateStr);
-    const moon = calcMoonPhase(date);
-    const code: number = json.daily.weather_code[i] ?? 0;
-    const windKmh: number = Math.round((json.daily.wind_speed_10m_max[i] ?? 0) * 10) / 10;
-    const precipProb: number = json.daily.precipitation_probability_max[i] ?? 0;
-    const cloudCover: number = json.daily.cloud_cover_mean[i] ?? 50;
+    const dates: string[] = json.daily?.time ?? [];
+    return dates.map((dateStr, i) => {
+      const date = new Date(dateStr);
+      const moon = calcMoonPhase(date);
+      const code: number = json.daily.weather_code[i] ?? 0;
+      const windKmh: number = Math.round((json.daily.wind_speed_10m_max[i] ?? 0) * 10) / 10;
+      const precipProb: number = json.daily.precipitation_probability_max[i] ?? 0;
+      const cloudCover: number = json.daily.cloud_cover_mean[i] ?? 50;
 
-    const rating = fishRating({
-      code,
-      windKmh,
-      windGustKmh: json.daily.wind_gusts_10m_max[i] ?? windKmh,
-      pressureHpa: 1013,
-      cloudCover,
-      uvIndex: 0,
-      moonPhase: moon.phase,
-      precipProbability: precipProb,
+      const rating = fishRating({
+        code,
+        windKmh,
+        windGustKmh: json.daily.wind_gusts_10m_max[i] ?? windKmh,
+        pressureHpa: 1013,
+        cloudCover,
+        uvIndex: 0,
+        moonPhase: moon.phase,
+        precipProbability: precipProb,
+      });
+
+      return {
+        dateIso: dateStr,
+        dayLabel: i === 0 ? 'Днес' : i === 1 ? 'Утре' : DAY_NAMES_BG[date.getDay()] ?? '',
+        fishingRating: rating,
+        maxTempC: Math.round(json.daily.temperature_2m_max[i] ?? 0),
+        precipProbability: Math.round(precipProb),
+        weatherCode: code,
+        moonPhaseName: moon.name,
+      };
     });
-
-    return {
-      dateIso: dateStr,
-      dayLabel: i === 0 ? 'Днес' : i === 1 ? 'Утре' : DAY_NAMES_BG[date.getDay()] ?? '',
-      fishingRating: rating,
-      maxTempC: Math.round(json.daily.temperature_2m_max[i] ?? 0),
-      precipProbability: Math.round(precipProb),
-      weatherCode: code,
-      moonPhaseName: moon.name,
-    };
   });
+
+  _forecastCache.set(key, { data: result, at: Date.now() });
+  return result;
 }

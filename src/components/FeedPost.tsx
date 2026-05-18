@@ -59,7 +59,7 @@ function feedStyles(colors: AppColors) {
       overflow: 'hidden',
     },
     avatarImg: { width: 32, height: 32 },
-    avatarText: { color: colors.white, fontFamily: 'DMSans_700Bold', fontSize: 13 },
+    avatarText: { color: colors.white, fontFamily: 'Nunito_700Bold', fontSize: 13 },
     headerMeta: { flex: 1 },
     headerName: { fontWeight: '700', color: colors.text, fontSize: 14 },
     headerSub: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
@@ -149,9 +149,11 @@ type Props = {
   isVisible?: boolean;
   onPressAuthor: (authorUid: string, displayName: string) => void;
   onPressCatch?: (item: FeedItem) => void;
+  onDeletePhoto?: (item: FeedItem) => void;
+  onRemovePost?: (item: FeedItem) => void;
 };
 
-export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarUrl, socialEnabled, isVisible = true, onPressAuthor, onPressCatch }: Props) {
+export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarUrl, socialEnabled, isVisible = true, onPressAuthor, onPressCatch, onDeletePhoto, onRemovePost }: Props) {
   const { colors, mode } = useTheme();
   const styles = useMemo(() => feedStyles(colors), [colors]);
   const { width: screenWidth } = useWindowDimensions();
@@ -255,20 +257,43 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
 
   const openMoreMenu = () => {
     void Haptics.selectionAsync();
-    const options = isMine
-      ? ['Докладвай', 'Отказ']
-      : ['Докладвай', 'Отказ'];
-    const cancelIdx = options.length - 1;
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        { options, cancelButtonIndex: cancelIdx, destructiveButtonIndex: 0 },
-        (idx) => { if (idx === 0) social.onReportCatch(); }
-      );
+    if (isMine) {
+      const options = [
+        ...(item.photoUri ? ['Изтрий снимката'] : []),
+        'Премахни от лентата',
+        'Отказ',
+      ];
+      const cancelIdx = options.length - 1;
+      const destructiveIdx = 0;
+      if (Platform.OS === 'ios') {
+        ActionSheetIOS.showActionSheetWithOptions(
+          { options, cancelButtonIndex: cancelIdx, destructiveButtonIndex: destructiveIdx },
+          (idx) => {
+            if (item.photoUri && idx === 0) { onDeletePhoto?.(item); return; }
+            if (idx === cancelIdx) return;
+            onRemovePost?.(item);
+          }
+        );
+      } else {
+        const buttons = [
+          ...(item.photoUri ? [{ text: 'Изтрий снимката', style: 'destructive' as const, onPress: () => onDeletePhoto?.(item) }] : []),
+          { text: 'Премахни от лентата', style: 'destructive' as const, onPress: () => onRemovePost?.(item) },
+          { text: 'Отказ', style: 'cancel' as const },
+        ];
+        Alert.alert('Опции', undefined, buttons);
+      }
     } else {
-      Alert.alert('Опции', undefined, [
-        { text: 'Докладвай', style: 'destructive', onPress: social.onReportCatch },
-        { text: 'Отказ', style: 'cancel' },
-      ]);
+      if (Platform.OS === 'ios') {
+        ActionSheetIOS.showActionSheetWithOptions(
+          { options: ['Докладвай', 'Отказ'], cancelButtonIndex: 1, destructiveButtonIndex: 0 },
+          (idx) => { if (idx === 0) social.onReportCatch(); }
+        );
+      } else {
+        Alert.alert('Опции', undefined, [
+          { text: 'Докладвай', style: 'destructive', onPress: social.onReportCatch },
+          { text: 'Отказ', style: 'cancel' },
+        ]);
+      }
     }
   };
 

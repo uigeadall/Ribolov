@@ -15,7 +15,6 @@ import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { EmptyState } from '../components/EmptyState';
 import { Button } from '../components/Button';
-import { SectionHeader } from '../components/SectionHeader';
 import { speciesList } from '../data/species';
 import { imageHeadersForUrl, speciesPhotos } from '../data/speciesPhotos';
 import { Species } from '../types';
@@ -34,31 +33,14 @@ function categoryBand(cat: string): [string, string] {
   }
 }
 
+const S = StyleSheet.create({
+  heroStat: { flex: 1, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 12, padding: 12, alignItems: 'center' },
+  heroStatNum: { fontSize: 24, fontWeight: '800', color: '#fff' },
+  heroStatLbl: { fontSize: 11, color: 'rgba(255,255,255,0.75)', marginTop: 2, textAlign: 'center' },
+});
+
 function createSpeciesListStyles(colors: AppColors) {
   return StyleSheet.create({
-    topBlock: {
-      paddingHorizontal: spacing.xl,
-      paddingTop: spacing.sm,
-    },
-    statsRow: {
-      flexDirection: 'row',
-      gap: spacing.md,
-      paddingHorizontal: spacing.xl,
-      marginTop: spacing.md,
-      marginBottom: spacing.sm,
-    },
-    statBox: {
-      flex: 1,
-      backgroundColor: colors.primarySurface,
-      borderRadius: radius.lg,
-      paddingVertical: spacing.md + 4,
-      paddingHorizontal: spacing.md,
-      borderWidth: 1,
-      borderColor: colors.border,
-      alignItems: 'center',
-    },
-    statNum: { ...typography.h2, fontSize: 26, color: colors.primary, letterSpacing: -0.5 },
-    statLbl: { ...typography.caption, color: colors.textMuted, marginTop: 6, textAlign: 'center', lineHeight: 18 },
     filtersCardInner: { gap: spacing.md },
     filterSectionLabel: {
       ...typography.small,
@@ -125,7 +107,12 @@ function createSpeciesListStyles(colors: AppColors) {
 
 export default function SpeciesScreen() {
   const navigation = useAppNavigation();
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
+  const isDark = mode === 'dark';
+  const heroColors = isDark
+    ? (['#0A1E38', '#050C1A', '#030810'] as const)
+    : (['#2B87CE', '#1570B8', '#0D559A'] as const);
+  const waveColor = isDark ? '#0E1628' : '#FFFFFF';
   const styles = useMemo(() => createSpeciesListStyles(colors), [colors]);
   const [q, setQ] = useState('');
 
@@ -194,107 +181,113 @@ export default function SpeciesScreen() {
     );
   };
 
-  const filtersCard = (
-    <Card style={{ marginHorizontal: spacing.xl, marginBottom: spacing.md }}>
-      <View style={styles.filtersCardInner}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Text style={[styles.filterSectionLabel, { marginBottom: 0 }]}>ТЪРСЕНЕ</Text>
-          {searchActive ? (
-            <Pressable onPress={() => setQ('')} hitSlop={8} style={{ padding: spacing.xs }}>
-              <Text style={{ ...typography.bodyBold, fontSize: 14, color: colors.primary }}>Изчисти</Text>
-            </Pressable>
-          ) : null}
-        </View>
-        <View style={styles.searchWrap}>
-          <Ionicons name="search-outline" size={20} color={colors.textMuted} style={styles.searchIcon} />
-          <TextInput
-            value={q}
-            onChangeText={setQ}
-            placeholder="Име на български или латинско…"
-            placeholderTextColor={colors.textMuted}
-            style={styles.searchInput}
-          />
-        </View>
-      </View>
-    </Card>
-  );
-
   return (
-    <Screen padded={false}>
-      <View style={styles.topBlock}>
-        <SectionHeader hint="СПРАВОЧНИК" title="Видове риби" subtitle={subtitle} />
+    <Screen padded={false} avoidKeyboard={false}>
+      {/* Hero */}
+      <View>
+        <LinearGradient colors={heroColors} style={StyleSheet.absoluteFillObject} pointerEvents="none" />
+        <View style={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 44 }}>
+          <Text style={{ fontSize: 26, fontWeight: '800', color: '#fff', letterSpacing: -0.5 }}>Видове риби</Text>
+          <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.75)', marginTop: 4 }}>{subtitle}</Text>
+          {/* Stats row */}
+          <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
+            <View style={S.heroStat}>
+              <Text style={S.heroStatNum}>{speciesList.length}</Text>
+              <Text style={S.heroStatLbl}>вида в справочника</Text>
+            </View>
+            <View style={S.heroStat}>
+              <Text style={S.heroStatNum}>{filtered.length}</Text>
+              <Text style={S.heroStatLbl}>{searchActive ? 'намерени' : 'показани'}</Text>
+            </View>
+          </View>
+        </View>
       </View>
 
-      <View style={styles.statsRow}>
-        <View style={styles.statBox}>
-          <Text style={styles.statNum}>{speciesList.length}</Text>
-          <Text style={styles.statLbl}>вида в справочника</Text>
-        </View>
-        <View style={styles.statBox}>
-          <Text style={styles.statNum}>{filtered.length}</Text>
-          <Text style={styles.statLbl}>{searchActive ? 'намерени' : 'показани сега'}</Text>
-        </View>
-      </View>
-
-      <Pressable
-        onPress={() => navigation.navigate('WeightCalc')}
-        style={{
-          flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-          marginHorizontal: spacing.xl, marginBottom: spacing.md,
-          padding: spacing.md,
-          backgroundColor: colors.primarySurface,
-          borderRadius: 12,
-          borderWidth: 1,
-          borderColor: colors.border,
-        }}
-      >
-        <View style={{
-          width: 40, height: 40, borderRadius: 10,
-          backgroundColor: colors.primary,
-          alignItems: 'center', justifyContent: 'center',
-        }}>
-          <Ionicons name="scale-outline" size={20} color="#fff" />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={{ ...typography.bodyBold, color: colors.text }}>Калкулатор за размер</Text>
-          <Text style={{ ...typography.small, color: colors.textMuted, marginTop: 2 }}>
-            Дължина ↔ тегло · минимален размер по вид
-          </Text>
-        </View>
-        <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-      </Pressable>
-
-      {filtersCard}
-
-      {filtered.length === 0 ? (
-        <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: spacing.xl }}>
-          <EmptyState
-            icon="search-outline"
-            title="Няма съвпадения"
-            subtitle="Опитай друга дума или провери правописа на латинското име."
-          />
-          <Button title="Изчисти търсенето" variant="secondary" onPress={() => setQ('')} style={{ marginTop: spacing.lg }} />
-        </View>
-      ) : (
-        <FlatList
-          data={filtered}
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          numColumns={2}
-          columnWrapperStyle={{ paddingHorizontal: spacing.md }}
-          removeClippedSubviews={Platform.OS === 'android'}
-          contentContainerStyle={{ paddingHorizontal: spacing.xs, paddingBottom: spacing.xxl }}
-          ListHeaderComponent={
-            <Text style={[styles.listHeaderLabel, { paddingHorizontal: spacing.md, marginBottom: spacing.sm }]}>
-              РЕЗУЛТАТИ ({filtered.length}
-              {searchActive ? ` от ${speciesList.length}` : ''})
+      {/* Wave */}
+      <View style={{ flex: 1, backgroundColor: waveColor, borderTopLeftRadius: 28, borderTopRightRadius: 28, marginTop: -28 }}>
+        {/* Weight calc shortcut */}
+        <Pressable
+          onPress={() => navigation.navigate('WeightCalc')}
+          style={{
+            flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+            margin: 16,
+            padding: spacing.md,
+            backgroundColor: colors.primarySurface,
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: colors.border,
+          }}
+        >
+          <View style={{
+            width: 40, height: 40, borderRadius: 10,
+            backgroundColor: colors.primary,
+            alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Ionicons name="scale-outline" size={20} color="#fff" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ ...typography.bodyBold, color: colors.text }}>Калкулатор за размер</Text>
+            <Text style={{ ...typography.small, color: colors.textMuted, marginTop: 2 }}>
+              Дължина ↔ тегло · минимален размер по вид
             </Text>
-          }
-          ItemSeparatorComponent={() => <View style={{ height: spacing.xs }} />}
-          ListFooterComponent={<View style={styles.listFooterPad} />}
-          {...keyboardAwareScrollProps}
-        />
-      )}
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+        </Pressable>
+
+        {/* Filters card */}
+        <Card style={{ marginHorizontal: 16, marginBottom: spacing.md }}>
+          <View style={styles.filtersCardInner}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={[styles.filterSectionLabel, { marginBottom: 0 }]}>ТЪРСЕНЕ</Text>
+              {searchActive ? (
+                <Pressable onPress={() => setQ('')} hitSlop={8} style={{ padding: spacing.xs }}>
+                  <Text style={{ ...typography.bodyBold, fontSize: 14, color: colors.primary }}>Изчисти</Text>
+                </Pressable>
+              ) : null}
+            </View>
+            <View style={styles.searchWrap}>
+              <Ionicons name="search-outline" size={20} color={colors.textMuted} style={styles.searchIcon} />
+              <TextInput
+                value={q}
+                onChangeText={setQ}
+                placeholder="Име на български или латинско…"
+                placeholderTextColor={colors.textMuted}
+                style={styles.searchInput}
+              />
+            </View>
+          </View>
+        </Card>
+
+        {filtered.length === 0 ? (
+          <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: spacing.xl }}>
+            <EmptyState
+              icon="search-outline"
+              title="Няма съвпадения"
+              subtitle="Опитай друга дума или провери правописа на латинското име."
+            />
+            <Button title="Изчисти търсенето" variant="secondary" onPress={() => setQ('')} style={{ marginTop: spacing.lg }} />
+          </View>
+        ) : (
+          <FlatList
+            data={filtered}
+            keyExtractor={(item) => item.id}
+            renderItem={renderItem}
+            numColumns={2}
+            columnWrapperStyle={{ paddingHorizontal: spacing.md }}
+            removeClippedSubviews={Platform.OS === 'android'}
+            contentContainerStyle={{ paddingHorizontal: spacing.xs, paddingBottom: spacing.xxl }}
+            ListHeaderComponent={
+              <Text style={[styles.listHeaderLabel, { paddingHorizontal: spacing.md, marginBottom: spacing.sm }]}>
+                РЕЗУЛТАТИ ({filtered.length}
+                {searchActive ? ` от ${speciesList.length}` : ''})
+              </Text>
+            }
+            ItemSeparatorComponent={() => <View style={{ height: spacing.xs }} />}
+            ListFooterComponent={<View style={styles.listFooterPad} />}
+            {...keyboardAwareScrollProps}
+          />
+        )}
+      </View>
     </Screen>
   );
 }

@@ -68,8 +68,8 @@ export default function AppSplashScreen() {
 
   return (
     <LinearGradient
-      colors={['#050F12', '#0A2230', '#051A14']}
-      locations={[0, 0.55, 1]}
+      colors={['#030810', '#050C1A', '#0A1A30']}
+      locations={[0, 0.5, 1]}
       style={styles.container}
     >
       {/* Ripple rings */}
@@ -101,7 +101,7 @@ export default function AppSplashScreen() {
         ]}
       >
         <LinearGradient
-          colors={['#007A9A', '#004F64']}
+          colors={['#2A8FD4', '#0D559A']}
           start={{ x: 0.15, y: 0 }}
           end={{ x: 0.85, y: 1 }}
           style={styles.logoCircle}
@@ -144,7 +144,7 @@ const styles = StyleSheet.create({
   ripple: {
     position: 'absolute',
     borderWidth: 1.5,
-    borderColor: '#00C4E8',
+    borderColor: '#4AA8E8',
   },
   logoWrap: {
     alignItems: 'center',
@@ -194,6 +194,6 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#00C4E8',
+    backgroundColor: '#4AA8E8',
   },
 });

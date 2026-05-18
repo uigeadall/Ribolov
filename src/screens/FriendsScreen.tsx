@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import { Skeleton } from '../components/Skeleton';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
@@ -47,8 +48,13 @@ function FriendsSkeleton({ borderColor }: { borderColor: string }) {
 
 export default function FriendsScreen() {
   const navigation = useAppNavigation();
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const { user, configured } = useAuth();
+
+  const heroColors: [string, string, string] = mode === 'dark'
+    ? ['#0A1E38', '#050C1A', '#030810']
+    : ['#2B87CE', '#1570B8', '#0D559A'];
+  const waveColor = mode === 'dark' ? '#0E1628' : '#FFFFFF';
 
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState<SearchUserResult[]>([]);
@@ -60,13 +66,23 @@ export default function FriendsScreen() {
       if (!user) return [] as FollowedRow[];
       const all = await getFollowing(user.uid);
       const summaries = await Promise.all(
-        all.map((r) => getUserPublicSummary(r.uid).catch(() => null)),
+        all.map((r) => getUserPublicSummary(r.uid).then(
+          (s) => s,
+          () => 'error' as const,   // network/Firestore error — keep the follow
+        )),
       );
       const staleUids: string[] = [];
       const active: FollowedRow[] = [];
       all.forEach((r, i) => {
-        if (summaries[i] == null) { staleUids.push(r.uid); }
-        else { active.push({ uid: r.uid, displayName: r.displayName, photoUrl: summaries[i]?.photoUrl }); }
+        const s = summaries[i];
+        if (s === 'error') {
+          // Transient error — don't auto-unfollow, show with no photo
+          active.push({ uid: r.uid, displayName: r.displayName });
+        } else if (s == null) {
+          staleUids.push(r.uid);  // User document gone — safe to unfollow
+        } else {
+          active.push({ uid: r.uid, displayName: r.displayName, photoUrl: s.photoUrl });
+        }
       });
       await Promise.all(staleUids.map((uid) => unfollowUser(user.uid, uid).catch(() => {})));
       return active;
@@ -82,12 +98,36 @@ export default function FriendsScreen() {
   );
 
   const styles = useMemo(() => StyleSheet.create({
-    header: {
-      flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-      paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
-      borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
+    hero: { paddingBottom: 28 + 16 },
+    heroInner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingTop: 16,
+      paddingBottom: 8,
+      gap: 8,
     },
-    title: { ...typography.h2, color: colors.text, flex: 1 },
+    heroTitle: {
+      flex: 1,
+      fontSize: 22,
+      fontWeight: '700',
+      color: '#fff',
+      textAlign: 'center',
+    },
+    backBtn: {
+      width: 40, height: 40,
+      borderRadius: 20,
+      backgroundColor: 'rgba(255,255,255,0.15)',
+      alignItems: 'center', justifyContent: 'center',
+    },
+    wave: {
+      borderTopLeftRadius: 28,
+      borderTopRightRadius: 28,
+      marginTop: -28,
+      flex: 1,
+      backgroundColor: waveColor,
+      overflow: 'hidden',
+    },
     searchWrap: {
       flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
       backgroundColor: colors.surfaceAlt, borderRadius: radius.lg,
@@ -116,7 +156,7 @@ export default function FriendsScreen() {
     },
     name: { ...typography.bodyBold, color: colors.text },
     city: { ...typography.small, color: colors.textMuted, marginTop: 1 },
-  }), [colors]);
+  }), [colors, waveColor]);
 
   const doSearch = useCallback(async (q: string) => {
     if (!configured) return;
@@ -132,9 +172,20 @@ export default function FriendsScreen() {
     }
   }, [configured, user?.uid]);
 
+  // Debounce: only fire the Firestore search 250ms after the user stops typing.
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+  }, []);
+
   const handleSearchChange = (text: string) => {
     setSearch(text);
-    void doSearch(text);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (text.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    searchTimer.current = setTimeout(() => { void doSearch(text); }, 250);
   };
 
   const toggleFollow = useCallback(async (uid: string, displayName: string) => {
@@ -198,91 +249,95 @@ export default function FriendsScreen() {
     );
   };
 
+  const isSearching = search.trim().length >= 2;
+
+  const HeroSection = (
+    <View style={styles.hero}>
+      <LinearGradient colors={heroColors} style={StyleSheet.absoluteFillObject} pointerEvents="none" />
+      <View style={styles.heroInner}>
+        <Pressable onPress={() => navigation.goBack()} hitSlop={8} style={styles.backBtn}>
+          <Ionicons name="chevron-back" size={24} color="#fff" />
+        </Pressable>
+        <Text style={styles.heroTitle}>Приятели</Text>
+        <View style={{ width: 40 }} />
+      </View>
+    </View>
+  );
+
   if (!configured || !user) {
     return (
-      <Screen padded={false}>
-        <View style={styles.header}>
-          <Pressable onPress={() => navigation.goBack()} hitSlop={8}>
-            <Ionicons name="chevron-back" size={28} color={colors.primary} />
-          </Pressable>
-          <Text style={styles.title}>Приятели</Text>
-          <View style={{ width: 28 }} />
+      <Screen padded={false} avoidKeyboard={false}>
+        {HeroSection}
+        <View style={styles.wave}>
+          <EmptyState
+            icon="people-outline"
+            title="Влез в акаунта"
+            subtitle="Следването на рибари изисква вход и Firebase."
+          />
         </View>
-        <EmptyState
-          icon="people-outline"
-          title="Влез в акаунта"
-          subtitle="Следването на рибари изисква вход и Firebase."
-        />
       </Screen>
     );
   }
 
-  const isSearching = search.trim().length >= 2;
-
   return (
-    <Screen padded={false}>
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={8}>
-          <Ionicons name="chevron-back" size={28} color={colors.primary} />
-        </Pressable>
-        <Text style={styles.title}>Приятели</Text>
-        <View style={{ width: 28 }} />
-      </View>
+    <Screen padded={false} avoidKeyboard={false}>
+      {HeroSection}
+      <View style={styles.wave}>
+        <View style={styles.searchWrap}>
+          <Ionicons name="search-outline" size={16} color={colors.textMuted} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Търси рибар по име…"
+            placeholderTextColor={colors.textMuted}
+            value={search}
+            onChangeText={handleSearchChange}
+            autoCapitalize="none"
+            autoCorrect={false}
+            clearButtonMode="while-editing"
+            returnKeyType="search"
+          />
+          {searching && <ActivityIndicator size="small" color={colors.primary} />}
+        </View>
 
-      <View style={styles.searchWrap}>
-        <Ionicons name="search-outline" size={16} color={colors.textMuted} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Търси рибар по име…"
-          placeholderTextColor={colors.textMuted}
-          value={search}
-          onChangeText={handleSearchChange}
-          autoCapitalize="none"
-          autoCorrect={false}
-          clearButtonMode="while-editing"
-          returnKeyType="search"
-        />
-        {searching && <ActivityIndicator size="small" color={colors.primary} />}
+        {isSearching ? (
+          <>
+            <Text style={styles.sectionLabel}>
+              {searching ? 'ТЪРСЕНЕ…' : `РЕЗУЛТАТИ${searchResults.length > 0 ? ` (${searchResults.length})` : ''}`}
+            </Text>
+            {searching && searchResults.length === 0 ? (
+              <FriendsSkeleton borderColor={colors.border} />
+            ) : searchResults.length === 0 ? (
+              <EmptyState icon="person-outline" title="Няма резултати" subtitle="Опитай с различно или по-пълно име." />
+            ) : (
+              searchResults.map((r) => (
+                <React.Fragment key={r.uid}>
+                  {renderUserRow(r.uid, r.displayName, r.photoUrl, r.city)}
+                </React.Fragment>
+              ))
+            )}
+          </>
+        ) : (
+          <>
+            <Text style={styles.sectionLabel}>СЛЕДВАНИ</Text>
+            {followsLoading ? (
+              <FriendsSkeleton borderColor={colors.border} />
+            ) : (followedRows ?? []).length === 0 ? (
+              <EmptyState
+                icon="people-outline"
+                title="Още никого не следваш"
+                subtitle="Търси рибар по-горе или отвори профил от лентата."
+              />
+            ) : (
+              <FlatList
+                data={followedRows ?? []}
+                keyExtractor={(r) => r.uid}
+                renderItem={({ item }) => renderUserRow(item.uid, item.displayName, item.photoUrl)}
+                keyboardShouldPersistTaps="handled"
+              />
+            )}
+          </>
+        )}
       </View>
-
-      {isSearching ? (
-        <>
-          <Text style={styles.sectionLabel}>
-            {searching ? 'ТЪРСЕНЕ…' : `РЕЗУЛТАТИ${searchResults.length > 0 ? ` (${searchResults.length})` : ''}`}
-          </Text>
-          {searching && searchResults.length === 0 ? (
-            <FriendsSkeleton borderColor={colors.border} />
-          ) : searchResults.length === 0 ? (
-            <EmptyState icon="person-outline" title="Няма резултати" subtitle="Опитай с различно или по-пълно име." />
-          ) : (
-            searchResults.map((r) => (
-              <React.Fragment key={r.uid}>
-                {renderUserRow(r.uid, r.displayName, r.photoUrl, r.city)}
-              </React.Fragment>
-            ))
-          )}
-        </>
-      ) : (
-        <>
-          <Text style={styles.sectionLabel}>СЛЕДВАНИ</Text>
-          {followsLoading ? (
-            <FriendsSkeleton borderColor={colors.border} />
-          ) : (followedRows ?? []).length === 0 ? (
-            <EmptyState
-              icon="people-outline"
-              title="Още никого не следваш"
-              subtitle="Търси рибар по-горе или отвори профил от лентата."
-            />
-          ) : (
-            <FlatList
-              data={followedRows ?? []}
-              keyExtractor={(r) => r.uid}
-              renderItem={({ item }) => renderUserRow(item.uid, item.displayName, item.photoUrl)}
-              keyboardShouldPersistTaps="handled"
-            />
-          )}
-        </>
-      )}
     </Screen>
   );
 }

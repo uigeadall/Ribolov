@@ -22,6 +22,8 @@ type Props = ViewProps & {
   avoidKeyboard?: boolean;
   /** Кои safe area ръбове да се прилагат (виж react-native-safe-area-context). По подразбиране само top. */
   safeAreaEdges?: Edge[];
+  /** Override the background gradient (3-stop tuple). */
+  gradient?: [string, string, string];
 };
 
 export function Screen({
@@ -32,20 +34,21 @@ export function Screen({
   scrollProps,
   avoidKeyboard = true,
   safeAreaEdges = ['top'],
+  gradient,
   ...rest
 }: Props) {
   const { colors, mode } = useTheme();
 
-  const gradientColors = (
+  const gradientColors: [string, string, string] = gradient ?? (
     mode === 'dark'
-      ? ['#060D14', '#050F12', '#060F12']
-      : ['#C8E7F5', '#DDF0F7', '#EEF5F7']
-  ) as [string, string, string];
+      ? ['#030810', '#050C1A', '#0A1628']
+      : ['#D6EEFF', '#EBF5FF', '#FFFFFF']
+  );
 
   const styles = useMemo(
     () =>
       StyleSheet.create({
-        safe: { flex: 1, backgroundColor: gradientColors[0] },
+        safe: { flex: 1, backgroundColor: gradient ? gradient[0] : (mode === 'dark' ? '#030810' : '#EBF5FF') },
         fill: { flex: 1 },
         padded: { paddingHorizontal: spacing.xl, paddingTop: spacing.md, paddingBottom: spacing.lg },
         scroll: { flexGrow: 1, paddingBottom: spacing.xxl },

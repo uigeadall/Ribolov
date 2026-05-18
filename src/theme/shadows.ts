@@ -4,10 +4,10 @@ import { Platform, ViewStyle } from 'react-native';
 export function shadowCard(mode: 'light' | 'dark'): ViewStyle {
   return Platform.select<ViewStyle>({
     ios: {
-      shadowColor: mode === 'dark' ? '#000000' : '#1C1409',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: mode === 'dark' ? 0.45 : 0.09,
-      shadowRadius: 14,
+      shadowColor: mode === 'dark' ? '#000000' : '#003C8C',
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: mode === 'dark' ? 0.45 : 0.12,
+      shadowRadius: 18,
     },
     android: { elevation: 3 },
     default: {},

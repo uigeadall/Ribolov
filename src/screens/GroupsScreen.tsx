@@ -1,8 +1,9 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, FlatList, Pressable,
-  TextInput, RefreshControl, Platform,
+  TextInput, Platform,
 } from 'react-native';
+import { FishingRefreshControl } from '../components/FishingRefreshControl';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -109,7 +110,7 @@ export default function GroupsScreen() {
       <FlatList
         data={displayed}
         keyExtractor={(g) => g.id}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => reload(true)} tintColor={colors.primary} />}
+        refreshControl={<FishingRefreshControl refreshing={refreshing} onRefresh={() => reload(true)} />}
         contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: insets.bottom + spacing.xl, gap: spacing.sm }}
         ListEmptyComponent={
           !loading ? (

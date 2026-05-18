@@ -34,6 +34,8 @@ type Props = {
   onMarkerPress: (id: string) => void;
   onDamPress: (id: string) => void;
   onRiverPress: (id: string) => void;
+  /** Fired after the user pans or zooms (debounced). */
+  onMapMove?: (lat: number, lng: number, zoom: number) => void;
 };
 
 export type LeafletMapProps = Props;
@@ -65,6 +67,15 @@ html,body,#map{margin:0;padding:0;height:100%;width:100%;}
   var activeBase = layers.standard.addTo(map);
 
   map.on('zoomend', function(){ POST({type:'zoom', z: map.getZoom()}); });
+  // Coalesce pan + zoom into a single 'move' notification (300ms debounce).
+  var moveTimer = null;
+  map.on('moveend', function(){
+    if(moveTimer) clearTimeout(moveTimer);
+    moveTimer = setTimeout(function(){
+      var c = map.getCenter();
+      POST({type:'move', lat: c.lat, lng: c.lng, z: map.getZoom()});
+    }, 300);
+  });
 
   function damPin(){ return L.divIcon({
     className:'wt-div-icon',
@@ -216,6 +227,7 @@ export const LeafletMap = forwardRef<LeafletMapHandle, Props>(function LeafletMa
     onMarkerPress,
     onDamPress,
     onRiverPress,
+    onMapMove,
   } = props;
   const webRef = useRef<WebView>(null);
   const readyRef = useRef(false);
@@ -275,6 +287,8 @@ export const LeafletMap = forwardRef<LeafletMapHandle, Props>(function LeafletMa
           injectRefresh();
         } else if (msg.type === 'zoom' && typeof msg.z === 'number') {
           setWebZoom(msg.z);
+        } else if (msg.type === 'move' && msg.lat != null && msg.lng != null && msg.z != null) {
+          onMapMove?.(msg.lat, msg.lng, msg.z);
         } else if (msg.type === 'longpress' && msg.lat != null && msg.lng != null) {
           onLongPress(msg.lat, msg.lng);
         } else if (msg.type === 'spot' && msg.id) onMarkerPress(msg.id);
@@ -284,7 +298,7 @@ export const LeafletMap = forwardRef<LeafletMapHandle, Props>(function LeafletMa
         /* ignore */
       }
     },
-    [injectRefresh, onLongPress, onMarkerPress, onDamPress, onRiverPress]
+    [injectRefresh, onLongPress, onMarkerPress, onDamPress, onRiverPress, onMapMove]
   );
 
   return (

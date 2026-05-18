@@ -13,6 +13,49 @@ import { Ionicons } from '@expo/vector-icons';
 import type { LeafletMapHandle, LeafletMapProps, LeafletMapType, CatchMapMarker } from './LeafletMap';
 
 const LABEL_THRESHOLD = 0.11;
+
+// ── Clustering ────────────────────────────────────────────────────────────────
+
+type Cluster = {
+  latitude: number;
+  longitude: number;
+  count: number;
+  ids: string[];
+};
+
+function clusterMarkers(
+  markers: CatchMapMarker[],
+  region: { latitudeDelta: number; longitudeDelta: number },
+): Cluster[] {
+  const cellLat = region.latitudeDelta / 6;
+  const cellLng = region.longitudeDelta / 6;
+  const cells = new Map<string, { latSum: number; lngSum: number; ids: string[] }>();
+
+  for (const m of markers) {
+    const row = Math.floor(m.latitude / cellLat);
+    const col = Math.floor(m.longitude / cellLng);
+    const key = `${row}:${col}`;
+    const cell = cells.get(key);
+    if (cell) {
+      cell.latSum += m.latitude;
+      cell.lngSum += m.longitude;
+      cell.ids.push(m.id);
+    } else {
+      cells.set(key, { latSum: m.latitude, lngSum: m.longitude, ids: [m.id] });
+    }
+  }
+
+  const result: Cluster[] = [];
+  for (const cell of cells.values()) {
+    result.push({
+      latitude: cell.latSum / cell.ids.length,
+      longitude: cell.lngSum / cell.ids.length,
+      count: cell.ids.length,
+      ids: cell.ids,
+    });
+  }
+  return result;
+}
 // Degrees of extra padding beyond the visible region when culling markers.
 const CULL_BUFFER = 0.25;
 // How long (ms) to keep tracksViewChanges=true after a marker mounts/remounts on Android.
@@ -23,6 +66,11 @@ function zoomToRegion(lat: number, lng: number, zoom: number): Region {
   const cos = Math.cos((lat * Math.PI) / 180);
   const lngDelta = latDelta / (Math.abs(cos) > 0.2 ? Math.abs(cos) : 0.2);
   return { latitude: lat, longitude: lng, latitudeDelta: latDelta, longitudeDelta: lngDelta };
+}
+
+function zoomFromRegion(r: Region): number {
+  // Inverse of zoomToRegion latDelta = 360 / 2^(zoom + 0.85)
+  return Math.log2(360 / Math.max(r.latitudeDelta, 0.0001)) - 0.85;
 }
 
 function rnMapType(mt: LeafletMapType): 'standard' | 'satellite' | 'hybrid' {
@@ -128,7 +176,7 @@ const WaterMarker = React.memo(function WaterMarker({
 
 export const NativeMapView = forwardRef<LeafletMapHandle, LeafletMapProps>(
   function NativeMapView(props, ref) {
-    const { spots, dams, rivers, catchMarkers, pendingCoord, userCoord, routeLine, mapType, onLongPress, onMarkerPress, onDamPress, onRiverPress } = props;
+    const { spots, dams, rivers, catchMarkers, pendingCoord, userCoord, routeLine, mapType, onLongPress, onMarkerPress, onDamPress, onRiverPress, onMapMove } = props;
 
     const mapRef = useRef<MapView>(null);
 
@@ -148,7 +196,8 @@ export const NativeMapView = forwardRef<LeafletMapHandle, LeafletMapProps>(
     const onRegionChangeComplete = useCallback((r: Region) => {
       setRegion(r);
       setShowWaterLabels(r.latitudeDelta <= LABEL_THRESHOLD);
-    }, []);
+      onMapMove?.(r.latitude, r.longitude, zoomFromRegion(r));
+    }, [onMapMove]);
 
     useImperativeHandle(ref, () => ({
       flyTo: (lat: number, lng: number, zoom = 13) => {
@@ -190,6 +239,11 @@ export const NativeMapView = forwardRef<LeafletMapHandle, LeafletMapProps>(
       );
     }, [rivers, region]);
 
+    const catchClusters = useMemo(
+      () => clusterMarkers(catchMarkers ?? [], region),
+      [catchMarkers, region],
+    );
+
     return (
       <MapView
         ref={mapRef}
@@ -222,7 +276,7 @@ export const NativeMapView = forwardRef<LeafletMapHandle, LeafletMapProps>(
 
         {visibleDams.map((d) => (
           <WaterMarker
-            key={`dam-${d.id}-${showWaterLabels ? 1 : 0}`}
+            key={`dam-${d.id}`}
             id={`dam-${d.id}`}
             latitude={d.latitude}
             longitude={d.longitude}
@@ -235,7 +289,7 @@ export const NativeMapView = forwardRef<LeafletMapHandle, LeafletMapProps>(
 
         {visibleRivers.map((r) => (
           <WaterMarker
-            key={`river-${r.id}-${showWaterLabels ? 1 : 0}`}
+            key={`river-${r.id}`}
             id={`river-${r.id}`}
             latitude={r.latitude}
             longitude={r.longitude}
@@ -246,16 +300,29 @@ export const NativeMapView = forwardRef<LeafletMapHandle, LeafletMapProps>(
           />
         ))}
 
-        {(catchMarkers ?? []).map((c) => (
-          <Circle
-            key={`catch-${c.id}`}
-            center={{ latitude: c.latitude, longitude: c.longitude }}
-            radius={120}
-            strokeWidth={2.5}
-            strokeColor="#E85D04"
-            fillColor="rgba(255,133,51,0.75)"
-          />
-        ))}
+        {catchClusters.map((cluster) =>
+          cluster.count === 1 ? (
+            <Circle
+              key={`catch-${cluster.ids[0]}`}
+              center={{ latitude: cluster.latitude, longitude: cluster.longitude }}
+              radius={120}
+              strokeWidth={2.5}
+              strokeColor="#E85D04"
+              fillColor="rgba(255,133,51,0.75)"
+            />
+          ) : (
+            <Marker
+              key={`cluster-${cluster.ids.join('-')}`}
+              coordinate={{ latitude: cluster.latitude, longitude: cluster.longitude }}
+              anchor={{ x: 0.5, y: 0.5 }}
+              tracksViewChanges={false}
+            >
+              <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#E85D04', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>{cluster.count}</Text>
+              </View>
+            </Marker>
+          ),
+        )}
 
         {pendingCoord ? (
           <Circle

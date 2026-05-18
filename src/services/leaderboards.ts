@@ -1,11 +1,12 @@
-import { collection, getDocs, limit, orderBy, query, startAfter, where, type DocumentSnapshot } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, limit, orderBy, query, startAfter, where, type DocumentSnapshot } from 'firebase/firestore';
 import { DAMS } from '../data/dams';
 import { RIVERS } from '../data/rivers';
 import { requireFirebase } from './firebase';
 import type { CloudCatch } from './cloudSync';
 
-const LEADERBOARD_CACHE_TTL = 5 * 60 * 1000;
+const LEADERBOARD_CACHE_TTL = 15 * 60 * 1000;
 const leaderboardCache = new Map<string, { data: LeaderboardRow[]; at: number }>();
+const leaderboardInflight = new Map<string, Promise<LeaderboardRow[]>>();
 
 function leaderboardCacheKey(minDateIso: string, period: LeaderboardPeriod, scope: LeaderboardScope): string {
   return `${period}:${minDateIso}:${scope.type === 'water' ? `${scope.kind}:${scope.id}` : 'all'}`;
@@ -34,10 +35,22 @@ export const LEADERBOARD_RIVER_RADIUS_KM = 72;
 
 export function periodMinIso(period: LeaderboardPeriod): string {
   const d = new Date();
-  if (period === 'day') d.setHours(0, 0, 0, 0);
-  else if (period === 'week') d.setDate(d.getDate() - 7);
-  else if (period === 'month') d.setMonth(d.getMonth() - 1);
-  else d.setFullYear(d.getFullYear() - 1);
+  if (period === 'day') {
+    d.setHours(0, 0, 0, 0);
+  } else if (period === 'week') {
+    // Monday 00:00 of the current ISO week
+    const day = d.getDay(); // 0 = Sun, 1 = Mon … 6 = Sat
+    d.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+    d.setHours(0, 0, 0, 0);
+  } else if (period === 'month') {
+    // 1st of the current calendar month
+    d.setDate(1);
+    d.setHours(0, 0, 0, 0);
+  } else {
+    // January 1st of the current year
+    d.setMonth(0, 1);
+    d.setHours(0, 0, 0, 0);
+  }
   return d.toISOString();
 }
 
@@ -171,16 +184,46 @@ const PERIOD_MAX: Record<LeaderboardPeriod, number> = {
  * Each page is released from memory before the next is fetched, avoiding
  * loading thousands of documents into a single array.
  */
-export async function fetchAndAggregateLeaderboard(
+export function fetchAndAggregateLeaderboard(
   minDateIso: string,
   period: LeaderboardPeriod,
   scope: LeaderboardScope,
 ): Promise<LeaderboardRow[]> {
   const cacheKey = leaderboardCacheKey(minDateIso, period, scope);
   const cached = leaderboardCache.get(cacheKey);
-  if (cached && Date.now() - cached.at < LEADERBOARD_CACHE_TTL) return cached.data;
+  if (cached && Date.now() - cached.at < LEADERBOARD_CACHE_TTL) return Promise.resolve(cached.data);
+
+  // Deduplicate concurrent callers — one Firestore scan shared across all waiters
+  const inflight = leaderboardInflight.get(cacheKey);
+  if (inflight) return inflight;
+
+  const p = _fetchAndAggregateLeaderboardImpl(cacheKey, minDateIso, period, scope);
+  leaderboardInflight.set(cacheKey, p);
+  p.finally(() => leaderboardInflight.delete(cacheKey));
+  return p;
+}
+
+async function _fetchAndAggregateLeaderboardImpl(
+  cacheKey: string,
+  minDateIso: string,
+  period: LeaderboardPeriod,
+  scope: LeaderboardScope,
+): Promise<LeaderboardRow[]> {
 
   const fb = requireFirebase();
+
+  if (scope.type === 'all') {
+    try {
+      const cacheSnap = await getDoc(doc(fb.db, 'leaderboardCache', `global_${period}`));
+      if (cacheSnap.exists()) {
+        const rows = (cacheSnap.data().rows as LeaderboardRow[]) ?? [];
+        leaderboardCache.set(cacheKey, { data: rows, at: Date.now() });
+        return rows;
+      }
+    } catch {
+      // fall through to client computation
+    }
+  }
 
   const maxTotal = PERIOD_MAX[period];
   const byOwner = new Map<string, { name: string; totalKg: number; count: number; best: number }>();

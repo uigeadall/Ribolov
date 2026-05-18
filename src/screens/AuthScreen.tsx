@@ -110,8 +110,10 @@ export default function AuthScreen() {
     if (!validate()) return;
     setBusy(true);
     try {
-      if (mode === 'login') await signIn(email, password);
-      else await signUp(email, password, name);
+      const cleanEmail = email.trim();
+      const cleanName = name.trim();
+      if (mode === 'login') await signIn(cleanEmail, password);
+      else await signUp(cleanEmail, password, cleanName);
       navigation.goBack();
     } catch (e: unknown) {
       handleError(e);

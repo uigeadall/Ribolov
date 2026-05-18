@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 import { Catch, Spot, GearItem, TripPlan } from '../types';
+import { resetRateLimits } from '../services/socialRateLimit';
 
 const KEYS = {
   catches: '@ribolov/catches',
@@ -28,6 +29,21 @@ async function writeJson<T>(key: string, value: T): Promise<void> {
 
 let _catchesCache: Catch[] | null = null;
 
+// Serialise all read-modify-write operations to prevent concurrent saves from clobbering each other.
+function makeMutex() {
+  let chain: Promise<unknown> = Promise.resolve();
+  return function withMutex<T>(task: () => Promise<T>): Promise<T> {
+    const next = chain.then(task, task);
+    chain = next.then(() => {}, () => {});
+    return next as Promise<T>;
+  };
+}
+
+const withCatchesMutex = makeMutex();
+const withSpotsMutex = makeMutex();
+const withGearMutex = makeMutex();
+const withTripsMutex = makeMutex();
+
 async function readCatches(): Promise<Catch[]> {
   if (_catchesCache !== null) return _catchesCache;
   const list = await readJson<Catch[]>(KEYS.catches, []);
@@ -45,10 +61,10 @@ export const catchesStore = {
   // Return a shallow copy so every call gives a new reference — React useMemo will
   // always see a changed dependency and recompute filtered lists after a save.
   list: () => readCatches().then((c) => [...c]),
-  replaceAll: async (items: Catch[]) => {
+  replaceAll: (items: Catch[]) => withCatchesMutex(async () => {
     await writeCatches([...items]);
-  },
-  save: async (item: Catch) => {
+  }),
+  save: (item: Catch) => withCatchesMutex(async () => {
     const all = await readCatches();
     const idx = all.findIndex((c) => c.id === item.id);
     // Build a new array — never mutate the cached reference in-place
@@ -57,58 +73,55 @@ export const catchesStore = {
       : [item, ...all];
     await writeCatches(next);
     return next;
-  },
-  remove: async (id: string) => {
+  }),
+  remove: (id: string) => withCatchesMutex(async () => {
     const all = await readCatches();
     const next = all.filter((c) => c.id !== id);
     await writeCatches(next);
     return next;
-  },
+  }),
 };
 
 export const spotsStore = {
   list: () => readJson<Spot[]>(KEYS.spots, []),
-  save: async (item: Spot) => {
+  save: (item: Spot) => withSpotsMutex(async () => {
     const all = await readJson<Spot[]>(KEYS.spots, []);
     const idx = all.findIndex((s) => s.id === item.id);
-    if (idx >= 0) all[idx] = item;
-    else all.unshift(item);
-    await writeJson(KEYS.spots, all);
-    return all;
-  },
-  toggleFavorite: async (id: string) => {
+    const next = idx >= 0 ? all.map((s, i) => (i === idx ? item : s)) : [item, ...all];
+    await writeJson(KEYS.spots, next);
+    return next;
+  }),
+  toggleFavorite: (id: string) => withSpotsMutex(async () => {
     const all = await readJson<Spot[]>(KEYS.spots, []);
     const idx = all.findIndex((s) => s.id === id);
     if (idx < 0) return all;
-    const next = { ...all[idx], isFavorite: !all[idx].isFavorite };
-    all[idx] = next;
-    await writeJson(KEYS.spots, all);
-    return all;
-  },
-  remove: async (id: string) => {
+    const next = all.map((s, i) => i === idx ? { ...s, isFavorite: !s.isFavorite } : s);
+    await writeJson(KEYS.spots, next);
+    return next;
+  }),
+  remove: (id: string) => withSpotsMutex(async () => {
     const all = await readJson<Spot[]>(KEYS.spots, []);
     const next = all.filter((s) => s.id !== id);
     await writeJson(KEYS.spots, next);
     return next;
-  },
+  }),
 };
 
 export const gearStore = {
   list: () => readJson<GearItem[]>(KEYS.gear, []),
-  save: async (item: GearItem) => {
+  save: (item: GearItem) => withGearMutex(async () => {
     const all = await readJson<GearItem[]>(KEYS.gear, []);
     const idx = all.findIndex((g) => g.id === item.id);
-    if (idx >= 0) all[idx] = item;
-    else all.unshift(item);
-    await writeJson(KEYS.gear, all);
-    return all;
-  },
-  remove: async (id: string) => {
+    const next = idx >= 0 ? all.map((g, i) => (i === idx ? item : g)) : [item, ...all];
+    await writeJson(KEYS.gear, next);
+    return next;
+  }),
+  remove: (id: string) => withGearMutex(async () => {
     const all = await readJson<GearItem[]>(KEYS.gear, []);
     const next = all.filter((g) => g.id !== id);
     await writeJson(KEYS.gear, next);
     return next;
-  },
+  }),
 };
 
 export const tripsStore = {
@@ -117,20 +130,19 @@ export const tripsStore = {
     const all = await readJson<TripPlan[]>(KEYS.trips, []);
     return all.find((t) => t.id === id);
   },
-  save: async (item: TripPlan) => {
+  save: (item: TripPlan) => withTripsMutex(async () => {
     const all = await readJson<TripPlan[]>(KEYS.trips, []);
     const idx = all.findIndex((t) => t.id === item.id);
-    if (idx >= 0) all[idx] = item;
-    else all.unshift(item);
-    await writeJson(KEYS.trips, all);
-    return all;
-  },
-  remove: async (id: string) => {
+    const next = idx >= 0 ? all.map((t, i) => (i === idx ? item : t)) : [item, ...all];
+    await writeJson(KEYS.trips, next);
+    return next;
+  }),
+  remove: (id: string) => withTripsMutex(async () => {
     const all = await readJson<TripPlan[]>(KEYS.trips, []);
     const next = all.filter((t) => t.id !== id);
     await writeJson(KEYS.trips, next);
     return next;
-  },
+  }),
 };
 
 export const newId = () => Crypto.randomUUID();
@@ -161,6 +173,7 @@ export const recentSpeciesStore = {
 
 export async function wipeAllLocalAppData(): Promise<void> {
   _catchesCache = null;
+  resetRateLimits();
   await AsyncStorage.multiRemove([
     KEYS.catches,
     KEYS.spots,

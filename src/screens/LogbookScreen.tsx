@@ -19,27 +19,26 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useAuth } from '../services/authContext';
+import { deleteCatchEverywhere } from '../services/cloudSync';
 import { computePersonalBests, isPersonalBestCatch } from '../services/personalBests';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Image } from 'expo-image';
-import { Screen } from '../components/Screen';
-import { Card } from '../components/Card';
-import { EmptyState } from '../components/EmptyState';
-import { Button } from '../components/Button';
-import { SectionHeader } from '../components/SectionHeader';
 import { Skeleton } from '../components/Skeleton';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
-import { shadowButton } from '../theme/shadows';
 import { catchesStore } from '../storage/storage';
 import { Catch } from '../types';
 import { speciesList } from '../data/species';
 import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
 import * as Haptics from 'expo-haptics';
 import { FishingRefreshControl } from '../components/FishingRefreshControl';
+import { Button } from '../components/Button';
+import { EmptyState } from '../components/EmptyState';
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 const CATCH_ACCENTS = ['#1A7A9C', '#2E9B5A', '#0E4D64', '#7BB7CC', '#006E8A', '#C49A00'];
 function speciesAccent(name: string): string {
@@ -49,202 +48,33 @@ function speciesAccent(name: string): string {
 }
 
 function startOfDay(d: Date): number {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x.getTime();
+  const x = new Date(d); x.setHours(0, 0, 0, 0); return x.getTime();
 }
-
 function endOfDay(d: Date): number {
-  const x = new Date(d);
-  x.setHours(23, 59, 59, 999);
-  return x.getTime();
+  const x = new Date(d); x.setHours(23, 59, 59, 999); return x.getTime();
 }
 
-function createLogbookStyles(colors: AppColors, mode: 'light' | 'dark') {
-  return StyleSheet.create({
-    topRow: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      justifyContent: 'space-between',
-      paddingHorizontal: spacing.lg,
-      paddingTop: spacing.xs,
-      gap: spacing.sm,
-    },
-    titleCol: { flex: 1, minWidth: 0 },
-    addBtn: {
-      width: 42,
-      height: 42,
-      borderRadius: 21,
-      backgroundColor: colors.primary,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginTop: 2,
-      ...shadowButton(mode),
-    },
-    statsRow: {
-      flexDirection: 'row',
-      gap: spacing.sm,
-      paddingHorizontal: spacing.lg,
-      marginTop: spacing.sm,
-      marginBottom: spacing.xs,
-    },
-    statBox: {
-      flex: 1,
-      backgroundColor: colors.primarySurface,
-      borderRadius: radius.md,
-      paddingVertical: spacing.sm + 2,
-      paddingHorizontal: spacing.sm,
-      borderWidth: 1,
-      borderColor: colors.border,
-      alignItems: 'center',
-    },
-    statNum: { ...typography.h3, fontSize: 22, color: colors.primary, letterSpacing: -1 },
-    statLbl: { ...typography.small, color: colors.textMuted, marginTop: 2, textAlign: 'center' },
-    filtersCardInner: {
-      gap: spacing.md,
-    },
-    filterHeadRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: spacing.xs,
-    },
-    filterCardTitle: { ...typography.overline, color: colors.primary, letterSpacing: 1.1 },
-    clearFiltersBtn: { paddingVertical: spacing.xs, paddingHorizontal: spacing.sm },
-    clearFiltersText: { ...typography.bodyBold, fontSize: 14, color: colors.primary },
-    filterSectionLabel: {
-      ...typography.small,
-      fontWeight: '700',
-      color: colors.textMuted,
-      letterSpacing: 0.35,
-      marginBottom: spacing.xs,
-    },
-    searchWrap: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: colors.surfaceAlt,
-      borderRadius: radius.lg,
-      borderWidth: 1,
-      borderColor: colors.border,
-      paddingHorizontal: spacing.md,
-      paddingVertical: Platform.OS === 'ios' ? spacing.sm + 2 : spacing.sm,
-    },
-    searchIcon: { marginRight: spacing.sm },
-    searchInput: {
-      flex: 1,
-      paddingVertical: spacing.xs,
-      fontSize: 16,
-      color: colors.text,
-    },
-    chipsRow: {
-      paddingVertical: 2,
-      gap: spacing.xs,
-      alignItems: 'center',
-    },
-    chip: {
-      paddingHorizontal: spacing.md,
-      paddingVertical: 6,
-      borderRadius: radius.pill,
-      backgroundColor: colors.surfaceAlt,
-      borderWidth: 1,
-      borderColor: colors.border,
-      marginRight: spacing.xs,
-      maxWidth: 220,
-    },
-    chipSelected: {
-      backgroundColor: colors.primary,
-      borderColor: colors.primary,
-    },
-    chipText: { ...typography.small, color: colors.text, fontWeight: '600' },
-    chipTextSelected: { color: colors.white },
-    divider: {
-      height: StyleSheet.hairlineWidth,
-      backgroundColor: colors.border,
-    },
-    datesRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.sm,
-      flexWrap: 'wrap',
-    },
-    datePill: {
-      flex: 1,
-      minWidth: 108,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.sm,
-      paddingVertical: spacing.sm + 2,
-      paddingHorizontal: spacing.md,
-      backgroundColor: colors.surfaceAlt,
-      borderRadius: radius.md,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    datePillLabel: { ...typography.small, color: colors.textMuted, fontWeight: '700' },
-    datePillValue: { ...typography.caption, color: colors.primary, fontWeight: '700', marginTop: 2 },
-    clearDatesBtn: {
-      width: 42,
-      height: 42,
-      borderRadius: 21,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: colors.primarySurface,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    releasedRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingTop: spacing.xs,
-      gap: spacing.md,
-    },
-    releasedLabelWrap: { flex: 1 },
-    releasedLabel: { ...typography.bodyBold, color: colors.text, fontSize: 15 },
-    releasedHint: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
-    row: { flexDirection: 'row', alignItems: 'center' },
-    thumb: {
-      width: 60,
-      height: 60,
-      borderRadius: radius.md,
-    },
-    thumbPlaceholder: {
-      backgroundColor: colors.primarySurface,
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    itemBody: { flex: 1, marginLeft: spacing.md, minWidth: 0 },
-    itemTitle: { ...typography.h3, fontSize: 15, color: colors.text },
-    photoTitleLine: { ...typography.small, color: colors.primary, marginTop: 2, fontStyle: 'italic' },
-    itemMeta: { ...typography.small, color: colors.textMuted, marginTop: 2, lineHeight: 16 },
-    rowTrail: { alignItems: 'flex-end', justifyContent: 'center', gap: spacing.sm, marginLeft: spacing.sm },
-    badge: {
-      backgroundColor: colors.accent + '18',
-      paddingHorizontal: 10,
-      paddingVertical: 4,
-      borderRadius: radius.pill,
-      borderWidth: 1,
-      borderColor: colors.accent + '66',
-    },
-    badgeText: { color: colors.accent, ...typography.small, fontWeight: '700' },
-    listFooterPad: { height: spacing.md },
-  });
+function useCountUp(target: number, duration = 800): number {
+  const [val, setVal] = React.useState(0);
+  React.useEffect(() => {
+    if (target === 0) { setVal(0); return; }
+    const start = Date.now();
+    const tick = () => {
+      const elapsed = Date.now() - start;
+      const progress = Math.min(elapsed / duration, 1);
+      setVal(Math.round((1 - Math.pow(1 - progress, 3)) * target));
+      if (progress < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }, [target, duration]);
+  return val;
 }
 
-type SpeciesChipProps = {
-  label: string;
-  selected: boolean;
-  onPress: () => void;
-  colors: AppColors;
-  styles: ReturnType<typeof createLogbookStyles>;
-};
+// ── CatchCard ─────────────────────────────────────────────────────────────────
 
-type CatchListRowProps = {
+type CatchCardProps = {
   item: Catch;
   colors: AppColors;
-  styles: ReturnType<typeof createLogbookStyles>;
   personalBests: ReturnType<typeof computePersonalBests>;
   user: { uid: string } | null;
   onPress: (item: Catch) => void;
@@ -252,27 +82,27 @@ type CatchListRowProps = {
   onEdit: (item: Catch) => void;
 };
 
-const CatchListRow = React.memo(function CatchListRow({
-  item, colors, styles, personalBests, user, onPress, onDelete, onEdit,
-}: CatchListRowProps) {
+const CatchCard = React.memo(function CatchCard({
+  item, colors, personalBests, user, onPress, onDelete, onEdit,
+}: CatchCardProps) {
   const isPB = isPersonalBestCatch(item, personalBests);
   const accent = speciesAccent(item.speciesName);
 
   const renderRightActions = () => (
-    <View style={{ flexDirection: 'row', alignItems: 'stretch', marginBottom: spacing.sm }}>
+    <View style={{ flexDirection: 'row', alignItems: 'stretch', marginBottom: 12 }}>
       <Pressable
         onPress={() => { void Haptics.selectionAsync(); onEdit(item); }}
-        style={{ backgroundColor: colors.primary, width: 80, alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: radius.md, marginRight: spacing.xs }}
+        style={{ backgroundColor: colors.primary, width: 70, alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 14, marginRight: 6 }}
       >
-        <Ionicons name="pencil-outline" size={20} color={colors.white} />
-        <Text style={{ color: colors.white, fontSize: 11, fontWeight: '700' }}>Редактирай</Text>
+        <Ionicons name="pencil-outline" size={20} color="#fff" />
+        <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>Редактирай</Text>
       </Pressable>
       <Pressable
         onPress={() => { void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); onDelete(item); }}
-        style={{ backgroundColor: colors.danger, width: 80, alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: radius.md }}
+        style={{ backgroundColor: colors.danger, width: 70, alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 14 }}
       >
-        <Ionicons name="trash-outline" size={20} color={colors.white} />
-        <Text style={{ color: colors.white, fontSize: 11, fontWeight: '700' }}>Изтрий</Text>
+        <Ionicons name="trash-outline" size={20} color="#fff" />
+        <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>Изтрий</Text>
       </Pressable>
     </View>
   );
@@ -283,106 +113,118 @@ const CatchListRow = React.memo(function CatchListRow({
         void Haptics.selectionAsync();
         void Share.share({ message: `${item.speciesName} - ${item.weightKg ?? '—'}кг` });
       }}
-      style={{ backgroundColor: colors.accent, width: 80, alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: radius.md, marginBottom: spacing.sm, marginRight: spacing.xs }}
+      style={{ backgroundColor: colors.accent, width: 70, alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 14, marginBottom: 12, marginRight: 6 }}
     >
-      <Ionicons name="share-outline" size={20} color={colors.white} />
-      <Text style={{ color: colors.white, fontSize: 11, fontWeight: '700' }}>Сподели</Text>
+      <Ionicons name="share-outline" size={20} color="#fff" />
+      <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>Сподели</Text>
     </Pressable>
   );
 
   return (
-    <Swipeable
-      renderRightActions={renderRightActions}
-      renderLeftActions={renderLeftActions}
-      overshootRight={false}
-      overshootLeft={false}
-    >
+    <Swipeable renderRightActions={renderRightActions} renderLeftActions={renderLeftActions} overshootRight={false} overshootLeft={false}>
       <Pressable
         onPress={() => onPress(item)}
-        android_ripple={{ color: `${colors.primary}18` }}
-        style={({ pressed }) => (pressed && Platform.OS === 'ios' ? { opacity: 0.92 } : undefined)}
+        android_ripple={{ color: `${colors.primary}14` }}
+        style={({ pressed }) => pressed && Platform.OS === 'ios' ? { opacity: 0.93 } : undefined}
       >
         <View style={{
-          flexDirection: 'row',
-          height: 90,
-          borderRadius: radius.md,
           backgroundColor: colors.card,
-          borderWidth: 1,
-          borderColor: colors.cardEdge ?? colors.border,
+          borderRadius: 16,
           overflow: 'hidden',
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.07,
-          shadowRadius: 3,
+          marginBottom: 12,
           elevation: 2,
+          shadowColor: '#000',
+          shadowOpacity: 0.06,
+          shadowRadius: 8,
+          shadowOffset: { width: 0, height: 2 },
         }}>
-          {/* Left accent bar */}
-          <View style={{ width: 4, backgroundColor: accent }} />
+          {/* Full-width photo or accent strip */}
+          {item.photoUri ? (
+            <View style={{ height: 170 }}>
+              <Image source={{ uri: item.photoUri }} style={StyleSheet.absoluteFillObject} contentFit="cover" />
+              {isPB && (
+                <View style={{ position: 'absolute', top: 10, left: 10, backgroundColor: '#FFD700', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8 }}>
+                  <Text style={{ fontSize: 10, fontWeight: '800', color: '#5A3D00' }}>⭐ PB</Text>
+                </View>
+              )}
+              {(item.extraPhotoUris?.length ?? 0) > 0 && (
+                <View style={{ position: 'absolute', top: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.62)', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 3 }}>
+                  <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>+{item.extraPhotoUris!.length}</Text>
+                </View>
+              )}
+              {user && !item.syncedToCloud ? (
+                <View style={{ position: 'absolute', bottom: 8, right: 8 }}>
+                  <Ionicons name="cloud-upload-outline" size={14} color="rgba(255,255,255,0.8)" />
+                </View>
+              ) : null}
+            </View>
+          ) : (
+            /* Solid 4px colored accent strip */
+            <View style={{ height: 4, backgroundColor: accent }} />
+          )}
 
-          {/* Center content */}
-          <View style={{ flex: 1, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, justifyContent: 'center' }}>
-            {/* Species + PB badge */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-              <Text style={{ fontSize: 15, fontWeight: '700', color: colors.text, flex: 1 }} numberOfLines={1}>
+          {/* Card content */}
+          <View style={{ paddingHorizontal: 14, paddingTop: 12, paddingBottom: 14 }}>
+            {/* Species + PB badge (no photo case) */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+              <Text style={{ fontSize: 17, fontWeight: '700', color: colors.text, letterSpacing: -0.3, flex: 1 }} numberOfLines={1}>
                 {item.speciesName}
               </Text>
-              {isPB ? (
-                <View style={{ backgroundColor: '#FFD70022', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: '#C49A0055' }}>
-                  <Text style={{ color: '#C49A00', fontSize: 9, fontWeight: '700', letterSpacing: 0.5 }}>⭐ РЕКОРД</Text>
+              {isPB && !item.photoUri && (
+                <View style={{ backgroundColor: '#FFD700', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8, marginLeft: 8 }}>
+                  <Text style={{ fontSize: 10, fontWeight: '800', color: '#5A3D00' }}>⭐ PB</Text>
+                </View>
+              )}
+              {user && !item.syncedToCloud && !item.photoUri ? (
+                <View style={{ marginLeft: 6 }}>
+                  <Ionicons name="cloud-upload-outline" size={14} color={colors.textMuted} />
                 </View>
               ) : null}
             </View>
 
-            {/* Weight hero */}
-            <Text style={{ fontSize: 20, fontWeight: '700', color: colors.primary, letterSpacing: -0.5, marginTop: 2 }}>
-              {item.weightKg != null ? `${item.weightKg} кг` : '— кг'}
-            </Text>
+            {/* Weight */}
+            {item.weightKg != null ? (
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', marginBottom: 8 }}>
+                <Text style={{ fontSize: 28, fontWeight: '900', color: colors.primary, letterSpacing: -0.5 }}>
+                  {item.weightKg}
+                </Text>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: colors.primary, marginLeft: 3 }}>кг</Text>
+              </View>
+            ) : (
+              <Text style={{ fontSize: 28, fontWeight: '900', color: colors.textMuted, letterSpacing: -0.5, marginBottom: 8 }}>—</Text>
+            )}
 
-            {/* Meta row: date + location + released */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
+            {/* Meta row: date · location · C&R */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
               <Text style={{ fontSize: 12, color: colors.textMuted }}>
-                {new Date(item.date).toLocaleDateString('bg-BG')}
+                {new Date(item.date).toLocaleDateString('bg-BG', { day: 'numeric', month: 'short', year: 'numeric' })}
               </Text>
               {item.location?.name ? (
                 <>
-                  <Text style={{ fontSize: 12, color: colors.textMuted }}>·</Text>
-                  <Ionicons name="location-outline" size={12} color={colors.textMuted} />
-                  <Text style={{ fontSize: 12, color: colors.textMuted }} numberOfLines={1}>
+                  <View style={{ width: 3, height: 3, borderRadius: 1.5, backgroundColor: colors.textMuted }} />
+                  <Ionicons name="location-outline" size={11} color={colors.textMuted} />
+                  <Text style={{ fontSize: 12, color: colors.textMuted, flexShrink: 1 }} numberOfLines={1}>
                     {item.location.name}
                   </Text>
                 </>
               ) : null}
               {item.released ? (
-                <View style={{ backgroundColor: colors.accent + '18', paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.accent + '55' }}>
-                  <Text style={{ color: colors.accent, fontSize: 10, fontWeight: '700' }}>пуснат</Text>
-                </View>
-              ) : null}
-              {user && !item.syncedToCloud ? (
-                <Ionicons name="cloud-upload-outline" size={13} color={colors.textMuted} />
+                <>
+                  <View style={{ width: 3, height: 3, borderRadius: 1.5, backgroundColor: colors.textMuted }} />
+                  <View style={{ backgroundColor: '#34C97A22', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, borderWidth: 1, borderColor: '#34C97A55' }}>
+                    <Text style={{ color: '#2EA86A', fontSize: 10, fontWeight: '700' }}>C&R</Text>
+                  </View>
+                </>
               ) : null}
             </View>
-          </View>
-
-          {/* Right photo or placeholder */}
-          <View style={{ width: 60, height: 70, alignSelf: 'center', marginRight: spacing.sm, borderRadius: radius.sm, overflow: 'hidden' }}>
-            {item.photoUri ? (
-              <Image source={{ uri: item.photoUri }} style={{ width: 60, height: 70 }} contentFit="cover" />
-            ) : (
-              <View style={{ width: 60, height: 70, backgroundColor: colors.primarySurface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm }}>
-                <Ionicons name="fish-outline" size={28} color={colors.primary} />
-              </View>
-            )}
-            {(item.extraPhotoUris?.length ?? 0) > 0 ? (
-              <View style={{ position: 'absolute', bottom: 3, right: 3, backgroundColor: 'rgba(0,0,0,0.62)', borderRadius: 6, paddingHorizontal: 4, paddingVertical: 1 }}>
-                <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>+{item.extraPhotoUris!.length}</Text>
-              </View>
-            ) : null}
           </View>
         </View>
       </Pressable>
     </Swipeable>
   );
 });
+
+// ── CatchGridItem ─────────────────────────────────────────────────────────────
 
 type CatchGridItemProps = {
   item: Catch;
@@ -415,31 +257,16 @@ const CatchGridItem = React.memo(function CatchGridItem({ item, colors, personal
           {item.weightKg != null ? (
             <Text style={{ ...typography.small, color: colors.primary, fontWeight: '700', marginTop: 1 }}>{item.weightKg} кг</Text>
           ) : null}
-          <Text style={{ ...typography.small, color: colors.textMuted, marginTop: 1 }}>{new Date(item.date).toLocaleDateString('bg-BG', { day: 'numeric', month: 'short' })}</Text>
+          <Text style={{ ...typography.small, color: colors.textMuted, marginTop: 1 }}>
+            {new Date(item.date).toLocaleDateString('bg-BG', { day: 'numeric', month: 'short' })}
+          </Text>
         </View>
       </View>
     </Pressable>
   );
 });
 
-function SpeciesChip({ label, selected, onPress, colors, styles }: SpeciesChipProps) {
-  return (
-    <Pressable
-      onPress={() => { void Haptics.selectionAsync(); onPress(); }}
-      accessibilityRole="button"
-      android_ripple={{ color: `${colors.primary}22` }}
-      style={({ pressed }) => [
-        styles.chip,
-        selected && styles.chipSelected,
-        pressed && Platform.OS === 'ios' ? { opacity: 0.85 } : null,
-      ]}
-    >
-      <Text style={[styles.chipText, selected && styles.chipTextSelected]} numberOfLines={1}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
+// ── LogbookCalendar ───────────────────────────────────────────────────────────
 
 const DAY_LABELS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'];
 
@@ -452,17 +279,13 @@ type LogbookCalendarProps = {
   setCalMonth: React.Dispatch<React.SetStateAction<{ year: number; month: number }>>;
   personalBests: ReturnType<typeof computePersonalBests>;
   user: { uid: string } | null;
-  styles: ReturnType<typeof createLogbookStyles>;
   onOpenCatch: (item: Catch) => void;
   onDeleteCatch: (item: Catch) => void;
   onEditCatch: (item: Catch) => void;
   bottomPad: number;
 };
 
-function LogbookCalendar({
-  catches, colors, onDayPress, selectedDay, calMonth, setCalMonth,
-  personalBests, user, styles, onOpenCatch, onDeleteCatch, onEditCatch, bottomPad,
-}: LogbookCalendarProps) {
+function LogbookCalendar({ catches, colors, onDayPress, selectedDay, calMonth, setCalMonth, personalBests, user, onOpenCatch, onDeleteCatch, onEditCatch, bottomPad }: LogbookCalendarProps) {
   const daysInMonth = new Date(calMonth.year, calMonth.month + 1, 0).getDate();
   const firstDow = (new Date(calMonth.year, calMonth.month, 1).getDay() + 6) % 7;
 
@@ -476,26 +299,16 @@ function LogbookCalendar({
     return map;
   }, [catches]);
 
-  const monthLabel = new Date(calMonth.year, calMonth.month, 1).toLocaleDateString('bg-BG', {
-    month: 'long',
-    year: 'numeric',
+  const monthLabel = new Date(calMonth.year, calMonth.month, 1).toLocaleDateString('bg-BG', { month: 'long', year: 'numeric' });
+
+  const goToPrev = () => setCalMonth((p) => {
+    const m = p.month === 0 ? 11 : p.month - 1;
+    return { year: p.month === 0 ? p.year - 1 : p.year, month: m };
   });
-
-  const goToPrev = () => {
-    setCalMonth((prev) => {
-      const m = prev.month === 0 ? 11 : prev.month - 1;
-      const y = prev.month === 0 ? prev.year - 1 : prev.year;
-      return { year: y, month: m };
-    });
-  };
-
-  const goToNext = () => {
-    setCalMonth((prev) => {
-      const m = prev.month === 11 ? 0 : prev.month + 1;
-      const y = prev.month === 11 ? prev.year + 1 : prev.year;
-      return { year: y, month: m };
-    });
-  };
+  const goToNext = () => setCalMonth((p) => {
+    const m = p.month === 11 ? 0 : p.month + 1;
+    return { year: p.month === 11 ? p.year + 1 : p.year, month: m };
+  });
 
   const selectedDayCatches: Catch[] = selectedDay
     ? (catchesByDay.get(selectedDay) ?? [])
@@ -515,23 +328,15 @@ function LogbookCalendar({
 
   return (
     <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-      {/* Month navigation */}
-      <View style={{
-        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-        paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
-      }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}>
         <Pressable onPress={goToPrev} hitSlop={8} style={{ padding: spacing.sm }}>
           <Ionicons name="chevron-back" size={22} color={colors.primary} />
         </Pressable>
-        <Text style={{ ...typography.h3, color: colors.text, textTransform: 'capitalize' }}>
-          {monthLabel}
-        </Text>
+        <Text style={{ ...typography.h3, color: colors.text, textTransform: 'capitalize' }}>{monthLabel}</Text>
         <Pressable onPress={goToNext} hitSlop={8} style={{ padding: spacing.sm }}>
           <Ionicons name="chevron-forward" size={22} color={colors.primary} />
         </Pressable>
       </View>
-
-      {/* Day-of-week header */}
       <View style={{ flexDirection: 'row', paddingHorizontal: spacing.md }}>
         {DAY_LABELS.map((lbl) => (
           <View key={lbl} style={{ flex: 1, alignItems: 'center', paddingVertical: spacing.xs }}>
@@ -539,78 +344,33 @@ function LogbookCalendar({
           </View>
         ))}
       </View>
-
-      {/* Calendar grid */}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: spacing.md }}>
         {cells.map((day, idx) => {
-          if (day === null) {
-            return <View key={`empty-${idx}`} style={{ width: `${100 / 7}%`, height: 52 }} />;
-          }
+          if (day === null) return <View key={`e-${idx}`} style={{ width: `${100 / 7}%`, height: 52 }} />;
           const dateKey = `${calMonth.year}-${String(calMonth.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
           const hasCatches = catchesByDay.has(dateKey);
           const isSelected = selectedDay === dateKey;
           return (
-            <Pressable
-              key={dateKey}
-              onPress={() => { if (hasCatches) onDayPress(dateKey); }}
-              style={{ width: `${100 / 7}%`, alignItems: 'center', paddingVertical: 4 }}
-            >
-              <View style={{
-                width: 36, height: 36, alignItems: 'center', justifyContent: 'center',
-                borderRadius: 18,
-                ...(isSelected ? {
-                  backgroundColor: colors.primarySurface,
-                  borderWidth: 1,
-                  borderColor: colors.primary,
-                } : {}),
-              }}>
-                <Text style={{
-                  ...typography.body,
-                  color: hasCatches ? colors.primary : colors.text,
-                  fontWeight: hasCatches ? '700' : '400',
-                }}>
-                  {day}
-                </Text>
+            <Pressable key={dateKey} onPress={() => { if (hasCatches) onDayPress(dateKey); }} style={{ width: `${100 / 7}%`, alignItems: 'center', paddingVertical: 4 }}>
+              <View style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, ...(isSelected ? { backgroundColor: colors.primarySurface, borderWidth: 1, borderColor: colors.primary } : {}) }}>
+                <Text style={{ ...typography.body, color: hasCatches ? colors.primary : colors.text, fontWeight: hasCatches ? '700' : '400' }}>{day}</Text>
               </View>
-              {hasCatches ? (
-                <View style={{
-                  width: 5, height: 5, borderRadius: 2.5,
-                  backgroundColor: colors.primary, marginTop: 2,
-                }} />
-              ) : (
-                <View style={{ width: 5, height: 5, marginTop: 2 }} />
-              )}
+              {hasCatches ? <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: colors.primary, marginTop: 2 }} /> : <View style={{ width: 5, height: 5, marginTop: 2 }} />}
             </Pressable>
           );
         })}
       </View>
-
-      {/* Catches for selected day / month */}
       <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>
-        <Text style={[styles.filterSectionLabel, { marginBottom: spacing.xs }]}>
+        <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: spacing.sm }}>
           {selectedDay
-            ? `УЛОВИ – ${new Date(selectedDay + 'T12:00:00').toLocaleDateString('bg-BG', { day: 'numeric', month: 'long' })} (${selectedDayCatches.length})`
-            : `ВСИЧКИ ЗА МЕСЕЦА (${selectedDayCatches.length})`}
+            ? `${new Date(selectedDay + 'T12:00:00').toLocaleDateString('bg-BG', { day: 'numeric', month: 'long' })} · ${selectedDayCatches.length} улова`
+            : `Месецът · ${selectedDayCatches.length} улова`}
         </Text>
         {selectedDayCatches.length === 0 ? (
-          <Text style={{ ...typography.body, color: colors.textMuted, textAlign: 'center', marginTop: spacing.lg }}>
-            Няма улови
-          </Text>
+          <Text style={{ ...typography.body, color: colors.textMuted, textAlign: 'center', marginTop: spacing.lg }}>Няма улови</Text>
         ) : (
-          selectedDayCatches.map((item, i) => (
-            <View key={item.id}>
-              {i > 0 && <View style={{ height: spacing.sm }} />}
-              <CatchListRow
-                item={item}
-                colors={colors}
-                styles={styles}
-                personalBests={personalBests}
-                user={user}
-                onPress={onOpenCatch}
-                onDelete={onDeleteCatch}
-                onEdit={onEditCatch}
-              />
-            </View>
+          selectedDayCatches.map((calItem) => (
+            <CatchCard key={calItem.id} item={calItem} colors={colors} personalBests={personalBests} user={user} onPress={onOpenCatch} onDelete={onDeleteCatch} onEdit={onEditCatch} />
           ))
         )}
         <View style={{ height: bottomPad }} />
@@ -619,63 +379,38 @@ function LogbookCalendar({
   );
 }
 
-function LogbookSkeleton({ colors, mode }: { colors: AppColors; mode: 'light' | 'dark' }) {
-  const styles = useMemo(() => createLogbookStyles(colors, mode), [colors, mode]);
+// ── LogbookSkeleton ───────────────────────────────────────────────────────────
+
+function LogbookSkeleton() {
   return (
-    <View style={{ paddingHorizontal: spacing.lg, gap: spacing.sm, marginTop: spacing.sm }}>
+    <View style={{ paddingHorizontal: spacing.lg, gap: 8, marginTop: spacing.sm }}>
       {[0, 1, 2, 3, 4].map((i) => (
-        <View key={i} style={{ backgroundColor: colors.card, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.sm + 2, flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-          <Skeleton width={60} height={60} borderRadius={radius.md} />
-          <View style={{ flex: 1, gap: 8 }}>
-            <Skeleton height={14} width="60%" />
-            <Skeleton height={11} width="40%" />
-            <Skeleton height={11} width="80%" />
-          </View>
-          <Skeleton width={20} height={20} borderRadius={10} />
-        </View>
+        <Skeleton key={i} width="100%" height={100} borderRadius={20} />
       ))}
     </View>
   );
 }
 
-function useCountUp(target: number, duration = 800): number {
-  const [val, setVal] = React.useState(0);
-  React.useEffect(() => {
-    if (target === 0) { setVal(0); return; }
-    const start = Date.now();
-    const tick = () => {
-      const elapsed = Date.now() - start;
-      const progress = Math.min(elapsed / duration, 1);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      setVal(Math.round(eased * target));
-      if (progress < 1) requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  }, [target, duration]);
-  return val;
-}
+// ── Main screen ───────────────────────────────────────────────────────────────
 
 export default function LogbookScreen() {
   const navigation = useAppNavigation();
   const { colors, mode } = useTheme();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
-  const bottomPad = insets.bottom + spacing.xl;
+  const bottomPad = spacing.md;
 
   const [items, setItems] = useState<Catch[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
   const [pendingDelete, setPendingDelete] = useState<Catch | null>(null);
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const styles = useMemo(() => createLogbookStyles(colors, mode), [colors, mode]);
 
-  // Badge shows count of unsynced catches on the tab bar
   useEffect(() => {
     if (!user) return;
     const unsynced = items.filter((c) => !c.syncedToCloud).length;
-    navigation.getParent()?.setOptions({
-      tabBarBadge: unsynced > 0 ? unsynced : undefined,
-    });
+    navigation.getParent()?.setOptions({ tabBarBadge: unsynced > 0 ? unsynced : undefined });
   }, [items, user, navigation]);
+
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -687,12 +422,10 @@ export default function LogbookScreen() {
   const [pickTo, setPickTo] = useState(false);
   const [gridView, setGridView] = useState(false);
   const [calendarView, setCalendarView] = useState(false);
-  const [calMonth, setCalMonth] = useState(() => {
-    const now = new Date();
-    return { year: now.getFullYear(), month: now.getMonth() };
-  });
+  const [calMonth, setCalMonth] = useState(() => { const n = new Date(); return { year: n.getFullYear(), month: n.getMonth() }; });
   const [calSelectedDay, setCalSelectedDay] = useState<string | null>(null);
   const [chipFilter, setChipFilter] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const [showCelebration, setShowCelebration] = useState(false);
   const celebrationShownRef = useRef(false);
@@ -701,12 +434,7 @@ export default function LogbookScreen() {
   useEffect(() => {
     if (showCelebration) {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Animated.spring(celebrationScale, {
-        toValue: 1,
-        useNativeDriver: true,
-        friction: 5,
-        tension: 80,
-      }).start();
+      Animated.spring(celebrationScale, { toValue: 1, useNativeDriver: true, friction: 5, tension: 80 }).start();
     } else {
       celebrationScale.setValue(0);
     }
@@ -724,25 +452,14 @@ export default function LogbookScreen() {
     setInitialLoading(false);
     if (list.length === 1 && !celebrationShownRef.current) {
       AsyncStorage.getItem('@ribolov/firstCatchCelebrated').then((v) => {
-        if (!v) {
-          setShowCelebration(true);
-          celebrationShownRef.current = true;
-        }
+        if (!v) { setShowCelebration(true); celebrationShownRef.current = true; }
       }).catch(() => {});
     }
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load])
-  );
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await load(true);
-    setRefreshing(false);
-  };
+  const onRefresh = async () => { setRefreshing(true); await load(true); setRefreshing(false); };
 
   const filtered = useMemo(() => {
     const q = debouncedQuery.trim().toLowerCase();
@@ -763,26 +480,26 @@ export default function LogbookScreen() {
 
   const totalKg = filtered.reduce((s, i) => s + (i.weightKg ?? 0), 0);
   const personalBests = useMemo(() => computePersonalBests(items), [items]);
-  const uniqueSpeciesCount = useMemo(
-    () => new Set(items.map((c) => c.speciesId ?? c.speciesName)).size,
-    [items]
-  );
-
-  const speciesChipList = useMemo(
-    () => [...new Set(items.map((c) => c.speciesName))].sort((a, b) => a.localeCompare(b, 'bg')),
-    [items]
-  );
+  const uniqueSpeciesCount = useMemo(() => new Set(items.map((c) => c.speciesId ?? c.speciesName)).size, [items]);
+  const speciesChipList = useMemo(() => [...new Set(items.map((c) => c.speciesName))].sort((a, b) => a.localeCompare(b, 'bg')), [items]);
 
   const animatedCount = useCountUp(filtered.length);
   const animatedKgInt = useCountUp(Math.round(totalKg * 10));
   const animatedKg = (animatedKgInt / 10).toFixed(1);
 
+  const filtersActive = !!speciesId || releasedOnly || !!dateFrom || !!dateTo || searchQuery.trim().length > 0;
+
+  const resetFilters = () => {
+    setSearchQuery('');
+    setSpeciesId(null);
+    setReleasedOnly(false);
+    setDateFrom(null);
+    setDateTo(null);
+  };
+
   const handleStatsLongPress = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const statsText =
-      `Общо улови: ${items.length}\n` +
-      `Видове: ${uniqueSpeciesCount}\n` +
-      `Общо кг: ${items.reduce((s, c) => s + (c.weightKg ?? 0), 0).toFixed(1)}`;
+    const statsText = `Общо улови: ${items.length}\nВидове: ${uniqueSpeciesCount}\nОбщо кг: ${items.reduce((s, c) => s + (c.weightKg ?? 0), 0).toFixed(1)}`;
     void Share.share({ message: `🎣 Моята риболовна статистика\n\n${statsText}` });
   }, [items, uniqueSpeciesCount]);
 
@@ -800,32 +517,48 @@ export default function LogbookScreen() {
       data,
     }));
   }, [filtered]);
-  const filtersActive =
-    !!speciesId || releasedOnly || !!dateFrom || !!dateTo || searchQuery.trim().length > 0;
-
-  const resetFilters = () => {
-    setSearchQuery('');
-    setSpeciesId(null);
-    setReleasedOnly(false);
-    setDateFrom(null);
-    setDateTo(null);
-  };
-
-  const subtitle =
-    items.length === 0
-      ? 'Записвай всеки улов с дата, място и детайли — всичко остава на телефона.'
-      : `${items.length} ${items.length === 1 ? 'запис' : 'записа'} в дневника · преглед и филтри по-долу`;
 
   const handleSwipeDelete = useCallback((catchItem: Catch) => {
-    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    // If a previous delete is still pending, commit its cloud cleanup NOW
+    // so rapid sequential deletes don't leak orphan docs/files.
+    if (undoTimerRef.current) {
+      clearTimeout(undoTimerRef.current);
+      const prev = pendingDelete;
+      const uid = user?.uid;
+      if (prev && uid) void deleteCatchEverywhere(prev.id, uid);
+    }
     setItems((prev) => prev.filter((c) => c.id !== catchItem.id));
     catchesStore.remove(catchItem.id).catch(() => {});
     setPendingDelete(catchItem);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    undoTimerRef.current = setTimeout(() => setPendingDelete(null), 4000);
+    undoTimerRef.current = setTimeout(() => {
+      const uid = user?.uid;
+      if (uid) void deleteCatchEverywhere(catchItem.id, uid);
+      setPendingDelete(null);
+      undoTimerRef.current = null;
+    }, 4000);
+  }, [user, pendingDelete]);
+
+  // Keep refs in sync so unmount cleanup sees the latest values
+  const pendingDeleteRef = useRef<Catch | null>(null);
+  const userRef = useRef(user);
+  useEffect(() => { pendingDeleteRef.current = pendingDelete; }, [pendingDelete]);
+  useEffect(() => { userRef.current = user; }, [user]);
+
+  // On unmount only: commit any pending cloud delete immediately.
+  useEffect(() => () => {
+    if (undoTimerRef.current) {
+      clearTimeout(undoTimerRef.current);
+      undoTimerRef.current = null;
+    }
+    const p = pendingDeleteRef.current;
+    const u = userRef.current;
+    if (p && u?.uid) void deleteCatchEverywhere(p.id, u.uid);
   }, []);
 
   const handleSwipeEdit = useCallback((catchItem: Catch) => {
+    void Haptics.selectionAsync();
     navigation.navigate('AddCatch', { editCatchId: catchItem.id });
   }, [navigation]);
 
@@ -833,313 +566,212 @@ export default function LogbookScreen() {
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
     if (!pendingDelete) return;
     await catchesStore.save(pendingDelete);
-    setItems((prev) =>
-      [...prev, pendingDelete].sort((a, b) => Date.parse(b.date) - Date.parse(a.date))
-    );
+    setItems((prev) => [...prev, pendingDelete].sort((a, b) => Date.parse(b.date) - Date.parse(a.date)));
     setPendingDelete(null);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }, [pendingDelete]);
 
-  // Card(60 thumb + 10+10 padding + 1+1 border) + 8 separator
-  const CATCH_ROW_H = 82;
-  const CATCH_SEP_H = spacing.sm;
-  const getCatchItemLayout = useCallback(
-    (_: unknown, index: number) => ({
-      length: CATCH_ROW_H,
-      offset: (CATCH_ROW_H + CATCH_SEP_H) * index,
-      index,
-    }),
-    []
-  );
-
-  const CatchSeparator = useCallback(() => <View style={{ height: CATCH_SEP_H }} />, []);
-
-  const renderCatchItem = useCallback(
-    ({ item }: { item: Catch }) => gridView ? (
-      <CatchGridItem
-        item={item}
-        colors={colors}
-        personalBests={personalBests}
-        onPress={(c) => navigation.navigate('CatchDetail', { id: c.id })}
-      />
+  const renderCatchItem = useCallback(({ item }: { item: Catch }) =>
+    gridView ? (
+      <CatchGridItem item={item} colors={colors} personalBests={personalBests} onPress={(c) => navigation.navigate('CatchDetail', { id: c.id })} />
     ) : (
-      <CatchListRow
-        item={item}
-        colors={colors}
-        styles={styles}
-        personalBests={personalBests}
-        user={user}
-        onPress={(c) => navigation.navigate('CatchDetail', { id: c.id })}
-        onDelete={handleSwipeDelete}
-        onEdit={handleSwipeEdit}
-      />
+      <CatchCard item={item} colors={colors} personalBests={personalBests} user={user} onPress={(c) => navigation.navigate('CatchDetail', { id: c.id })} onDelete={handleSwipeDelete} onEdit={handleSwipeEdit} />
     ),
-    [gridView, colors, styles, personalBests, user, navigation, handleSwipeDelete, handleSwipeEdit]
+    [gridView, colors, personalBests, user, navigation, handleSwipeDelete, handleSwipeEdit]
   );
 
-  const filtersCard = (
-    <Card style={{ marginHorizontal: spacing.lg, marginBottom: spacing.sm }}>
-      <View style={styles.filtersCardInner}>
-        <View style={styles.filterHeadRow}>
-          <Text style={styles.filterCardTitle}>ФИЛТРИ</Text>
-          {filtersActive ? (
-            <Pressable style={styles.clearFiltersBtn} onPress={resetFilters} hitSlop={8}>
-              <Text style={styles.clearFiltersText}>Изчисти</Text>
-            </Pressable>
-          ) : null}
-        </View>
+  const subtitle = items.length === 0
+    ? 'Записвай всеки улов с дата, място и детайли.'
+    : `${items.length} ${items.length === 1 ? 'запис' : 'записа'} в дневника`;
 
-        <View>
-          <Text style={styles.filterSectionLabel}>Търсене</Text>
-          <View style={styles.searchWrap}>
-            <Ionicons name="search-outline" size={20} color={colors.textMuted} style={styles.searchIcon} />
-            <TextInput
-              placeholder="Вид, място, бележки, примамка…"
-              placeholderTextColor={colors.textMuted}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              style={styles.searchInput}
-            />
-          </View>
-        </View>
+  // ── Active filter pill style ──
+  const activePill = { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, backgroundColor: colors.primarySurface, borderWidth: 1, borderColor: colors.primary };
+  const activePillText = { fontSize: 12, fontWeight: '600' as const, color: colors.primary };
 
-        <View>
-          <Text style={styles.filterSectionLabel}>Вид риба</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.chipsRow}
-            keyboardShouldPersistTaps="handled"
-          >
-            <SpeciesChip
-              label="Всички"
-              selected={speciesId === null}
-              onPress={() => setSpeciesId(null)}
-              colors={colors}
-              styles={styles}
-            />
-            {speciesList.map((s) => (
-              <SpeciesChip
-                key={s.id}
-                label={s.nameBg}
-                selected={speciesId === s.id}
-                onPress={() => setSpeciesId((prev) => (prev === s.id ? null : s.id))}
-                colors={colors}
-                styles={styles}
-              />
-            ))}
-          </ScrollView>
-        </View>
-
-        <View style={styles.divider} />
-
-        <View>
-          <Text style={styles.filterSectionLabel}>Период</Text>
-          <View style={styles.datesRow}>
-            <Pressable style={styles.datePill} onPress={() => setPickFrom(true)}>
-              <Ionicons name="calendar-outline" size={18} color={colors.primary} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.datePillLabel}>От дата</Text>
-                <Text style={styles.datePillValue} numberOfLines={1}>
-                  {dateFrom ? dateFrom.toLocaleDateString('bg-BG') : 'Избери'}
-                </Text>
-              </View>
-            </Pressable>
-            <Pressable style={styles.datePill} onPress={() => setPickTo(true)}>
-              <Ionicons name="calendar-outline" size={18} color={colors.primary} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.datePillLabel}>До дата</Text>
-                <Text style={styles.datePillValue} numberOfLines={1}>
-                  {dateTo ? dateTo.toLocaleDateString('bg-BG') : 'Избери'}
-                </Text>
-              </View>
-            </Pressable>
-            {dateFrom || dateTo ? (
-              <Pressable
-                style={styles.clearDatesBtn}
-                onPress={() => {
-                  setDateFrom(null);
-                  setDateTo(null);
-                }}
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityLabel="Изчисти периода"
-              >
-                <Ionicons name="close" size={22} color={colors.primary} />
-              </Pressable>
-            ) : null}
-          </View>
-        </View>
-
-        <View style={styles.releasedRow}>
-          <View style={styles.releasedLabelWrap}>
-            <Text style={styles.releasedLabel}>Само пуснати риби</Text>
-            <Text style={styles.releasedHint}>Показва записи, маркирани като върнати във водата.</Text>
-          </View>
-          <Switch
-            value={releasedOnly}
-            onValueChange={setReleasedOnly}
-            trackColor={{ false: colors.border, true: colors.primaryLight }}
-            thumbColor={colors.white}
-          />
-        </View>
-      </View>
-    </Card>
+  // ── Results header ──
+  const ResultsHeader = (
+    <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase' as const, paddingBottom: 8, paddingTop: 4 }}>
+      Резултати · {filtered.length}
+    </Text>
   );
 
   return (
-    <Screen padded={false}>
-      <View style={{ flex: 1, position: 'relative' }}>
-        <View style={styles.topRow}>
-          <View style={styles.titleCol}>
-            <SectionHeader hint="ДНЕВНИК" title="Улови" subtitle={subtitle} />
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+
+      {/* ── Flat header (Strava-style) ── */}
+      <View style={{ paddingTop: insets.top + 4, paddingHorizontal: spacing.lg, paddingBottom: 12, backgroundColor: colors.background, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
+
+        {/* Title row with view toggles */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <View>
+            <Text style={{ fontSize: 30, fontWeight: '900', color: colors.text, letterSpacing: -0.5 }}>Дневник</Text>
+            <Text style={{ fontSize: 13, color: colors.textMuted, marginTop: 2 }}>{subtitle}</Text>
+          </View>
+
+          {/* Segment control: list / grid / gallery / calendar */}
+          <View style={{ flexDirection: 'row', backgroundColor: mode === 'dark' ? colors.surfaceAlt : '#EFEFEF', borderRadius: 10, padding: 3, gap: 2 }}>
+            {/* List toggle */}
+            <Pressable
+              onPress={() => { setGridView(false); setCalendarView(false); }}
+              hitSlop={4}
+              style={{ paddingHorizontal: 9, paddingVertical: 7, borderRadius: 8, backgroundColor: (!calendarView && !gridView) ? colors.card : 'transparent', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Ionicons name="list-outline" size={18} color={(!calendarView && !gridView) ? colors.primary : colors.textMuted} />
+            </Pressable>
+            {/* Grid toggle */}
+            <Pressable
+              onPress={() => { setGridView(true); setCalendarView(false); }}
+              hitSlop={4}
+              style={{ paddingHorizontal: 9, paddingVertical: 7, borderRadius: 8, backgroundColor: (gridView && !calendarView) ? colors.card : 'transparent', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Ionicons name="grid-outline" size={18} color={(gridView && !calendarView) ? colors.primary : colors.textMuted} />
+            </Pressable>
+            {/* Gallery */}
+            <Pressable
+              onPress={() => navigation.navigate('PhotoGallery')}
+              hitSlop={4}
+              style={{ paddingHorizontal: 9, paddingVertical: 7, borderRadius: 8, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Ionicons name="images-outline" size={18} color={colors.textMuted} />
+            </Pressable>
+            {/* Calendar toggle */}
+            <Pressable
+              onPress={() => { setCalendarView((v) => !v); setGridView(false); }}
+              hitSlop={4}
+              style={{ paddingHorizontal: 9, paddingVertical: 7, borderRadius: 8, backgroundColor: calendarView ? colors.card : 'transparent', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Ionicons name="calendar-outline" size={18} color={calendarView ? colors.primary : colors.textMuted} />
+            </Pressable>
+          </View>
+        </View>
+
+        {/* Stats row — 3 columns with hairline dividers */}
+        <Pressable onLongPress={handleStatsLongPress} delayLongPress={400}>
+          <View style={{ flexDirection: 'row', borderRadius: 14, overflow: 'hidden', backgroundColor: mode === 'dark' ? colors.card : '#F4F6F9', borderWidth: 1, borderColor: colors.border }}>
+            {/* Catches */}
+            <View style={{ flex: 1, paddingVertical: 12, paddingHorizontal: 10, alignItems: 'center' }}>
+              <Text style={{ fontSize: 22, fontWeight: '900', color: colors.text }}>{animatedCount}</Text>
+              <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 2 }}>
+                {filtersActive ? `из ${items.length}` : items.length === 1 ? 'улов' : 'улова'}
+              </Text>
+            </View>
+            {/* Divider */}
+            <View style={{ width: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginVertical: 10 }} />
+            {/* Kg */}
+            <View style={{ flex: 1, paddingVertical: 12, paddingHorizontal: 10, alignItems: 'center' }}>
+              <Text style={{ fontSize: 22, fontWeight: '900', color: colors.text }}>{animatedKg}</Text>
+              <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 2 }}>кг</Text>
+            </View>
+            {/* Divider */}
+            <View style={{ width: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginVertical: 10 }} />
+            {/* Species */}
+            <View style={{ flex: 1, paddingVertical: 12, paddingHorizontal: 10, alignItems: 'center' }}>
+              <Text style={{ fontSize: 22, fontWeight: '900', color: colors.text }}>{uniqueSpeciesCount}</Text>
+              <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 2 }}>вида</Text>
+            </View>
+          </View>
+        </Pressable>
+      </View>
+
+      {/* ── Content panel ── */}
+      <View style={{ flex: 1 }}>
+
+        {/* Search bar + filter button */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xs }}>
+          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: mode === 'dark' ? colors.surfaceAlt : '#F2F4F8', borderRadius: 24, paddingHorizontal: 14, paddingVertical: Platform.OS === 'ios' ? 10 : 7 }}>
+            <Ionicons name="search-outline" size={18} color={colors.textMuted} style={{ marginRight: 8 }} />
+            <TextInput
+              placeholder="Търси вид, място, бележки..."
+              placeholderTextColor={colors.textMuted}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              style={{ flex: 1, fontSize: 15, color: colors.text, paddingVertical: 0 }}
+            />
+            {searchQuery.length > 0 ? (
+              <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
+                <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+              </Pressable>
+            ) : null}
           </View>
           <Pressable
-            onPress={() => { setGridView((v) => !v); setCalendarView(false); }}
+            onPress={() => setFiltersOpen(true)}
             hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={gridView ? 'Списък' : 'Мрежа'}
-            style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: gridView ? colors.primarySurface : colors.surfaceAlt, borderWidth: 1, borderColor: gridView ? colors.primary : colors.border, alignItems: 'center', justifyContent: 'center', marginTop: 2 }}
+            style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: filtersActive ? colors.primary : (mode === 'dark' ? colors.surfaceAlt : '#F2F4F8'), alignItems: 'center', justifyContent: 'center' }}
           >
-            <Ionicons name={gridView ? 'list-outline' : 'grid-outline'} size={20} color={colors.primary} />
-          </Pressable>
-          <Pressable
-            onPress={() => navigation.navigate('PhotoGallery')}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Галерия"
-            style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', marginTop: 2 }}
-          >
-            <Ionicons name="images-outline" size={20} color={colors.primary} />
-          </Pressable>
-          <Pressable
-            onPress={() => { setCalendarView((v) => !v); setGridView(false); }}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Календар"
-            style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: calendarView ? colors.primarySurface : colors.surfaceAlt, borderWidth: 1, borderColor: calendarView ? colors.primary : colors.border, alignItems: 'center', justifyContent: 'center', marginTop: 2 }}
-          >
-            <Ionicons name="calendar-outline" size={20} color={colors.primary} />
-          </Pressable>
-          <Pressable
-            style={styles.addBtn}
-            onPress={() => navigation.navigate('AddCatch')}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Добави улов"
-          >
-            <Ionicons name="add" size={26} color={colors.white} />
+            <Ionicons name="options-outline" size={20} color={filtersActive ? '#fff' : colors.primary} />
+            {filtersActive && (
+              <View style={{ position: 'absolute', top: 8, right: 8, width: 8, height: 8, borderRadius: 4, backgroundColor: '#FF8C00', borderWidth: 1.5, borderColor: colors.background }} />
+            )}
           </Pressable>
         </View>
 
-        <Pressable style={styles.statsRow} onLongPress={handleStatsLongPress} delayLongPress={400}>
-          <View style={styles.statBox}>
-            <Text style={styles.statNum}>{animatedCount}</Text>
-            <Text style={styles.statLbl}>
-              {filtersActive ? `от ${items.length} записа` : items.length === 1 ? 'запис' : 'записа'}
-            </Text>
-          </View>
-          <View style={styles.statBox}>
-            <Text style={styles.statNum}>{animatedKg}</Text>
-            <Text style={styles.statLbl}>{filtersActive ? 'кг в избора' : 'кг общо'}</Text>
-          </View>
-        </Pressable>
-
-        {filtersCard}
-
-        {pickFrom ? (
-          <>
-            <DateTimePicker
-              mode="date"
-              value={dateFrom ?? new Date()}
-              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-              onChange={(event, d) => {
-                if (Platform.OS === 'android') setPickFrom(false);
-                if (event.type === 'set' && d) setDateFrom(d);
-              }}
-            />
-            {Platform.OS === 'ios' ? (
-              <View style={{ paddingHorizontal: spacing.xl, paddingBottom: spacing.sm }}>
-                <Button title="Готово" variant="secondary" compact onPress={() => setPickFrom(false)} />
-              </View>
+        {/* Active filter pills */}
+        {(dateFrom || dateTo || speciesId || releasedOnly) ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.xs, gap: 6, alignItems: 'center' }}>
+            {(dateFrom || dateTo) ? (
+              <Pressable onPress={() => { setDateFrom(null); setDateTo(null); }} style={activePill}>
+                <Ionicons name="calendar-outline" size={13} color={colors.primary} />
+                <Text style={activePillText}>Период</Text>
+                <Ionicons name="close" size={13} color={colors.primary} />
+              </Pressable>
             ) : null}
-          </>
-        ) : null}
-        {pickTo ? (
-          <>
-            <DateTimePicker
-              mode="date"
-              value={dateTo ?? new Date()}
-              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-              onChange={(event, d) => {
-                if (Platform.OS === 'android') setPickTo(false);
-                if (event.type === 'set' && d) setDateTo(d);
-              }}
-            />
-            {Platform.OS === 'ios' ? (
-              <View style={{ paddingHorizontal: spacing.xl, paddingBottom: spacing.sm }}>
-                <Button title="Готово" variant="secondary" compact onPress={() => setPickTo(false)} />
-              </View>
+            {speciesId ? (
+              <Pressable onPress={() => setSpeciesId(null)} style={activePill}>
+                <Text style={activePillText}>{speciesList.find((s) => s.id === speciesId)?.nameBg}</Text>
+                <Ionicons name="close" size={13} color={colors.primary} />
+              </Pressable>
             ) : null}
-          </>
+            {releasedOnly ? (
+              <Pressable onPress={() => setReleasedOnly(false)} style={activePill}>
+                <Text style={activePillText}>Само пуснати</Text>
+                <Ionicons name="close" size={13} color={colors.primary} />
+              </Pressable>
+            ) : null}
+            <Pressable onPress={resetFilters} style={[activePill, { backgroundColor: colors.danger + '18', borderColor: colors.danger }]}>
+              <Text style={[activePillText, { color: colors.danger }]}>Изчисти всички</Text>
+            </Pressable>
+          </ScrollView>
         ) : null}
 
-        {/* ── Species quick-filter chips ── */}
+        {/* Species quick-filter chips */}
         {!initialLoading && speciesChipList.length >= 2 ? (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingVertical: spacing.xs, gap: spacing.xs, alignItems: 'center' }}
-            keyboardShouldPersistTaps="handled"
-          >
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.sm, gap: 6, alignItems: 'center' }} keyboardShouldPersistTaps="handled">
             <Pressable
               onPress={() => { void Haptics.selectionAsync(); setChipFilter(null); }}
-              accessibilityRole="button"
-              android_ripple={{ color: `${colors.primary}22` }}
-              style={({ pressed }) => ({
-                paddingHorizontal: spacing.md,
-                paddingVertical: 6,
-                borderRadius: radius.pill,
-                backgroundColor: chipFilter === null ? colors.primary : colors.card,
-                borderWidth: 1,
-                borderColor: chipFilter === null ? colors.primary : colors.border,
-                marginRight: spacing.xs,
-                opacity: pressed && Platform.OS === 'ios' ? 0.85 : 1,
-              })}
+              style={{ paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, backgroundColor: chipFilter === null ? colors.primary : colors.card, borderWidth: 1, borderColor: chipFilter === null ? colors.primary : colors.border }}
             >
-              <Text style={{ fontSize: 12, fontWeight: '600', color: chipFilter === null ? colors.white : colors.text }}>
-                Всички
-              </Text>
+              <Text style={{ fontSize: 12, fontWeight: '600', color: chipFilter === null ? '#fff' : colors.text }}>Всички</Text>
             </Pressable>
             {speciesChipList.map((name) => (
               <Pressable
                 key={name}
                 onPress={() => { void Haptics.selectionAsync(); setChipFilter((prev) => (prev === name ? null : name)); }}
-                accessibilityRole="button"
-                android_ripple={{ color: `${colors.primary}22` }}
-                style={({ pressed }) => ({
-                  paddingHorizontal: spacing.md,
-                  paddingVertical: 6,
-                  borderRadius: radius.pill,
-                  backgroundColor: chipFilter === name ? colors.primary : colors.card,
-                  borderWidth: 1,
-                  borderColor: chipFilter === name ? colors.primary : colors.border,
-                  marginRight: spacing.xs,
-                  maxWidth: 220,
-                  opacity: pressed && Platform.OS === 'ios' ? 0.85 : 1,
-                })}
+                style={{ paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, backgroundColor: chipFilter === name ? colors.primary : colors.card, borderWidth: 1, borderColor: chipFilter === name ? colors.primary : colors.border, maxWidth: 200 }}
               >
-                <Text style={{ fontSize: 12, fontWeight: '600', color: chipFilter === name ? colors.white : colors.text }} numberOfLines={1}>
-                  {name}
-                </Text>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: chipFilter === name ? '#fff' : colors.text }} numberOfLines={1}>{name}</Text>
               </Pressable>
             ))}
           </ScrollView>
         ) : null}
 
+        {/* Date pickers */}
+        {pickFrom ? (
+          <>
+            <DateTimePicker mode="date" value={dateFrom ?? new Date()} display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={(e, d) => { if (Platform.OS === 'android') setPickFrom(false); if (e.type === 'set' && d) setDateFrom(d); }} />
+            {Platform.OS === 'ios' ? <View style={{ paddingHorizontal: spacing.xl, paddingBottom: spacing.sm }}><Button title="Готово" variant="secondary" compact onPress={() => setPickFrom(false)} /></View> : null}
+          </>
+        ) : null}
+        {pickTo ? (
+          <>
+            <DateTimePicker mode="date" value={dateTo ?? new Date()} display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={(e, d) => { if (Platform.OS === 'android') setPickTo(false); if (e.type === 'set' && d) setDateTo(d); }} />
+            {Platform.OS === 'ios' ? <View style={{ paddingHorizontal: spacing.xl, paddingBottom: spacing.sm }}><Button title="Готово" variant="secondary" compact onPress={() => setPickTo(false)} /></View> : null}
+          </>
+        ) : null}
+
+        {/* Main content */}
         {initialLoading ? (
-          <LogbookSkeleton colors={colors} mode={mode} />
-        ) : calendarView && !initialLoading ? (
+          <LogbookSkeleton />
+        ) : calendarView ? (
           <LogbookCalendar
             catches={filtered}
             colors={colors}
@@ -1149,41 +781,28 @@ export default function LogbookScreen() {
             setCalMonth={setCalMonth}
             personalBests={personalBests}
             user={user}
-            styles={styles}
             onOpenCatch={(c) => navigation.navigate('CatchDetail', { id: c.id })}
             onDeleteCatch={handleSwipeDelete}
             onEditCatch={handleSwipeEdit}
-            bottomPad={bottomPad}
+            bottomPad={bottomPad + 8}
           />
         ) : items.length === 0 ? (
-          <ScrollView
-            contentContainerStyle={{
-              flexGrow: 1,
-              justifyContent: 'center',
-              paddingHorizontal: spacing.xl,
-              paddingBottom: bottomPad,
-            }}
-            showsVerticalScrollIndicator={false}
-          >
+          <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingHorizontal: spacing.xl, paddingBottom: bottomPad }}>
             <EmptyState
               icon="book-outline"
               title="Дневникът е празен"
-              subtitle={'Добави първия улов с бутона „+” горе или оттук — после ще го виждаш в списъка и на картата.'}
+              subtitle="Добави първия улов — ще го виждаш тук, на картата и в статистиките."
+              action={{ label: 'Добави улов', onPress: () => navigation.navigate('AddCatch') }}
             />
-            <Button title="Добави улов" onPress={() => navigation.navigate('AddCatch')} style={{ marginTop: spacing.lg }} />
           </ScrollView>
         ) : filtered.length === 0 ? (
-          <ScrollView
-            contentContainerStyle={{
-              flexGrow: 1,
-              justifyContent: 'center',
-              paddingHorizontal: spacing.xl,
-              paddingBottom: bottomPad,
-            }}
-            showsVerticalScrollIndicator={false}
-          >
-            <EmptyState icon="search-outline" title="Няма съвпадения" subtitle="Няма записи за тези филтри. Опитай друга комбинация." />
-            <Button title="Изчисти филтри" variant="secondary" onPress={resetFilters} style={{ marginTop: spacing.lg }} />
+          <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingHorizontal: spacing.xl, paddingBottom: bottomPad }}>
+            <EmptyState
+              icon="search-outline"
+              title="Няма съвпадения"
+              subtitle="Опитай с различни филтри."
+              action={{ label: 'Изчисти филтри', onPress: resetFilters }}
+            />
           </ScrollView>
         ) : gridView ? (
           <FlatList
@@ -1192,14 +811,9 @@ export default function LogbookScreen() {
             keyExtractor={(item) => item.id}
             numColumns={2}
             removeClippedSubviews={Platform.OS === 'android'}
-            contentContainerStyle={{ paddingHorizontal: spacing.sm, paddingBottom: bottomPad }}
-            ListHeaderComponent={
-              <Text style={[styles.filterSectionLabel, { marginBottom: spacing.sm, paddingHorizontal: spacing.sm }]}>
-                РЕЗУЛТАТИ ({filtered.length})
-              </Text>
-            }
+            contentContainerStyle={{ paddingHorizontal: spacing.sm, paddingBottom: bottomPad + 8 }}
+            ListHeaderComponent={<View style={{ paddingHorizontal: spacing.sm, paddingTop: spacing.sm }}>{ResultsHeader}</View>}
             refreshControl={<FishingRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-            ListFooterComponent={<View style={styles.listFooterPad} />}
             maxToRenderPerBatch={10}
             windowSize={5}
             initialNumToRender={10}
@@ -1211,35 +825,17 @@ export default function LogbookScreen() {
             sections={sections}
             keyExtractor={(item) => item.id}
             removeClippedSubviews={Platform.OS === 'android'}
-            contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: bottomPad }}
+            contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: bottomPad + 8 }}
             refreshControl={<FishingRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-            ItemSeparatorComponent={CatchSeparator}
+            ItemSeparatorComponent={null}
             stickySectionHeadersEnabled={false}
             renderSectionHeader={({ section }) => (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm }}>
-                <View style={{ flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
-                <View style={{
-                  flexDirection: 'row', alignItems: 'center', gap: 6,
-                  backgroundColor: colors.primarySurface, paddingHorizontal: spacing.md, paddingVertical: 4,
-                  borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border,
-                }}>
-                  <Text style={{ ...typography.overline, color: colors.primary, textTransform: 'capitalize' }}>
-                    {section.title}
-                  </Text>
-                  <Text style={{ ...typography.small, color: colors.textMuted, fontWeight: '600' }}>
-                    · {section.data.length}
-                  </Text>
-                </View>
-                <View style={{ flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
-              </View>
-            )}
-            renderSectionFooter={() => <View style={{ height: spacing.sm }} />}
-            ListHeaderComponent={
-              <Text style={[styles.filterSectionLabel, { marginBottom: spacing.xs }]}>
-                РЕЗУЛТАТИ ({filtered.length})
+              <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase', paddingVertical: 10, paddingTop: 16 }}>
+                {section.title} · {section.data.length} {section.data.length === 1 ? 'улов' : 'улова'}
               </Text>
-            }
-            ListFooterComponent={<View style={styles.listFooterPad} />}
+            )}
+            renderSectionFooter={() => <View style={{ height: 8 }} />}
+            ListHeaderComponent={ResultsHeader}
             maxToRenderPerBatch={10}
             windowSize={5}
             initialNumToRender={10}
@@ -1247,72 +843,127 @@ export default function LogbookScreen() {
             renderItem={renderCatchItem}
           />
         )}
+      </View>
 
-        {/* ── Undo delete snackbar ── */}
-        {pendingDelete ? (
-          <View style={{
-            position: 'absolute', bottom: bottomPad, left: spacing.lg, right: spacing.lg,
-            backgroundColor: mode === 'dark' ? '#2a2a2a' : '#1c1c1c',
-            borderRadius: radius.lg, flexDirection: 'row', alignItems: 'center',
-            paddingVertical: spacing.md, paddingHorizontal: spacing.lg,
-            gap: spacing.md, elevation: 8,
-            shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.3, shadowRadius: 8,
-          }}>
+      {/* ── Floating add button ── */}
+      <Pressable
+        onPress={() => navigation.navigate('AddCatch')}
+        style={{ position: 'absolute', bottom: 16, right: spacing.lg, width: 60, height: 60, borderRadius: 30, backgroundColor: '#FF8C00', alignItems: 'center', justifyContent: 'center', shadowColor: '#FF6B00', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.6, shadowRadius: 16, elevation: 12 }}
+      >
+        <Ionicons name="add" size={32} color="#fff" />
+      </Pressable>
+
+      {/* ── Undo snackbar ── */}
+      {pendingDelete ? (
+        <View style={{ position: 'absolute', bottom: 88, left: spacing.lg, right: spacing.lg, backgroundColor: mode === 'dark' ? '#2a2a2a' : '#1c1c1c', borderRadius: 20, flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.md, paddingHorizontal: 0, elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, overflow: 'hidden' }}>
+          {/* Left colored accent stripe */}
+          <View style={{ width: 4, alignSelf: 'stretch', backgroundColor: colors.danger, borderRadius: 2 }} />
+          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: 0, paddingHorizontal: spacing.lg }}>
             <Ionicons name="trash-outline" size={18} color="rgba(255,255,255,0.6)" />
             <Text style={{ ...typography.body, color: '#fff', flex: 1 }} numberOfLines={1}>
-              „{pendingDelete.speciesName}" изтрит
+              {'„'}{pendingDelete.speciesName}{'"'} изтрит
             </Text>
             <Pressable onPress={handleUndoDelete} hitSlop={8}>
               <Text style={{ ...typography.bodyBold, color: colors.primary }}>Отмени</Text>
             </Pressable>
           </View>
-        ) : null}
-      </View>
+        </View>
+      ) : null}
 
-      {/* ── First catch celebration modal ── */}
-      <Modal
-        visible={showCelebration}
-        animationType="fade"
-        transparent
-        onRequestClose={() => setShowCelebration(false)}
-      >
-        <View style={{
-          flex: 1, backgroundColor: 'rgba(0,0,0,0.7)',
-          alignItems: 'center', justifyContent: 'center',
-        }}>
-          <View style={{
-            backgroundColor: colors.card, borderRadius: radius.xl,
-            padding: spacing.xl, margin: spacing.lg,
-            alignItems: 'center',
-          }}>
-            <Animated.Text style={{ fontSize: 72, transform: [{ scale: celebrationScale }] }}>
-              🎣
-            </Animated.Text>
-            <Text style={{ ...typography.h1, color: colors.primary, marginTop: spacing.lg, textAlign: 'center' }}>
-              Първи улов!
-            </Text>
+      {/* ── Filters bottom sheet ── */}
+      <Modal visible={filtersOpen} animationType="slide" transparent onRequestClose={() => setFiltersOpen(false)}>
+        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+          <Pressable style={{ ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' } as any} onPress={() => setFiltersOpen(false)} />
+          <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingTop: 12, paddingHorizontal: spacing.lg, paddingBottom: insets.bottom + spacing.lg, maxHeight: '88%' }}>
+            {/* Handle */}
+            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 16 }} />
+            {/* Header */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.lg }}>
+              <Text style={{ ...typography.h3, color: colors.text, flex: 1 }}>Филтри</Text>
+              {filtersActive ? (
+                <Pressable onPress={resetFilters} hitSlop={8} style={{ paddingHorizontal: spacing.sm }}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: colors.primary }}>Изчисти</Text>
+                </Pressable>
+              ) : null}
+              <Pressable onPress={() => setFiltersOpen(false)} hitSlop={8} style={{ padding: spacing.xs, marginLeft: 4 }}>
+                <Ionicons name="close" size={22} color={colors.text} />
+              </Pressable>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              {/* Species filter */}
+              <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textMuted, letterSpacing: 0.5, marginBottom: spacing.sm, textTransform: 'uppercase' }}>Вид риба</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, alignItems: 'center', marginBottom: spacing.lg }} keyboardShouldPersistTaps="handled">
+                <Pressable onPress={() => setSpeciesId(null)} style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: speciesId === null ? colors.primary : colors.surfaceAlt, borderWidth: 1, borderColor: speciesId === null ? colors.primary : colors.border }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: speciesId === null ? '#fff' : colors.text }}>Всички</Text>
+                </Pressable>
+                {speciesList.map((s) => (
+                  <Pressable key={s.id} onPress={() => setSpeciesId((prev) => (prev === s.id ? null : s.id))} style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: speciesId === s.id ? colors.primary : colors.surfaceAlt, borderWidth: 1, borderColor: speciesId === s.id ? colors.primary : colors.border }}>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: speciesId === s.id ? '#fff' : colors.text }}>{s.nameBg}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+
+              {/* Date range */}
+              <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textMuted, letterSpacing: 0.5, marginBottom: spacing.sm, textTransform: 'uppercase' }}>Период</Text>
+              <View style={{ flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg }}>
+                <Pressable onPress={() => setPickFrom(true)} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md, backgroundColor: colors.surfaceAlt, borderRadius: 14, borderWidth: 1, borderColor: colors.border }}>
+                  <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+                  <View>
+                    <Text style={{ fontSize: 11, color: colors.textMuted, fontWeight: '700' }}>От</Text>
+                    <Text style={{ fontSize: 13, color: dateFrom ? colors.primary : colors.textMuted, fontWeight: '700' }}>{dateFrom ? dateFrom.toLocaleDateString('bg-BG') : 'Избери'}</Text>
+                  </View>
+                </Pressable>
+                <Pressable onPress={() => setPickTo(true)} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md, backgroundColor: colors.surfaceAlt, borderRadius: 14, borderWidth: 1, borderColor: colors.border }}>
+                  <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+                  <View>
+                    <Text style={{ fontSize: 11, color: colors.textMuted, fontWeight: '700' }}>До</Text>
+                    <Text style={{ fontSize: 13, color: dateTo ? colors.primary : colors.textMuted, fontWeight: '700' }}>{dateTo ? dateTo.toLocaleDateString('bg-BG') : 'Избери'}</Text>
+                  </View>
+                </Pressable>
+                {(dateFrom || dateTo) ? (
+                  <Pressable onPress={() => { setDateFrom(null); setDateTo(null); }} hitSlop={8} style={{ width: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceAlt, borderRadius: 14, borderWidth: 1, borderColor: colors.border }}>
+                    <Ionicons name="close" size={20} color={colors.primary} />
+                  </Pressable>
+                ) : null}
+              </View>
+
+              {/* Released only */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, marginBottom: spacing.xl }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: colors.text }}>Само пуснати (C&R)</Text>
+                  <Text style={{ fontSize: 13, color: colors.textMuted, marginTop: 2 }}>Показва само риби, върнати във водата.</Text>
+                </View>
+                <Switch value={releasedOnly} onValueChange={setReleasedOnly} trackColor={{ false: colors.border, true: colors.primaryLight }} thumbColor="#fff" />
+              </View>
+
+              {/* Apply */}
+              <Pressable onPress={() => setFiltersOpen(false)} style={{ backgroundColor: colors.primary, borderRadius: radius.pill, paddingVertical: spacing.md + 2, alignItems: 'center' }}>
+                <Text style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>Приложи</Text>
+              </Pressable>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── First catch celebration ── */}
+      <Modal visible={showCelebration} animationType="fade" transparent onRequestClose={() => setShowCelebration(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', alignItems: 'center', justifyContent: 'center' }}>
+          <View style={{ backgroundColor: colors.card, borderRadius: radius.xl, padding: spacing.xl, margin: spacing.lg, alignItems: 'center' }}>
+            <Animated.Text style={{ fontSize: 72, transform: [{ scale: celebrationScale }] }}>🎣</Animated.Text>
+            <Text style={{ ...typography.h1, color: colors.primary, marginTop: spacing.lg, textAlign: 'center' }}>Първи улов!</Text>
             <Text style={{ ...typography.body, color: colors.textMuted, marginTop: spacing.md, textAlign: 'center', lineHeight: 22 }}>
               Добре дошъл в дневника! Продължавай да записваш — всеки улов се счита.
             </Text>
             <Pressable
-              onPress={() => {
-                setShowCelebration(false);
-                AsyncStorage.setItem('@ribolov/firstCatchCelebrated', '1').catch(() => {});
-              }}
-              style={{
-                marginTop: spacing.xl,
-                backgroundColor: colors.primary,
-                paddingHorizontal: spacing.xl,
-                paddingVertical: spacing.md,
-                borderRadius: radius.pill,
-              }}
+              onPress={() => { setShowCelebration(false); AsyncStorage.setItem('@ribolov/firstCatchCelebrated', '1').catch(() => {}); }}
+              style={{ marginTop: spacing.xl, backgroundColor: colors.primary, paddingHorizontal: spacing.xl, paddingVertical: spacing.md, borderRadius: radius.pill }}
             >
-              <Text style={{ ...typography.bodyBold, color: colors.white }}>Страхотно! 🎉</Text>
+              <Text style={{ ...typography.bodyBold, color: '#fff' }}>Страхотно! 🎉</Text>
             </Pressable>
           </View>
         </View>
       </Modal>
-    </Screen>
+    </View>
   );
 }

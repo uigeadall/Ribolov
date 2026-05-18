@@ -1,7 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+import { StyleSheet, Text, View } from 'react-native';
 import {
   NavigationContainer,
   DefaultTheme,
@@ -23,6 +21,8 @@ import {
   TabsParamList,
 } from './types';
 import { useNotificationNavigation } from '../hooks/useNotificationNavigation';
+import { useUnreadNotifCount } from '../hooks/useUnreadNotifCount';
+import { useAuth } from '../services/authContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { catchesStore } from '../storage/storage';
@@ -69,6 +69,7 @@ import ExploreScreen from '../screens/ExploreScreen';
 import SpeciesTargetScreen from '../screens/SpeciesTargetScreen';
 import PhotoGalleryScreen from '../screens/PhotoGalleryScreen';
 import TripPlannerScreen from '../screens/TripPlannerScreen';
+import NotificationPreferencesScreen from '../screens/NotificationPreferencesScreen';
 
 const wrap = (label: string, Component: React.ComponentType<any>) => (props: any) =>
   (
@@ -170,6 +171,7 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="Groups" component={GroupsScreen} />
       <ProfileStack.Screen name="GroupDetail" component={GroupDetailScreen} />
       <ProfileStack.Screen name="CreateGroup" component={CreateGroupScreen} />
+      <ProfileStack.Screen name="NotificationPreferences" component={NotificationPreferencesScreen} />
     </ProfileStack.Navigator>
     </ErrorBoundary>
   );
@@ -178,6 +180,8 @@ function ProfileNavigator() {
 function TabNavigator() {
   const { colors, mode } = useTheme();
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+  const unreadNotifs = useUnreadNotifCount(user?.uid);
   const [feedBadge, setFeedBadge] = React.useState<string | undefined>(undefined);
   const [mapBadge, setMapBadge] = React.useState<string | undefined>(undefined);
 
@@ -211,110 +215,96 @@ function TabNavigator() {
       })
       .catch(() => {});
   }, []);
-  const tabRowInner = 34;
-  const tabPadTop = 2;
-  // Use the full bottom inset so the tab icons clear the Android system navigation bar.
-  // With edgeToEdgeEnabled the nav bar sits ON TOP of the app — a capped value hides the icons.
-  const bottomPad = Math.max(6, insets.bottom);
-
-  const tabBarStyle = useMemo(
+  // Bubble tab bar: floats above safe area as a pill
+  const bubbleTabBarStyle = useMemo(
     () => ({
+      marginHorizontal: 12,
+      marginBottom: Math.max(insets.bottom + 6, 12),
+      height: 58,
+      borderRadius: 32,
       backgroundColor: 'transparent',
       borderTopWidth: 0,
-      elevation: 0,
-      shadowOpacity: 0,
-      paddingTop: tabPadTop,
-      paddingBottom: bottomPad,
-      height: tabPadTop + tabRowInner + bottomPad,
+      elevation: 20,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: mode === 'dark' ? 0.45 : 0.10,
+      shadowRadius: 20,
+      paddingTop: 0,
+      paddingBottom: 0,
     }),
-    [bottomPad]
+    [mode, insets.bottom]
   );
 
   const tabBarBackground = useMemo(
     () => () => (
-      <>
-        <BlurView
-          intensity={mode === 'dark' ? 65 : 82}
-          tint={mode === 'dark' ? 'dark' : 'light'}
-          style={StyleSheet.absoluteFillObject}
-        />
-        <LinearGradient
-          colors={mode === 'dark'
-            ? ['rgba(255,255,255,0.07)', 'rgba(255,255,255,0.02)']
-            : ['rgba(255,255,255,0.58)', 'rgba(255,255,255,0.18)']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={StyleSheet.absoluteFillObject}
-        />
-        {/* Glass rim — specular highlight along the top edge */}
-        <View style={{
-          position: 'absolute', top: 0, left: 0, right: 0,
-          height: StyleSheet.hairlineWidth,
-          backgroundColor: mode === 'dark' ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.90)',
-        }} />
-      </>
+      <View style={[StyleSheet.absoluteFillObject, {
+        borderRadius: 36,
+        backgroundColor: mode === 'dark' ? '#0C1C30' : '#FFFFFF',
+        borderWidth: 1,
+        borderColor: mode === 'dark' ? 'rgba(74,168,232,0.22)' : 'rgba(21,112,184,0.1)',
+        overflow: 'hidden',
+      }]} />
     ),
     [mode]
   );
 
   return (
-    // bottom safe area за табовете контролираме само чрез tabBarStyle.paddingBottom — без втори пълен inset от навигатора
     <Tabs.Navigator
       safeAreaInsets={{ bottom: 0 }}
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textMuted,
-        tabBarStyle,
+        tabBarInactiveTintColor: mode === 'dark' ? '#3A6080' : '#AAC8E0',
+        tabBarStyle: bubbleTabBarStyle,
         tabBarBackground,
-        tabBarButton: (props) => (
-          <PlatformPressable
-            {...props}
-            style={[props.style, { justifyContent: 'center', paddingVertical: 2 }]}
-          />
-        ),
-        tabBarLabelStyle: {
-          fontSize: 9,
-          fontWeight: '600',
-          letterSpacing: 0.2,
-          marginBottom: 0,
-          marginTop: 1,
+        tabBarShowLabel: false,
+        tabBarButton: (props) => {
+          const focused = !!props.accessibilityState?.selected;
+          const label =
+            route.name === 'HomeTab' ? 'Начало' :
+            route.name === 'LogbookTab' ? 'Дневник' :
+            route.name === 'MapTab' ? 'Карта' :
+            route.name === 'FeedTab' ? 'Лента' : 'Профил';
+          return (
+            <PlatformPressable
+              {...props}
+              style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <View style={{
+                alignItems: 'center',
+                justifyContent: 'center',
+                paddingHorizontal: focused ? 14 : 8,
+                paddingVertical: focused ? 5 : 8,
+                borderRadius: 20,
+                gap: 2,
+                backgroundColor: focused
+                  ? (mode === 'dark' ? 'rgba(43,135,206,0.22)' : 'rgba(21,112,184,0.11)')
+                  : 'transparent',
+              }}>
+                {props.children}
+                {focused && (
+                  <Text style={{
+                    fontSize: 10,
+                    fontFamily: 'Nunito_700Bold',
+                    color: colors.primary,
+                    lineHeight: 11,
+                  }}>
+                    {label}
+                  </Text>
+                )}
+              </View>
+            </PlatformPressable>
+          );
         },
         tabBarIcon: ({ color, focused }) => {
-          const iconSize = 22;
+          const iconSize = focused ? 22 : 22;
           let icon: keyof typeof Ionicons.glyphMap = 'home';
           if (route.name === 'HomeTab') icon = focused ? 'home' : 'home-outline';
           if (route.name === 'LogbookTab') icon = focused ? 'book' : 'book-outline';
           if (route.name === 'MapTab') icon = focused ? 'map' : 'map-outline';
           if (route.name === 'FeedTab') icon = focused ? 'newspaper' : 'newspaper-outline';
           if (route.name === 'ProfileTab') icon = focused ? 'person' : 'person-outline';
-          return (
-            <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-              {focused && (
-                <>
-                  {/* Top accent line */}
-                  <View style={{
-                    position: 'absolute',
-                    top: -(tabPadTop + 4),
-                    width: iconSize + 24,
-                    height: 2.5,
-                    backgroundColor: colors.primary,
-                    borderBottomLeftRadius: 2,
-                    borderBottomRightRadius: 2,
-                  }} />
-                  {/* Pill background */}
-                  <View style={{
-                    position: 'absolute',
-                    backgroundColor: colors.primarySurface,
-                    borderRadius: 10,
-                    width: iconSize + 24,
-                    height: iconSize + 6,
-                  }} />
-                </>
-              )}
-              <Ionicons name={icon} size={iconSize} color={color} />
-            </View>
-          );
+          return <Ionicons name={icon} size={iconSize} color={color} />;
         },
       })}
     >
@@ -351,7 +341,7 @@ function TabNavigator() {
       <Tabs.Screen
         name="ProfileTab"
         component={ProfileNavigator}
-        options={{ title: 'Профил' }}
+        options={{ title: 'Профил', tabBarBadge: unreadNotifs > 0 ? unreadNotifs : undefined }}
         listeners={({ navigation }) => ({
           tabPress: (e) => { e.preventDefault(); navigation.navigate('ProfileTab', { screen: 'ProfileMain' }); },
         })}

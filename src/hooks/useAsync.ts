@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, type DependencyList } from 'react';
+import { useState, useCallback, useEffect, useRef, type DependencyList, type MutableRefObject } from 'react';
 
 type AsyncState<T> = {
   data: T | null;
@@ -28,6 +28,8 @@ export function useAsync<T>(
   });
 
   const runIdRef = useRef(0);
+  const fnRef = useRef(fn) as MutableRefObject<() => Promise<T>>;
+  fnRef.current = fn;
 
   const run = useCallback(async (silent = false) => {
     const id = ++runIdRef.current;
@@ -39,7 +41,7 @@ export function useAsync<T>(
       error: null,
     }));
     try {
-      const data = await fn();
+      const data = await fnRef.current();
       if (runIdRef.current === id) setState({ data, loading: false, refreshing: false, error: null });
     } catch (e: unknown) {
       if (runIdRef.current === id) {

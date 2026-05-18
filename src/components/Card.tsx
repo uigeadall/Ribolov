@@ -18,7 +18,7 @@ export function Card({ children, style, onPress, ...rest }: CardProps) {
       StyleSheet.create({
         wrap: {
           backgroundColor: colors.card,
-          borderRadius: radius.lg,
+          borderRadius: radius.xl,
           padding: spacing.lg,
           borderWidth: mode === 'dark' ? 1 : 0,
           borderColor: colors.cardEdge,

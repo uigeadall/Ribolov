@@ -12,7 +12,7 @@ function routeNotification(
   if (!ref.isReady()) return;
   const type = data.type as string | undefined;
 
-  if (type === 'follow' && typeof data.actorUid === 'string') {
+  if ((type === 'follow' || type === 'storyLike' || type === 'storyComment') && typeof data.actorUid === 'string') {
     ref.navigate('UserPublicProfile', {
       uid: data.actorUid,
       displayName: typeof data.actorName === 'string' ? data.actorName : 'Рибар',

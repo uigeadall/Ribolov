@@ -67,14 +67,17 @@ export async function flushPendingCatchSync(ctx: {
   const remaining: Entry[] = [];
   const ownerName = ctx.user.displayName ?? ctx.user.email ?? 'Рибар';
 
+  // Read the full catch list once — not once per queue entry
+  const catchList = await catchesStore.list();
+  const catchById = new Map(catchList.map((c) => [c.id, c]));
+
   for (const entry of entries) {
     if (entry.nextAttemptAfter != null && now < entry.nextAttemptAfter) {
       remaining.push(entry);
       continue;
     }
 
-    const list = await catchesStore.list();
-    const c = list.find((x) => x.id === entry.catchId);
+    const c = catchById.get(entry.catchId);
     if (!c) {
       addBreadcrumb('sync', 'catch_missing_skip', { catchId: entry.catchId });
       continue;
@@ -87,7 +90,9 @@ export async function flushPendingCatchSync(ctx: {
         toSync = await ensureCatchPhotoUploadedForCloud(c, ctx.user.uid);
       }
       await pushCatch(toSync, ctx.user.uid, ownerName, entry.sharePublic);
-      await catchesStore.save({ ...toSync, syncedToCloud: true });
+      const synced = { ...toSync, syncedToCloud: true };
+      await catchesStore.save(synced);
+      catchById.set(entry.catchId, synced);
       addBreadcrumb('sync', 'catch_push_ok', { catchId: entry.catchId });
     } catch (e) {
       const attempts = entry.attempts + 1;

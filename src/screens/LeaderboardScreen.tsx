@@ -7,11 +7,11 @@ import {
   Pressable,
   FlatList,
   Modal,
-  RefreshControl,
   ActivityIndicator,
   TextInput,
   Animated,
 } from 'react-native';
+import { FishingRefreshControl } from '../components/FishingRefreshControl';
 import { useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -492,7 +492,7 @@ export default function LeaderboardScreen() {
           keyExtractor={(item) => item.ownerUid}
           contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl }}
           ListHeaderComponent={rows.length >= 3 ? <Podium rows={rows} colors={colors} /> : null}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => reload(true)} tintColor={colors.primary} />}
+          refreshControl={<FishingRefreshControl refreshing={refreshing} onRefresh={() => reload(true)} />}
           renderItem={({ item }) => (
             <Pressable
               onPress={() =>

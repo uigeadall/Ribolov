@@ -46,6 +46,16 @@ service cloud.firestore {
         allow read, write: if isSelf(userId);
       }
 
+      /** Private user data (push token, etc.) — only the owner can read or write. */
+      match /private/{document} {
+        allow read, write: if isSelf(userId);
+      }
+
+      /** Notification preferences and other user settings. */
+      match /settings/{document} {
+        allow read, write: if isSelf(userId);
+      }
+
       /** Известия за харесвания и коментари по мои публични улови. */
       match /notifications/{nid} {
         allow read, delete: if isSelf(userId);
@@ -54,18 +64,22 @@ service cloud.firestore {
           && request.resource.data.actorUid == request.auth.uid
           && request.resource.data.actorName is string
           && request.resource.data.actorName.size() <= 120
-          && request.resource.data.type in ['like', 'comment', 'follow']
-          && request.resource.data.catchId is string
-          && request.resource.data.catchId.size() <= 128
+          && request.resource.data.type in ['like', 'comment', 'follow', 'storyLike', 'storyComment']
           && request.resource.data.preview is string
           && request.resource.data.preview.size() <= 200
           && request.resource.data.read == false
           && (
             (request.resource.data.type == 'follow'
-              && request.resource.data.catchId == ''
+              && (!('catchId' in request.resource.data) || request.resource.data.catchId == '')
               && request.resource.data.preview == '')
-            || (request.resource.data.type != 'follow'
-              && request.resource.data.catchId.size() > 0)
+            || (request.resource.data.type in ['like', 'comment']
+              && request.resource.data.catchId is string
+              && request.resource.data.catchId.size() > 0
+              && request.resource.data.catchId.size() <= 128)
+            || (request.resource.data.type in ['storyLike', 'storyComment']
+              && request.resource.data.storyId is string
+              && request.resource.data.storyId.size() > 0
+              && request.resource.data.storyId.size() <= 128)
           );
         allow update: if isSelf(userId)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])
@@ -268,6 +282,12 @@ service cloud.firestore {
       }
     }
 
+    /** Pre-aggregated leaderboard — written only by Cloud Functions, read by all signed-in users. */
+    match /leaderboardCache/{docId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
     /** Директни съобщения — само двамата участници. */
     match /conversations/{convId} {
       allow read: if signedIn() && (resource == null || request.auth.uid in resource.data.participantIds);
@@ -303,6 +323,14 @@ service cloud.firestore {
               && request.resource.data.mediaUrl.size() > 0)
           );
         allow update, delete: if false;
+      }
+
+      /** Typing indicators — both participants can read/write their own status. */
+      match /typing/{uid} {
+        allow read: if signedIn()
+          && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participantIds;
+        allow write: if isSelf(uid)
+          && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participantIds;
       }
     }
   }

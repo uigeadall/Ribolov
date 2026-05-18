@@ -5,11 +5,11 @@ import {
   StyleSheet,
   Pressable,
   ActivityIndicator,
-  RefreshControl,
   Alert,
   FlatList,
   Dimensions,
 } from 'react-native';
+import { FishingRefreshControl } from '../components/FishingRefreshControl';
 
 const SW = Dimensions.get('window').width;
 import { useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
@@ -38,7 +38,7 @@ import {
 } from '../services/cloudSync';
 import { sendFollowNotification } from '../services/socialFeed';
 import { handleError } from '../utils/handleError';
-import { blockUser } from '../services/blockUser';
+import { blockUser, unblockUser } from '../services/blockUser';
 import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 
@@ -320,7 +320,7 @@ export default function UserPublicProfileScreen() {
             {
               text: 'Деблокирай',
               onPress: async () => {
-                await blockUser(user.uid, uid).catch(() => {});
+                await unblockUser(user.uid, uid).catch(() => {});
                 setBlocked(false);
               },
             },
@@ -354,7 +354,11 @@ export default function UserPublicProfileScreen() {
   };
 
   const load = useCallback(async () => {
-    if (!configured) return;
+    if (!configured) {
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
     setError(null);
     try {
       const self = user?.uid === uid;
@@ -657,7 +661,7 @@ export default function UserPublicProfileScreen() {
           {catches.map((item) => (
             <Pressable
               key={item.id}
-              onPress={() => navigation.navigate('CatchDetail', { id: item.id })}
+              onPress={() => (navigation as any).navigate('LogbookTab', { screen: 'CatchDetail', params: { id: item.id } })}
               style={{
                 width: SW / 3,
                 height: SW / 3,
@@ -711,7 +715,7 @@ export default function UserPublicProfileScreen() {
         ListHeaderComponent={ListHeader}
         contentContainerStyle={{ paddingBottom: spacing.xxl + insets.bottom }}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+          <FishingRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
         ItemSeparatorComponent={() => <View style={{ height: spacing.md }} />}
         ListFooterComponent={<View style={{ height: spacing.lg }} />}

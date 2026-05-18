@@ -13,8 +13,9 @@ import {
   Modal,
   Keyboard,
   RefreshControl,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -26,6 +27,7 @@ import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { MenuRow } from '../components/MenuRow';
+import { BadgeIcon } from '../components/BadgeIcon';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { accentPresets, type AccentTheme } from '../theme/palette';
@@ -49,11 +51,16 @@ import {
   uploadProfileAvatar,
   deleteProfileAvatar,
   refreshOwnerPhotoOnPublicCatches,
+  fetchPublicCatchesByOwner,
+  type CloudCatch,
 } from '../services/cloudSync';
 import { getFollowing } from '../services/social';
 import { fetchMyGroups, type Group, CATEGORY_LABELS } from '../services/groups';
 
-const SW = Dimensions.get('window').width;
+let _socialDataCache: { uid: string; friends: { uid: string; displayName: string; photoUrl?: string }[]; groups: Group[]; at: number; friendUids: string } | null = null;
+const SOCIAL_CACHE_TTL = 5 * 60 * 1000;
+
+const WAVE = 32;
 
 // ─── DeleteAccountModal ────────────────────────────────────────────────────────
 
@@ -123,11 +130,14 @@ const DeleteAccountModal = React.memo(function DeleteAccountModal({
 export default function ProfileScreen() {
   const navigation = useAppNavigation();
   const insets = useSafeAreaInsets();
+  const { width: screenWidth } = useWindowDimensions();
   const { colors, mode, toggleMode, accent, setAccent } = useTheme();
   const { user, configured, loading: authLoading, signOut, deleteAccount } = useAuth();
 
   const [catches, setCatches] = useState<Catch[]>([]);
-  useEffect(() => { catchesStore.list().then(setCatches).catch(() => {}); }, []);
+  useFocusEffect(useCallback(() => {
+    catchesStore.list().then(setCatches).catch(() => {});
+  }, []));
 
   const [nextTrip, setNextTrip] = useState<TripPlan | null>(null);
   const loadNextTrip = useCallback(async () => {
@@ -140,12 +150,37 @@ export default function ProfileScreen() {
   }, []);
   useFocusEffect(useCallback(() => { void loadNextTrip(); }, [loadNextTrip]));
 
+  const [publicPosts, setPublicPosts] = useState<CloudCatch[]>([]);
+  useFocusEffect(useCallback(() => {
+    if (!user?.uid || !configured) return;
+    fetchPublicCatchesByOwner(user.uid, 24).then(setPublicPosts).catch(() => {});
+  }, [user?.uid, configured]));
+
   const [friends, setFriends] = useState<{ uid: string; displayName: string; photoUrl?: string }[]>([]);
   const [myGroups, setMyGroups] = useState<Group[]>([]);
 
   const loadSocialData = useCallback(async () => {
     if (!user?.uid || !configured) return;
-    getFollowing(user.uid).then(async (list) => {
+    try {
+      const [list, groups] = await Promise.all([
+        getFollowing(user.uid),
+        fetchMyGroups(user.uid).catch(() => [] as Group[]),
+      ]);
+
+      // Compare current follow graph against cached one — if unchanged within TTL, reuse photos.
+      const freshFriendUids = list.map((f) => f.uid).sort().join(',');
+      if (
+        _socialDataCache &&
+        _socialDataCache.uid === user.uid &&
+        _socialDataCache.friendUids === freshFriendUids &&
+        Date.now() - _socialDataCache.at < SOCIAL_CACHE_TTL
+      ) {
+        setFriends(_socialDataCache.friends);
+        setMyGroups(groups);
+        return;
+      }
+
+      setMyGroups(groups);
       setFriends(list);
       const enriched = await Promise.all(
         list.map(async (f) => {
@@ -154,8 +189,8 @@ export default function ProfileScreen() {
         })
       );
       setFriends(enriched);
-    }).catch(() => {});
-    fetchMyGroups(user.uid).then(setMyGroups).catch(() => {});
+      _socialDataCache = { uid: user.uid, friends: enriched, groups, at: Date.now(), friendUids: freshFriendUids };
+    } catch {}
   }, [user?.uid, configured]);
 
   useFocusEffect(
@@ -235,370 +270,6 @@ export default function ProfileScreen() {
     }, [loadRemoteProfile])
   );
 
-  const styles = useMemo(
-    () =>
-      StyleSheet.create({
-        scrollContent: {
-          paddingBottom: spacing.xxl,
-          backgroundColor: colors.background,
-        },
-        // ── Top bar ──
-        topBar: {
-          flexDirection: 'row',
-          alignItems: 'center',
-          backgroundColor: colors.card,
-          borderBottomWidth: StyleSheet.hairlineWidth,
-          borderBottomColor: colors.border,
-          paddingTop: 0, // applied inline with insets
-          paddingHorizontal: spacing.lg,
-          paddingBottom: spacing.sm,
-        },
-        topBarCenter: {
-          flex: 1,
-          textAlign: 'center',
-          ...typography.bodyBold,
-          fontSize: 17,
-          color: colors.text,
-        },
-        topBarRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-        topBarIconHit: { padding: spacing.xs },
-        notifBadgeWrap: { position: 'relative' },
-        notifBadge: {
-          position: 'absolute',
-          top: 2,
-          right: 2,
-          minWidth: 14,
-          height: 14,
-          borderRadius: 7,
-          backgroundColor: colors.danger,
-          alignItems: 'center',
-          justifyContent: 'center',
-          paddingHorizontal: 2,
-        },
-        notifBadgeText: {
-          color: colors.white,
-          fontSize: 9,
-          fontWeight: '700',
-          lineHeight: 14,
-        },
-        // ── Profile header ──
-        profileHeader: {
-          backgroundColor: colors.card,
-          paddingHorizontal: spacing.lg,
-          paddingTop: spacing.md,
-          paddingBottom: spacing.md,
-        },
-        headerRow1: { flexDirection: 'row', alignItems: 'center' },
-        avatarWrap: {
-          width: 90,
-          height: 90,
-          borderRadius: 45,
-          backgroundColor: colors.primaryDark,
-          alignItems: 'center',
-          justifyContent: 'center',
-          overflow: 'hidden',
-          position: 'relative',
-        },
-        avatarImg: { width: '100%', height: '100%' },
-        avatarLetter: { color: colors.white, fontSize: 34, fontWeight: '700' },
-        avatarBadge: {
-          position: 'absolute',
-          bottom: 0,
-          right: 0,
-          width: 28,
-          height: 28,
-          borderRadius: 14,
-          backgroundColor: colors.accent,
-          alignItems: 'center',
-          justifyContent: 'center',
-          borderWidth: 2,
-          borderColor: colors.card,
-        },
-        statsRow: {
-          flex: 1,
-          flexDirection: 'row',
-          justifyContent: 'space-around',
-          paddingLeft: spacing.md,
-        },
-        statCol: { alignItems: 'center' },
-        statNum: { fontSize: 20, fontWeight: '700', color: colors.text },
-        statLabel: { ...typography.small, color: colors.textMuted, marginTop: 2 },
-        headerRow2: { marginTop: spacing.sm },
-        headerName: { ...typography.bodyBold, fontSize: 15, color: colors.text },
-        headerCity: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
-        headerBio: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
-        headerButtons: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
-        outlinedBtn: {
-          flex: 1,
-          alignItems: 'center',
-          borderWidth: 1,
-          borderColor: colors.border,
-          borderRadius: radius.md,
-          paddingVertical: 7,
-        },
-        outlinedBtnText: { ...typography.caption, fontWeight: '700', color: colors.text },
-        // ── Photo grid ──
-        gridDivider: {
-          height: StyleSheet.hairlineWidth,
-          backgroundColor: colors.border,
-          marginTop: spacing.sm,
-        },
-        gridCell: {
-          width: SW / 3,
-          height: SW / 3,
-        },
-        gridEmpty: {
-          alignItems: 'center',
-          justifyContent: 'center',
-          paddingVertical: spacing.xl,
-          backgroundColor: colors.card,
-        },
-        gridEmptyText: { ...typography.caption, color: colors.textMuted, marginTop: spacing.sm, textAlign: 'center' },
-        // ── Completion nudge ──
-        nudge: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, backgroundColor: colors.card },
-        nudgeRow: { flexDirection: 'row', justifyContent: 'space-between' },
-        nudgeText: { ...typography.small, color: colors.textMuted },
-        nudgePercent: { ...typography.small, color: colors.primary, fontWeight: '700' },
-        nudgeBar: { height: 4, backgroundColor: colors.border, borderRadius: 2, marginTop: spacing.xs },
-        nudgeFill: { height: 4, borderRadius: 2, backgroundColor: colors.primary },
-        nudgeHint: { ...typography.small, color: colors.textMuted, marginTop: spacing.xs, paddingBottom: spacing.sm },
-        // ── Warnings ──
-        warnBanner: {
-          flexDirection: 'row',
-          gap: spacing.sm,
-          alignItems: 'flex-start',
-          backgroundColor: mode === 'dark' ? 'rgba(255,193,7,0.12)' : 'rgba(255,193,7,0.18)',
-          padding: spacing.md,
-          borderRadius: radius.md,
-          marginBottom: spacing.md,
-          marginHorizontal: spacing.lg,
-          borderWidth: 1,
-          borderColor: colors.border,
-        },
-        warnText: { ...typography.caption, color: colors.text, flex: 1, lineHeight: 18 },
-        // ── Public profile edit panel ──
-        panel: {
-          backgroundColor: colors.card,
-          borderRadius: radius.md,
-          borderWidth: 1,
-          borderColor: colors.cardEdge,
-          padding: spacing.md,
-          marginBottom: spacing.md,
-          marginHorizontal: spacing.lg,
-          ...shadowCard(mode),
-        },
-        panelTitle: { ...typography.bodyBold, fontSize: 15, color: colors.text },
-        panelSub: { ...typography.caption, color: colors.textMuted, marginTop: 2, lineHeight: 18 },
-        fieldLabel: {
-          ...typography.small,
-          fontWeight: '700',
-          color: colors.textMuted,
-          marginTop: spacing.sm,
-          marginBottom: spacing.xs,
-          letterSpacing: 0.3,
-        },
-        fieldLabelFirst: { marginTop: spacing.sm },
-        input: {
-          backgroundColor: colors.surfaceAlt,
-          borderWidth: 1,
-          borderColor: colors.border,
-          borderRadius: radius.md,
-          paddingHorizontal: spacing.md,
-          paddingVertical: Platform.OS === 'ios' ? spacing.sm + 4 : spacing.sm + 2,
-          fontSize: 15,
-          color: colors.text,
-        },
-        // ── Modal ──
-        modalBackdrop: {
-          flex: 1,
-          backgroundColor: 'rgba(0,0,0,0.48)',
-          justifyContent: 'center',
-          paddingHorizontal: spacing.lg,
-        },
-        modalCard: {
-          backgroundColor: colors.card,
-          borderRadius: radius.lg,
-          padding: spacing.lg,
-          borderWidth: 1,
-          borderColor: colors.cardEdge,
-          zIndex: 2,
-          ...shadowCard(mode),
-        },
-        modalTitle: { ...typography.bodyBold, fontSize: 17, color: colors.danger },
-        modalHint: { ...typography.caption, color: colors.textMuted, marginTop: spacing.sm, lineHeight: 18 },
-        modalInput: {
-          backgroundColor: colors.surfaceAlt,
-          borderWidth: 1,
-          borderColor: colors.border,
-          borderRadius: radius.md,
-          paddingHorizontal: spacing.md,
-          paddingVertical: Platform.OS === 'ios' ? spacing.sm + 2 : spacing.sm,
-          fontSize: 15,
-          color: colors.text,
-          marginTop: spacing.md,
-        },
-        modalActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
-        // ── Settings drawer ──
-        settingsBackdrop: {
-          flex: 1,
-          backgroundColor: 'rgba(0,0,0,0.45)',
-          justifyContent: 'flex-end',
-        },
-        settingsSheet: {
-          backgroundColor: colors.card,
-          borderTopLeftRadius: radius.xl,
-          borderTopRightRadius: radius.xl,
-          paddingBottom: 32,
-          maxHeight: '88%',
-          ...shadowCard(mode),
-        },
-        settingsHandle: {
-          width: 36,
-          height: 4,
-          borderRadius: 2,
-          backgroundColor: colors.border,
-          alignSelf: 'center',
-          marginTop: spacing.sm,
-          marginBottom: spacing.xs,
-        },
-        settingsHeader: {
-          flexDirection: 'row',
-          alignItems: 'center',
-          paddingHorizontal: spacing.lg,
-          paddingVertical: spacing.sm,
-          borderBottomWidth: StyleSheet.hairlineWidth,
-          borderBottomColor: colors.border,
-        },
-        settingsTitle: { ...typography.bodyBold, fontSize: 16, color: colors.text, flex: 1 },
-        settingsCloseBtn: { padding: spacing.xs },
-        settingsSignOut: {
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: spacing.sm,
-          padding: spacing.md,
-          paddingHorizontal: spacing.lg,
-        },
-        settingsSignOutText: { ...typography.bodyBold, fontSize: 15, color: colors.danger },
-        settingsDivider: {
-          height: StyleSheet.hairlineWidth,
-          backgroundColor: colors.border,
-          marginHorizontal: spacing.lg,
-          marginVertical: spacing.xs,
-        },
-        menuCardTitle: {
-          ...typography.small,
-          fontWeight: '700',
-          color: colors.textMuted,
-          marginBottom: 2,
-          marginLeft: spacing.xs,
-          letterSpacing: 0.5,
-          fontSize: 11,
-        },
-        menuCardWrap: {
-          paddingVertical: 2,
-          paddingHorizontal: spacing.xs,
-          marginBottom: spacing.sm,
-        },
-        // ── Upcoming trip ──
-        tripCard: {
-          flexDirection: 'row',
-          alignItems: 'center',
-          marginHorizontal: spacing.lg,
-          marginTop: spacing.md,
-          backgroundColor: colors.primarySurface,
-          borderRadius: radius.md,
-          borderWidth: 1,
-          borderColor: colors.primary + '44',
-          padding: spacing.md,
-          gap: spacing.sm,
-        },
-        tripIconWrap: {
-          width: 40,
-          height: 40,
-          borderRadius: 20,
-          backgroundColor: colors.primary,
-          alignItems: 'center',
-          justifyContent: 'center',
-        },
-        tripLabel: { ...typography.small, color: colors.primary, fontWeight: '700', marginBottom: 2 },
-        tripTitle: { ...typography.bodyBold, fontSize: 14, color: colors.text },
-        tripDate: { ...typography.small, color: colors.textMuted, marginTop: 1 },
-        // ── Social sections ──
-        sectionWrap: {
-          backgroundColor: colors.card,
-          borderBottomWidth: StyleSheet.hairlineWidth,
-          borderBottomColor: colors.border,
-          paddingBottom: spacing.md,
-        },
-        sectionHeader: {
-          flexDirection: 'row',
-          alignItems: 'center',
-          paddingHorizontal: spacing.lg,
-          paddingTop: spacing.md,
-          paddingBottom: spacing.sm,
-        },
-        sectionTitle: { ...typography.bodyBold, fontSize: 14, color: colors.text, flex: 1 },
-        sectionAction: { ...typography.small, color: colors.primary, fontWeight: '600' },
-        friendItem: { alignItems: 'center', marginLeft: spacing.lg, width: 60 },
-        friendAvatar: {
-          width: 52,
-          height: 52,
-          borderRadius: 26,
-          backgroundColor: colors.primaryDark,
-          alignItems: 'center',
-          justifyContent: 'center',
-          marginBottom: spacing.xs,
-        },
-        friendAvatarText: { color: colors.white, fontSize: 20, fontWeight: '700' },
-        friendName: { ...typography.small, color: colors.text, textAlign: 'center', fontSize: 11 },
-        emptySection: {
-          paddingHorizontal: spacing.lg,
-          paddingBottom: spacing.md,
-        },
-        emptySectionText: { ...typography.caption, color: colors.textMuted },
-        clubRow: {
-          flexDirection: 'row',
-          alignItems: 'center',
-          paddingHorizontal: spacing.lg,
-          paddingVertical: spacing.sm,
-          borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: colors.border,
-        },
-        clubIconWrap: {
-          width: 40,
-          height: 40,
-          borderRadius: 10,
-          backgroundColor: colors.primarySurface,
-          alignItems: 'center',
-          justifyContent: 'center',
-          marginRight: spacing.sm,
-        },
-        clubName: { ...typography.bodyBold, fontSize: 14, color: colors.text, flex: 1 },
-        clubMeta: { ...typography.small, color: colors.textMuted, marginTop: 2 },
-        // ── Guest ──
-        guestBlock: { alignItems: 'center', paddingVertical: spacing.lg, paddingHorizontal: spacing.lg },
-        guestIconWrap: {
-          width: 56,
-          height: 56,
-          borderRadius: 28,
-          backgroundColor: colors.primarySurface,
-          alignItems: 'center',
-          justifyContent: 'center',
-          marginBottom: spacing.sm,
-        },
-        guestTitle: { ...typography.bodyBold, fontSize: 17, color: colors.text, textAlign: 'center' },
-        guestSub: {
-          ...typography.caption,
-          color: colors.textMuted,
-          textAlign: 'center',
-          marginTop: spacing.xs,
-          lineHeight: 18,
-          paddingHorizontal: spacing.sm,
-        },
-      }),
-    [colors, mode]
-  );
-
   // ── Handlers ───────────────────────────────────────────────────────────────
 
   const onSignOut = () => {
@@ -607,6 +278,7 @@ export default function ProfileScreen() {
       {
         text: 'Изход', style: 'destructive', onPress: () => {
           if (user?.uid) AsyncStorage.removeItem(`@ribolov/profilePhoto/${user.uid}`).catch(() => {});
+          _socialDataCache = null;
           signOut().catch(() => undefined);
         },
       },
@@ -758,61 +430,648 @@ export default function ProfileScreen() {
   const catchStatsSpecies = new Set(catches.map((c) => c.speciesId)).size;
   const catchStatsKg = catches.reduce((s, c) => s + (c.weightKg ?? 0), 0).toFixed(1);
 
+  // ── Design tokens ───────────────────────────────────────────────────────────
+
+  const heroGrad: [string, string, string] = mode === 'dark'
+    ? ['#0A1E38', '#050C1A', '#030810']
+    : ['#4EAEE0', '#1E7CC4', '#0D559A'];
+
+  const waveColor  = mode === 'dark' ? '#080E1A' : '#F2F8FF';
+  const cardBg     = mode === 'dark' ? '#0E1E35' : '#FFFFFF';
+  const cardBorder = mode === 'dark' ? 'rgba(74,168,232,0.15)' : 'rgba(21,112,184,0.10)';
+
+  // ── Styles ──────────────────────────────────────────────────────────────────
+
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        // ── Scroll ──
+        scrollContent: {
+          paddingBottom: spacing.xxl,
+        },
+
+        // ── Hero ──
+        hero: {
+          paddingBottom: WAVE + 64,
+          overflow: 'hidden',
+        },
+        heroBg: { ...StyleSheet.absoluteFillObject },
+        heroInner: {
+          paddingHorizontal: spacing.xl,
+          paddingTop: spacing.xs,
+        },
+
+        // ── Hero top bar ──
+        heroBar: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: spacing.lg,
+        },
+        heroMenuBtn: {
+          width: 40,
+          height: 40,
+          borderRadius: 20,
+          backgroundColor: 'rgba(255,255,255,0.18)',
+          borderWidth: 1.5,
+          borderColor: 'rgba(255,255,255,0.35)',
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        heroBarCenter: {
+          color: '#fff',
+          fontSize: 13,
+          fontFamily: 'Nunito_700Bold',
+          letterSpacing: 2.2,
+          textTransform: 'uppercase',
+          opacity: 0.6,
+        },
+        heroBarRight: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 12,
+        },
+        heroBarIconBtn: {
+          width: 40,
+          height: 40,
+          borderRadius: 20,
+          backgroundColor: 'rgba(255,255,255,0.12)',
+          borderWidth: 1,
+          borderColor: 'rgba(255,255,255,0.22)',
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+
+        // ── Hero avatar section ──
+        heroAvatarSection: {
+          alignItems: 'center',
+          paddingTop: spacing.sm,
+          paddingBottom: spacing.md,
+        },
+        avatarRingWrap: {
+          width: 108,
+          height: 108,
+          borderRadius: 54,
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderWidth: 2,
+          borderColor: 'rgba(255,255,255,0.4)',
+          shadowColor: '#4AA8E8',
+          shadowOffset: { width: 0, height: 0 },
+          shadowRadius: 12,
+          shadowOpacity: 0.6,
+          elevation: 10,
+          marginBottom: spacing.sm,
+        },
+        avatarInner: {
+          width: 100,
+          height: 100,
+          borderRadius: 50,
+          backgroundColor: '#0D559A',
+          alignItems: 'center',
+          justifyContent: 'center',
+          overflow: 'hidden',
+          position: 'relative',
+        },
+        avatarImg: { width: '100%', height: '100%' },
+        avatarLetter: {
+          color: '#fff',
+          fontSize: 38,
+          fontFamily: 'Nunito_800ExtraBold',
+        },
+        avatarBadge: {
+          position: 'absolute',
+          bottom: 0,
+          right: 0,
+          width: 30,
+          height: 30,
+          borderRadius: 15,
+          backgroundColor: colors.accent,
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderWidth: 2,
+          borderColor: 'rgba(255,255,255,0.6)',
+        },
+        heroDisplayName: {
+          color: '#fff',
+          fontSize: 22,
+          fontFamily: 'Nunito_800ExtraBold',
+          letterSpacing: -0.4,
+          textAlign: 'center',
+          marginBottom: 4,
+        },
+        heroCity: {
+          color: 'rgba(255,255,255,0.65)',
+          fontSize: 12,
+          fontFamily: 'Nunito_600SemiBold',
+          textAlign: 'center',
+          marginBottom: 4,
+        },
+        heroBio: {
+          color: 'rgba(255,255,255,0.55)',
+          fontSize: 12,
+          fontFamily: 'Nunito_600SemiBold',
+          textAlign: 'center',
+          lineHeight: 17,
+          paddingHorizontal: spacing.xl,
+          marginBottom: spacing.sm,
+        },
+
+        // ── Hero stats strip (glass panel) ──
+        heroStatsPanel: {
+          flexDirection: 'row',
+          backgroundColor: 'rgba(255,255,255,0.10)',
+          borderWidth: 1,
+          borderColor: 'rgba(255,255,255,0.22)',
+          borderRadius: 18,
+          paddingVertical: 12,
+          marginBottom: spacing.sm,
+        },
+        heroStatItem: {
+          flex: 1,
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        heroStatDivider: {
+          width: 1,
+          height: 28,
+          backgroundColor: 'rgba(255,255,255,0.25)',
+          alignSelf: 'center',
+        },
+        heroStatNum: {
+          color: '#fff',
+          fontSize: 22,
+          fontFamily: 'Nunito_800ExtraBold',
+          letterSpacing: -0.5,
+        },
+        heroStatLabel: {
+          color: 'rgba(255,255,255,0.6)',
+          fontSize: 10,
+          fontFamily: 'Nunito_600SemiBold',
+          marginTop: 2,
+        },
+
+        // ── Hero action buttons ──
+        heroActions: {
+          flexDirection: 'row',
+          gap: spacing.sm,
+          marginTop: spacing.xs,
+          marginBottom: spacing.sm,
+        },
+        heroActionBtn: {
+          flex: 1,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 6,
+          backgroundColor: 'rgba(255,255,255,0.15)',
+          borderRadius: 20,
+          borderWidth: 1,
+          borderColor: 'rgba(255,255,255,0.3)',
+          paddingVertical: 10,
+        },
+        heroActionBtnText: {
+          color: '#fff',
+          fontSize: 12,
+          fontFamily: 'Nunito_700Bold',
+        },
+
+        // ── Hero completion nudge ──
+        heroNudge: {
+          marginTop: spacing.sm,
+        },
+        heroNudgeRow: {
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 6,
+        },
+        heroNudgeText: {
+          color: 'rgba(255,255,255,0.65)',
+          fontSize: 11,
+          fontFamily: 'Nunito_600SemiBold',
+        },
+        heroNudgePct: {
+          color: '#fff',
+          fontSize: 11,
+          fontFamily: 'Nunito_700Bold',
+        },
+        heroNudgeBarBg: {
+          height: 3,
+          borderRadius: 2,
+          backgroundColor: 'rgba(255,255,255,0.18)',
+        },
+        heroNudgeBarFill: {
+          height: 3,
+          borderRadius: 2,
+          backgroundColor: 'rgba(255,255,255,0.8)',
+        },
+
+        // ── Wave content panel ──
+        wave: {
+          borderTopLeftRadius: WAVE,
+          borderTopRightRadius: WAVE,
+          marginTop: -WAVE,
+          paddingTop: spacing.xl,
+        },
+
+        // ── Section headers ──
+        sectionRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingHorizontal: spacing.xl,
+          marginBottom: spacing.sm,
+          marginTop: spacing.md,
+        },
+        sectionLeft: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 8,
+        },
+        sectionAccent: {
+          width: 3,
+          height: 16,
+          borderRadius: 2,
+          backgroundColor: colors.primary,
+        },
+        sectionLabel: {
+          fontSize: 11,
+          fontFamily: 'Nunito_700Bold',
+          letterSpacing: 1.2,
+          textTransform: 'uppercase',
+          color: colors.textMuted,
+        },
+        sectionLink: {
+          fontSize: 12,
+          fontFamily: 'Nunito_700Bold',
+          color: colors.primary,
+        },
+
+        // ── Public profile edit panel ──
+        panel: {
+          backgroundColor: cardBg,
+          borderWidth: 1.5,
+          borderColor: cardBorder,
+          borderRadius: 22,
+          marginHorizontal: spacing.xl,
+          marginBottom: spacing.xl,
+          padding: spacing.lg,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.2,
+          shadowRadius: 16,
+          elevation: 8,
+        },
+        panelTitleRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          marginBottom: spacing.md,
+        },
+        panelTitle: {
+          fontSize: 15,
+          fontFamily: 'Nunito_700Bold',
+          color: colors.text,
+          flex: 1,
+          marginLeft: spacing.sm,
+        },
+        fieldLabel: {
+          fontSize: 11,
+          fontFamily: 'Nunito_700Bold',
+          color: colors.textMuted,
+          marginTop: spacing.sm,
+          marginBottom: spacing.xs,
+          letterSpacing: 0.3,
+          textTransform: 'uppercase',
+        },
+        input: {
+          backgroundColor: colors.surfaceAlt,
+          borderWidth: 1,
+          borderColor: colors.border,
+          borderRadius: radius.md,
+          paddingHorizontal: spacing.md,
+          paddingVertical: Platform.OS === 'ios' ? spacing.sm + 4 : spacing.sm + 2,
+          fontSize: 15,
+          color: colors.text,
+          fontFamily: 'Nunito_600SemiBold',
+        },
+
+        // ── Cloud warning banner ──
+        warnBanner: {
+          flexDirection: 'row',
+          gap: spacing.sm,
+          alignItems: 'flex-start',
+          backgroundColor: mode === 'dark' ? 'rgba(245,137,10,0.10)' : 'rgba(245,137,10,0.12)',
+          padding: spacing.md,
+          borderRadius: 18,
+          marginBottom: spacing.md,
+          marginHorizontal: spacing.xl,
+          borderWidth: 1,
+          borderColor: 'rgba(245,137,10,0.30)',
+        },
+        warnText: {
+          ...typography.caption,
+          color: colors.text,
+          flex: 1,
+          lineHeight: 18,
+        },
+
+        // ── Upcoming trip card ──
+        tripCard: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          marginHorizontal: spacing.xl,
+          marginBottom: spacing.md,
+          borderRadius: 22,
+          overflow: 'hidden',
+          padding: spacing.md,
+          gap: spacing.sm,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.25,
+          shadowRadius: 14,
+          elevation: 8,
+        },
+        tripGradBg: { ...StyleSheet.absoluteFillObject },
+        tripIconWrap: {
+          width: 44,
+          height: 44,
+          borderRadius: 22,
+          backgroundColor: colors.accent,
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        tripLabel: {
+          fontSize: 9,
+          fontFamily: 'Nunito_700Bold',
+          color: 'rgba(255,255,255,0.55)',
+          letterSpacing: 1.2,
+          textTransform: 'uppercase',
+          marginBottom: 2,
+        },
+        tripTitle: {
+          fontSize: 14,
+          fontFamily: 'Nunito_800ExtraBold',
+          color: '#fff',
+        },
+        tripDate: {
+          fontSize: 11,
+          fontFamily: 'Nunito_600SemiBold',
+          color: 'rgba(255,255,255,0.6)',
+          marginTop: 2,
+        },
+
+        // ── Friends section ──
+        sectionWrap: {
+          marginBottom: spacing.sm,
+        },
+        friendScroll: {
+          paddingLeft: spacing.xl,
+          paddingRight: spacing.md,
+        },
+        friendItem: {
+          alignItems: 'center',
+          marginRight: spacing.md,
+          width: 68,
+        },
+        friendAvatar: {
+          width: 60,
+          height: 60,
+          borderRadius: 30,
+          backgroundColor: colors.primaryDark,
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginBottom: spacing.xs,
+          borderWidth: 2,
+          borderColor: cardBorder,
+          overflow: 'hidden',
+        },
+        friendAvatarText: {
+          color: '#fff',
+          fontSize: 22,
+          fontFamily: 'Nunito_800ExtraBold',
+        },
+        friendName: {
+          fontSize: 10,
+          fontFamily: 'Nunito_600SemiBold',
+          color: colors.text,
+          textAlign: 'center',
+        },
+        emptySection: {
+          paddingHorizontal: spacing.xl,
+          paddingBottom: spacing.md,
+        },
+        emptySectionText: {
+          ...typography.caption,
+          color: colors.textMuted,
+        },
+
+        // ── Clubs section ──
+        clubCard: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: spacing.xl,
+          paddingVertical: spacing.sm + 2,
+          backgroundColor: cardBg,
+          borderWidth: 1,
+          borderColor: cardBorder,
+          borderRadius: 18,
+          marginHorizontal: spacing.xl,
+          marginBottom: spacing.sm,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.1,
+          shadowRadius: 8,
+          elevation: 4,
+        },
+        clubIconWrap: {
+          width: 42,
+          height: 42,
+          borderRadius: 12,
+          backgroundColor: colors.primarySurface,
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginRight: spacing.sm,
+        },
+        clubName: {
+          fontSize: 14,
+          fontFamily: 'Nunito_700Bold',
+          color: colors.text,
+        },
+        clubMeta: {
+          fontSize: 11,
+          fontFamily: 'Nunito_600SemiBold',
+          color: colors.textMuted,
+          marginTop: 2,
+        },
+
+        // ── Guest hero ──
+        guestHero: {
+          flex: 1,
+          minHeight: 500,
+        },
+        guestHeroBg: { ...StyleSheet.absoluteFillObject },
+        guestHeroInner: {
+          flex: 1,
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingHorizontal: spacing.xl,
+          paddingTop: 80,
+          paddingBottom: 48,
+        },
+        guestIconOuter: {
+          width: 96,
+          height: 96,
+          borderRadius: 48,
+          backgroundColor: 'rgba(255,255,255,0.12)',
+          borderWidth: 2,
+          borderColor: 'rgba(255,255,255,0.3)',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginBottom: spacing.lg,
+        },
+        guestTitle: {
+          color: '#fff',
+          fontSize: 24,
+          fontFamily: 'Nunito_800ExtraBold',
+          textAlign: 'center',
+          letterSpacing: -0.4,
+          marginBottom: spacing.sm,
+        },
+        guestSub: {
+          color: 'rgba(255,255,255,0.62)',
+          fontSize: 14,
+          fontFamily: 'Nunito_600SemiBold',
+          textAlign: 'center',
+          lineHeight: 20,
+          paddingHorizontal: spacing.md,
+          marginBottom: spacing.xl,
+        },
+        guestBtn: {
+          borderRadius: 28,
+          overflow: 'hidden',
+          alignSelf: 'stretch',
+          shadowColor: '#F5890A',
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.5,
+          shadowRadius: 14,
+          elevation: 8,
+        },
+        guestBtnInner: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: spacing.sm,
+          paddingVertical: 16,
+          paddingHorizontal: spacing.xl,
+        },
+        guestBtnText: {
+          color: '#fff',
+          fontSize: 16,
+          fontFamily: 'Nunito_800ExtraBold',
+          letterSpacing: -0.2,
+        },
+
+        // ── Modal ──
+        modalBackdrop: {
+          flex: 1,
+          backgroundColor: 'rgba(0,0,0,0.48)',
+          justifyContent: 'center',
+          paddingHorizontal: spacing.lg,
+        },
+        modalCard: {
+          backgroundColor: colors.card,
+          borderRadius: radius.lg,
+          padding: spacing.lg,
+          borderWidth: 1,
+          borderColor: colors.cardEdge,
+          zIndex: 2,
+          ...shadowCard(mode),
+        },
+        modalTitle: { ...typography.bodyBold, fontSize: 17, color: colors.danger },
+        modalHint: { ...typography.caption, color: colors.textMuted, marginTop: spacing.sm, lineHeight: 18 },
+        modalInput: {
+          backgroundColor: colors.surfaceAlt,
+          borderWidth: 1,
+          borderColor: colors.border,
+          borderRadius: radius.md,
+          paddingHorizontal: spacing.md,
+          paddingVertical: Platform.OS === 'ios' ? spacing.sm + 2 : spacing.sm,
+          fontSize: 15,
+          color: colors.text,
+          marginTop: spacing.md,
+        },
+        modalActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
+
+        // ── Settings drawer ──
+        settingsBackdrop: {
+          flex: 1,
+          backgroundColor: 'rgba(0,0,0,0.45)',
+          justifyContent: 'flex-end',
+        },
+        settingsSheet: {
+          backgroundColor: colors.card,
+          borderTopLeftRadius: radius.xl,
+          borderTopRightRadius: radius.xl,
+          paddingBottom: 32,
+          maxHeight: '88%',
+          ...shadowCard(mode),
+        },
+        settingsHandle: {
+          width: 36,
+          height: 4,
+          borderRadius: 2,
+          backgroundColor: colors.border,
+          alignSelf: 'center',
+          marginTop: spacing.sm,
+          marginBottom: spacing.xs,
+        },
+        settingsHeader: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: spacing.lg,
+          paddingVertical: spacing.sm,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: colors.border,
+        },
+        settingsTitle: { ...typography.bodyBold, fontSize: 16, color: colors.text, flex: 1 },
+        settingsCloseBtn: { padding: spacing.xs },
+        settingsSignOut: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: spacing.sm,
+          padding: spacing.md,
+          paddingHorizontal: spacing.lg,
+        },
+        settingsSignOutText: { ...typography.bodyBold, fontSize: 15, color: colors.danger },
+        settingsDivider: {
+          height: StyleSheet.hairlineWidth,
+          backgroundColor: colors.border,
+          marginHorizontal: spacing.lg,
+          marginVertical: spacing.xs,
+        },
+        menuCardTitle: {
+          ...typography.small,
+          fontWeight: '700',
+          color: colors.textMuted,
+          marginBottom: 2,
+          marginLeft: spacing.xs,
+          letterSpacing: 0.5,
+          fontSize: 11,
+        },
+        menuCardWrap: {
+          paddingVertical: 2,
+          paddingHorizontal: spacing.xs,
+          marginBottom: spacing.sm,
+        },
+      }),
+    [colors, mode, cardBg, cardBorder]
+  );
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <Screen scroll={false} padded={false}>
-      {/* ── Top bar ── */}
-      <View style={[styles.topBar, { paddingTop: insets.top }]}>
-        <Pressable
-          onPress={() => { void Haptics.selectionAsync(); setSettingsOpen(true); }}
-          style={styles.topBarIconHit}
-          accessibilityRole="button"
-          accessibilityLabel="Меню"
-          hitSlop={8}
-        >
-          <Ionicons name="menu-outline" size={24} color={colors.text} />
-        </Pressable>
-
-        <Text style={styles.topBarCenter} numberOfLines={1}>
-          {displayName.trim() || 'Рибар'}
-        </Text>
-
-        <View style={styles.topBarRight}>
-          {/* Notifications bell with badge */}
-          <Pressable
-            onPress={() => navigation.navigate('Notifications')}
-            style={[styles.topBarIconHit, styles.notifBadgeWrap]}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Известия"
-          >
-            <Ionicons name="notifications-outline" size={23} color={colors.text} />
-            {unreadNotifs > 0 ? (
-              <View style={styles.notifBadge}>
-                <Text style={styles.notifBadgeText}>{unreadNotifs > 99 ? '99+' : unreadNotifs}</Text>
-              </View>
-            ) : null}
-          </Pressable>
-
-          {/* Light / dark toggle */}
-          <Pressable
-            onPress={() => { void Haptics.selectionAsync(); toggleMode(); }}
-            style={styles.topBarIconHit}
-            accessibilityRole="button"
-            accessibilityLabel={mode === 'dark' ? 'Светла тема' : 'Тъмна тема'}
-            hitSlop={8}
-          >
-            <Ionicons
-              name={mode === 'dark' ? 'sunny-outline' : 'moon-outline'}
-              size={22}
-              color={colors.text}
-            />
-          </Pressable>
-        </View>
-      </View>
-
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -826,129 +1085,231 @@ export default function ProfileScreen() {
           />
         }
       >
-        {/* ── Guest state ── */}
+
+        {/* ════════════════════════════════════════
+            GUEST STATE — hero gradient screen
+        ════════════════════════════════════════ */}
         {!user ? (
-          <View style={styles.guestBlock}>
-            <View style={styles.guestIconWrap}>
-              <Ionicons name="fish-outline" size={26} color={colors.primary} />
+          <View style={styles.guestHero}>
+            <LinearGradient
+              colors={heroGrad}
+              start={{ x: 0.3, y: 0 }}
+              end={{ x: 0.7, y: 1 }}
+              style={styles.guestHeroBg}
+              pointerEvents="none"
+            />
+            <View style={[styles.guestHeroInner, { paddingTop: insets.top + 48 }]}>
+              <View style={styles.guestIconOuter}>
+                <Ionicons name="fish-outline" size={44} color="rgba(255,255,255,0.9)" />
+              </View>
+              <Text style={styles.guestTitle}>Твоят риболовен профил</Text>
+              <Text style={styles.guestSub}>
+                Влез за синхронизация, лента и видимо име и снимка в профила.
+              </Text>
+              <Pressable
+                style={({ pressed }) => [styles.guestBtn, pressed && { opacity: 0.85 }]}
+                onPress={() => navigation.navigate('Auth')}
+                accessibilityRole="button"
+                accessibilityLabel="Вход / Регистрация"
+              >
+                <LinearGradient
+                  colors={['#F5A020', '#E05E00']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={StyleSheet.absoluteFillObject}
+                />
+                <View style={styles.guestBtnInner}>
+                  <Ionicons name="log-in-outline" size={20} color="#fff" />
+                  <Text style={styles.guestBtnText}>Вход / Регистрация</Text>
+                </View>
+              </Pressable>
             </View>
-            <Text style={styles.guestTitle}>Твоят риболовен профил</Text>
-            <Text style={styles.guestSub}>
-              Влез за синхронизация, лента и видимо име и снимка в профила.
-            </Text>
-            <Button title="Вход / Регистрация" onPress={() => navigation.navigate('Auth')} style={{ marginTop: spacing.md }} />
           </View>
+
         ) : profileLoading ? (
-          <View style={{ justifyContent: 'center', alignItems: 'center', paddingVertical: spacing.xl }}>
-            <ActivityIndicator color={colors.primary} />
+          /* ── Loading state ── */
+          <View style={{ flex: 1, minHeight: 400, alignItems: 'center', justifyContent: 'center' }}>
+            <ActivityIndicator color={colors.primary} size="large" />
           </View>
+
         ) : (
           <>
-            {/* ── Profile header ── */}
-            <View style={styles.profileHeader}>
-              {/* Row 1: Avatar + Stats */}
-              <View style={styles.headerRow1}>
-                <Pressable
-                  onPress={configured ? pickProfileAvatar : undefined}
-                  disabled={!configured}
-                  accessibilityRole={configured ? 'button' : 'image'}
-                  accessibilityLabel={configured ? 'Промени снимка на профила' : 'Аватар'}
-                >
-                  <View style={styles.avatarWrap}>
-                    {avatarUri ? (
-                      <Image source={{ uri: avatarUri }} style={styles.avatarImg} contentFit="cover" />
-                    ) : (
-                      <Text style={styles.avatarLetter}>{initialLetter}</Text>
-                    )}
-                    {configured ? (
-                      <View style={styles.avatarBadge} pointerEvents="none">
-                        <Ionicons name="camera" size={13} color={colors.white} />
+            {/* ════════════════════════════════════════
+                HERO — gradient background
+            ════════════════════════════════════════ */}
+            <View style={styles.hero}>
+              <LinearGradient
+                colors={heroGrad}
+                start={{ x: 0.3, y: 0 }}
+                end={{ x: 0.7, y: 1 }}
+                style={styles.heroBg}
+                pointerEvents="none"
+              />
+
+              <View style={[styles.heroInner, { paddingTop: insets.top + 4 }]}>
+
+                {/* ── Top bar row ── */}
+                <View style={styles.heroBar}>
+                  {/* Left: hamburger menu */}
+                  <Pressable
+                    onPress={() => { void Haptics.selectionAsync(); setSettingsOpen(true); }}
+                    style={styles.heroMenuBtn}
+                    accessibilityRole="button"
+                    accessibilityLabel="Меню"
+                    hitSlop={8}
+                  >
+                    <Ionicons name="menu-outline" size={22} color="#fff" />
+                  </Pressable>
+
+                  {/* Center: subtle app label */}
+                  <Text style={styles.heroBarCenter}>РИБОЛОВ</Text>
+
+                  {/* Right: notifications + theme toggle */}
+                  <View style={styles.heroBarRight}>
+                    <Pressable
+                      onPress={() => navigation.navigate('Notifications')}
+                      style={styles.heroBarIconBtn}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel="Известия"
+                    >
+                      <BadgeIcon
+                        name="notifications-outline"
+                        size={20}
+                        color="rgba(255,255,255,0.9)"
+                        count={unreadNotifs}
+                      />
+                    </Pressable>
+                    <Pressable
+                      onPress={() => { void Haptics.selectionAsync(); toggleMode(); }}
+                      style={styles.heroBarIconBtn}
+                      accessibilityRole="button"
+                      accessibilityLabel={mode === 'dark' ? 'Светла тема' : 'Тъмна тема'}
+                      hitSlop={8}
+                    >
+                      <Ionicons
+                        name={mode === 'dark' ? 'sunny-outline' : 'moon-outline'}
+                        size={20}
+                        color="rgba(255,255,255,0.9)"
+                      />
+                    </Pressable>
+                  </View>
+                </View>
+
+                {/* ── Avatar + name + city + bio ── */}
+                <View style={styles.heroAvatarSection}>
+                  <Pressable
+                    onPress={configured ? pickProfileAvatar : undefined}
+                    disabled={!configured}
+                    accessibilityRole={configured ? 'button' : 'image'}
+                    accessibilityLabel={configured ? 'Промени снимка на профила' : 'Аватар'}
+                  >
+                    <View style={styles.avatarRingWrap}>
+                      <View style={styles.avatarInner}>
+                        {avatarUri ? (
+                          <Image source={{ uri: avatarUri }} style={styles.avatarImg} contentFit="cover" />
+                        ) : (
+                          <Text style={styles.avatarLetter}>{initialLetter}</Text>
+                        )}
+                        {configured ? (
+                          <View style={styles.avatarBadge} pointerEvents="none">
+                            <Ionicons name="camera" size={14} color="#fff" />
+                          </View>
+                        ) : null}
                       </View>
-                    ) : null}
-                  </View>
-                </Pressable>
-
-                {/* Stats */}
-                <View style={styles.statsRow}>
-                  <View style={styles.statCol}>
-                    <Text style={styles.statNum}>{catchStatsCount}</Text>
-                    <Text style={styles.statLabel}>улова</Text>
-                  </View>
-                  <View style={styles.statCol}>
-                    <Text style={styles.statNum}>{catchStatsSpecies}</Text>
-                    <Text style={styles.statLabel}>вида</Text>
-                  </View>
-                  <View style={styles.statCol}>
-                    <Text style={styles.statNum}>{catchStatsKg}</Text>
-                    <Text style={styles.statLabel}>кг</Text>
-                  </View>
-                </View>
-              </View>
-
-              {/* Row 2: Name, city, bio */}
-              <View style={styles.headerRow2}>
-                <Text style={styles.headerName} numberOfLines={1}>
-                  {displayName.trim() || user.displayName || 'Рибар'}
-                </Text>
-                {city.trim() ? (
-                  <Text style={styles.headerCity} numberOfLines={1}>📍 {city.trim()}</Text>
-                ) : null}
-                {bio.trim() ? (
-                  <Text style={styles.headerBio} numberOfLines={2}>{bio.trim()}</Text>
-                ) : null}
-              </View>
-
-              {/* Row 3: Action buttons */}
-              {configured ? (
-                <View style={styles.headerButtons}>
-                  <Pressable
-                    style={({ pressed }) => [styles.outlinedBtn, pressed && { opacity: 0.7 }]}
-                    onPress={() => { void Haptics.selectionAsync(); setPubExpanded(true); }}
-                    accessibilityRole="button"
-                    accessibilityLabel="Редактирай профил"
-                  >
-                    <Text style={styles.outlinedBtnText}>Редактирай профил</Text>
+                    </View>
                   </Pressable>
-                  <Pressable
-                    style={({ pressed }) => [styles.outlinedBtn, pressed && { opacity: 0.7 }]}
-                    onPress={openPublicPreview}
-                    accessibilityRole="button"
-                    accessibilityLabel="Публичен изглед"
-                  >
-                    <Text style={styles.outlinedBtnText}>Публичен изглед</Text>
-                  </Pressable>
-                </View>
-              ) : null}
 
-              {/* Completion nudge — compact, inside header card */}
-              {completionPct < 100 ? (
-                <View style={styles.nudge}>
-                  <View style={styles.nudgeRow}>
-                    <Text style={styles.nudgeText}>Профил {completionPct}% завършен</Text>
-                    <Text style={styles.nudgePercent}>{completionPct}%</Text>
-                  </View>
-                  <View style={styles.nudgeBar}>
-                    <View style={[styles.nudgeFill, { width: `${completionPct}%` as `${number}%` }]} />
-                  </View>
-                  {completionHint ? (
-                    <Text style={styles.nudgeHint}>{completionHint} →</Text>
+                  <Text style={styles.heroDisplayName} numberOfLines={1}>
+                    {displayName.trim() || user.displayName || 'Рибар'}
+                  </Text>
+                  {city.trim() ? (
+                    <Text style={styles.heroCity} numberOfLines={1}>
+                      📍 {city.trim()}
+                    </Text>
+                  ) : null}
+                  {bio.trim() ? (
+                    <Text style={styles.heroBio} numberOfLines={2}>{bio.trim()}</Text>
                   ) : null}
                 </View>
-              ) : null}
+
+                {/* ── Stats strip — glass panel ── */}
+                <View style={styles.heroStatsPanel}>
+                  <View style={styles.heroStatItem}>
+                    <Text style={styles.heroStatNum}>{catchStatsCount}</Text>
+                    <Text style={styles.heroStatLabel}>улова</Text>
+                  </View>
+                  <View style={styles.heroStatDivider} />
+                  <View style={styles.heroStatItem}>
+                    <Text style={styles.heroStatNum}>{catchStatsSpecies}</Text>
+                    <Text style={styles.heroStatLabel}>вида</Text>
+                  </View>
+                  <View style={styles.heroStatDivider} />
+                  <View style={styles.heroStatItem}>
+                    <Text style={styles.heroStatNum}>{catchStatsKg}</Text>
+                    <Text style={styles.heroStatLabel}>кг</Text>
+                  </View>
+                </View>
+
+                {/* ── Action buttons (only when configured) ── */}
+                {configured ? (
+                  <View style={styles.heroActions}>
+                    <Pressable
+                      style={({ pressed }) => [styles.heroActionBtn, pressed && { opacity: 0.75 }]}
+                      onPress={() => { void Haptics.selectionAsync(); setPubExpanded(true); }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Редактирай профил"
+                    >
+                      <Ionicons name="create-outline" size={14} color="#fff" />
+                      <Text style={styles.heroActionBtnText}>Редактирай профил</Text>
+                    </Pressable>
+                    <Pressable
+                      style={({ pressed }) => [styles.heroActionBtn, pressed && { opacity: 0.75 }]}
+                      onPress={openPublicPreview}
+                      accessibilityRole="button"
+                      accessibilityLabel="Публичен изглед"
+                    >
+                      <Ionicons name="eye-outline" size={14} color="#fff" />
+                      <Text style={styles.heroActionBtnText}>Публичен изглед</Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+
+                {/* ── Completion nudge (inside hero) ── */}
+                {completionPct < 100 ? (
+                  <View style={styles.heroNudge}>
+                    <View style={styles.heroNudgeRow}>
+                      <Text style={styles.heroNudgeText}>
+                        {completionHint ? completionHint + ' →' : `Профил ${completionPct}% завършен`}
+                      </Text>
+                      <Text style={styles.heroNudgePct}>{completionPct}%</Text>
+                    </View>
+                    <View style={styles.heroNudgeBarBg}>
+                      <View style={[styles.heroNudgeBarFill, { width: `${completionPct}%` as `${number}%` }]} />
+                    </View>
+                  </View>
+                ) : null}
+
+              </View>
             </View>
 
-            {/* ── Public profile edit (inline) ── */}
-            {pubExpanded && configured ? (
-              <View style={[styles.panel, { padding: 0, overflow: 'hidden', marginTop: spacing.sm }]}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', padding: spacing.md }}>
-                  <Ionicons name="person-circle-outline" size={18} color={colors.primary} style={{ marginRight: spacing.sm }} />
-                  <Text style={[styles.panelTitle, { flex: 1 }]}>Редактирай профил</Text>
-                  <Pressable onPress={() => setPubExpanded(false)} hitSlop={8}>
-                    <Ionicons name="close" size={18} color={colors.textMuted} />
-                  </Pressable>
-                </View>
-                <View style={{ paddingHorizontal: spacing.md, paddingBottom: spacing.md, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
-                  <Text style={[styles.fieldLabel, styles.fieldLabelFirst]}>Име</Text>
+            {/* ════════════════════════════════════════
+                WAVE CONTENT PANEL
+            ════════════════════════════════════════ */}
+            <View style={[styles.wave, { backgroundColor: waveColor }]}>
+
+              {/* ── Public profile edit panel ── */}
+              {pubExpanded && configured ? (
+                <View style={styles.panel}>
+                  <View style={styles.panelTitleRow}>
+                    <Ionicons name="person-circle-outline" size={20} color={colors.primary} />
+                    <Text style={styles.panelTitle}>Редактирай профил</Text>
+                    <Pressable onPress={() => setPubExpanded(false)} hitSlop={8}>
+                      <Ionicons name="close" size={20} color={colors.textMuted} />
+                    </Pressable>
+                  </View>
+
+                  <Text style={styles.fieldLabel}>Име</Text>
                   <TextInput
                     style={styles.input}
                     placeholder="Как да те виждат другите"
@@ -973,119 +1334,184 @@ export default function ProfileScreen() {
                     onChangeText={setBio}
                     multiline
                   />
-                  <Button title="Запази промените" onPress={savePublicProfile} loading={profileSaving} style={{ marginTop: spacing.md }} />
+                  <Button
+                    title="Запази промените"
+                    onPress={savePublicProfile}
+                    loading={profileSaving}
+                    style={{ marginTop: spacing.md }}
+                  />
                 </View>
-              </View>
-            ) : null}
+              ) : null}
 
-            {/* ── Cloud warning ── */}
-            {!configured ? (
-              <View style={styles.warnBanner}>
-                <Ionicons name="cloud-offline-outline" size={18} color={colors.textMuted} />
-                <Text style={styles.warnText}>
-                  Облакът не е активен — настрой Firebase, за да редактираш снимка и онлайн профил.
-                </Text>
-              </View>
-            ) : null}
-
-            {/* ── Upcoming trip ── */}
-            {nextTrip ? (
-              <Pressable
-                style={({ pressed }) => [styles.tripCard, pressed && { opacity: 0.75 }]}
-                onPress={() => navigation.navigate('Trips')}
-                accessibilityRole="button"
-                accessibilityLabel="Следващ излет"
-              >
-                <View style={styles.tripIconWrap}>
-                  <Ionicons name="calendar-outline" size={20} color={colors.white} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.tripLabel}>СЛЕДВАЩ ИЗЛЕТ</Text>
-                  <Text style={styles.tripTitle} numberOfLines={1}>{nextTrip.title}</Text>
-                  <Text style={styles.tripDate}>
-                    {new Date(nextTrip.dateIso).toLocaleDateString('bg-BG', { day: 'numeric', month: 'long', year: 'numeric' })}
+              {/* ── Cloud warning banner ── */}
+              {!configured ? (
+                <View style={styles.warnBanner}>
+                  <Ionicons name="cloud-offline-outline" size={18} color={colors.accent} />
+                  <Text style={styles.warnText}>
+                    Облакът не е активен — настрой Firebase, за да редактираш снимка и онлайн профил.
                   </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={16} color={colors.primary} />
-              </Pressable>
-            ) : null}
+              ) : null}
 
-            {/* ── Friends ── */}
-            <View style={styles.sectionWrap}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Приятели</Text>
-                <Pressable onPress={() => navigation.navigate('Friends')} hitSlop={8}>
-                  <Text style={styles.sectionAction}>Виж всички</Text>
-                </Pressable>
-              </View>
-              {friends.length > 0 ? (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={{ paddingRight: spacing.lg }}
+              {/* ── Upcoming trip card ── */}
+              {nextTrip ? (
+                <Pressable
+                  style={({ pressed }) => [styles.tripCard, pressed && { opacity: 0.8 }]}
+                  onPress={() => navigation.navigate('Trips')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Следващ излет"
                 >
-                  {friends.map((f) => (
-                    <Pressable
-                      key={f.uid}
-                      style={({ pressed }) => [styles.friendItem, pressed && { opacity: 0.7 }]}
-                      onPress={() => navigation.navigate('UserPublicProfile', { uid: f.uid, displayName: f.displayName })}
-                    >
-                      <View style={styles.friendAvatar}>
-                        {f.photoUrl ? (
-                          <Image source={{ uri: f.photoUrl }} style={{ width: '100%', height: '100%', borderRadius: 26 }} contentFit="cover" />
-                        ) : (
-                          <Text style={styles.friendAvatarText}>
-                            {(f.displayName || '?').slice(0, 1).toUpperCase()}
-                          </Text>
-                        )}
-                      </View>
-                      <Text style={styles.friendName} numberOfLines={1}>{f.displayName}</Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              ) : (
-                <View style={styles.emptySection}>
-                  <Text style={styles.emptySectionText}>Все още няма приятели — намери рибари от лентата!</Text>
-                </View>
-              )}
-            </View>
-
-            {/* ── Clubs ── */}
-            <View style={[styles.sectionWrap, { marginTop: spacing.sm }]}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Клубове</Text>
-                <Pressable onPress={() => navigation.navigate('Groups')} hitSlop={8}>
-                  <Text style={styles.sectionAction}>Виж всички</Text>
+                  <LinearGradient
+                    colors={['#0A1E38', '#0D2240']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.tripGradBg}
+                  />
+                  <View style={styles.tripIconWrap}>
+                    <Ionicons name="calendar-outline" size={22} color="#fff" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.tripLabel}>СЛЕДВАЩ ИЗЛЕТ</Text>
+                    <Text style={styles.tripTitle} numberOfLines={1}>{nextTrip.title}</Text>
+                    <Text style={styles.tripDate}>
+                      {new Date(nextTrip.dateIso).toLocaleDateString('bg-BG', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.5)" />
                 </Pressable>
-              </View>
-              {myGroups.length > 0 ? (
-                myGroups.map((g) => (
-                  <Pressable
-                    key={g.id}
-                    style={({ pressed }) => [styles.clubRow, pressed && { opacity: 0.7 }]}
-                    onPress={() => navigation.navigate('GroupDetail', { groupId: g.id, groupName: g.name })}
-                  >
-                    <View style={styles.clubIconWrap}>
-                      <Ionicons name="people-outline" size={20} color={colors.primary} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.clubName} numberOfLines={1}>{g.name}</Text>
-                      <Text style={styles.clubMeta}>{CATEGORY_LABELS[g.category]} · {g.memberCount} члена</Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+              ) : null}
+
+              {/* ── Friends section ── */}
+              <View style={styles.sectionWrap}>
+                <View style={styles.sectionRow}>
+                  <View style={styles.sectionLeft}>
+                    <View style={styles.sectionAccent} />
+                    <Text style={styles.sectionLabel}>Приятели</Text>
+                  </View>
+                  <Pressable onPress={() => navigation.navigate('Friends')} hitSlop={8}>
+                    <Text style={styles.sectionLink}>Виж всички</Text>
                   </Pressable>
-                ))
-              ) : (
-                <View style={styles.emptySection}>
-                  <Text style={styles.emptySectionText}>Все още не членуваш в клуб — намери такъв в секция Клубове!</Text>
                 </View>
-              )}
+
+                {friends.length > 0 ? (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.friendScroll}
+                  >
+                    {friends.map((f) => (
+                      <Pressable
+                        key={f.uid}
+                        style={({ pressed }) => [styles.friendItem, pressed && { opacity: 0.7 }]}
+                        onPress={() => navigation.navigate('UserPublicProfile', { uid: f.uid, displayName: f.displayName })}
+                      >
+                        <View style={styles.friendAvatar}>
+                          {f.photoUrl ? (
+                            <Image
+                              source={{ uri: f.photoUrl }}
+                              style={{ width: '100%', height: '100%', borderRadius: 30 }}
+                              contentFit="cover"
+                            />
+                          ) : (
+                            <Text style={styles.friendAvatarText}>
+                              {(f.displayName || '?').slice(0, 1).toUpperCase()}
+                            </Text>
+                          )}
+                        </View>
+                        <Text style={styles.friendName} numberOfLines={1}>{f.displayName}</Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                ) : (
+                  <View style={styles.emptySection}>
+                    <Text style={styles.emptySectionText}>Все още няма приятели — намери рибари от лентата!</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* ── Public posts grid ── */}
+              {publicPosts.length > 0 ? (
+                <View style={[styles.sectionWrap, { marginBottom: spacing.md }]}>
+                  <View style={styles.sectionRow}>
+                    <View style={styles.sectionLeft}>
+                      <View style={styles.sectionAccent} />
+                      <Text style={styles.sectionLabel}>Публични улови</Text>
+                    </View>
+                    <Pressable onPress={() => (navigation as any).navigate('FeedTab', { screen: 'FeedList' })} hitSlop={8}>
+                      <Text style={styles.sectionLink}>Към лентата</Text>
+                    </Pressable>
+                  </View>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2, marginHorizontal: spacing.xl }}>
+                    {publicPosts.map((post) => {
+                      const size = (screenWidth - spacing.xl * 2 - 4) / 3;
+                      return (
+                        <Pressable
+                          key={post.id}
+                          onPress={() => (navigation as any).navigate('LogbookTab', { screen: 'CatchDetail', params: { id: post.id } })}
+                          style={{ width: size, height: size, backgroundColor: colors.surfaceAlt, borderRadius: 4, overflow: 'hidden' }}
+                        >
+                          {post.photoUri ? (
+                            <Image source={{ uri: post.photoUri }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
+                          ) : (
+                            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                              <Ionicons name="fish-outline" size={20} color={colors.textMuted} />
+                              <Text style={{ fontSize: 10, color: colors.textMuted, fontFamily: 'Nunito_600SemiBold' }} numberOfLines={1}>
+                                {post.speciesName ?? ''}
+                              </Text>
+                            </View>
+                          )}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              ) : null}
+
+              {/* ── Clubs section ── */}
+              <View style={[styles.sectionWrap, { marginBottom: spacing.xl }]}>
+                <View style={styles.sectionRow}>
+                  <View style={styles.sectionLeft}>
+                    <View style={styles.sectionAccent} />
+                    <Text style={styles.sectionLabel}>Клубове</Text>
+                  </View>
+                  <Pressable onPress={() => navigation.navigate('Groups')} hitSlop={8}>
+                    <Text style={styles.sectionLink}>Виж всички</Text>
+                  </Pressable>
+                </View>
+
+                {myGroups.length > 0 ? (
+                  myGroups.map((g) => (
+                    <Pressable
+                      key={g.id}
+                      style={({ pressed }) => [styles.clubCard, pressed && { opacity: 0.75 }]}
+                      onPress={() => navigation.navigate('GroupDetail', { groupId: g.id, groupName: g.name })}
+                    >
+                      <View style={styles.clubIconWrap}>
+                        <Ionicons name="people-outline" size={20} color={colors.primary} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.clubName} numberOfLines={1}>{g.name}</Text>
+                        <Text style={styles.clubMeta}>{CATEGORY_LABELS[g.category]} · {g.memberCount} члена</Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                    </Pressable>
+                  ))
+                ) : (
+                  <View style={styles.emptySection}>
+                    <Text style={styles.emptySectionText}>Все още не членуваш в клуб — намери такъв в секция Клубове!</Text>
+                  </View>
+                )}
+              </View>
+
             </View>
+            {/* end wave */}
           </>
         )}
       </ScrollView>
 
-      {/* ── Settings drawer (Modal bottom sheet) ── */}
+      {/* ════════════════════════════════════════
+          SETTINGS DRAWER (Modal bottom sheet) — UNCHANGED
+      ════════════════════════════════════════ */}
       <Modal
         visible={settingsOpen}
         animationType="slide"
@@ -1188,6 +1614,7 @@ export default function ProfileScreen() {
               <View style={{ paddingHorizontal: spacing.xs, paddingVertical: 2, marginHorizontal: spacing.xs }}>
                 <Text style={[styles.menuCardTitle, { paddingHorizontal: spacing.sm, paddingTop: spacing.sm }]}>Навигация</Text>
                 <Card style={styles.menuCardWrap}>
+                  <MenuRow dense icon="notifications-outline" title="Настройки за известия" onPress={() => { setSettingsOpen(false); navigation.navigate('NotificationPreferences'); }} showDivider />
                   <MenuRow dense icon="stats-chart-outline" title="Статистики" onPress={() => { setSettingsOpen(false); navigation.navigate('Stats'); }} showDivider />
                   <MenuRow dense icon="trophy-outline" title="Лични рекорди" onPress={() => { setSettingsOpen(false); navigation.navigate('PersonalBests'); }} showDivider />
                   <MenuRow dense icon="people-outline" title="Клубове" onPress={() => { setSettingsOpen(false); navigation.navigate('Groups'); }} showDivider />

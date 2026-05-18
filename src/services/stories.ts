@@ -13,10 +13,11 @@ import {
   where,
   limit,
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, getDownloadURL, deleteObject } from 'firebase/storage';
+import { uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
 import { requireFirebase } from './firebase';
+import { getFirebaseWebConfig } from './firebaseConfig';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
-import { getUserPushToken, sendPushNotification } from './pushNotifications';
 
 const TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -66,12 +67,22 @@ export async function uploadStoryMedia(
   const contentType = type === 'video' ? 'video/mp4' : 'image/jpeg';
   const storagePath = `stories/${uid}/${Date.now()}.${ext}`;
 
-  const response = await fetch(localUri);
-  const blob = await response.blob();
-
-  const storageRef = ref(fb.storage, storagePath);
-  await uploadBytes(storageRef, blob, { contentType });
-  return getDownloadURL(storageRef);
+  const token = await fb.auth.currentUser?.getIdToken();
+  if (!token) throw new Error('Не е влезено в акаунт.');
+  const { storageBucket } = getFirebaseWebConfig();
+  const result = await uploadAsync(
+    `https://firebasestorage.googleapis.com/v0/b/${storageBucket}/o?uploadType=media&name=${encodeURIComponent(storagePath)}`,
+    localUri,
+    {
+      httpMethod: 'POST',
+      uploadType: FileSystemUploadType.BINARY_CONTENT,
+      headers: { 'Content-Type': contentType, Authorization: `Bearer ${token}` },
+    },
+  );
+  if (result.status < 200 || result.status >= 300) {
+    throw new Error(`Upload failed (${result.status}): ${result.body.slice(0, 200)}`);
+  }
+  return getDownloadURL(ref(fb.storage, storagePath));
 }
 
 export async function addStory(s: Omit<Story, 'id' | 'createdAt' | 'expiresAt'>): Promise<void> {
@@ -148,7 +159,15 @@ export function subscribeStories(onNext: (stories: Story[]) => void): () => void
 
 export async function deleteStory(storyId: string): Promise<void> {
   const fb = requireFirebase();
+  const snap = await getDoc(doc(fb.db, 'stories', storyId));
+  const mediaUrl = snap.exists() ? (snap.data()?.mediaUrl as string | undefined) : undefined;
   await deleteDoc(doc(fb.db, 'stories', storyId));
+  if (mediaUrl && mediaUrl.includes('firebasestorage.googleapis.com')) {
+    try {
+      const match = decodeURIComponent(mediaUrl).match(/\/o\/([^?]+)/);
+      if (match?.[1]) await deleteObject(ref(fb.storage, match[1]));
+    } catch { /* file may already be gone */ }
+  }
 }
 
 /* ── Story Reactions ─────────────────────────────────────── */
@@ -190,14 +209,6 @@ export async function toggleStoryReaction(
       doc(fb.db, 'users', ownerUid, 'notifications', `storyLike_${uid}_${storyId}`),
       { actorUid: uid, actorName: (displayName || 'Рибар').slice(0, 120), type: 'storyLike', storyId, reactionEmoji: emoji, preview: '', read: false, createdAt: serverTimestamp() }
     );
-    const token = await getUserPushToken(ownerUid);
-    if (!token) return;
-    await sendPushNotification({
-      to: token,
-      title: displayName || 'Рибар',
-      body: `Реагира ${emoji} на твоята история`,
-      data: { type: 'storyLike', storyId, actorUid: uid, actorName: displayName },
-    });
   })().catch(() => {});
 
   return reaction;
@@ -265,14 +276,6 @@ export async function addStoryComment(
     if (!ownerUid || ownerUid === authorUid) return;
     await addDoc(collection(fb.db, 'users', ownerUid, 'notifications'), {
       actorUid: authorUid, actorName: (authorName || 'Рибар').slice(0, 120), type: 'storyComment', storyId, preview: trimmed.slice(0, 200), read: false, createdAt: serverTimestamp(),
-    });
-    const token = await getUserPushToken(ownerUid);
-    if (!token) return;
-    await sendPushNotification({
-      to: token,
-      title: authorName || 'Рибар',
-      body: `Коментира историята ти: ${trimmed.slice(0, 80)}`,
-      data: { type: 'storyComment', storyId, actorUid: authorUid, actorName: authorName },
     });
   })().catch(() => {});
 }

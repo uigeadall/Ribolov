@@ -5,10 +5,10 @@ import {
   StyleSheet,
   FlatList,
   Pressable,
-  RefreshControl,
   ActivityIndicator,
   Platform,
 } from 'react-native';
+import { FishingRefreshControl } from '../components/FishingRefreshControl';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { FeedPost, FeedItem } from '../components/FeedPost';
@@ -122,7 +122,7 @@ export default function SavedPostsScreen() {
           removeClippedSubviews={Platform.OS === 'android'}
           contentContainerStyle={styles.listContent}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => reload(true)} tintColor={colors.primary} />
+            <FishingRefreshControl refreshing={refreshing} onRefresh={() => reload(true)} />
           }
           ItemSeparatorComponent={() => <View style={styles.gap} />}
           {...keyboardAwareScrollProps}

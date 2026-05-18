@@ -23,6 +23,7 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import { Ionicons } from '@expo/vector-icons';
 import { useRoute, useFocusEffect } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Screen } from '../components/Screen';
 import { Button } from '../components/Button';
 import { LeafletMap, LeafletMapHandle, LeafletMapType } from '../components/LeafletMap';
@@ -115,6 +116,7 @@ function bearingLabel(deg: number): string {
 
 export default function MapScreen() {
   const { colors, mode } = useTheme();
+  const insets = useSafeAreaInsets();
   const styles = useMemo(() => createMapStyles(colors), [colors]);
   const waterTypeColor = (t: Spot['waterType']) =>
     WATER_TYPES.find((x) => x.id === t)?.color ?? colors.primary;
@@ -146,7 +148,6 @@ export default function MapScreen() {
   const weatherCacheRef = useRef<Record<string, WeatherCacheEntry>>({});
   const { user, configured } = useAuth();
   const [hintVisible, setHintVisible] = useState(true);
-  const lastPosRef = useRef<{ lat: number; lng: number; zoom: number } | null>(null);
   const [waterReports, setWaterReports] = useState<WaterReport[]>([]);
   const [reportSheetOpen, setReportSheetOpen] = useState(false);
   const [reportActivity, setReportActivity] = useState(3);
@@ -175,20 +176,25 @@ export default function MapScreen() {
   }, []));
 
   useEffect(() => {
-    AsyncStorage.getItem('@ribolov/lastMapPos').then((raw) => {
-      if (!raw) return;
-      try {
-        const pos = JSON.parse(raw) as { lat: number; lng: number; zoom: number };
-        lastPosRef.current = pos;
-        setTimeout(() => mapRef.current?.flyTo(pos.lat, pos.lng, pos.zoom), 600);
-      } catch {
-        /* ignore bad data */
-      }
-    });
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    // Skip restoring last position if we're being focused on a specific water body —
+    // otherwise the saved-position fly-to races and overrides the focus target.
+    if (!focusDamId && !focusRiverId) {
+      AsyncStorage.getItem('@ribolov/lastMapPos').then((raw) => {
+        if (!raw) return;
+        try {
+          const pos = JSON.parse(raw) as { lat: number; lng: number; zoom: number };
+          timer = setTimeout(() => mapRef.current?.flyTo(pos.lat, pos.lng, pos.zoom), 600);
+        } catch {
+          /* ignore bad data */
+        }
+      });
+    }
     AsyncStorage.getItem('@ribolov/catchMarkersOn').then((v) => {
       if (v === 'true') setShowCatchMarkers(true);
     });
-  }, []);
+    return () => { if (timer) clearTimeout(timer); };
+  }, [focusDamId, focusRiverId]);
 
   useEffect(() => {
     AsyncStorage.setItem('@ribolov/catchMarkersOn', showCatchMarkers ? 'true' : 'false').catch(
@@ -230,16 +236,24 @@ export default function MapScreen() {
 
   useEffect(() => {
     const task = InteractionManager.runAfterInteractions(() => { load(); });
+    let cancelled = false;
     (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === 'granted') {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (cancelled || status !== 'granted') return;
         const loc = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Balanced,
         });
+        if (cancelled) return;
         setUserCoord({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+      } catch {
+        /* GPS may be off or simulator has no location — ignore */
       }
     })();
-    return () => task.cancel();
+    return () => {
+      cancelled = true;
+      task.cancel();
+    };
   }, [load]);
 
   useEffect(() => {
@@ -433,9 +447,9 @@ export default function MapScreen() {
     }
   };
 
-  const saveMapPos = (lat: number, lng: number, zoom: number) => {
+  const saveMapPos = useCallback((lat: number, lng: number, zoom: number) => {
     AsyncStorage.setItem('@ribolov/lastMapPos', JSON.stringify({ lat, lng, zoom })).catch(() => {});
-  };
+  }, []);
 
   const flyToSpot = (s: Spot) => {
     mapRef.current?.flyTo(s.latitude, s.longitude, 13);
@@ -498,15 +512,19 @@ export default function MapScreen() {
   );
 
   const locateMe = async () => {
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Локация', 'Разреши достъп до локацията в настройките.');
-      return;
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Локация', 'Разреши достъп до локацията в настройките.');
+        return;
+      }
+      const loc = await Location.getCurrentPositionAsync({});
+      const c = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+      setUserCoord(c);
+      mapRef.current?.flyTo(c.latitude, c.longitude, 13);
+    } catch {
+      Alert.alert('Локация', 'Неуспешно засичане на текущата позиция. Опитай отново.');
     }
-    const loc = await Location.getCurrentPositionAsync({});
-    const c = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
-    setUserCoord(c);
-    mapRef.current?.flyTo(c.latitude, c.longitude, 13);
   };
 
   const openInAppRouteToWater = useCallback(async () => {
@@ -514,13 +532,17 @@ export default function MapScreen() {
     setRouteLoading(true);
     try {
       let origin = userCoord;
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === 'granted') {
-        const loc = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-        origin = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
-        setUserCoord(origin);
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const loc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          origin = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+          setUserCoord(origin);
+        }
+      } catch {
+        /* Use last known position if GPS lookup fails */
       }
       if (!origin) {
         Alert.alert(
@@ -621,8 +643,9 @@ export default function MapScreen() {
   }, [selected, togglingFavorite, showFavoritesOnly]);
 
   return (
-    <Screen padded={false}>
-      <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      {/* ── Map (full screen base layer) ── */}
+      <View style={StyleSheet.absoluteFill}>
         {USE_REACT_NATIVE_MAPS ? (
           <NativeMapView
             ref={mapRef}
@@ -643,6 +666,7 @@ export default function MapScreen() {
             onMarkerPress={onMarkerPress}
             onDamPress={onDamPress}
             onRiverPress={onRiverPress}
+            onMapMove={saveMapPos}
           />
         ) : (
           <LeafletMap
@@ -664,80 +688,9 @@ export default function MapScreen() {
             onMarkerPress={onMarkerPress}
             onDamPress={onDamPress}
             onRiverPress={onRiverPress}
+            onMapMove={saveMapPos}
           />
         )}
-
-        <MapTopControls
-          colors={colors}
-          mode={mode}
-          mapType={mapType}
-          showDams={showDams}
-          showRivers={showRivers}
-          showFavoritesOnly={showFavoritesOnly}
-          showCatchMarkers={showCatchMarkers}
-          catchMarkersCount={catchMarkers.length}
-          hintVisible={hintVisible}
-          onMapTypeChange={setMapType}
-          onToggleDams={() => setShowDams((v) => !v)}
-          onToggleRivers={() => setShowRivers((v) => !v)}
-          onToggleFavorites={() => setShowFavoritesOnly((v) => !v)}
-          onToggleCatchMarkers={() => setShowCatchMarkers((v) => !v)}
-          onHintDismiss={() => setHintVisible(false)}
-          onHintShow={() => setHintVisible(true)}
-        />
-
-        <Pressable style={styles.fab} onPress={locateMe}>
-          <Ionicons name="locate" size={22} color={colors.primary} />
-        </Pressable>
-
-        <Pressable style={styles.searchFab} onPress={() => setPickerOpen(true)}>
-          <Ionicons name="search" size={20} color={colors.white} />
-          <Text style={styles.searchFabText}>Търси водоем</Text>
-        </Pressable>
-
-        {/* Layers FAB */}
-        <Pressable
-          style={[styles.layersFab, layersOpen && { backgroundColor: colors.primary }]}
-          onPress={() => setLayersOpen((v) => !v)}
-          accessibilityLabel="Слоеве"
-        >
-          <Ionicons name="layers-outline" size={22} color={layersOpen ? colors.white : colors.primary} />
-        </Pressable>
-
-        {layersOpen ? (
-          <View style={styles.layersPanel}>
-            <Pressable
-              onPress={() => setShowDams((v) => !v)}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xs, paddingHorizontal: spacing.sm, borderRadius: radius.md, backgroundColor: showDams ? colors.primarySurface : 'transparent' }}
-            >
-              <Ionicons name="layers-outline" size={18} color={showDams ? colors.primary : colors.textMuted} />
-              <Text style={{ ...typography.caption, fontWeight: '600', color: showDams ? colors.primary : colors.text }}>Язовири</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setShowRivers((v) => !v)}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xs, paddingHorizontal: spacing.sm, borderRadius: radius.md, backgroundColor: showRivers ? '#2E9B5A18' : 'transparent' }}
-            >
-              <Ionicons name="git-branch-outline" size={18} color={showRivers ? '#2E9B5A' : colors.textMuted} />
-              <Text style={{ ...typography.caption, fontWeight: '600', color: showRivers ? '#2E9B5A' : colors.text }}>Реки</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setShowFavoritesOnly((v) => !v)}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xs, paddingHorizontal: spacing.sm, borderRadius: radius.md, backgroundColor: showFavoritesOnly ? '#C49A0018' : 'transparent' }}
-            >
-              <Ionicons name="star" size={18} color={showFavoritesOnly ? '#C49A00' : colors.textMuted} />
-              <Text style={{ ...typography.caption, fontWeight: '600', color: showFavoritesOnly ? '#C49A00' : colors.text }}>Любими</Text>
-            </Pressable>
-            {catchMarkers.length > 0 ? (
-              <Pressable
-                onPress={() => setShowCatchMarkers((v) => !v)}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xs, paddingHorizontal: spacing.sm, borderRadius: radius.md, backgroundColor: showCatchMarkers ? '#E85D0418' : 'transparent' }}
-              >
-                <Text style={{ fontSize: 16 }}>🎣</Text>
-                <Text style={{ ...typography.caption, fontWeight: '600', color: showCatchMarkers ? '#E85D04' : colors.text }}>Мои улови</Text>
-              </Pressable>
-            ) : null}
-          </View>
-        ) : null}
 
         {sortedSpots.length > 1 && spotCenter ? (
           <Pressable
@@ -785,6 +738,105 @@ export default function MapScreen() {
             onSpotLongPress={(s) => recordCatchAt({ latitude: s.latitude, longitude: s.longitude, name: s.name })}
           />
         ) : null}
+      </View>
+
+      {/* ── Floating top controls ── */}
+      <View pointerEvents="box-none" style={{ position: 'absolute', top: insets.top + 10, left: 12, right: 12, gap: 8 }}>
+        {/* Search bar row */}
+        <View style={{
+          flexDirection: 'row', alignItems: 'center', gap: 8,
+          backgroundColor: mode === 'dark' ? 'rgba(18,28,36,0.96)' : 'rgba(255,255,255,0.97)',
+          borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10,
+          shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 12, shadowOffset: { width: 0, height: 4 },
+          elevation: 8,
+        }}>
+          <Ionicons name="search" size={18} color={colors.textMuted} />
+          <Pressable style={{ flex: 1 }} onPress={() => setPickerOpen(true)}>
+            <Text style={{ fontSize: 15, color: colors.textMuted, fontFamily: 'Nunito_600SemiBold' }}>
+              Търси язовир или река…
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={locateMe}
+            hitSlop={8}
+            style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: colors.primarySurface, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Ionicons name="locate" size={18} color={colors.primary} />
+          </Pressable>
+        </View>
+
+        {/* Filter chips row */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: 6, paddingRight: 4 }}
+          style={{}}
+        >
+          {/* Map type segment */}
+          <View style={{
+            flexDirection: 'row', overflow: 'hidden', borderRadius: 20,
+            backgroundColor: mode === 'dark' ? 'rgba(18,28,36,0.96)' : 'rgba(255,255,255,0.97)',
+            shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
+            elevation: 4,
+          }}>
+            {(['standard', 'satellite', 'hybrid'] as LeafletMapType[]).map((type, idx) => (
+              <Pressable
+                key={type}
+                onPress={() => setMapType(type)}
+                style={{
+                  paddingHorizontal: 12, paddingVertical: 7,
+                  backgroundColor: mapType === type ? colors.primary : 'transparent',
+                }}
+              >
+                <Text style={{ fontSize: 12, fontFamily: 'Nunito_700Bold', color: mapType === type ? '#fff' : colors.textMuted }}>
+                  {(['Карта', 'Сателит', 'Хибрид'])[idx]}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          {/* Toggle chips */}
+          {[
+            { key: 'dams', active: showDams, icon: 'layers-outline' as const, label: 'Язовири', activeColor: '#062D3D', onPress: () => setShowDams((v) => !v) },
+            { key: 'rivers', active: showRivers, icon: 'git-branch-outline' as const, label: 'Реки', activeColor: '#1e6b3d', onPress: () => setShowRivers((v) => !v) },
+            { key: 'favs', active: showFavoritesOnly, icon: 'star' as const, label: 'Любими', activeColor: '#B8860B', onPress: () => setShowFavoritesOnly((v) => !v) },
+          ].map((chip) => (
+            <Pressable
+              key={chip.key}
+              onPress={chip.onPress}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: 5,
+                paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
+                backgroundColor: chip.active ? chip.activeColor : (mode === 'dark' ? 'rgba(18,28,36,0.96)' : 'rgba(255,255,255,0.97)'),
+                shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
+                elevation: 4,
+              }}
+            >
+              <Ionicons name={chip.icon} size={13} color={chip.active ? '#fff' : colors.textMuted} />
+              <Text style={{ fontSize: 12, fontFamily: 'Nunito_700Bold', color: chip.active ? '#fff' : colors.text }}>
+                {chip.label}
+              </Text>
+            </Pressable>
+          ))}
+
+          {catchMarkers.length > 0 ? (
+            <Pressable
+              onPress={() => setShowCatchMarkers((v) => !v)}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: 5,
+                paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
+                backgroundColor: showCatchMarkers ? '#E85D04' : (mode === 'dark' ? 'rgba(18,28,36,0.96)' : 'rgba(255,255,255,0.97)'),
+                shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
+                elevation: 4,
+              }}
+            >
+              <Text style={{ fontSize: 12 }}>🎣</Text>
+              <Text style={{ fontSize: 12, fontFamily: 'Nunito_700Bold', color: showCatchMarkers ? '#fff' : colors.text }}>
+                Мои улови
+              </Text>
+            </Pressable>
+          ) : null}
+        </ScrollView>
       </View>
 
       <DamPicker
@@ -868,7 +920,7 @@ export default function MapScreen() {
         onRecordCatch={recordCatchAt}
         onToggleFavorite={() => void handleToggleFavorite()}
       />
-    </Screen>
+    </View>
   );
 }
 
@@ -1090,7 +1142,7 @@ const SpeciesFilterRow = React.memo(function SpeciesFilterRow({
   onSelect,
 }: SpeciesFilterRowProps) {
   return (
-    <View style={{ position: 'absolute', left: 0, right: 0, top: 110 }}>
+    <View style={{ position: 'absolute', left: 0, right: 0, top: 140 }}>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}

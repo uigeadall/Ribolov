@@ -144,12 +144,26 @@ export default function TournamentDetailScreen() {
     setEntries((prev) =>
       prev.map((e) => e.id === entry.id ? { ...e, likeCount: e.likeCount + (isLiked ? -1 : 1) } : e)
     );
-    await toggleTournamentEntryLike(route.params.id, entry.id, user.uid);
+    try {
+      await toggleTournamentEntryLike(route.params.id, entry.id, user.uid);
+    } catch {
+      // Roll back optimistic update
+      setMyLikes((prev) => {
+        const next = new Set(prev);
+        isLiked ? next.add(entry.id) : next.delete(entry.id);
+        return next;
+      });
+      setEntries((prev) =>
+        prev.map((e) => e.id === entry.id ? { ...e, likeCount: e.likeCount + (isLiked ? 1 : -1) } : e)
+      );
+    }
   };
 
   const openSubmitModal = async () => {
     const list = await catchesStore.list();
-    setMyCatches(list.filter((c) => !!c.photoUri));
+    // Only allow catches whose photo is already uploaded to the cloud (https URL).
+    // Local file:// URIs aren't readable by other users and would show broken images.
+    setMyCatches(list.filter((c) => !!c.photoUri && /^https?:\/\//i.test(c.photoUri)));
     setSubmitOpen(true);
   };
 

@@ -20,12 +20,17 @@ export function useFirestoreSubscription<T>(
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let active = true;
     setLoading(true);
     const unsub = subscribe((next) => {
+      if (!active) return;
       setData(next);
       setLoading(false);
     });
-    return unsub;
+    return () => {
+      active = false;
+      unsub();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 

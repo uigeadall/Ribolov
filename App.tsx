@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
+import * as Updates from 'expo-updates';
 import * as ScreenOrientation from 'expo-screen-orientation';
-import { useFonts, DMSans_400Regular, DMSans_500Medium, DMSans_600SemiBold, DMSans_700Bold } from '@expo-google-fonts/dm-sans';
+import { useFonts, Nunito_400Regular, Nunito_500Medium, Nunito_600SemiBold, Nunito_700Bold, Nunito_800ExtraBold } from '@expo-google-fonts/nunito';
 import { StatusBar } from 'expo-status-bar';
 import Toast from 'react-native-toast-message';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -22,7 +23,7 @@ const MIN_SPLASH_MS = 2200;
 
 export default function App() {
   const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
-  const [fontsLoaded] = useFonts({ DMSans_400Regular, DMSans_500Medium, DMSans_600SemiBold, DMSans_700Bold });
+  const [fontsLoaded] = useFonts({ Nunito_400Regular, Nunito_500Medium, Nunito_600SemiBold, Nunito_700Bold, Nunito_800ExtraBold });
   const [minTimeElapsed, setMinTimeElapsed] = useState(false);
 
   useEffect(() => {
@@ -32,6 +33,12 @@ export default function App() {
     if (fb) void initFirebaseAppCheckBridge(fb.app);
     AsyncStorage.getItem(ONBOARDING_KEY).then((v) => setOnboardingDone(v === '1'));
     const t = setTimeout(() => setMinTimeElapsed(true), MIN_SPLASH_MS);
+    if (!__DEV__) {
+      Updates.checkForUpdateAsync()
+        .then(({ isAvailable }) => { if (isAvailable) return Updates.fetchUpdateAsync(); })
+        .then((res) => { if (res) void Updates.reloadAsync(); })
+        .catch(() => {});
+    }
     return () => clearTimeout(t);
   }, []);
 

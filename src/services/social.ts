@@ -11,7 +11,7 @@ import {
 import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
 
-const FOLLOWING_TTL_MS = 2 * 60 * 1000;
+const FOLLOWING_TTL_MS = 10 * 60 * 1000;
 const followingCache = new Map<string, { data: { uid: string; displayName: string }[]; at: number }>();
 
 export async function getFollowerCount(targetUid: string): Promise<number> {

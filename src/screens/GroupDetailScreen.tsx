@@ -2,8 +2,9 @@ import React, { useCallback, useMemo, useState } from 'react';
 import Toast from 'react-native-toast-message';
 import {
   View, Text, StyleSheet, FlatList, Pressable,
-  TextInput, Alert, KeyboardAvoidingView, Platform, RefreshControl,
+  TextInput, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
+import { FishingRefreshControl } from '../components/FishingRefreshControl';
 import { useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -174,7 +175,7 @@ export default function GroupDetailScreen() {
         <FlatList
           data={posts}
           keyExtractor={(p) => p.id}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.primary} />}
+          refreshControl={<FishingRefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
           contentContainerStyle={{ padding: spacing.lg, gap: spacing.md, flexGrow: 1 }}
           ListEmptyComponent={
             <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: spacing.xxl }}>

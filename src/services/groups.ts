@@ -14,6 +14,7 @@ import {
   updateDoc,
   where,
   increment,
+  writeBatch,
 } from 'firebase/firestore';
 import { requireFirebase } from './firebase';
 import { newId } from '../storage/storage';
@@ -62,7 +63,8 @@ export async function createGroup(
 ): Promise<string> {
   const fb = requireFirebase();
   const id = newId();
-  await setDoc(doc(fb.db, 'groups', id), {
+  const batch = writeBatch(fb.db);
+  batch.set(doc(fb.db, 'groups', id), {
     name: g.name.trim(),
     description: g.description?.trim() ?? '',
     category: g.category,
@@ -73,12 +75,13 @@ export async function createGroup(
     postCount: 0,
   });
   // Creator becomes admin member — uid stored explicitly for collectionGroup queries
-  await setDoc(doc(fb.db, 'groups', id, 'members', creator.uid), {
+  batch.set(doc(fb.db, 'groups', id, 'members', creator.uid), {
     uid: creator.uid,
     displayName: creator.displayName,
     role: 'admin',
     joinedAt: serverTimestamp(),
   });
+  await batch.commit();
   return id;
 }
 
@@ -100,8 +103,10 @@ export async function fetchMyGroups(uid: string): Promise<Group[]> {
       query(collectionGroup(fb.db, 'members'), where('uid', '==', uid))
     );
     groupIds = memberSnap.docs.map((d) => d.ref.parent.parent!.id);
-  } catch {
-    // Index missing or unavailable — fall through to direct lookup below
+  } catch (e: unknown) {
+    const code = (e as { code?: string })?.code ?? '';
+    // Only fall through when the composite index is missing; re-throw other errors.
+    if (!code.includes('failed-precondition') && !code.includes('FAILED_PRECONDITION')) throw e;
   }
 
   // Fallback: check the user's direct member doc under every group
@@ -135,21 +140,23 @@ export async function getGroup(groupId: string): Promise<Group | null> {
 
 export async function joinGroup(groupId: string, user: { uid: string; displayName: string }): Promise<void> {
   const fb = requireFirebase();
-  await setDoc(doc(fb.db, 'groups', groupId, 'members', user.uid), {
+  const batch = writeBatch(fb.db);
+  batch.set(doc(fb.db, 'groups', groupId, 'members', user.uid), {
     uid: user.uid,
     displayName: user.displayName,
     role: 'member',
     joinedAt: serverTimestamp(),
   });
-  // Best-effort counter — membership write above is the authoritative join
-  await updateDoc(doc(fb.db, 'groups', groupId), { memberCount: increment(1) }).catch(() => {});
+  batch.update(doc(fb.db, 'groups', groupId), { memberCount: increment(1) });
+  await batch.commit();
 }
 
 export async function leaveGroup(groupId: string, uid: string): Promise<void> {
   const fb = requireFirebase();
-  await deleteDoc(doc(fb.db, 'groups', groupId, 'members', uid));
-  // Best-effort counter
-  await updateDoc(doc(fb.db, 'groups', groupId), { memberCount: increment(-1) }).catch(() => {});
+  const batch = writeBatch(fb.db);
+  batch.delete(doc(fb.db, 'groups', groupId, 'members', uid));
+  batch.update(doc(fb.db, 'groups', groupId), { memberCount: increment(-1) });
+  await batch.commit();
 }
 
 export async function isMember(groupId: string, uid: string): Promise<boolean> {

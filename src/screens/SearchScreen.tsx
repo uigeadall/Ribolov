@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import type { DocumentSnapshot } from 'firebase/firestore';
 
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 import { DAMS } from '../data/dams';
@@ -38,12 +39,29 @@ export default function SearchScreen() {
 
   const [tab, setTab] = useState<Tab>('users');
   const [query2, setQuery2] = useState('');
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [userResults, setUserResults] = useState<UserResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const lastUserDocRef = useRef<DocumentSnapshot | null>(null);
   const activeQueryRef = useRef('');
+
+  useEffect(() => {
+    AsyncStorage.getItem('@ribolov/recentSearches').then((v) => {
+      if (v) setRecentSearches(JSON.parse(v) as string[]);
+    }).catch(() => {});
+  }, []);
+
+  const saveSearch = useCallback((term: string) => {
+    const trimmed = term.trim();
+    if (!trimmed) return;
+    setRecentSearches((prev) => {
+      const next = [trimmed, ...prev.filter((s) => s !== trimmed)].slice(0, 6);
+      AsyncStorage.setItem('@ribolov/recentSearches', JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }, []);
 
   const styles = useMemo(() => StyleSheet.create({
     root: { flex: 1, backgroundColor: colors.background },
@@ -185,9 +203,26 @@ export default function SearchScreen() {
     return speciesList.filter((s) => s.nameBg.toLowerCase().includes(q) || s.nameLatin.toLowerCase().includes(q));
   }, [query2]);
 
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+  }, []);
+
   const handleQueryChange = (text: string) => {
     setQuery2(text);
-    if (tab === 'users') searchUsers(text);
+    if (tab !== 'users') return;
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (text.trim().length < 2) {
+      setUserResults([]);
+      setHasMore(false);
+      lastUserDocRef.current = null;
+      return;
+    }
+    searchTimer.current = setTimeout(() => { void searchUsers(text); }, 250);
+  };
+
+  const handleSubmitSearch = () => {
+    saveSearch(query2);
   };
 
   const handleTabChange = (t: Tab) => {
@@ -208,6 +243,7 @@ export default function SearchScreen() {
             placeholderTextColor={colors.textMuted}
             value={query2}
             onChangeText={handleQueryChange}
+            onSubmitEditing={handleSubmitSearch}
             style={styles.input}
             autoFocus
             clearButtonMode="while-editing"
@@ -228,6 +264,25 @@ export default function SearchScreen() {
           );
         })}
       </View>
+
+      {query2.trim() === '' && recentSearches.length > 0 && (
+        <View style={{ paddingHorizontal: spacing.xl, paddingTop: spacing.md }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm }}>
+            <Text style={{ fontSize: 11, fontFamily: 'Nunito_700Bold', color: colors.textMuted, letterSpacing: 0.5 }}>ПОСЛЕДНИ ТЪРСЕНИЯ</Text>
+            <Pressable onPress={() => { setRecentSearches([]); AsyncStorage.removeItem('@ribolov/recentSearches').catch(() => {}); }}>
+              <Text style={{ fontSize: 11, fontFamily: 'Nunito_600SemiBold', color: colors.primary }}>Изчисти</Text>
+            </Pressable>
+          </View>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {recentSearches.map((s) => (
+              <Pressable key={s} onPress={() => { setQuery2(s); if (tab === 'users') searchUsers(s); }}
+                style={{ backgroundColor: colors.primarySurface, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: colors.cardEdge }}>
+                <Text style={{ fontSize: 12, fontFamily: 'Nunito_600SemiBold', color: colors.primary }}>{s}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      )}
 
       {tab === 'users' && (
         <FlatList

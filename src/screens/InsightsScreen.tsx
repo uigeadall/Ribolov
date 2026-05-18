@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
@@ -36,7 +37,9 @@ export default function InsightsScreen() {
   const { colors } = useTheme();
   const [catches, setCatches] = useState<Catch[]>([]);
 
-  useEffect(() => { catchesStore.list().then(setCatches); }, []);
+  useFocusEffect(useCallback(() => {
+    catchesStore.list().then(setCatches).catch(() => {});
+  }, []));
 
   const insights = useMemo(() => {
     if (catches.length < 3) return null;

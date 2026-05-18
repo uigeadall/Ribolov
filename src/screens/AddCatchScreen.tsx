@@ -12,8 +12,6 @@ import {
   ActivityIndicator,
   Linking,
   Animated,
-  StyleProp,
-  ViewStyle,
 } from 'react-native';
 import { useRoute, RouteProp } from '@react-navigation/native';
 import { useAppNavigation } from '../navigation/useAppNavigation';
@@ -23,9 +21,8 @@ import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Location from 'expo-location';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Screen } from '../components/Screen';
-import { Button } from '../components/Button';
-import { Card } from '../components/Card';
 import { BanPeriodCard } from '../components/BanPeriodCard';
 import { TripPickerModal } from '../components/TripPickerModal';
 import { useTheme } from '../services/themeContext';
@@ -36,7 +33,7 @@ import { speciesList } from '../data/species';
 import { Achievement, Catch, TripPlan } from '../types';
 import { useAuth } from '../services/authContext';
 import { doc, getDoc } from 'firebase/firestore';
-import { pushCatch, ensureCatchPhotoUploadedForCloud } from '../services/cloudSync';
+import { pushCatch, ensureCatchPhotoUploadedForCloud, deleteStoragePath } from '../services/cloudSync';
 import { ensureFirebase } from '../services/firebase';
 import { enqueueCatchSync } from '../services/catchSyncQueue';
 import { checkBanPeriod } from '../services/notifications';
@@ -168,6 +165,19 @@ export default function AddCatchScreen() {
     });
   }, []);
 
+  const [suggestedSpecies, setSuggestedSpecies] = useState<string | null>(null);
+  useEffect(() => {
+    // Only suggest if form isn't being edited (fresh open)
+    catchesStore.list().then((list) => {
+      if (list.length === 0) return;
+      // Find catches within ~5km of current location or just most frequent species
+      const freq: Record<string, number> = {};
+      list.forEach((c) => { if (c.speciesName) freq[c.speciesName] = (freq[c.speciesName] ?? 0) + 1; });
+      const top = Object.entries(freq).sort((a, b) => b[1] - a[1])[0];
+      if (top && top[1] >= 2) setSuggestedSpecies(top[0]);
+    }).catch(() => {});
+  }, []);
+
   const [recentBaits, setRecentBaits] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [unlockedNow, setUnlockedNow] = useState<Achievement[]>([]);
@@ -243,6 +253,7 @@ export default function AddCatchScreen() {
           released: !!c.released,
           enterLeaderboard: c.enterLeaderboard ?? true,
           photoUri: c.photoUri,
+          extraPhotoUris: c.extraPhotoUris ?? [],
           cameraVerifiedPhoto: isRemoteImageUri(c.photoUri) || c.photoTakenWithAppCamera === true,
           locationCoords: c.location
             ? { lat: c.location.latitude, lon: c.location.longitude }
@@ -424,11 +435,27 @@ export default function AddCatchScreen() {
     if (!user) return { ok: true };
     try {
       let toSync = catchItem;
-      if (catchItem.photoUri?.trim() && !/^https?:\/\//i.test(catchItem.photoUri.trim())) {
+      const newLocalUri =
+        catchItem.photoUri?.trim() && !/^https?:\/\//i.test(catchItem.photoUri.trim());
+      // Capture the previous storage path BEFORE upload so we can clean it up after.
+      // Only delete if we're replacing with a new local photo OR the photo was cleared,
+      // and the new path will differ from the old one.
+      const oldStoragePath = initialCatch?.photoStoragePath;
+      const photoWasReplaced =
+        oldStoragePath &&
+        (newLocalUri || !catchItem.photoUri) &&
+        oldStoragePath !== catchItem.photoStoragePath;
+
+      if (newLocalUri) {
         toSync = await ensureCatchPhotoUploadedForCloud(catchItem, user.uid);
       }
       await pushCatch(toSync, user.uid, user.displayName ?? user.email ?? 'Рибар', sharePublic);
       await catchesStore.save({ ...toSync, syncedToCloud: true });
+
+      // After successful sync, delete the orphaned previous photo from Storage.
+      if (photoWasReplaced && oldStoragePath && oldStoragePath !== toSync.photoStoragePath) {
+        void deleteStoragePath(oldStoragePath);
+      }
       return { ok: true };
     } catch (e: any) {
       return { ok: false, message: e?.message ?? String(e) };
@@ -489,6 +516,9 @@ export default function AddCatchScreen() {
 
     try {
       await catchesStore.save(item);
+      // Save succeeded — the form is no longer dirty, so the beforeRemove guard won't trigger
+      // when the achievement modal is dismissed.
+      formDirtyRef.current = false;
 
       const allCatches = await catchesStore.list();
       const pb = checkNewPersonalBest(item, allCatches);
@@ -527,6 +557,7 @@ export default function AddCatchScreen() {
         void (async () => {
           const sync = await syncCatchToCloud(item, form.shareToFeed);
           if (!sync.ok) {
+            console.error('[CatchSync] failed:', sync.message);
             await enqueueCatchSync(item.id, form.shareToFeed).catch(() => {});
           }
         })();
@@ -552,6 +583,16 @@ export default function AddCatchScreen() {
     return 1;
   }, [form.photoUri, selectedSpecies, form.weight, form.locationName, form.locationCoords]);
 
+  // Progress bar animation
+  const progressAnim = useRef(new Animated.Value(currentStep)).current;
+  useEffect(() => {
+    Animated.timing(progressAnim, {
+      toValue: currentStep,
+      duration: 300,
+      useNativeDriver: false,
+    }).start();
+  }, [currentStep, progressAnim]);
+
   if (editCatchId && !editLoaded) {
     return (
       <Screen>
@@ -564,300 +605,382 @@ export default function AddCatchScreen() {
 
   return (
     <Screen padded={false}>
-      <ScrollView contentContainerStyle={styles.content} {...keyboardAwareScrollProps}>
-        <View style={styles.header}>
-          <Pressable onPress={() => navigation.goBack()} hitSlop={8}>
-            <Ionicons name="chevron-back" size={28} color={colors.primary} />
-          </Pressable>
-          <Text style={styles.title}>{editCatchId ? 'Редактирай улов' : 'Нов улов'}</Text>
-          <View style={{ width: 28 }} />
-        </View>
+      <ScrollView contentContainerStyle={{ paddingBottom: 24 }} {...keyboardAwareScrollProps}>
 
-        {!editCatchId ? (
-          <StepIndicator currentStep={currentStep} colors={colors} />
-        ) : null}
-
-        {!editCatchId && lastCatch ? (
-          <Pressable
-            onPress={() => {
-              void Haptics.selectionAsync();
-              dispatch({
-                type: 'LOAD_CATCH',
-                payload: {
-                  speciesId: speciesList.some((s) => s.id === lastCatch.speciesId)
-                    ? lastCatch.speciesId
-                    : speciesList[0].id,
-                  weight: lastCatch.weightKg != null ? String(lastCatch.weightKg) : '',
-                  length: lastCatch.lengthCm != null ? String(lastCatch.lengthCm) : '',
-                  bait: lastCatch.bait ?? '',
-                  notes: lastCatch.notes ?? '',
-                  released: !!lastCatch.released,
-                  locationCoords: lastCatch.location
-                    ? { lat: lastCatch.location.latitude, lon: lastCatch.location.longitude }
-                    : null,
-                  locationName: lastCatch.location?.name ?? '',
-                  photoUri: undefined,
-                  cameraVerifiedPhoto: false,
-                },
-              });
-            }}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 6,
-              paddingHorizontal: spacing.md,
-              paddingVertical: 8,
-              borderRadius: radius.pill,
-              backgroundColor: colors.primarySurface,
-              borderWidth: 1,
-              borderColor: colors.primary,
-              alignSelf: 'flex-start',
-              marginHorizontal: spacing.lg,
-              marginBottom: spacing.sm,
-            }}
-          >
-            <Text
-              style={{ ...typography.small, color: colors.primary, fontWeight: '600', maxWidth: 280 }}
-              numberOfLines={1}
-            >
-              {'🔁 Като последния — ' + lastCatch.speciesName + (lastCatch.weightKg != null ? ' ' + lastCatch.weightKg + 'кг' : '')}
-            </Text>
-          </Pressable>
-        ) : null}
-
+        {/* ── PHOTO HERO ── */}
         <PhotoSection
           photoUri={form.photoUri}
           shareToFeed={form.shareToFeed}
-          extraPhotoUris={form.extraPhotoUris}
-          photoTitle={form.photoTitle}
+          editCatchId={editCatchId}
+          currentStep={currentStep}
           colors={colors}
           styles={styles}
           onPickPhoto={() => void pickPhoto()}
           onTakePhoto={() => void takePhoto()}
           onClearPhoto={() => dispatch({ type: 'CLEAR_PHOTO' })}
-          onAddExtraPhoto={() => void addExtraPhoto()}
-          onRemoveExtraPhoto={(i) => dispatch({ type: 'REMOVE_EXTRA_PHOTO', payload: i })}
-          onChangePhotoTitle={(t) => dispatch({ type: 'SET_PHOTO_TITLE', payload: t })}
+          onNavigationBack={() => navigation.goBack()}
         />
 
-        <Text style={styles.label}>Вид риба</Text>
-        <Pressable
-          onPress={() => setPickerOpen(true)}
-          style={[styles.input, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
-        >
-          <View>
-            <Text style={{ ...typography.bodyBold, color: colors.text }}>
-              {selectedSpecies.nameBg}
-            </Text>
-            <Text style={{ ...typography.small, color: colors.textMuted, fontStyle: 'italic' }}>
-              {selectedSpecies.nameLatin}
-            </Text>
-          </View>
-          <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
-        </Pressable>
-        <SpeciesPicker
-          visible={pickerOpen}
-          selectedId={form.speciesId}
-          onSelect={(id) => dispatch({ type: 'SET_SPECIES', payload: id })}
-          onClose={() => setPickerOpen(false)}
-        />
+        {/* ── SHEET (overlaps hero, white card, curved top) ── */}
+        <View style={styles.sheet}>
 
-        <BanPeriodCard speciesName={selectedSpecies.nameBg} banInfo={banInfo} />
-
-        <View style={styles.row2}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.label}>Тегло (кг)</Text>
-            <TextInput
-              value={form.weight}
-              onChangeText={(v) => dispatch({ type: 'SET_WEIGHT', payload: v })}
-              placeholder="напр. 2.5"
-              keyboardType="decimal-pad"
-              returnKeyType="next"
-              style={styles.input}
-              placeholderTextColor={colors.textMuted}
-            />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.label}>Дължина (см)</Text>
-            <TextInput
-              value={form.length}
-              onChangeText={(v) => dispatch({ type: 'SET_LENGTH', payload: v })}
-              placeholder="напр. 45"
-              keyboardType="decimal-pad"
-              style={styles.input}
-              placeholderTextColor={colors.textMuted}
-            />
-            <WeightEstimator
-              length={form.length}
-              weight={form.weight}
-              speciesId={form.speciesId}
-              colors={colors}
-              onAccept={(w) => dispatch({ type: 'SET_WEIGHT', payload: w })}
-            />
-          </View>
-        </View>
-
-        <Text style={styles.label}>Стръв / примамка</Text>
-        {recentBaits.length > 0 ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.xs, marginBottom: spacing.sm }} keyboardShouldPersistTaps="handled">
-            {recentBaits.map((b) => (
-              <Pressable
-                key={b}
-                onPress={() => dispatch({ type: 'SET_BAIT', payload: b })}
-                style={{
-                  paddingHorizontal: spacing.md,
-                  paddingVertical: 6,
-                  borderRadius: radius.pill,
-                  backgroundColor: form.bait === b ? colors.primary : colors.card,
-                  borderWidth: 1,
-                  borderColor: form.bait === b ? colors.primary : colors.border,
-                }}
-              >
-                <Text style={{ ...typography.small, color: form.bait === b ? colors.white : colors.text, fontWeight: '600' }}>{b}</Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-        ) : null}
-        <TextInput
-          value={form.bait}
-          onChangeText={(v) => dispatch({ type: 'SET_BAIT', payload: v })}
-          placeholder="напр. царевица, червей, воблер..."
-          returnKeyType="next"
-          style={styles.input}
-          placeholderTextColor={colors.textMuted}
-        />
-
-        <Card style={{ marginTop: spacing.md }}>
-          <View style={styles.locRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.label}>Локация</Text>
-              {form.locationCoords ? (
-                <Text style={styles.muted}>
-                  {form.locationName ||
-                    `${form.locationCoords.lat.toFixed(4)}, ${form.locationCoords.lon.toFixed(4)}`}
-                </Text>
-              ) : (
-                <Text style={styles.muted}>Без координати</Text>
-              )}
-            </View>
-            <Button
-              title={form.locationCoords ? 'Обнови' : 'Маркирай'}
-              variant="secondary"
-              onPress={() => void grabLocation()}
-            />
-          </View>
-        </Card>
-
-        <Text style={styles.label}>Бележки</Text>
-        <TextInput
-          value={form.notes}
-          onChangeText={(v) => dispatch({ type: 'SET_NOTES', payload: v })}
-          placeholder="Условия, час, какво е работило..."
-          multiline
-          numberOfLines={4}
-          style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
-          placeholderTextColor={colors.textMuted}
-        />
-
-        {trips.length > 0 ? (
-          <>
-            <Text style={[styles.label, { marginTop: spacing.md }]}>Излет (по избор)</Text>
+          {/* CHIPS — repeat last + suggested species */}
+          {!editCatchId && lastCatch ? (
             <Pressable
-              onPress={() => setTripPickerOpen(true)}
-              style={[
-                styles.input,
-                {
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  height: undefined,
-                  paddingVertical: spacing.sm + 2,
-                },
-              ]}
+              onPress={() => {
+                void Haptics.selectionAsync();
+                dispatch({
+                  type: 'LOAD_CATCH',
+                  payload: {
+                    speciesId: speciesList.some((s) => s.id === lastCatch.speciesId)
+                      ? lastCatch.speciesId
+                      : speciesList[0].id,
+                    weight: lastCatch.weightKg != null ? String(lastCatch.weightKg) : '',
+                    length: lastCatch.lengthCm != null ? String(lastCatch.lengthCm) : '',
+                    bait: lastCatch.bait ?? '',
+                    notes: lastCatch.notes ?? '',
+                    released: !!lastCatch.released,
+                    locationCoords: lastCatch.location
+                      ? { lat: lastCatch.location.latitude, lon: lastCatch.location.longitude }
+                      : null,
+                    locationName: lastCatch.location?.name ?? '',
+                    photoUri: undefined,
+                    cameraVerifiedPhoto: false,
+                  },
+                });
+              }}
+              style={styles.chipPill}
             >
-              <Text style={{ color: form.tripId ? colors.text : colors.textMuted, fontSize: 16 }}>
-                {form.tripId
-                  ? (trips.find((t) => t.id === form.tripId)?.title ?? 'Излет')
-                  : 'Не е избран'}
+              <Text style={styles.chipPillText} numberOfLines={1}>
+                {'🔁 Като последния — ' + lastCatch.speciesName + (lastCatch.weightKg != null ? ' ' + lastCatch.weightKg + 'кг' : '')}
               </Text>
-              <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
             </Pressable>
-            <TripPickerModal
-              visible={tripPickerOpen}
-              trips={trips}
-              selectedTripId={form.tripId}
-              onSelect={(id) => dispatch({ type: 'SET_TRIP', payload: id })}
-              onClose={() => setTripPickerOpen(false)}
-            />
-          </>
-        ) : null}
+          ) : null}
 
-        <View style={[styles.row2, { alignItems: 'center', marginTop: spacing.md }]}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.label}>Пуснат обратно</Text>
-            <Text style={styles.muted}>Catch & release</Text>
-          </View>
-          <Switch
-            value={form.released}
-            onValueChange={(v) => dispatch({ type: 'SET_RELEASED', payload: v })}
-            trackColor={{ true: colors.primary, false: colors.border }}
-          />
-        </View>
+          {suggestedSpecies && form.speciesId === speciesList[0].id && !editCatchId ? (
+            <Pressable
+              onPress={() => {
+                const matched = speciesList.find((s) => s.nameBg === suggestedSpecies);
+                if (matched) dispatch({ type: 'SET_SPECIES', payload: matched.id });
+                setSuggestedSpecies(null);
+              }}
+              style={styles.chipPill}
+            >
+              <Ionicons name="bulb-outline" size={15} color={colors.primary} />
+              <Text style={[styles.chipPillText, { flex: 1 }]}>
+                Препоръчан вид:{' '}
+                <Text style={{ color: colors.primary, fontFamily: 'Nunito_700Bold' }}>{suggestedSpecies}</Text>
+              </Text>
+              <Pressable onPress={() => setSuggestedSpecies(null)} hitSlop={8}>
+                <Ionicons name="close-outline" size={15} color={colors.textMuted} />
+              </Pressable>
+            </Pressable>
+          ) : null}
 
-        <View style={[styles.row2, { alignItems: 'center', marginTop: spacing.md }]}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.label}>Сподели публично</Text>
-            <Text style={styles.muted}>
-              {user ? 'В лентата и класиките; снимка само от камерата.' : 'Изисква акаунт.'}
-            </Text>
-          </View>
-          <Switch
-            value={form.shareToFeed}
-            onValueChange={(v) => {
-              if (!v) {
-                dispatch({ type: 'SET_SHARE_TO_FEED', payload: false });
-                dispatch({ type: 'SET_ENTER_LEADERBOARD', payload: false });
-                return;
-              }
-              if (
-                form.photoUri?.trim() &&
-                !isRemoteImageUri(form.photoUri) &&
-                !form.cameraVerifiedPhoto
-              ) {
-                Alert.alert(
-                  'Галерията не се ползва за класики',
-                  'За публично споделяне трябва снимка от камерата. Премахни текущата снимка или я заснеми отново с „Снимай".',
-                  [{ text: 'OK', style: 'cancel' }]
-                );
-                return;
-              }
-              dispatch({ type: 'SET_SHARE_TO_FEED', payload: true });
-              dispatch({ type: 'SET_ENTER_LEADERBOARD', payload: true });
-            }}
-            trackColor={{ true: colors.primary, false: colors.border }}
-          />
-        </View>
-
-        {form.shareToFeed ? (
-          <View style={[styles.row2, { alignItems: 'center', marginTop: spacing.md }]}>
+          {/* ── SPECIES BLOCK ── */}
+          <View style={styles.speciesBlock}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.label}>Участвай в класацията</Text>
-              <Text style={styles.muted}>Седмична и месечна класация по тегло.</Text>
+              <Text style={styles.speciesName}>{selectedSpecies.nameBg}</Text>
+              <Text style={styles.speciesLatin}>{selectedSpecies.nameLatin}</Text>
             </View>
-            <Switch
-              value={form.enterLeaderboard}
-              onValueChange={(v) => dispatch({ type: 'SET_ENTER_LEADERBOARD', payload: v })}
-              trackColor={{ true: colors.primary, false: colors.border }}
-            />
+            <Pressable onPress={() => setPickerOpen(true)} style={styles.speciesChangeBtn}>
+              <Ionicons name="swap-horizontal" size={14} color={colors.primary} />
+              <Text style={styles.speciesChangeBtnText}>Промени</Text>
+            </Pressable>
           </View>
-        ) : null}
+          <BanPeriodCard speciesName={selectedSpecies.nameBg} banInfo={banInfo} />
 
-        <Button
-          title={editCatchId ? 'Запази промените' : 'Запази улова'}
-          onPress={() => void save()}
-          loading={saving}
-          style={{ marginTop: spacing.xl }}
-        />
+          {/* ── PHOTO META (when photoUri exists) ── */}
+          {form.photoUri ? (
+            <View style={styles.photoMetaCard}>
+              <TextInput
+                value={form.photoTitle}
+                onChangeText={(t) => dispatch({ type: 'SET_PHOTO_TITLE', payload: t })}
+                placeholder="Заглавие на снимката (по избор)"
+                style={styles.photoMetaInput}
+                placeholderTextColor={colors.textMuted}
+              />
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 8, paddingTop: 10 }}
+              >
+                {form.extraPhotoUris.map((uri, i) => (
+                  <View key={i} style={{ position: 'relative' }}>
+                    <Image source={{ uri }} style={{ width: 64, height: 64, borderRadius: 12 }} contentFit="cover" />
+                    <Pressable
+                      onPress={() => dispatch({ type: 'REMOVE_EXTRA_PHOTO', payload: i })}
+                      hitSlop={4}
+                      style={{
+                        position: 'absolute',
+                        top: -5,
+                        right: -5,
+                        backgroundColor: colors.danger,
+                        borderRadius: 9,
+                        width: 18,
+                        height: 18,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Ionicons name="close" size={11} color="#fff" />
+                    </Pressable>
+                  </View>
+                ))}
+                {form.extraPhotoUris.length < 4 && (
+                  <Pressable
+                    onPress={() => void addExtraPhoto()}
+                    style={{
+                      width: 64,
+                      height: 64,
+                      borderRadius: 12,
+                      backgroundColor: colors.surfaceAlt,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Ionicons name="add" size={24} color={colors.primary} />
+                  </Pressable>
+                )}
+              </ScrollView>
+            </View>
+          ) : null}
+
+          {/* ── METRIC TILES ── */}
+          <View style={styles.metricRow}>
+            <View style={styles.metricTile}>
+              <Text style={styles.metricTileLabel}>Тегло</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 4 }}>
+                <TextInput
+                  value={form.weight}
+                  onChangeText={(v) => dispatch({ type: 'SET_WEIGHT', payload: v })}
+                  placeholder="—"
+                  keyboardType="decimal-pad"
+                  returnKeyType="next"
+                  style={styles.metricTileInput}
+                  placeholderTextColor={colors.border}
+                />
+                <Text style={styles.metricTileUnit}>кг</Text>
+              </View>
+              <WeightEstimator
+                length={form.length}
+                weight={form.weight}
+                speciesId={form.speciesId}
+                colors={colors}
+                onAccept={(w) => dispatch({ type: 'SET_WEIGHT', payload: w })}
+              />
+            </View>
+            <View style={styles.metricTileDivider} />
+            <View style={styles.metricTile}>
+              <Text style={styles.metricTileLabel}>Дължина</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 4 }}>
+                <TextInput
+                  value={form.length}
+                  onChangeText={(v) => dispatch({ type: 'SET_LENGTH', payload: v })}
+                  placeholder="—"
+                  keyboardType="decimal-pad"
+                  style={styles.metricTileInput}
+                  placeholderTextColor={colors.border}
+                />
+                <Text style={styles.metricTileUnit}>см</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* ── DETAIL ROWS CARD ── */}
+          <View style={styles.detailCard}>
+            {/* Bait row */}
+            <View style={styles.detailRow}>
+              <View style={styles.detailIcon}>
+                <Ionicons name="leaf-outline" size={18} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <TextInput
+                  value={form.bait}
+                  onChangeText={(v) => dispatch({ type: 'SET_BAIT', payload: v })}
+                  placeholder="Стръв / примамка..."
+                  returnKeyType="next"
+                  style={styles.detailInput}
+                  placeholderTextColor={colors.textMuted}
+                />
+                {recentBaits.length > 0 && (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={{ gap: 6, paddingTop: 8, paddingBottom: 4 }}
+                    keyboardShouldPersistTaps="handled"
+                  >
+                    {recentBaits.map((b) => (
+                      <Pressable
+                        key={b}
+                        onPress={() => dispatch({ type: 'SET_BAIT', payload: b })}
+                        style={[styles.baitPill, form.bait === b && styles.baitPillActive]}
+                      >
+                        <Text style={[styles.baitPillText, form.bait === b && styles.baitPillTextActive]}>{b}</Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                )}
+              </View>
+            </View>
+
+            <View style={styles.detailDivider} />
+
+            {/* Location row */}
+            <View style={styles.detailRow}>
+              <View style={styles.detailIcon}>
+                <Ionicons name="location-outline" size={18} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={form.locationCoords ? styles.detailInput : [styles.detailInput, { color: colors.textMuted }]}
+                  numberOfLines={1}
+                >
+                  {form.locationCoords
+                    ? (form.locationName || `${form.locationCoords.lat.toFixed(4)}, ${form.locationCoords.lon.toFixed(4)}`)
+                    : 'Без координати'}
+                </Text>
+              </View>
+              <Pressable onPress={() => void grabLocation()} style={styles.detailButton}>
+                <Text style={styles.detailButtonText}>{form.locationCoords ? 'Обнови' : 'Маркирай'}</Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.detailDivider} />
+
+            {/* Notes row */}
+            <View style={[styles.detailRow, { alignItems: 'flex-start' }]}>
+              <View style={[styles.detailIcon, { marginTop: 2 }]}>
+                <Ionicons name="create-outline" size={18} color={colors.primary} />
+              </View>
+              <TextInput
+                value={form.notes}
+                onChangeText={(v) => dispatch({ type: 'SET_NOTES', payload: v })}
+                placeholder="Бележки — условия, час, какво е работило..."
+                multiline
+                style={[styles.detailInput, { height: 80, textAlignVertical: 'top', flex: 1 }]}
+                placeholderTextColor={colors.textMuted}
+              />
+            </View>
+          </View>
+
+          {/* ── TRIP PICKER (conditional) ── */}
+          {trips.length > 0 ? (
+            <>
+              <View style={styles.detailCard}>
+                <Pressable onPress={() => setTripPickerOpen(true)} style={styles.detailRow}>
+                  <View style={styles.detailIcon}>
+                    <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+                  </View>
+                  <Text style={[styles.detailInput, !form.tripId && { color: colors.textMuted }]}>
+                    {form.tripId ? (trips.find((t) => t.id === form.tripId)?.title ?? 'Излет') : 'Избери излет (по избор)'}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                </Pressable>
+              </View>
+              <TripPickerModal
+                visible={tripPickerOpen}
+                trips={trips}
+                selectedTripId={form.tripId}
+                onSelect={(id) => dispatch({ type: 'SET_TRIP', payload: id })}
+                onClose={() => setTripPickerOpen(false)}
+              />
+            </>
+          ) : null}
+
+          {/* ── SETTINGS CARD ── */}
+          <View style={styles.detailCard}>
+            {/* C&R switch */}
+            <View style={styles.switchRow}>
+              <Ionicons name="refresh-circle-outline" size={20} color={colors.primary} style={{ marginRight: 12 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.switchLabel}>Пуснат обратно</Text>
+                <Text style={styles.switchSub}>Catch &amp; release</Text>
+              </View>
+              <Switch
+                value={form.released}
+                onValueChange={(v) => dispatch({ type: 'SET_RELEASED', payload: v })}
+                trackColor={{ true: colors.primary, false: colors.border }}
+              />
+            </View>
+
+            <View style={styles.detailDivider} />
+
+            {/* Share to feed switch */}
+            <View style={styles.switchRow}>
+              <Ionicons name="earth-outline" size={20} color={colors.primary} style={{ marginRight: 12 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.switchLabel}>Сподели публично</Text>
+                <Text style={styles.switchSub}>
+                  {user ? 'В лентата; снимка от камерата.' : 'Изисква акаунт.'}
+                </Text>
+              </View>
+              <Switch
+                value={form.shareToFeed}
+                onValueChange={(v) => {
+                  if (!v) {
+                    dispatch({ type: 'SET_SHARE_TO_FEED', payload: false });
+                    dispatch({ type: 'SET_ENTER_LEADERBOARD', payload: false });
+                    return;
+                  }
+                  if (
+                    form.photoUri?.trim() &&
+                    !isRemoteImageUri(form.photoUri) &&
+                    !form.cameraVerifiedPhoto
+                  ) {
+                    Alert.alert(
+                      'Галерията не се ползва за класики',
+                      'За публично споделяне трябва снимка от камерата. Премахни текущата снимка или я заснеми отново с „Снимай".',
+                      [{ text: 'OK', style: 'cancel' }]
+                    );
+                    return;
+                  }
+                  dispatch({ type: 'SET_SHARE_TO_FEED', payload: true });
+                  dispatch({ type: 'SET_ENTER_LEADERBOARD', payload: true });
+                }}
+                trackColor={{ true: colors.primary, false: colors.border }}
+              />
+            </View>
+
+            {/* Leaderboard switch — only when shareToFeed */}
+            {form.shareToFeed ? (
+              <>
+                <View style={styles.detailDivider} />
+                <View style={styles.switchRow}>
+                  <Ionicons name="trophy-outline" size={20} color={colors.primary} style={{ marginRight: 12 }} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.switchLabel}>Участвай в класацията</Text>
+                    <Text style={styles.switchSub}>Седмична и месечна класация.</Text>
+                  </View>
+                  <Switch
+                    value={form.enterLeaderboard}
+                    onValueChange={(v) => dispatch({ type: 'SET_ENTER_LEADERBOARD', payload: v })}
+                    trackColor={{ true: colors.primary, false: colors.border }}
+                  />
+                </View>
+              </>
+            ) : null}
+          </View>
+
+          {/* ── SAVE BUTTON ── */}
+          <Pressable
+            onPress={() => void save()}
+            disabled={saving}
+            style={{ borderRadius: 20, overflow: 'hidden', marginTop: 8 }}
+          >
+            <LinearGradient colors={['#1976D2', '#0D47A1']} style={styles.saveBtn}>
+              {saving
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={styles.saveBtnText}>{editCatchId ? 'Запази промените' : 'Запази улова'}</Text>
+              }
+            </LinearGradient>
+          </Pressable>
+
+        </View>
+        {/* end sheet */}
+
       </ScrollView>
 
       <AchievementUnlockModal
@@ -868,271 +991,126 @@ export default function AddCatchScreen() {
           navigation.goBack();
         }}
       />
+
+      <SpeciesPicker
+        visible={pickerOpen}
+        selectedId={form.speciesId}
+        onSelect={(id) => dispatch({ type: 'SET_SPECIES', payload: id })}
+        onClose={() => setPickerOpen(false)}
+      />
+
     </Screen>
   );
 }
 
-// ─── Local sub-components ─────────────────────────────────────────────────────
-
-const STEP_LABELS = ['Снимка', 'Детайли', 'Местоположение', 'Преглед'];
-const STEP_COUNT = 4;
-const CIRCLE_SIZE = 10;
-
-type StepIndicatorProps = {
-  currentStep: number;
-  colors: AppColors;
-};
-
-function StepIndicator({ currentStep, colors }: StepIndicatorProps) {
-  const animRef = useRef(new Animated.Value(currentStep)).current;
-
-  useEffect(() => {
-    Animated.timing(animRef, {
-      toValue: currentStep,
-      duration: 280,
-      useNativeDriver: false,
-    }).start();
-  }, [currentStep, animRef]);
-
-  return (
-    <View
-      style={{
-        paddingHorizontal: spacing.lg,
-        paddingVertical: spacing.md,
-        backgroundColor: colors.card,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: colors.border,
-        marginBottom: spacing.md,
-        marginHorizontal: -spacing.lg,
-      }}
-    >
-      {/* Circles + connecting lines */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm }}>
-        {STEP_LABELS.map((_, i) => {
-          const step = i + 1;
-          const isActive = step <= currentStep;
-          const circleStyle: StyleProp<ViewStyle> = isActive
-            ? {
-                width: CIRCLE_SIZE,
-                height: CIRCLE_SIZE,
-                borderRadius: CIRCLE_SIZE / 2,
-                backgroundColor: colors.primary,
-              }
-            : {
-                width: CIRCLE_SIZE,
-                height: CIRCLE_SIZE,
-                borderRadius: CIRCLE_SIZE / 2,
-                backgroundColor: 'transparent',
-                borderWidth: 2,
-                borderColor: colors.border,
-              };
-
-          return (
-            <React.Fragment key={step}>
-              <View style={circleStyle} />
-              {i < STEP_COUNT - 1 ? (
-                <View style={{ flex: 1, height: 2, backgroundColor: colors.border }}>
-                  <Animated.View
-                    style={{
-                      height: 2,
-                      backgroundColor: colors.primary,
-                      width: animRef.interpolate({
-                        inputRange: [step, step + 1],
-                        outputRange: ['0%', '100%'],
-                        extrapolate: 'clamp',
-                      }),
-                    }}
-                  />
-                </View>
-              ) : null}
-            </React.Fragment>
-          );
-        })}
-      </View>
-
-      {/* Labels */}
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-        {STEP_LABELS.map((label, i) => {
-          const step = i + 1;
-          const isActive = step === currentStep;
-          return (
-            <Text
-              key={step}
-              style={{
-                fontSize: 10,
-                color: isActive ? colors.primary : colors.textMuted,
-                fontWeight: isActive ? '700' : '400',
-                textAlign: i === 0 ? 'left' : i === STEP_COUNT - 1 ? 'right' : 'center',
-                flex: 1,
-              }}
-              numberOfLines={1}
-            >
-              {label}
-            </Text>
-          );
-        })}
-      </View>
-    </View>
-  );
-}
+// ─── PhotoSection sub-component ───────────────────────────────────────────────
 
 type PhotoSectionProps = {
   photoUri: string | undefined;
   shareToFeed: boolean;
-  extraPhotoUris: string[];
-  photoTitle: string;
+  editCatchId: string | undefined;
+  currentStep: number;
   colors: AppColors;
   styles: ReturnType<typeof createAddCatchStyles>;
   onPickPhoto: () => void;
   onTakePhoto: () => void;
   onClearPhoto: () => void;
-  onAddExtraPhoto: () => void;
-  onRemoveExtraPhoto: (idx: number) => void;
-  onChangePhotoTitle: (t: string) => void;
+  onNavigationBack: () => void;
 };
 
 function PhotoSection({
   photoUri,
   shareToFeed,
-  extraPhotoUris,
-  photoTitle,
+  editCatchId,
+  currentStep,
   colors,
   styles,
   onPickPhoto,
   onTakePhoto,
   onClearPhoto,
-  onAddExtraPhoto,
-  onRemoveExtraPhoto,
-  onChangePhotoTitle,
+  onNavigationBack,
 }: PhotoSectionProps) {
   return (
-    <>
-      <View style={[styles.photoBox, photoUri ? { height: 300, borderWidth: 0, borderRadius: radius.xl } : null]}>
-        {photoUri ? (
-          <>
-            <Image source={{ uri: photoUri }} style={styles.photo} contentFit="cover" />
-            <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', gap: spacing.sm, padding: spacing.md, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.32)' }}>
-              <Pressable
-                onPress={shareToFeed ? onTakePhoto : onPickPhoto}
-                style={{ backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: 20, paddingHorizontal: spacing.md, paddingVertical: 6, flexDirection: 'row', gap: 4, alignItems: 'center' }}
-              >
-                <Ionicons name={shareToFeed ? 'camera' : 'image'} size={14} color="#111" />
-                <Text style={{ fontSize: 12, fontWeight: '700', color: '#111' }}>Смени</Text>
-              </Pressable>
-              <Pressable
-                onPress={onClearPhoto}
-                style={{ backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 20, paddingHorizontal: spacing.md, paddingVertical: 6, flexDirection: 'row', gap: 4, alignItems: 'center' }}
-              >
-                <Ionicons name="trash" size={14} color="#fff" />
-                <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>Премахни</Text>
-              </Pressable>
-            </View>
-          </>
-        ) : (
-          <Pressable onPress={onTakePhoto} style={[styles.photoPlaceholder, { width: '100%' }]}>
-            <Ionicons name="camera-outline" size={36} color={colors.primary} />
-            <Text style={styles.photoText}>Добави снимка</Text>
-          </Pressable>
-        )}
-      </View>
+    <View style={styles.heroBox}>
+      {/* Back button — absolute top-left */}
+      <Pressable onPress={onNavigationBack} hitSlop={10} style={styles.heroBack}>
+        <Ionicons name="chevron-back" size={22} color="#fff" />
+      </Pressable>
+
+      {/* Progress dots — absolute top-center, only !editCatchId */}
+      {!editCatchId && (
+        <View style={styles.heroDots}>
+          {[1, 2, 3, 4].map((step) => (
+            <View
+              key={step}
+              style={[
+                styles.heroDot,
+                currentStep >= step && styles.heroDotActive,
+                currentStep === step && styles.heroDotCurrent,
+              ]}
+            />
+          ))}
+        </View>
+      )}
 
       {photoUri ? (
         <>
-          <Text style={styles.label}>Заглавие на снимката (по избор)</Text>
-          <TextInput
-            value={photoTitle}
-            onChangeText={onChangePhotoTitle}
-            placeholder="напр. Зоран от яз. Искър, здрачен шаран…"
-            style={styles.input}
-            placeholderTextColor={colors.textMuted}
+          <Image source={{ uri: photoUri }} style={StyleSheet.absoluteFillObject} contentFit="cover" />
+          {/* Dark overlay at top for back button readability */}
+          <LinearGradient
+            colors={['rgba(0,0,0,0.55)', 'rgba(0,0,0,0)']}
+            style={styles.heroTopGrad}
           />
-          <Text style={[styles.muted, { marginTop: spacing.xs }]}>
-            Показва се в лентата и участва в класиките с лайкове.
-          </Text>
-          {shareToFeed ? (
-            <Text style={[styles.muted, { marginTop: spacing.xs, fontStyle: 'italic' }]}>
-              За класиките снимката трябва да е направена с камерата тук — не от галерията.
-            </Text>
-          ) : null}
-        </>
-      ) : null}
-
-      {!photoUri ? (
-        <View style={styles.photoActions}>
-          <Button
-            title="От галерията"
-            variant="secondary"
-            onPress={onPickPhoto}
-            style={{ flex: 1 }}
-            disabled={shareToFeed}
-          />
-          <Button title="Снимай" variant="secondary" onPress={onTakePhoto} style={{ flex: 1 }} />
-        </View>
-      ) : null}
-
-      {!photoUri && shareToFeed ? (
-        <Text style={[styles.muted, { marginTop: spacing.xs }]}>
-          При включено публично споделяне добави снимка само през „Снимай".
-        </Text>
-      ) : null}
-
-      {photoUri ? (
-        <View style={{ marginTop: spacing.md }}>
-          <Text style={styles.label}>Още снимки (до 4)</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: spacing.sm }}
+          {/* Controls overlay at bottom */}
+          <LinearGradient
+            colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.6)']}
+            style={styles.heroBottomGrad}
           >
-            {extraPhotoUris.map((uri, i) => (
-              <View key={i} style={{ position: 'relative' }}>
-                <Image
-                  source={{ uri }}
-                  style={{ width: 80, height: 80, borderRadius: radius.md }}
-                  contentFit="cover"
-                />
-                <Pressable
-                  onPress={() => onRemoveExtraPhoto(i)}
-                  style={{
-                    position: 'absolute',
-                    top: -6,
-                    right: -6,
-                    backgroundColor: colors.danger,
-                    borderRadius: 10,
-                    width: 20,
-                    height: 20,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                  hitSlop={4}
-                >
-                  <Ionicons name="close" size={12} color={colors.white} />
-                </Pressable>
-              </View>
-            ))}
-            {extraPhotoUris.length < 4 ? (
+            <View style={styles.heroPhotoActions}>
               <Pressable
-                onPress={onAddExtraPhoto}
-                style={{
-                  width: 80,
-                  height: 80,
-                  borderRadius: radius.md,
-                  backgroundColor: colors.surfaceAlt,
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
+                onPress={shareToFeed ? onTakePhoto : onPickPhoto}
+                style={styles.heroPhotoBtn}
               >
-                <Ionicons name="add" size={28} color={colors.primary} />
+                <Ionicons name={shareToFeed ? 'camera' : 'image'} size={14} color="#111" />
+                <Text style={styles.heroPhotoBtnText}>Смени</Text>
               </Pressable>
-            ) : null}
-          </ScrollView>
-        </View>
-      ) : null}
-    </>
+              <Pressable onPress={onClearPhoto} style={styles.heroPhotoBtnDark}>
+                <Ionicons name="trash-outline" size={14} color="#fff" />
+                <Text style={styles.heroPhotoBtnDarkText}>Премахни</Text>
+              </Pressable>
+            </View>
+          </LinearGradient>
+        </>
+      ) : (
+        <>
+          {/* Gradient placeholder — looks like camera viewfinder */}
+          <LinearGradient
+            colors={['#0D2B5E', '#0D47A1', '#1565C0']}
+            style={StyleSheet.absoluteFillObject}
+          />
+          {/* Subtle grid overlay for depth */}
+          <View style={styles.heroGrid} pointerEvents="none" />
+          {/* Camera shutter button */}
+          <Pressable onPress={onTakePhoto} style={styles.heroShutter}>
+            <View style={styles.heroShutterOuter}>
+              <View style={styles.heroShutterInner} />
+            </View>
+          </Pressable>
+          <Text style={styles.heroPlaceholderText}>Сними улова</Text>
+          {/* Gallery link at bottom */}
+          {!shareToFeed && (
+            <Pressable onPress={onPickPhoto} style={styles.heroGalleryLink}>
+              <Ionicons name="images-outline" size={14} color="rgba(255,255,255,0.7)" />
+              <Text style={styles.heroGalleryLinkText}>Избери от галерията</Text>
+            </Pressable>
+          )}
+        </>
+      )}
+    </View>
   );
 }
+
+// ─── WeightEstimator sub-component ───────────────────────────────────────────
 
 type WeightEstimatorProps = {
   length: string;
@@ -1170,51 +1148,388 @@ function WeightEstimator({ length, weight, speciesId, colors, onAccept }: Weight
 
 function createAddCatchStyles(colors: AppColors) {
   return StyleSheet.create({
-    content: { padding: spacing.lg, paddingBottom: spacing.xxl + 16 },
-    header: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: spacing.lg,
-    },
-    title: { ...typography.h2, color: colors.text },
-    label: { ...typography.bodyBold, color: colors.text, marginTop: spacing.lg, marginBottom: spacing.sm },
-    input: {
-      backgroundColor: colors.card,
-      borderRadius: radius.md,
-      paddingHorizontal: spacing.lg,
-      paddingVertical: spacing.md,
-      fontSize: 15,
-      color: colors.text,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    row2: { flexDirection: 'row', gap: spacing.md },
-    chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-    chip: {
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm,
-      borderRadius: radius.pill,
-      backgroundColor: colors.card,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-    chipText: { ...typography.body, color: colors.text },
-    chipTextActive: { color: colors.white, fontWeight: '600' },
-    photoBox: {
-      height: 200,
-      borderRadius: radius.lg,
+
+    // ── Hero box ──
+    heroBox: {
+      width: '100%',
+      height: 320,
       overflow: 'hidden',
+      backgroundColor: '#0D47A1',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    heroBack: {
+      position: 'absolute',
+      top: 52,
+      left: 16,
+      zIndex: 10,
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: 'rgba(0,0,0,0.35)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    heroDots: {
+      position: 'absolute',
+      top: 60,
+      left: 0,
+      right: 0,
+      flexDirection: 'row',
+      justifyContent: 'center',
+      gap: 6,
+      zIndex: 10,
+    },
+    heroDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: 'rgba(255,255,255,0.3)',
+    },
+    heroDotActive: {
+      backgroundColor: 'rgba(255,255,255,0.7)',
+    },
+    heroDotCurrent: {
+      width: 18,
+      borderRadius: 3,
+      backgroundColor: '#fff',
+    },
+    heroTopGrad: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      height: 100,
+    },
+    heroBottomGrad: {
+      position: 'absolute',
+      bottom: 0,
+      left: 0,
+      right: 0,
+      paddingBottom: 16,
+      paddingHorizontal: 16,
+      paddingTop: 40,
+    },
+    heroPhotoActions: {
+      flexDirection: 'row',
+      gap: 8,
+      justifyContent: 'flex-end',
+    },
+    heroPhotoBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: 'rgba(255,255,255,0.92)',
+      borderRadius: 20,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+    },
+    heroPhotoBtnText: {
+      fontSize: 12,
+      fontFamily: 'Nunito_700Bold',
+      color: '#111',
+    },
+    heroPhotoBtnDark: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      borderRadius: 20,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+    },
+    heroPhotoBtnDarkText: {
+      fontSize: 12,
+      fontFamily: 'Nunito_700Bold',
+      color: '#fff',
+    },
+    heroGrid: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.06)',
+      margin: 20,
+    },
+    heroShutter: {
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    heroShutterOuter: {
+      width: 72,
+      height: 72,
+      borderRadius: 36,
+      borderWidth: 3,
+      borderColor: 'rgba(255,255,255,0.8)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    heroShutterInner: {
+      width: 58,
+      height: 58,
+      borderRadius: 29,
+      backgroundColor: 'rgba(255,255,255,0.9)',
+    },
+    heroPlaceholderText: {
+      fontSize: 16,
+      fontFamily: 'Nunito_700Bold',
+      color: 'rgba(255,255,255,0.9)',
+      marginTop: 14,
+      letterSpacing: 0.3,
+    },
+    heroGalleryLink: {
+      position: 'absolute',
+      bottom: 18,
+      left: 0,
+      right: 0,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 5,
+    },
+    heroGalleryLinkText: {
+      fontSize: 12,
+      fontFamily: 'Nunito_400Regular',
+      color: 'rgba(255,255,255,0.7)',
+      textDecorationLine: 'underline',
+    },
+
+    // ── Sheet ──
+    sheet: {
+      backgroundColor: colors.background,
+      borderTopLeftRadius: 28,
+      borderTopRightRadius: 28,
+      marginTop: -28,
+      paddingTop: 24,
+      paddingHorizontal: 20,
+      paddingBottom: 8,
+    },
+
+    // ── Chips ──
+    chipPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor: colors.primarySurface,
+      borderColor: colors.primary,
+      borderWidth: 1,
+      borderRadius: 20,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      alignSelf: 'flex-start',
+      marginBottom: 10,
+    },
+    chipPillText: {
+      fontSize: 13,
+      fontFamily: 'Nunito_600SemiBold',
+      color: colors.text,
+    },
+
+    // ── Species block ──
+    speciesBlock: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 8,
+      marginTop: 4,
+    },
+    speciesName: {
+      fontSize: 26,
+      fontFamily: 'Nunito_800ExtraBold',
+      color: colors.text,
+      lineHeight: 30,
+    },
+    speciesLatin: {
+      fontSize: 13,
+      fontFamily: 'Nunito_400Regular',
+      color: colors.textMuted,
+      fontStyle: 'italic',
+      marginTop: 2,
+    },
+    speciesChangeBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      backgroundColor: colors.primarySurface,
+      borderWidth: 1,
+      borderColor: colors.primary,
+      borderRadius: 16,
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+    },
+    speciesChangeBtnText: {
+      fontSize: 13,
+      fontFamily: 'Nunito_600SemiBold',
+      color: colors.primary,
+    },
+
+    // ── Photo meta card ──
+    photoMetaCard: {
       backgroundColor: colors.card,
+      borderRadius: 16,
+      padding: 14,
+      marginBottom: 16,
+    },
+    photoMetaInput: {
+      fontSize: 14,
+      fontFamily: 'Nunito_400Regular',
+      color: colors.text,
+      padding: 0,
+    },
+
+    // ── Metric tiles ──
+    metricRow: {
+      flexDirection: 'row',
+      backgroundColor: colors.card,
+      borderRadius: 18,
+      marginVertical: 14,
+      overflow: 'hidden',
+      shadowColor: '#000',
+      shadowOpacity: 0.04,
+      shadowRadius: 8,
+      elevation: 1,
+    },
+    metricTile: {
+      flex: 1,
+      paddingVertical: 20,
+      paddingHorizontal: 18,
+    },
+    metricTileDivider: {
+      width: StyleSheet.hairlineWidth,
+      backgroundColor: colors.border,
+      marginVertical: 12,
+    },
+    metricTileLabel: {
+      fontSize: 11,
+      fontFamily: 'Nunito_700Bold',
+      color: colors.textMuted,
+      letterSpacing: 0.8,
+      textTransform: 'uppercase',
+      marginBottom: 8,
+    },
+    metricTileInput: {
+      fontSize: 32,
+      fontFamily: 'Nunito_800ExtraBold',
+      color: colors.text,
+      padding: 0,
+      minWidth: 60,
+      letterSpacing: -0.5,
+    },
+    metricTileUnit: {
+      fontSize: 16,
+      fontFamily: 'Nunito_600SemiBold',
+      color: colors.textMuted,
+      marginBottom: 5,
+    },
+
+    // ── Detail card (bait / location / notes / trip) ──
+    detailCard: {
+      backgroundColor: colors.card,
+      borderRadius: 18,
+      marginBottom: 12,
+      overflow: 'hidden',
+      shadowColor: '#000',
+      shadowOpacity: 0.04,
+      shadowRadius: 6,
+      elevation: 1,
+    },
+    detailRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 18,
+      paddingVertical: 16,
+    },
+    detailIcon: {
+      width: 32,
+      alignItems: 'center',
+      marginRight: 10,
+    },
+    detailInput: {
+      flex: 1,
+      fontSize: 15,
+      fontFamily: 'Nunito_400Regular',
+      color: colors.text,
+      padding: 0,
+    },
+    detailDivider: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: colors.border,
+      marginHorizontal: 16,
+    },
+    detailButton: {
+      borderRadius: 12,
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+      backgroundColor: colors.primarySurface,
+      borderWidth: 1,
+      borderColor: colors.primary,
+      marginLeft: 8,
+    },
+    detailButtonText: {
+      fontSize: 12,
+      fontFamily: 'Nunito_600SemiBold',
+      color: colors.primary,
+    },
+
+    // ── Bait pills ──
+    baitPill: {
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 16,
+      backgroundColor: colors.surfaceAlt,
       borderWidth: 1,
       borderColor: colors.border,
     },
-    photo: { width: '100%', height: '100%' },
-    photoPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-    photoText: { ...typography.body, color: colors.primary, marginTop: spacing.sm },
-    photoActions: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.md },
-    locRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    muted: { ...typography.body, color: colors.textMuted },
+    baitPillActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    baitPillText: {
+      fontSize: 12,
+      fontFamily: 'Nunito_600SemiBold',
+      color: colors.text,
+    },
+    baitPillTextActive: {
+      color: '#fff',
+    },
+
+    // ── Switch rows ──
+    switchRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 18,
+      paddingVertical: 16,
+    },
+    switchLabel: {
+      fontSize: 15,
+      fontFamily: 'Nunito_600SemiBold',
+      color: colors.text,
+    },
+    switchSub: {
+      fontSize: 12,
+      color: colors.textMuted,
+      marginTop: 1,
+    },
+
+    // ── Save button ──
+    saveBtn: {
+      height: 60,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: 20,
+    },
+    saveBtnText: {
+      fontSize: 18,
+      fontFamily: 'Nunito_800ExtraBold',
+      color: '#fff',
+      letterSpacing: 0.2,
+    },
+
+    // ── Misc (kept for WeightEstimator and any residual uses) ──
+    mutedText: {
+      ...typography.small,
+      color: colors.textMuted,
+    },
   });
 }

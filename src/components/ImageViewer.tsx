@@ -18,6 +18,7 @@ export function ImageViewer({ uri, visible, onClose }: Props) {
   const scale = useRef(new Animated.Value(1)).current;
   const scaleRef = useRef(1);
   const lastScale = useRef(1);
+  const activePinchScale = useRef(1);
 
   const translateX = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(0)).current;
@@ -62,6 +63,7 @@ export function ImageViewer({ uri, visible, onClose }: Props) {
             (panResponder as any)._startScale = scaleRef.current;
           }
           const newScale = Math.max(1, Math.min(4, (panResponder as any)._startScale * (dist / (panResponder as any)._startDist)));
+          activePinchScale.current = newScale;
           scale.setValue(newScale - scaleRef.current + 1);
         } else if (scaleRef.current > 1) {
           // Pan when zoomed
@@ -76,7 +78,8 @@ export function ImageViewer({ uri, visible, onClose }: Props) {
         translateX.flattenOffset();
         translateY.flattenOffset();
 
-        const newScale = Math.max(1, Math.min(4, scaleRef.current));
+        const newScale = Math.max(1, Math.min(4, activePinchScale.current));
+        activePinchScale.current = newScale;
         scaleRef.current = newScale;
         lastScale.current = newScale;
         lastTranslate.current = {

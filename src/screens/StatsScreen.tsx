@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Pressable, RefreshControl, Modal, Animated, useWindowDimensions } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Pressable, Modal, Animated, useWindowDimensions } from 'react-native';
+import { FishingRefreshControl } from '../components/FishingRefreshControl';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { Ionicons } from '@expo/vector-icons';
@@ -153,7 +156,7 @@ export default function StatsScreen() {
     catchesStore.list().then((list) => { setCatches(list); setLoading(false); }).catch(() => { setLoadError(true); setLoading(false); });
   }, []);
 
-  useEffect(() => { loadCatches(); }, [loadCatches]);
+  useFocusEffect(useCallback(() => { loadCatches(); }, [loadCatches]));
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -320,27 +323,46 @@ export default function StatsScreen() {
     streakLbl: { ...typography.caption, color: colors.textMuted, marginTop: 2, textAlign: 'center' },
   }), [colors]);
 
+  const heroColors: [string, string, string] = mode === 'dark'
+    ? ['#0A1E38', '#050C1A', '#030810']
+    : ['#2B87CE', '#1570B8', '#0D559A'];
+  const waveColor = mode === 'dark' ? '#0E1628' : '#F4F8FC';
+
+  const SimpleHero = ({ title }: { title: string }) => (
+    <View style={{ paddingBottom: 44 }}>
+      <LinearGradient colors={heroColors} style={StyleSheet.absoluteFillObject} pointerEvents="none" />
+      <View style={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 }}>
+        <Pressable onPress={() => navigation.goBack()} hitSlop={8} style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+          <Ionicons name="chevron-back" size={24} color="#fff" />
+        </Pressable>
+        <Text style={{ fontSize: 26, fontWeight: '800', color: '#fff', letterSpacing: -0.5 }}>{title}</Text>
+      </View>
+    </View>
+  );
+
   if (loadError) {
     return (
-      <Screen scroll>
-        <Text style={{ ...typography.h2, color: colors.text }}>Статистики</Text>
-        <Card style={{ marginTop: spacing.lg }}>
-          <Text style={{ ...typography.body, color: colors.textMuted, marginBottom: spacing.md }}>
-            Грешка при зареждане на данните.
-          </Text>
-          <TouchableOpacity onPress={loadCatches}>
-            <Text style={{ ...typography.body, color: colors.primary, fontWeight: '600' }}>Опитай отново</Text>
-          </TouchableOpacity>
-        </Card>
+      <Screen padded={false}>
+        <SimpleHero title="Статистики" />
+        <View style={{ flex: 1, backgroundColor: waveColor, borderTopLeftRadius: 28, borderTopRightRadius: 28, marginTop: -28, padding: spacing.lg }}>
+          <Card style={{ marginTop: spacing.lg }}>
+            <Text style={{ ...typography.body, color: colors.textMuted, marginBottom: spacing.md }}>
+              Грешка при зареждане на данните.
+            </Text>
+            <TouchableOpacity onPress={loadCatches}>
+              <Text style={{ ...typography.body, color: colors.primary, fontWeight: '600' }}>Опитай отново</Text>
+            </TouchableOpacity>
+          </Card>
+        </View>
       </Screen>
     );
   }
 
   if (loading) {
     return (
-      <Screen scroll>
-        <Text style={{ ...typography.h2, color: colors.text, marginBottom: spacing.lg }}>Статистики</Text>
-        <View style={{ gap: spacing.md }}>
+      <Screen padded={false}>
+        <SimpleHero title="Статистики" />
+        <View style={{ flex: 1, backgroundColor: waveColor, borderTopLeftRadius: 28, borderTopRightRadius: 28, marginTop: -28, padding: spacing.lg, gap: spacing.md }}>
           {[120, 80, 100, 70].map((h, i) => (
             <View key={i} style={{ height: h, borderRadius: radius.md, backgroundColor: colors.border, opacity: 0.5 }} />
           ))}
@@ -351,68 +373,62 @@ export default function StatsScreen() {
 
   if (catches.length === 0) {
     return (
-      <Screen scroll>
-        <Text style={{ ...typography.h2, color: colors.text }}>Статистики</Text>
-        <Card style={{ marginTop: spacing.lg, alignItems: 'center', paddingVertical: spacing.xl }}>
-          <Ionicons name="bar-chart-outline" size={48} color={colors.textMuted} style={{ marginBottom: spacing.md }} />
-          <Text style={{ ...typography.bodyBold, color: colors.text, marginBottom: spacing.sm }}>
-            Все още няма статистики
-          </Text>
-          <Text style={{ ...typography.body, color: colors.textMuted, textAlign: 'center', marginBottom: spacing.lg }}>
-            Добави первия си улов в дневника, за да видиш графики и анализи.
-          </Text>
-          <TouchableOpacity
-            onPress={() => navigation.navigate('AddCatch', {})}
-            style={{ backgroundColor: colors.primary, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: 20 }}
-          >
-            <Text style={{ color: '#fff', fontWeight: '700', ...typography.body }}>Добави улов</Text>
-          </TouchableOpacity>
-        </Card>
+      <Screen padded={false}>
+        <SimpleHero title="Статистики" />
+        <View style={{ flex: 1, backgroundColor: waveColor, borderTopLeftRadius: 28, borderTopRightRadius: 28, marginTop: -28, padding: spacing.lg }}>
+          <Card style={{ marginTop: spacing.lg, alignItems: 'center', paddingVertical: spacing.xl }}>
+            <Ionicons name="bar-chart-outline" size={48} color={colors.textMuted} style={{ marginBottom: spacing.md }} />
+            <Text style={{ ...typography.bodyBold, color: colors.text, marginBottom: spacing.sm }}>
+              Все още няма статистики
+            </Text>
+            <Text style={{ ...typography.body, color: colors.textMuted, textAlign: 'center', marginBottom: spacing.lg }}>
+              Добави първия си улов в дневника, за да видиш графики и анализи.
+            </Text>
+            <TouchableOpacity
+              onPress={() => (navigation as any).navigate('LogbookTab', { screen: 'AddCatch', params: {} })}
+              style={{ backgroundColor: colors.primary, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: 20 }}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700', ...typography.body }}>Добави улов</Text>
+            </TouchableOpacity>
+          </Card>
+        </View>
       </Screen>
     );
   }
 
   return (
     <Screen padded={false}>
-      <ScrollView
-        contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
-      >
-        <Text style={{ ...typography.h2, color: colors.text, marginBottom: spacing.md }}>Статистики</Text>
-
-        {/* Hero card */}
-        <View style={{
-          backgroundColor: mode === 'dark' ? colors.primarySurface : colors.primary,
-          borderWidth: mode === 'dark' ? 1 : 0,
-          borderColor: colors.primary,
-          borderRadius: radius.xl,
-          padding: spacing.xl,
-          marginBottom: spacing.lg,
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: spacing.lg,
-        }}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ ...typography.overline, color: mode === 'dark' ? colors.textMuted : 'rgba(255,255,255,0.7)', marginBottom: 4 }}>Общо улова</Text>
-            <AnimatedStatNum value={stats!.n} color={mode === 'dark' ? colors.primary : '#fff'} />
-            <View style={{ flexDirection: 'row', gap: spacing.lg, marginTop: spacing.sm }}>
-              <View>
-                <Text style={{ ...typography.small, color: mode === 'dark' ? colors.textMuted : 'rgba(255,255,255,0.65)' }}>Общо тегло</Text>
-                <Text style={{ ...typography.bodyBold, color: mode === 'dark' ? colors.text : '#fff' }}>{stats!.totalWeight.toFixed(1)} кг</Text>
-              </View>
-              <View>
-                <Text style={{ ...typography.small, color: mode === 'dark' ? colors.textMuted : 'rgba(255,255,255,0.65)' }}>Вида</Text>
-                <Text style={{ ...typography.bodyBold, color: mode === 'dark' ? colors.text : '#fff' }}>{stats!.speciesMap.size}</Text>
-              </View>
-              <View>
-                <Text style={{ ...typography.small, color: mode === 'dark' ? colors.textMuted : 'rgba(255,255,255,0.65)' }}>Сезон</Text>
-                <Text style={{ ...typography.bodyBold, color: mode === 'dark' ? colors.text : '#fff' }}>{stats!.activeDaysThisYear} дни</Text>
-              </View>
+      {/* Hero with gradient */}
+      <View style={{ paddingBottom: 44 }}>
+        <LinearGradient colors={heroColors} style={StyleSheet.absoluteFillObject} pointerEvents="none" />
+        <View style={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 }}>
+          <Pressable onPress={() => navigation.goBack()} hitSlop={8} style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+            <Ionicons name="chevron-back" size={24} color="#fff" />
+          </Pressable>
+          <Text style={{ fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.65)', letterSpacing: 1.2, marginBottom: 4 }}>РИБОЛОВНА СТАТИСТИКА</Text>
+          <AnimatedStatNum value={stats!.n} color="#fff" />
+          <View style={{ flexDirection: 'row', gap: spacing.lg, marginTop: spacing.sm }}>
+            <View>
+              <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.65)' }}>Общо тегло</Text>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: '#fff' }}>{stats!.totalWeight.toFixed(1)} кг</Text>
+            </View>
+            <View>
+              <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.65)' }}>Вида</Text>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: '#fff' }}>{stats!.speciesMap.size}</Text>
+            </View>
+            <View>
+              <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.65)' }}>Активни дни</Text>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: '#fff' }}>{stats!.activeDaysThisYear}</Text>
             </View>
           </View>
-          <Text style={{ fontSize: 52, opacity: mode === 'dark' ? 0.6 : 0.9 }}>🎣</Text>
         </View>
+      </View>
 
+      <ScrollView
+        style={{ flex: 1, backgroundColor: waveColor, borderTopLeftRadius: 28, borderTopRightRadius: 28, marginTop: -28 }}
+        contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}
+        refreshControl={<FishingRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
         {/* Chart 1: Animated monthly bar chart (last 6 months) */}
         <MonthlyBarChart
           months={stats!.monthly6}

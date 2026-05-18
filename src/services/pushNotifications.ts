@@ -43,8 +43,7 @@ export async function registerForPushNotifications(uid: string): Promise<void> {
 
     const fb = requireFirebase();
 
-    // Use setDoc with merge so it works even if the user doc doesn't exist yet
-    await setDoc(doc(fb.db, 'users', uid), { expoPushToken: token }, { merge: true });
+    await setDoc(doc(fb.db, 'users', uid, 'private', 'pushToken'), { expoPushToken: token });
   } catch {
     // Best-effort — never crash the app over a push token
   }
@@ -53,7 +52,7 @@ export async function registerForPushNotifications(uid: string): Promise<void> {
 export async function getUserPushToken(uid: string): Promise<string | null> {
   try {
     const fb = requireFirebase();
-    const snap = await getDoc(doc(fb.db, 'users', uid));
+    const snap = await getDoc(doc(fb.db, 'users', uid, 'private', 'pushToken'));
     const token = snap.data()?.expoPushToken;
     return typeof token === 'string' && token.startsWith('ExponentPushToken') ? token : null;
   } catch {

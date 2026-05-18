@@ -31,7 +31,7 @@ export function initObservability(): void {
       dsn,
       enabled: true,
       enableAutoSessionTracking: true,
-      tracesSampleRate: __DEV__ ? 0.15 : 0.25,
+      tracesSampleRate: __DEV__ ? 0.15 : 0.05,
       attachStacktrace: true,
     });
     sentryReady = true;

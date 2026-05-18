@@ -1,7 +1,8 @@
 import React, { useCallback, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, RefreshControl,
+  View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator,
 } from 'react-native';
+import { FishingRefreshControl } from '../components/FishingRefreshControl';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
@@ -80,7 +81,7 @@ export default function ExploreScreen() {
         <FlatList
           data={[]}
           keyExtractor={() => 'placeholder'}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => reload(true)} tintColor={colors.primary} />}
+          refreshControl={<FishingRefreshControl refreshing={refreshing} onRefresh={() => reload(true)} />}
           ListHeaderComponent={
             <View style={{ padding: spacing.lg }}>
               <Text style={styles.sectionTitle}>🔥 Trending тази седмица</Text>
@@ -89,7 +90,7 @@ export default function ExploreScreen() {
                   <Pressable
                     key={c.id}
                     style={styles.catchThumb}
-                    onPress={() => navigation.navigate('UserPublicProfile', { uid: c.ownerUid, displayName: c.ownerName })}
+                    onPress={() => (navigation as any).navigate('LogbookTab', { screen: 'CatchDetail', params: { id: c.id } })}
                   >
                     {c.photoUri ? (
                       <Image source={{ uri: c.photoUri }} style={{ width: '100%', height: '100%' }} contentFit="cover" />

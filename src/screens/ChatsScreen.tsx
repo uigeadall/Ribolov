@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, Pressable, Platform, TextInput } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { EmptyState } from '../components/EmptyState';
@@ -45,14 +46,6 @@ function ChatSkeleton({ colors }: { colors: AppColors }) {
 
 function createChatsStyles(colors: AppColors) {
   return StyleSheet.create({
-    header: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      paddingHorizontal: spacing.lg,
-      paddingTop: spacing.lg,
-      paddingBottom: spacing.md,
-    },
     searchWrap: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -63,11 +56,11 @@ function createChatsStyles(colors: AppColors) {
       paddingHorizontal: spacing.md,
       paddingVertical: Platform.OS === 'ios' ? spacing.sm : spacing.xs,
       marginHorizontal: spacing.lg,
+      marginTop: spacing.md,
       marginBottom: spacing.sm,
       gap: spacing.sm,
     },
     searchInput: { flex: 1, color: colors.text, ...typography.body, paddingVertical: 2 },
-    title: { ...typography.h2, color: colors.text },
     center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
     avatar: {
@@ -148,11 +141,49 @@ function ChatRow({ item, myUid, styles, onPress }: ChatRowProps) {
 }
 
 export default function ChatsScreen() {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const styles = useMemo(() => createChatsStyles(colors), [colors]);
   const navigation = useAppNavigation();
   const { user, configured } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
+
+  const heroColors: [string, string, string] = mode === 'dark'
+    ? ['#0A1E38', '#050C1A', '#030810']
+    : ['#2B87CE', '#1570B8', '#0D559A'];
+  const waveColor = mode === 'dark' ? '#0E1628' : '#FFFFFF';
+
+  const S = useMemo(() => StyleSheet.create({
+    hero: { paddingBottom: 28 + 16 },
+    heroInner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingTop: 16,
+      paddingBottom: 8,
+      gap: 8,
+    },
+    heroTitle: {
+      flex: 1,
+      fontSize: 22,
+      fontWeight: '700',
+      color: '#fff',
+      textAlign: 'center',
+    },
+    backBtn: {
+      width: 40, height: 40,
+      borderRadius: 20,
+      backgroundColor: 'rgba(255,255,255,0.15)',
+      alignItems: 'center', justifyContent: 'center',
+    },
+    wave: {
+      borderTopLeftRadius: 28,
+      borderTopRightRadius: 28,
+      marginTop: -28,
+      flex: 1,
+      backgroundColor: waveColor,
+      overflow: 'hidden',
+    },
+  }), [waveColor]);
 
   const { data, loading } = useFirestoreSubscription<ConversationPreview[]>(
     (cb) => {
@@ -176,68 +207,73 @@ export default function ChatsScreen() {
     });
   };
 
-  function Header({ onBack }: { onBack: () => void }) {
-    return (
-      <View style={styles.header}>
-        <Pressable onPress={onBack} hitSlop={8}>
-          <Ionicons name="chevron-back" size={28} color={colors.primary} />
+  const HeroSection = (
+    <View style={S.hero}>
+      <LinearGradient colors={heroColors} style={StyleSheet.absoluteFillObject} pointerEvents="none" />
+      <View style={S.heroInner}>
+        <Pressable onPress={() => navigation.goBack()} hitSlop={8} style={S.backBtn}>
+          <Ionicons name="chevron-back" size={24} color="#fff" />
         </Pressable>
-        <Text style={styles.title}>Съобщения</Text>
-        <View style={{ width: 28 }} />
+        <Text style={S.heroTitle}>Съобщения</Text>
+        <View style={{ width: 40 }} />
       </View>
-    );
-  }
+    </View>
+  );
 
   if (!configured || !user) {
     return (
-      <Screen padded={false}>
-        <Header onBack={() => navigation.goBack()} />
-        <View style={{ padding: spacing.lg, flex: 1 }}>
-          <Card>
-            <Text style={styles.warn}>Влез в профила си и активирай Firebase, за да ползваш чата.</Text>
-          </Card>
+      <Screen padded={false} avoidKeyboard={false}>
+        {HeroSection}
+        <View style={[S.wave, { flex: 1 }]}>
+          <View style={{ padding: spacing.lg, flex: 1 }}>
+            <Card>
+              <Text style={styles.warn}>Влез в профила си и активирай Firebase, за да ползваш чата.</Text>
+            </Card>
+          </View>
         </View>
       </Screen>
     );
   }
 
   return (
-    <Screen padded={false}>
-      <Header onBack={() => navigation.goBack()} />
-      <View style={styles.searchWrap}>
-        <Ionicons name="search-outline" size={18} color={colors.textMuted} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Търси разговори…"
-          placeholderTextColor={colors.textMuted}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          returnKeyType="search"
-          clearButtonMode="while-editing"
-        />
-      </View>
+    <Screen padded={false} avoidKeyboard={false}>
+      {HeroSection}
+      <View style={[S.wave, { flex: 1 }]}>
+        <View style={styles.searchWrap}>
+          <Ionicons name="search-outline" size={18} color={colors.textMuted} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Търси разговори…"
+            placeholderTextColor={colors.textMuted}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            returnKeyType="search"
+            clearButtonMode="while-editing"
+          />
+        </View>
 
-      {loading ? (
-        <ChatSkeleton colors={colors} />
-      ) : (
-        <FlatList
-          data={items}
-          keyExtractor={(item) => item.convId}
-          removeClippedSubviews={Platform.OS === 'android'}
-          contentContainerStyle={{ padding: spacing.lg, flexGrow: 1 }}
-          ListEmptyComponent={
-            <EmptyState
-              icon="chatbubbles-outline"
-              title="Няма разговори"
-              subtitle="В Приятели отвори чат с някой, с когото се следвате взаимно."
-            />
-          }
-          ItemSeparatorComponent={() => <View style={{ height: spacing.md }} />}
-          renderItem={({ item }) => (
-            <ChatRow item={item} myUid={user.uid} styles={styles} onPress={onPressConv} />
-          )}
-        />
-      )}
+        {loading ? (
+          <ChatSkeleton colors={colors} />
+        ) : (
+          <FlatList
+            data={items}
+            keyExtractor={(item) => item.convId}
+            removeClippedSubviews={Platform.OS === 'android'}
+            contentContainerStyle={{ padding: spacing.lg, flexGrow: 1 }}
+            ListEmptyComponent={
+              <EmptyState
+                icon="chatbubbles-outline"
+                title="Няма разговори"
+                subtitle="В Приятели отвори чат с някой, с когото се следвате взаимно."
+              />
+            }
+            ItemSeparatorComponent={() => <View style={{ height: spacing.md }} />}
+            renderItem={({ item }) => (
+              <ChatRow item={item} myUid={user.uid} styles={styles} onPress={onPressConv} />
+            )}
+          />
+        )}
+      </View>
     </Screen>
   );
 }

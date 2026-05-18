@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, TextInput, StyleSheet, Pressable, Alert, Platform, Modal, FlatList } from 'react-native';
-import { useRoute, RouteProp } from '@react-navigation/native';
+import { useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Screen } from '../components/Screen';
@@ -28,10 +28,8 @@ export default function TripDetailScreen() {
   const [showPicker, setShowPicker] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // Trip metadata only needs to load once (or when the route id changes).
   useEffect(() => {
-    catchesStore.list().then((all) =>
-      setTripCatches(all.filter((c) => c.tripId === route.params.id))
-    );
     tripsStore.get(route.params.id).then((t) => {
       setTrip(t ?? null);
       if (t) {
@@ -41,6 +39,13 @@ export default function TripDetailScreen() {
       }
     });
   }, [route.params.id]);
+
+  // Catches list refreshes on focus — picks up new catches that were assigned this tripId.
+  useFocusEffect(useCallback(() => {
+    catchesStore.list().then((all) =>
+      setTripCatches(all.filter((c) => c.tripId === route.params.id))
+    ).catch(() => {});
+  }, [route.params.id]));
 
   const styles = useMemo(() => StyleSheet.create({
     header: {

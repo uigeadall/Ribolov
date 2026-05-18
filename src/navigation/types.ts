@@ -51,6 +51,7 @@ export type ProfileStackParamList = {
   Chats: undefined;
   ChatDetail: { convId: string; otherUid: string; otherName: string };
   LegalInfo: undefined;
+  NotificationPreferences: undefined;
 };
 
 export type FeedStackParamList = {

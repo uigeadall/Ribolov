@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { initializeAuth, getAuth, Auth, getReactNativePersistence } from 'firebase/auth';
-import { getFirestore, Firestore } from 'firebase/firestore';
+import { initializeFirestore, memoryLocalCache, Firestore } from 'firebase/firestore';
 import { getStorage, FirebaseStorage } from 'firebase/storage';
 import { getFirebaseWebConfig, isFirebaseConfigured } from './firebaseConfig';
 
@@ -36,7 +36,7 @@ export function ensureFirebase(): FirebaseBundle | null {
     bundle = {
       app,
       auth: authForApp(app),
-      db: getFirestore(app),
+      db: initializeFirestore(app, { localCache: memoryLocalCache() }),
       storage: getStorage(app),
     };
   }

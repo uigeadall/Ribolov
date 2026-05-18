@@ -21,6 +21,7 @@ import { useTheme } from '../services/themeContext';
 import { spacing, typography } from '../theme/typography';
 import { catchesStore } from '../storage/storage';
 import { requireFirebase } from '../services/firebase';
+import { deleteCatchEverywhere } from '../services/cloudSync';
 import { useAuth } from '../services/authContext';
 import type { Catch } from '../types';
 import type { LogbookStackParamList } from '../navigation/types';
@@ -69,6 +70,7 @@ export default function CatchDetailScreen() {
   const [item, setItem] = useState<Catch | null>(null);
   const [loading, setLoading] = useState(true);
   const [isOwn, setIsOwn] = useState(false);
+  const [isPublicFromCloud, setIsPublicFromCloud] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [photoAspectRatio, setPhotoAspectRatio] = useState<number | null>(null);
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -85,6 +87,15 @@ export default function CatchDetailScreen() {
       if (local) {
         setItem(local);
         setIsOwn(true);
+        // For own catches, the local doc never carries `isPublic` — probe Firestore
+        // for the public copy so the social section shows up correctly.
+        try {
+          const fb = requireFirebase();
+          const snap = await getDoc(doc(fb.db, 'publicCatches', id));
+          setIsPublicFromCloud(snap.exists());
+        } catch {
+          setIsPublicFromCloud(false);
+        }
         return;
       }
       try {
@@ -94,11 +105,14 @@ export default function CatchDetailScreen() {
           const data = snap.data() as Catch & { ownerUid?: string };
           setItem(data);
           setIsOwn(!!user?.uid && data.ownerUid === user.uid);
+          setIsPublicFromCloud(true);
         } else {
           setItem(null);
+          setIsPublicFromCloud(false);
         }
       } catch {
         setItem(null);
+        setIsPublicFromCloud(false);
       }
     } finally {
       setLoading(false);
@@ -150,7 +164,9 @@ export default function CatchDetailScreen() {
     return { ...item, ownerUid: asCloud.ownerUid ?? user!.uid, ownerName: asCloud.ownerName ?? user?.displayName ?? 'Рибар' };
   }, [item, user]);
 
-  const isPublic = !!(feedItem && (feedItem as { isPublic?: boolean }).isPublic);
+  // For local catches, `isPublic` is never on the local doc — rely on the Firestore probe.
+  // For cloud-loaded catches, `isPublic` comes from the publicCatches doc itself.
+  const isPublic = isPublicFromCloud || !!(feedItem && (feedItem as { isPublic?: boolean }).isPublic);
   const socialEnabled = isPublic && !!configured;
 
   const social = useFeedPostSocial({
@@ -164,7 +180,12 @@ export default function CatchDetailScreen() {
 
   const safeGoBack = () => {
     if (navigation.canGoBack()) navigation.goBack();
-    else navigation.navigate('LogbookList');
+    else (navigation as any).navigate('LogbookTab', { screen: 'LogbookList' });
+  };
+
+  const goToAddCatch = (params: { editCatchId?: string; duplicateCatchId?: string }) => {
+    // AddCatch only lives in LogbookStack, so always navigate through the tab navigator
+    (navigation as any).navigate('LogbookTab', { screen: 'AddCatch', params });
   };
 
   if (loading) {
@@ -203,7 +224,17 @@ export default function CatchDetailScreen() {
   const remove = () => {
     Alert.alert('Изтриване', 'Да се изтрие записът?', [
       { text: 'Отказ', style: 'cancel' },
-      { text: 'Изтрий', style: 'destructive', onPress: async () => { await catchesStore.remove(item.id); safeGoBack(); } },
+      {
+        text: 'Изтрий',
+        style: 'destructive',
+        onPress: async () => {
+          await catchesStore.remove(item.id);
+          // Also delete from Firestore + Storage so it doesn't stay in the public feed
+          // or come back on next sync. Best-effort; the local delete already happened.
+          if (user?.uid) void deleteCatchEverywhere(item.id, user.uid);
+          safeGoBack();
+        },
+      },
     ]);
   };
 
@@ -444,8 +475,8 @@ export default function CatchDetailScreen() {
             <Button title="Сподели като снимка" variant="secondary" onPress={shareCard} loading={sharing} />
             {isOwn && (
               <>
-                <Button title="Добави подобен" variant="secondary" onPress={() => navigation.navigate('AddCatch', { duplicateCatchId: item.id })} />
-                <Button title="Редактирай" variant="secondary" onPress={() => navigation.navigate('AddCatch', { editCatchId: item.id })} />
+                <Button title="Добави подобен" variant="secondary" onPress={() => goToAddCatch({ duplicateCatchId: item.id })} />
+                <Button title="Редактирай" variant="secondary" onPress={() => goToAddCatch({ editCatchId: item.id })} />
                 <Button title="Изтрий записа" variant="danger" onPress={remove} />
               </>
             )}

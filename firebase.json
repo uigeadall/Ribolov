@@ -6,5 +6,13 @@
   "storage": {
     "rules": "storage.rules",
     "bucket": "ribolov-4ef41.firebasestorage.app"
-  }
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": ["node_modules"],
+      "predeploy": ["npm --prefix \"$RESOURCE_DIR\" run build"]
+    }
+  ]
 }

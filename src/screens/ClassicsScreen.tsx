@@ -5,13 +5,13 @@ import {
   StyleSheet,
   FlatList,
   Pressable,
-  RefreshControl,
   ActivityIndicator,
   Dimensions,
   ScrollView,
   Modal,
   StatusBar,
 } from 'react-native';
+import { FishingRefreshControl } from '../components/FishingRefreshControl';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
@@ -91,7 +91,13 @@ export default function ClassicsScreen() {
     const liked = myLikes.has(id);
     setMyLikes((prev) => { const next = new Set(prev); liked ? next.delete(id) : next.add(id); return next; });
     setLocalRows((prev) => prev.map((r) => r.item.id === id ? { ...r, likes: r.likes + (liked ? -1 : 1) } : r));
-    await toggleCatchReaction(id, user.uid, row.item.ownerUid ?? '', user.displayName || 'Рибар', 'heart');
+    try {
+      await toggleCatchReaction(id, user.uid, row.item.ownerUid ?? '', user.displayName || 'Рибар', 'heart');
+    } catch {
+      // Roll back optimistic update on failure so the UI matches the server.
+      setMyLikes((prev) => { const next = new Set(prev); liked ? next.add(id) : next.delete(id); return next; });
+      setLocalRows((prev) => prev.map((r) => r.item.id === id ? { ...r, likes: r.likes + (liked ? 1 : -1) } : r));
+    }
   };
 
   const rows: RankedClassicPhoto[] = localRows.length ? localRows : (data ?? []);
@@ -444,7 +450,7 @@ export default function ClassicsScreen() {
           keyExtractor={(item) => item.item.id}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => reload(true)} tintColor={colors.primary} />
+            <FishingRefreshControl refreshing={refreshing} onRefresh={() => reload(true)} />
           }
           contentContainerStyle={{ paddingBottom: spacing.xxl }}
           ListHeaderComponent={

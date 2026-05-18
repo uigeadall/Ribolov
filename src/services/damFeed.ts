@@ -13,8 +13,10 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { ref, getDownloadURL, deleteObject } from 'firebase/storage';
+import { uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
 import { requireFirebase } from './firebase';
+import { getFirebaseWebConfig } from './firebaseConfig';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
 
 export type DamFeedPostDoc = {
@@ -102,11 +104,22 @@ export async function createDamFeedPost(opts: {
   const fb = requireFirebase();
   const postId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   const path = `damFeeds/${opts.damId}/${opts.ownerUid}/${postId}.jpg`;
-  const storageRef = ref(fb.storage, path);
-  const resp = await fetch(opts.localImageUri);
-  const blob = await resp.blob();
-  await uploadBytes(storageRef, blob, { contentType: 'image/jpeg' });
-  const photoUrl = await getDownloadURL(storageRef);
+  const token = await fb.auth.currentUser?.getIdToken();
+  if (!token) throw new Error('Не е влезено в акаунт.');
+  const { storageBucket } = getFirebaseWebConfig();
+  const result = await uploadAsync(
+    `https://firebasestorage.googleapis.com/v0/b/${storageBucket}/o?uploadType=media&name=${encodeURIComponent(path)}`,
+    opts.localImageUri,
+    {
+      httpMethod: 'POST',
+      uploadType: FileSystemUploadType.BINARY_CONTENT,
+      headers: { 'Content-Type': 'image/jpeg', Authorization: `Bearer ${token}` },
+    },
+  );
+  if (result.status < 200 || result.status >= 300) {
+    throw new Error(`Upload failed (${result.status}): ${result.body.slice(0, 200)}`);
+  }
+  const photoUrl = await getDownloadURL(ref(fb.storage, path));
   await addDoc(
     collection(fb.db, 'damFeeds', opts.damId, 'feedPosts'),
     stripUndefinedForFirestore({
