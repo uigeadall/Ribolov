@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -187,6 +187,15 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
 
   // Double-tap to like / save
   const lastTapTimeRef = useRef(0);
+  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
+    };
+  }, []);
   const heartOpacity = useRef(new Animated.Value(0)).current;
   const heartScale = useRef(new Animated.Value(0.4)).current;
   const heartY = useRef(new Animated.Value(0)).current;
@@ -231,9 +240,12 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
       ]).start();
     } else {
       lastTapTimeRef.current = now;
-      setTimeout(() => {
+      if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
+      tapTimerRef.current = setTimeout(() => {
+        tapTimerRef.current = null;
+        if (!mountedRef.current || !item.photoUri) return;
         if (Date.now() - lastTapTimeRef.current >= 280) {
-          setViewerUri(item.photoUri!);
+          setViewerUri(item.photoUri);
         }
       }, 280);
     }

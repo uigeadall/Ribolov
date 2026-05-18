@@ -12,7 +12,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
 import { useTheme } from '../services/themeContext';
 import { spacing } from '../theme/typography';
-import { OfflineBanner } from './OfflineBanner';
 
 type Props = ViewProps & {
   scroll?: boolean;
@@ -45,16 +44,16 @@ export function Screen({
       : ['#D6EEFF', '#EBF5FF', '#FFFFFF']
   );
 
+  const gradientFirst = gradient?.[0];
   const styles = useMemo(
     () =>
       StyleSheet.create({
-        safe: { flex: 1, backgroundColor: gradient ? gradient[0] : (mode === 'dark' ? '#030810' : '#EBF5FF') },
+        safe: { flex: 1, backgroundColor: gradientFirst ?? (mode === 'dark' ? '#030810' : '#EBF5FF') },
         fill: { flex: 1 },
         padded: { paddingHorizontal: spacing.xl, paddingTop: spacing.md, paddingBottom: spacing.lg },
         scroll: { flexGrow: 1, paddingBottom: spacing.xxl },
       }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [colors.background, mode]
+    [gradientFirst, mode]
   );
 
   const inner = (
@@ -99,7 +98,6 @@ export function Screen({
         style={StyleSheet.absoluteFillObject}
         pointerEvents="none"
       />
-      <OfflineBanner />
       {body}
     </SafeAreaView>
   );

@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   Modal, View, Pressable, StyleSheet, StatusBar,
   PanResponder, Animated, Dimensions,
@@ -27,6 +27,7 @@ export function ImageViewer({ uri, visible, onClose }: Props) {
   const resetTransform = () => {
     scaleRef.current = 1;
     lastScale.current = 1;
+    activePinchScale.current = 1;
     lastTranslate.current = { x: 0, y: 0 };
     Animated.parallel([
       Animated.spring(scale, { toValue: 1, useNativeDriver: true }),
@@ -34,6 +35,21 @@ export function ImageViewer({ uri, visible, onClose }: Props) {
       Animated.spring(translateY, { toValue: 0, useNativeDriver: true }),
     ]).start();
   };
+
+  // Reset transforms whenever the viewer opens or the image changes. The Modal
+  // only toggles visibility — without this, the next photo opens at the
+  // previous zoom/pan position.
+  useEffect(() => {
+    if (visible) {
+      scaleRef.current = 1;
+      lastScale.current = 1;
+      activePinchScale.current = 1;
+      lastTranslate.current = { x: 0, y: 0 };
+      scale.setValue(1);
+      translateX.setValue(0);
+      translateY.setValue(0);
+    }
+  }, [visible, uri, scale, translateX, translateY]);
 
   const panResponder = useRef(
     PanResponder.create({
