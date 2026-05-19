@@ -29,6 +29,8 @@ import { RIVERS } from '../data/rivers';
 import { haversineKm } from '../services/leaderboards';
 import { BiteForecast } from '../components/BiteForecast';
 import { FeaturedAnglerCard } from '../components/FeaturedAnglerCard';
+import { OnboardingChecklist } from '../components/OnboardingChecklist';
+import { getFollowingCount } from '../services/social';
 import { scheduleForecastNotificationIfGood } from '../services/pushNotifications';
 import { subscribeUnreadMessagesCount } from '../services/cloudSync';
 import { subscribeMyNotifications } from '../services/socialFeed';
@@ -428,10 +430,13 @@ export default function HomeScreen() {
   const [unreadNotifs, setUnreadNotifs] = useState(0);
   const [recentCatches, setRecentCatches] = useState<Catch[]>([]);
   const [userCoord, setUserCoord] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [followingCount, setFollowingCount] = useState(0);
+  const [catchCount, setCatchCount] = useState(0);
   // ── Data loading ────────────────────────────────────────────────
 
   const loadStats = useCallback(async () => {
     const list = await catchesStore.list();
+    setCatchCount(list.length);
 
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
@@ -445,7 +450,13 @@ export default function HomeScreen() {
     fetchRankedClassicPhotos(periodStartIso('week'), { maxCandidates: 20, resultLimit: 1 })
       .then((r) => setTopClassic(r[0] ?? null))
       .catch(() => {});
-  }, []);
+
+    if (user && configured) {
+      getFollowingCount(user.uid).then(setFollowingCount).catch(() => setFollowingCount(0));
+    } else {
+      setFollowingCount(0);
+    }
+  }, [user, configured]);
 
   const loadWeather = useCallback(async () => {
     setWeatherStatus('loading');
@@ -636,6 +647,15 @@ export default function HomeScreen() {
           CONTENT — rises over hero (wave effect)
       ════════════════════════════════════════ */}
       <View style={[S.wave, { backgroundColor: waveColor }]}>
+
+        {/* ── Onboarding checklist (hides itself once all steps complete or user dismisses) ── */}
+        {user && configured ? (
+          <OnboardingChecklist
+            hasProfilePhoto={!!user.photoURL}
+            catchCount={catchCount}
+            followingCount={followingCount}
+          />
+        ) : null}
 
         {/* ── Big CTA card ── */}
         <ScalePressable

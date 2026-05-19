@@ -787,13 +787,60 @@ export default function LogbookScreen() {
             bottomPad={bottomPad + 8}
           />
         ) : items.length === 0 ? (
-          <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingHorizontal: spacing.xl, paddingBottom: bottomPad }}>
-            <EmptyState
-              icon="book-outline"
-              title="Дневникът е празен"
-              subtitle="Добави първия улов — ще го виждаш тук, на картата и в статистиките."
-              action={{ label: 'Добави улов', onPress: () => navigation.navigate('AddCatch') }}
-            />
+          <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingHorizontal: spacing.xl, paddingBottom: bottomPad, gap: spacing.lg }}>
+            <View style={{ alignItems: 'center', gap: 12 }}>
+              <View style={{
+                width: 88, height: 88, borderRadius: 44,
+                backgroundColor: colors.primarySurface,
+                alignItems: 'center', justifyContent: 'center',
+                borderWidth: 1, borderColor: colors.border,
+              }}>
+                <Ionicons name="fish" size={42} color={colors.primary} />
+              </View>
+              <Text style={{ fontSize: 22, fontFamily: 'Nunito_800ExtraBold', color: colors.text, textAlign: 'center', letterSpacing: -0.3 }}>
+                Запиши първия си улов
+              </Text>
+              <Text style={{ fontSize: 14, color: colors.textMuted, textAlign: 'center', lineHeight: 20, paddingHorizontal: spacing.md }}>
+                Снимка, тегло, място — само 30 секунди. Ще го виждаш и в картата, статистиките и класиките.
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => navigation.navigate('AddCatch')}
+              style={{
+                marginHorizontal: spacing.md,
+                paddingVertical: 14,
+                borderRadius: 16,
+                backgroundColor: colors.primary,
+                alignItems: 'center', justifyContent: 'center',
+                flexDirection: 'row', gap: 8,
+                shadowColor: colors.primary,
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.3,
+                shadowRadius: 10,
+                elevation: 6,
+              }}
+            >
+              <Ionicons name="add-circle" size={20} color="#fff" />
+              <Text style={{ color: '#fff', fontFamily: 'Nunito_800ExtraBold', fontSize: 15 }}>Добави улов</Text>
+            </Pressable>
+            <View style={{ flexDirection: 'row', justifyContent: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, flexWrap: 'wrap' }}>
+              {[
+                { icon: 'camera-outline' as const, label: 'Снимка от камерата' },
+                { icon: 'location-outline' as const, label: 'Авто-локация' },
+                { icon: 'cloud-outline' as const, label: 'Време + луна' },
+              ].map((feat) => (
+                <View key={feat.label} style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 5,
+                  paddingHorizontal: 10, paddingVertical: 6,
+                  borderRadius: 999,
+                  backgroundColor: colors.surfaceAlt,
+                  borderWidth: 1, borderColor: colors.border,
+                }}>
+                  <Ionicons name={feat.icon} size={12} color={colors.primary} />
+                  <Text style={{ fontSize: 11, fontFamily: 'Nunito_600SemiBold', color: colors.textMuted }}>{feat.label}</Text>
+                </View>
+              ))}
+            </View>
           </ScrollView>
         ) : filtered.length === 0 ? (
           <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingHorizontal: spacing.xl, paddingBottom: bottomPad }}>

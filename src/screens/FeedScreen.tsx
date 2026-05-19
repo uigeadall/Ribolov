@@ -588,21 +588,29 @@ export default function FeedScreen() {
     }
     if (items.length === 0) {
       return (
-        <View style={{ flex: 1, justifyContent: 'center', paddingTop: headerHeight }}>
-          <EmptyState
-            icon="layers-outline"
-            title={scope === 'following' ? 'Няма публикации от следваните' : 'Тук още е тихо'}
-            subtitle={
-              scope === 'following'
-                ? 'Следвай риболовци от „Приятели", за да виждаш само техните публични улови тук.'
-                : 'Когато други споделят улов, ще го виждаш тук. Сподели и твоя — Дневник → улов → „Сподели публично".'
-            }
-          />
-          {scope === 'following' ? (
-            <View style={{ paddingHorizontal: spacing.xl, marginTop: spacing.md }}>
-              <Button title="Към приятели" onPress={() => navigation.navigate('Friends')} />
+        <View style={{ flex: 1, paddingTop: headerHeight }}>
+          {/* Suggested anglers — most useful first-time content */}
+          <PeopleYouMayKnowRow collapseWhenEmpty={false} />
+          <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: spacing.lg }}>
+            <EmptyState
+              icon={scope === 'following' ? 'people-outline' : 'layers-outline'}
+              title={scope === 'following' ? 'Няма публикации от следваните' : 'Тук още е тихо'}
+              subtitle={
+                scope === 'following'
+                  ? 'Последвай риболовци, за да виждаш техните улови тук.'
+                  : 'Сподели публично от Дневник → улов → „Сподели публично" — твоят пост ще се появи в лентата.'
+              }
+            />
+            <View style={{ paddingHorizontal: spacing.xl, marginTop: spacing.md, gap: spacing.sm }}>
+              <Button
+                title={scope === 'following' ? 'Намери приятели' : 'Добави първи улов'}
+                onPress={() => {
+                  if (scope === 'following') navigation.navigate('Friends');
+                  else (navigation as any).navigate('LogbookTab', { screen: 'AddCatch', params: {} });
+                }}
+              />
             </View>
-          ) : null}
+          </View>
         </View>
       );
     }
