@@ -26,6 +26,7 @@ type Props = {
   post: Post;
   myUid?: string;
   myDisplayName: string;
+  myPhotoUrl?: string;
   resolvedAvatarUrl?: string;
   onPressAuthor: (uid: string, displayName: string) => void;
   onPressHashtag: (tag: string) => void;
@@ -47,7 +48,7 @@ function formatPostDate(iso: string): string {
 }
 
 export function PostCard({
-  post, myUid, myDisplayName, resolvedAvatarUrl,
+  post, myUid, myDisplayName, myPhotoUrl, resolvedAvatarUrl,
   onPressAuthor, onPressHashtag, onPressMention, onDelete, onReshare,
 }: Props) {
   const { colors } = useTheme();
@@ -71,6 +72,7 @@ export function PostCard({
   const avatarUrl = useAvatarUrl({
     ownerUid: post.ownerUid,
     isMine,
+    myPhotoUrl,
     resolvedAvatarUrl,
     ownerPhotoUrl: post.ownerPhotoUrl,
   });

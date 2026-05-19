@@ -16,7 +16,8 @@ import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
 import { useAppNavigation } from '../navigation/useAppNavigation';
-import { createPost } from '../services/cloudSync';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createPost, getUserPublicSummary } from '../services/cloudSync';
 import { searchUsersByName, type SearchUserResult } from '../services/userProfile';
 import { handleError } from '../utils/handleError';
 import { useRoute, RouteProp } from '@react-navigation/native';
@@ -149,10 +150,23 @@ export default function CreatePostScreen() {
         .map((h) => resolvedMentions[h])
         .filter((uid): uid is string => !!uid);
 
+      // Resolve the user's avatar URL. user.photoURL (Firebase Auth) is often
+      // empty when the user uploaded their photo through Profile, since that
+      // flow writes to users/{uid}.photoUrl in Firestore (and data: URLs are
+      // never written to Auth). Try Auth → cached AsyncStorage → Firestore.
+      let ownerPhotoUrl = user.photoURL?.trim() || '';
+      if (!ownerPhotoUrl) {
+        ownerPhotoUrl = (await AsyncStorage.getItem(`@ribolov/profilePhoto/${user.uid}`).catch(() => null)) ?? '';
+      }
+      if (!ownerPhotoUrl) {
+        const summary = await getUserPublicSummary(user.uid).catch(() => null);
+        ownerPhotoUrl = summary?.photoUrl?.trim() ?? '';
+      }
+
       await createPost({
         ownerUid: user.uid,
         ownerName: user.displayName ?? user.email ?? 'Рибар',
-        ownerPhotoUrl: user.photoURL ?? undefined,
+        ownerPhotoUrl: ownerPhotoUrl || undefined,
         text,
         localPhotoUri: photoUri,
         mentionUids,

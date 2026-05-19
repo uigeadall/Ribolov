@@ -33,10 +33,16 @@ export function useAvatarUrl({
   ownerPhotoUrl?: string;
 }): string {
   const storedAvatar = resolvedAvatarUrl?.trim() || ownerPhotoUrl?.trim();
+  const myAvatar = myPhotoUrl?.trim() || '';
   const [fetchedAvatar, setFetchedAvatar] = useState<string>(() => getCached(ownerUid) ?? '');
 
   useEffect(() => {
-    if (isMine || storedAvatar) return;
+    // Skip the lookup only when we already have something to show.
+    // Previously this short-circuited whenever `isMine` was true, which
+    // left the user's own posts blank if `myPhotoUrl` happened to be empty
+    // (e.g. data: URL avatars don't get written to Firebase Auth.photoURL).
+    if (storedAvatar) return;
+    if (isMine && myAvatar) return;
     const cached = getCached(ownerUid);
     if (cached) { setFetchedAvatar(cached); return; }
     setFetchedAvatar('');
@@ -46,7 +52,7 @@ export function useAvatarUrl({
         if (p) { setCached(ownerUid, p); setFetchedAvatar(p); }
       })
       .catch(() => {});
-  }, [ownerUid, isMine, storedAvatar]);
+  }, [ownerUid, isMine, storedAvatar, myAvatar]);
 
-  return (isMine ? myPhotoUrl?.trim() : undefined) || storedAvatar || fetchedAvatar || '';
+  return (isMine ? myAvatar : '') || storedAvatar || fetchedAvatar || '';
 }

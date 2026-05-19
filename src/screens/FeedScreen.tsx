@@ -422,6 +422,7 @@ export default function FeedScreen() {
         post={p}
         myUid={user?.uid}
         myDisplayName={myDisplayName}
+        myPhotoUrl={myPhotoUrl}
         resolvedAvatarUrl={avatarMap[p.ownerUid]}
         onPressAuthor={onPressAuthor}
         onPressHashtag={onPressHashtag}
