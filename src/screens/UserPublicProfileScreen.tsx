@@ -20,6 +20,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
+import { Skeleton } from '../components/Skeleton';
 import { FeedPost, FeedItem } from '../components/FeedPost';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
@@ -436,8 +437,30 @@ export default function UserPublicProfileScreen() {
   if (loading && !refreshing) {
     return (
       <Screen padded={false}>
-        <View style={[styles.center, { paddingTop: insets.top }]}>
-          <ActivityIndicator size="large" color={colors.primary} />
+        <View style={{ flex: 1, paddingTop: insets.top }}>
+          {/* Cover band */}
+          <Skeleton height={200} width="100%" borderRadius={0} />
+          {/* Avatar circle that overlaps the cover */}
+          <View style={{ alignItems: 'center', marginTop: -48 }}>
+            <Skeleton width={96} height={96} borderRadius={48} />
+          </View>
+          {/* Name + city */}
+          <View style={{ alignItems: 'center', marginTop: spacing.md, gap: 8 }}>
+            <Skeleton width={160} height={20} borderRadius={4} />
+            <Skeleton width={110} height={12} borderRadius={4} />
+            <Skeleton width={240} height={14} borderRadius={4} />
+          </View>
+          {/* Stats strip */}
+          <View style={{ flexDirection: 'row', marginHorizontal: spacing.lg, marginTop: spacing.lg, gap: spacing.sm }}>
+            <Skeleton height={64} width="32%" />
+            <Skeleton height={64} width="32%" />
+            <Skeleton height={64} width="32%" />
+          </View>
+          {/* Action row */}
+          <View style={{ flexDirection: 'row', marginHorizontal: spacing.lg, marginTop: spacing.md, gap: spacing.sm }}>
+            <Skeleton height={44} width="80%" borderRadius={radius.pill} />
+            <Skeleton height={44} width={44} borderRadius={radius.pill} />
+          </View>
         </View>
       </Screen>
     );

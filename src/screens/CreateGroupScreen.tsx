@@ -68,7 +68,7 @@ export default function CreateGroupScreen() {
   return (
     <Screen padded={false}>
       <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={8}>
+        <Pressable onPress={() => navigation.goBack()} hitSlop={8} accessibilityRole="button" accessibilityLabel="Назад">
           <Ionicons name="chevron-back" size={28} color={colors.primary} />
         </Pressable>
         <Text style={styles.headerTitle}>Нов клуб</Text>

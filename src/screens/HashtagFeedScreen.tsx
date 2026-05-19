@@ -1,10 +1,11 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Pressable, Alert } from 'react-native';
 import { useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Screen } from '../components/Screen';
 import { EmptyState } from '../components/EmptyState';
+import { ListSkeleton } from '../components/ListSkeleton';
 import { PostCard } from '../components/PostCard';
 import { useTheme } from '../services/themeContext';
 import { spacing, typography } from '../theme/typography';
@@ -110,7 +111,7 @@ export default function HashtagFeedScreen() {
   return (
     <Screen padded={false} avoidKeyboard={false}>
       <LinearGradient colors={heroColors} style={styles.hero}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={8} style={styles.backBtn}>
+        <Pressable onPress={() => navigation.goBack()} hitSlop={8} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Назад">
           <Ionicons name="chevron-back" size={22} color="#fff" />
         </Pressable>
         <View style={styles.titleWrap}>
@@ -123,9 +124,7 @@ export default function HashtagFeedScreen() {
       </LinearGradient>
 
       {loading ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator color={colors.primary} size="large" />
-        </View>
+        <ListSkeleton variant="tile" count={3} />
       ) : items.length === 0 ? (
         <EmptyState
           icon="pricetag-outline"

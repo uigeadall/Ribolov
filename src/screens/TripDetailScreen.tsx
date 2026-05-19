@@ -126,7 +126,7 @@ export default function TripDetailScreen() {
   return (
     <Screen scroll>
       <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={8}>
+        <Pressable onPress={() => navigation.goBack()} hitSlop={8} accessibilityRole="button" accessibilityLabel="Назад">
           <Ionicons name="chevron-back" size={28} color={colors.primary} />
         </Pressable>
         <Text style={[styles.title, { flex: 1 }]} numberOfLines={1}>{trip.title}</Text>

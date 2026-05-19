@@ -283,7 +283,7 @@ export default function CreatePostScreen() {
     return (
       <Screen padded={false}>
         <LinearGradient colors={heroColors} style={styles.hero}>
-          <Pressable onPress={() => navigation.goBack()} hitSlop={8} style={styles.backBtn}>
+          <Pressable onPress={() => navigation.goBack()} hitSlop={8} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Назад">
             <Ionicons name="chevron-back" size={22} color="#fff" />
           </Pressable>
           <Text style={styles.heroTitle}>Нова публикация</Text>
@@ -304,7 +304,7 @@ export default function CreatePostScreen() {
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Screen padded={false} avoidKeyboard={false}>
         <LinearGradient colors={heroColors} style={styles.hero}>
-          <Pressable onPress={() => navigation.goBack()} hitSlop={8} style={styles.backBtn}>
+          <Pressable onPress={() => navigation.goBack()} hitSlop={8} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Назад">
             <Ionicons name="chevron-back" size={22} color="#fff" />
           </Pressable>
           <Text style={styles.heroTitle}>{reshare ? 'Сподели' : 'Нова публикация'}</Text>

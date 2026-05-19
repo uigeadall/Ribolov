@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator,
+  View, Text, StyleSheet, FlatList, Pressable,
 } from 'react-native';
 import { FishingRefreshControl } from '../components/FishingRefreshControl';
 import { useFocusEffect } from '@react-navigation/native';
@@ -9,6 +9,7 @@ import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
+import { ListSkeleton } from '../components/ListSkeleton';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
@@ -67,16 +68,14 @@ export default function ExploreScreen() {
   return (
     <Screen padded={false}>
       <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={8}>
+        <Pressable onPress={() => navigation.goBack()} hitSlop={8} accessibilityRole="button" accessibilityLabel="Назад">
           <Ionicons name="chevron-back" size={28} color={colors.primary} />
         </Pressable>
         <Text style={styles.title}>Открий</Text>
       </View>
 
       {loading && !refreshing ? (
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <ActivityIndicator color={colors.primary} size="large" />
-        </View>
+        <ListSkeleton variant="grid" count={6} />
       ) : (
         <FlatList
           data={[]}

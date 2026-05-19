@@ -255,7 +255,7 @@ export default function FriendsScreen() {
     <View style={styles.hero}>
       <LinearGradient colors={heroColors} style={StyleSheet.absoluteFillObject} pointerEvents="none" />
       <View style={styles.heroInner}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={8} style={styles.backBtn}>
+        <Pressable onPress={() => navigation.goBack()} hitSlop={8} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Назад">
           <Ionicons name="chevron-back" size={24} color="#fff" />
         </Pressable>
         <Text style={styles.heroTitle}>Приятели</Text>

@@ -233,7 +233,7 @@ export default function SearchScreen() {
   return (
     <View style={styles.root}>
       <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={8}>
+        <Pressable onPress={() => navigation.goBack()} hitSlop={8} accessibilityRole="button" accessibilityLabel="Назад">
           <Ionicons name="chevron-back" size={26} color={colors.primary} />
         </Pressable>
         <View style={styles.searchWrap}>

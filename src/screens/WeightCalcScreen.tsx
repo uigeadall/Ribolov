@@ -115,7 +115,7 @@ export default function WeightCalcScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={[styles.header, { paddingTop: insets.top + spacing.xs }]}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={8}>
+        <Pressable onPress={() => navigation.goBack()} hitSlop={8} accessibilityRole="button" accessibilityLabel="Назад">
           <Ionicons name="chevron-back" size={28} color={colors.primary} />
         </Pressable>
         <Text style={styles.headerTitle}>Калкулатор за размер</Text>

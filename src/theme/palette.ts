@@ -32,7 +32,8 @@ export const lightColors: AppColors = {
   card: '#FFFFFF',
   cardEdge: '#C2DDEF',
   text: '#0A3060',
-  textMuted: '#6AABDC',
+  // Darkened from #6AABDC (≈2.3:1 on white) to meet WCAG AA (~4.6:1)
+  textMuted: '#4A7BA5',
   border: '#BCD8EF',
   primary: '#1570B8',
   primaryLight: '#2A8FD4',
@@ -52,10 +53,13 @@ export const darkColors: AppColors = {
   background: '#050C1A',
   surfaceAlt: '#0A1428',
   card: '#0E1E35',
-  cardEdge: '#1A3050',
+  // Brighter than #1A3050 so card edges are actually visible against `card`.
+  cardEdge: '#23416C',
   text: '#E4F2FF',
-  textMuted: '#6AABDC',
-  border: '#1C3555',
+  // Slightly cooler than light-mode value, ~5:1 against `card` and `background`.
+  textMuted: '#94BFE0',
+  // Brightened from #1C3555 so hairlines actually show up.
+  border: '#26456E',
   primary: '#4AA8E8',
   primaryLight: '#6EC0F0',
   primaryDark: '#2A8FD4',

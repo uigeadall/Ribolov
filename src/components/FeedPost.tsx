@@ -369,7 +369,12 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
             </View>
           </Pressable>
           {/* More (···) button */}
-          <Pressable onPress={openMoreMenu} hitSlop={8}>
+          <Pressable
+            onPress={openMoreMenu}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Опции"
+          >
             <Ionicons name="ellipsis-horizontal" size={22} color={colors.textMuted} />
           </Pressable>
         </View>
@@ -493,6 +498,9 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
                   hitSlop={8}
                   delayLongPress={300}
                   style={social.likeBusy ? { opacity: 0.5 } : undefined}
+                  accessibilityRole="button"
+                  accessibilityLabel={social.myReaction ? 'Промени реакцията' : 'Хареса'}
+                  accessibilityState={{ selected: !!social.myReaction }}
                 >
                   <Animated.View style={{ transform: [{ scale: reactionScale }] }}>
                     {social.myReaction ? (
@@ -503,17 +511,32 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
                   </Animated.View>
                 </Pressable>
                 {/* Comment */}
-                <Pressable onPress={() => setCommentsOpen((v) => !v)} hitSlop={8}>
+                <Pressable
+                  onPress={() => setCommentsOpen((v) => !v)}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Коментари"
+                >
                   <Ionicons name="chatbubble-outline" size={24} color={colors.text} />
                 </Pressable>
                 {/* Quote-reshare within the app (new post quoting this one) */}
                 {onReshare ? (
-                  <Pressable onPress={() => onReshare(item)} hitSlop={8}>
+                  <Pressable
+                    onPress={() => onReshare(item)}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Сподели в лентата"
+                  >
                     <Ionicons name="repeat-outline" size={26} color={colors.text} />
                   </Pressable>
                 ) : null}
                 {/* Share externally */}
-                <Pressable onPress={social.onShare} hitSlop={8}>
+                <Pressable
+                  onPress={social.onShare}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Сподели външно"
+                >
                   <Ionicons name="paper-plane-outline" size={24} color={colors.text} />
                 </Pressable>
               </View>
@@ -523,6 +546,9 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
                 disabled={social.saveBusy}
                 hitSlop={8}
                 style={{ marginLeft: 'auto' }}
+                accessibilityRole="button"
+                accessibilityLabel={social.saved ? 'Премахни от запазени' : 'Запази'}
+                accessibilityState={{ selected: social.saved }}
               >
                 {social.saveBusy ? (
                   <ActivityIndicator size="small" color={colors.primary} />

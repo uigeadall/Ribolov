@@ -117,7 +117,7 @@ export default function TripsScreen() {
       <View style={S.hero}>
         <LinearGradient colors={heroColors} style={StyleSheet.absoluteFillObject} pointerEvents="none" />
         <View style={S.heroInner}>
-          <Pressable onPress={() => navigation.goBack()} hitSlop={8} style={S.backBtn}>
+          <Pressable onPress={() => navigation.goBack()} hitSlop={8} style={S.backBtn} accessibilityRole="button" accessibilityLabel="Назад">
             <Ionicons name="chevron-back" size={24} color="#fff" />
           </Pressable>
           <View style={{ flex: 1 }}>

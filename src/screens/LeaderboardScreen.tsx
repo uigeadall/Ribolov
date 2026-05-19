@@ -7,7 +7,6 @@ import {
   Pressable,
   FlatList,
   Modal,
-  ActivityIndicator,
   TextInput,
   Animated,
 } from 'react-native';
@@ -19,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { EmptyState } from '../components/EmptyState';
+import { ListSkeleton } from '../components/ListSkeleton';
 import { Button } from '../components/Button';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
@@ -471,9 +471,7 @@ export default function LeaderboardScreen() {
       </View>
 
       {loading && rows.length === 0 ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
+        <ListSkeleton variant="row" count={8} />
       ) : rows.length === 0 ? (
         <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: spacing.lg }}>
           <EmptyState
