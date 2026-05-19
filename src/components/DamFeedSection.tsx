@@ -16,6 +16,7 @@ import { radius, spacing, typography } from '../theme/typography';
 import { Button } from './Button';
 import { Card } from './Card';
 import { createDamFeedPost, deleteDamFeedPost, subscribeDamFeedPosts, type DamFeedPostDoc } from '../services/damFeed';
+import { checkImageSize } from '../utils/imageSize';
 
 type Props = {
   damId: string;
@@ -74,6 +75,7 @@ export function DamFeedSection({ damId, damName, user, firebaseConfigured }: Pro
       quality: 0.85,
     });
     if (res.canceled || !res.assets[0]?.uri) return;
+    if (!checkImageSize(res.assets[0])) return;
     setBusy(true);
     try {
       await createDamFeedPost({

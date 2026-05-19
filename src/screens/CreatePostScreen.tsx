@@ -20,6 +20,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createPost, getUserPublicSummary } from '../services/cloudSync';
 import { searchUsersByName, type SearchUserResult } from '../services/userProfile';
 import { handleError } from '../utils/handleError';
+import { checkImageSize } from '../utils/imageSize';
 import { useRoute, RouteProp } from '@react-navigation/native';
 import type { FeedStackParamList } from '../navigation/types';
 
@@ -119,6 +120,7 @@ export default function CreatePostScreen() {
     }
     const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', quality: 0.7 });
     if (!r.canceled && r.assets[0]) {
+      if (!checkImageSize(r.assets[0])) return;
       setPhotoUri(await compressPhoto(r.assets[0].uri));
     }
   };
@@ -131,6 +133,7 @@ export default function CreatePostScreen() {
     }
     const r = await ImagePicker.launchCameraAsync({ quality: 0.7 });
     if (!r.canceled && r.assets[0]) {
+      if (!checkImageSize(r.assets[0])) return;
       setPhotoUri(await compressPhoto(r.assets[0].uri));
     }
   };

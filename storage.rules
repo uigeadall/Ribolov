@@ -51,10 +51,13 @@ service firebase.storage {
       allow read: if signedIn()
         && (convId.split('_')[0] == request.auth.uid
           || convId.split('_')[1] == request.auth.uid);
+      // Image-only. Without isImage() the 50 MB cap accepted arbitrary binaries.
+      // 10 MB cap matches the rest of the app and the client-side guard in ChatDetailScreen.
       allow write: if signedIn()
         && (convId.split('_')[0] == request.auth.uid
           || convId.split('_')[1] == request.auth.uid)
-        && request.resource.size < 50 * 1024 * 1024;
+        && isImage()
+        && underLimit();
     }
   }
 }

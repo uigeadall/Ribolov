@@ -7,6 +7,7 @@ import {
   limit,
   where,
   serverTimestamp,
+  Timestamp,
 } from 'firebase/firestore';
 import { requireFirebase } from './firebase';
 
@@ -38,47 +39,48 @@ export async function addWaterReport(
   r: Omit<WaterReport, 'id' | 'createdAt'>
 ): Promise<void> {
   const fb = requireFirebase();
+  // No client-computed expiresAt — that field used Date.now() which could be hours/years
+  // off depending on device clock. TTL is enforced by the cleanupExpiredWaterReports
+  // Cloud Function and a client-side createdAt > now-TTL filter below.
   await addDoc(collection(fb.db, 'waterReports'), {
     ...r,
     createdAt: serverTimestamp(),
-    expiresAt: Date.now() + TTL_MS,
   });
 }
 
 export async function getWaterReports(waterBodyId: string): Promise<WaterReport[]> {
   const fb = requireFirebase();
   try {
+    // Query by createdAt range — requires a (waterBodyId asc, createdAt desc) composite
+    // index. Firestore will surface a one-time setup prompt in the console on first run.
+    const cutoff = Timestamp.fromMillis(Date.now() - TTL_MS);
     const snap = await getDocs(
       query(
         collection(fb.db, 'waterReports'),
         where('waterBodyId', '==', waterBodyId),
-        orderBy('expiresAt', 'desc'),
-        limit(10)
+        where('createdAt', '>=', cutoff),
+        orderBy('createdAt', 'desc'),
+        limit(10),
       )
     );
-    const now = Date.now();
-    return snap.docs
-      .map((d) => {
-        const data = d.data() as Omit<WaterReport, 'id'> & { expiresAt?: number; createdAt?: { toMillis?: () => number } };
-        return {
-          id: d.id,
-          waterBodyId: data.waterBodyId,
-          waterBodyKind: data.waterBodyKind,
-          waterBodyName: data.waterBodyName,
-          reporterUid: data.reporterUid,
-          reporterName: data.reporterName,
-          fishingActivity: data.fishingActivity,
-          waterCondition: data.waterCondition,
-          note: data.note,
-          createdAt:
-            typeof data.createdAt?.toMillis === 'function'
-              ? new Date(data.createdAt.toMillis()).toISOString()
-              : new Date().toISOString(),
-          _expiresAt: data.expiresAt ?? 0,
-        };
-      })
-      .filter((r) => (r as any)._expiresAt > now)
-      .map(({ _expiresAt: _, ...r }) => r);
+    return snap.docs.map((d) => {
+      const data = d.data() as Omit<WaterReport, 'id'> & { createdAt?: { toMillis?: () => number } };
+      return {
+        id: d.id,
+        waterBodyId: data.waterBodyId,
+        waterBodyKind: data.waterBodyKind,
+        waterBodyName: data.waterBodyName,
+        reporterUid: data.reporterUid,
+        reporterName: data.reporterName,
+        fishingActivity: data.fishingActivity,
+        waterCondition: data.waterCondition,
+        note: data.note,
+        createdAt:
+          typeof data.createdAt?.toMillis === 'function'
+            ? new Date(data.createdAt.toMillis()).toISOString()
+            : new Date().toISOString(),
+      };
+    });
   } catch {
     return [];
   }

@@ -25,9 +25,11 @@ export type SocialNotification = {
   id: string;
   actorUid: string;
   actorName: string;
-  type: 'like' | 'comment' | 'follow' | 'storyLike' | 'storyComment' | 'mention';
+  type: 'like' | 'comment' | 'follow' | 'storyLike' | 'storyComment' | 'mention' | 'message';
   catchId?: string;
   storyId?: string;
+  /** Present for 'message' notifications — the conversation this message belongs to. */
+  convId?: string;
   preview?: string;
   reactionEmoji?: string;
   read: boolean;

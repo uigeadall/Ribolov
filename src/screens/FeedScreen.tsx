@@ -1,6 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { View, Text, StyleSheet, FlatList, Pressable, Platform, Animated, ActionSheetIOS, Alert } from 'react-native';
+
+// FlatList wrapped with createAnimatedComponent — required so that the FlatList
+// can receive an Animated.event onScroll with useNativeDriver: true (plain
+// FlatList only supports JS-driven onScroll). The cast preserves FlatList's
+// generic so callers keep proper typing on data / renderItem / etc.
+const AnimatedFlatList = Animated.createAnimatedComponent(FlatList) as unknown as typeof FlatList;
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -436,25 +442,32 @@ export default function FeedScreen() {
   // No separator — each post has its own bottom border
   const ItemSeparator = useCallback(() => null, []);
 
-  const onScroll = Animated.event(
-    [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-    {
-      useNativeDriver: false,
-      listener: (e: { nativeEvent: { contentOffset: { y: number } } }) => {
-        const show = e.nativeEvent.contentOffset.y > 400;
-        setShowScrollTop((prev) => {
-          if (prev !== show) {
-            Animated.spring(scrollTopAnim, {
-              toValue: show ? 1 : 0,
-              useNativeDriver: true,
-              speed: 18,
-              bounciness: 8,
-            }).start();
-          }
-          return show;
-        });
+  // scrollY drives the collapsing header (Animated.diffClamp → translateY) on the
+  // native side — no JS reads its value, so we can stay on useNativeDriver: true.
+  // The threshold listener for the scroll-to-top button still fires in JS via the
+  // `listener` callback; that's compatible with the native driver.
+  const onScroll = useMemo(
+    () => Animated.event(
+      [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+      {
+        useNativeDriver: true,
+        listener: (e: { nativeEvent: { contentOffset: { y: number } } }) => {
+          const show = e.nativeEvent.contentOffset.y > 400;
+          setShowScrollTop((prev) => {
+            if (prev !== show) {
+              Animated.spring(scrollTopAnim, {
+                toValue: show ? 1 : 0,
+                useNativeDriver: true,
+                speed: 18,
+                bounciness: 8,
+              }).start();
+            }
+            return show;
+          });
+        },
       },
-    }
+    ),
+    [scrollY, scrollTopAnim],
   );
 
   const scrollToTop = useCallback(() => {
@@ -619,7 +632,7 @@ export default function FeedScreen() {
     }
     return (
       <View style={{ flex: 1 }}>
-        <FlatList
+        <AnimatedFlatList
           ref={flatListRef}
           data={displayedItems}
           keyExtractor={(item) => `${item.kind}-${item.data.id}`}

@@ -109,6 +109,7 @@ function NotifRow({ item, myUid, onOpen, onDismiss, styles, colors }: NotifRowPr
     : item.type === 'storyLike' ? colors.primary
     : item.type === 'comment' ? '#e53935'
     : item.type === 'storyComment' ? '#e53935'
+    : item.type === 'message' ? colors.primary
     : '#2E9B5A';
 
   const isGrouped = (item.groupCount ?? 0) > 0;
@@ -136,7 +137,9 @@ function NotifRow({ item, myUid, onOpen, onDismiss, styles, colors }: NotifRowPr
             ? 'коментира твоята история'
             : item.type === 'mention'
               ? 'те спомена в публикация'
-              : 'те последва';
+              : item.type === 'message'
+                ? 'ти изпрати съобщение'
+                : 'те последва';
   const icon =
     item.type === 'like' || item.type === 'storyLike'
       ? 'heart'
@@ -144,7 +147,9 @@ function NotifRow({ item, myUid, onOpen, onDismiss, styles, colors }: NotifRowPr
         ? 'chatbubble-ellipses-outline'
         : item.type === 'mention'
           ? 'at-outline'
-          : 'person-add-outline';
+          : item.type === 'message'
+            ? 'mail-outline'
+            : 'person-add-outline';
   const initials = item.actorName.slice(0, 1).toUpperCase();
 
   const onFollowBack = useCallback(async () => {
@@ -373,10 +378,16 @@ export default function NotificationsScreen() {
         setData((prev) => prev ? prev.map((item) => item.id === n.id ? { ...item, read: true } : item) : prev);
         markNotificationRead(user.uid, n.id).catch(() => {});
       }
-      if (n.type === 'follow') {
+      if (n.type === 'follow' || n.type === 'mention') {
         navigation.navigate('UserPublicProfile', { uid: n.actorUid, displayName: n.actorName });
       } else if (n.type === 'storyLike' || n.type === 'storyComment') {
         navigation.navigate('UserPublicProfile', { uid: n.actorUid, displayName: n.actorName });
+      } else if (n.type === 'message' && n.convId) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (navigation.navigate as any)('ProfileTab', {
+          screen: 'ChatDetail',
+          params: { convId: n.convId, otherUid: n.actorUid, otherName: n.actorName },
+        });
       } else if (n.catchId) {
         // like / comment — go directly to the catch in the logbook tab
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

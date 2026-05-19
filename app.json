@@ -92,7 +92,14 @@
       "expo-web-browser",
       "expo-apple-authentication",
       "@sentry/react-native",
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#0E4D64"
+        }
+      ]
     ],
     "extra": {
       "eas": {

@@ -38,6 +38,7 @@ import { GoogleSignInSection } from '../components/GoogleSignInButton';
 import { AppleSignInSection } from '../components/AppleSignInSection';
 import { updateProfile } from 'firebase/auth';
 import { handleError } from '../utils/handleError';
+import { checkImageSize } from '../utils/imageSize';
 import { ensureFirebase } from '../services/firebase';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 import { catchesStore, tripsStore } from '../storage/storage';
@@ -300,6 +301,10 @@ export default function ProfileScreen() {
     });
     if (!res.canceled && res.assets[0]) {
       const picked = res.assets[0];
+      // Pre-check before ImageManipulator loads the full file into memory —
+      // a huge source image can OOM-crash on low-end Android devices even
+      // though the resized output ends up small.
+      if (!checkImageSize(picked)) return;
       const manipulated = await ImageManipulator.manipulateAsync(
         picked.uri,
         [{ resize: { width: 80, height: 80 } }],

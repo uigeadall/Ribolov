@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { addStory, uploadStoryMedia } from '../services/stories';
+import { checkImageSize } from '../utils/imageSize';
 import type { User } from 'firebase/auth';
 
 export type AddStoryState = {
@@ -51,6 +52,9 @@ export function useAddStory(
         result = await ImagePicker.launchImageLibraryAsync(opts);
       }
       if (!result.canceled && result.assets[0]) {
+        // Photos use the standard 10 MB cap; videos rely on the storage rule's
+        // 100 MB cap since most clips under 60s fit comfortably.
+        if (type === 'photo' && !checkImageSize(result.assets[0])) return;
         setMediaUri(result.assets[0].uri);
         setMediaType(type);
       }

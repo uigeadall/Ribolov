@@ -65,9 +65,10 @@ export function subscribeMyNotifications(myUid: string, onNext: (items: SocialNo
         const data = d.data() as {
           actorUid: string;
           actorName: string;
-          type: 'like' | 'comment' | 'follow' | 'storyLike' | 'storyComment' | 'mention';
-          catchId: string;
+          type: 'like' | 'comment' | 'follow' | 'storyLike' | 'storyComment' | 'mention' | 'message';
+          catchId?: string;
           storyId?: string;
+          convId?: string;
           preview?: string;
           reactionEmoji?: string;
           read?: boolean;
@@ -80,6 +81,7 @@ export function subscribeMyNotifications(myUid: string, onNext: (items: SocialNo
           type: data.type,
           catchId: data.catchId,
           storyId: data.storyId,
+          convId: data.convId,
           preview: data.preview,
           reactionEmoji: data.reactionEmoji,
           read: !!data.read,

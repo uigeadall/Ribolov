@@ -32,6 +32,7 @@ import { formatTimeAgo } from '../utils/formatCatchDate';
 import { useAvatarUrl } from '../hooks/useAvatarUrl';
 import { useFeedPostSocial } from '../hooks/useFeedPostSocial';
 import { ImageViewer } from './ImageViewer';
+import { SharePickerModal, buildCatchSharedRef } from './SharePickerModal';
 import * as Haptics from 'expo-haptics';
 
 function feedStyles(colors: AppColors) {
@@ -157,12 +158,13 @@ type Props = {
   onPressMention?: (handle: string) => void;
 };
 
-export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarUrl, socialEnabled, isVisible = true, onPressAuthor, onPressCatch, onDeletePhoto, onRemovePost, onReshare, onPressHashtag, onPressMention }: Props) {
+function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarUrl, socialEnabled, isVisible = true, onPressAuthor, onPressCatch, onDeletePhoto, onRemovePost, onReshare, onPressHashtag, onPressMention }: Props) {
   const { colors, mode } = useTheme();
   const styles = useMemo(() => feedStyles(colors), [colors]);
   const { width: screenWidth } = useWindowDimensions();
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [viewerUri, setViewerUri] = useState<string | null>(null);
+  const [shareToFriendOpen, setShareToFriendOpen] = useState(false);
 
   const ownerName = item.ownerName || 'Рибар';
   const initials = ownerName.slice(0, 1).toUpperCase();
@@ -420,7 +422,23 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
           </View>
         )}
 
-        <ImageViewer uri={viewerUri ?? ''} visible={!!viewerUri} onClose={() => setViewerUri(null)} />
+        {/* Lazy-mount: ImageViewer constructs 5 Animated.Values + a PanResponder
+            on mount. Without this guard every FeedPost in the list paid for a
+            full-screen image viewer the user may never open. */}
+        {viewerUri ? (
+          <ImageViewer uri={viewerUri} visible onClose={() => setViewerUri(null)} />
+        ) : null}
+
+        {/* Lazy-mount: the share picker subscribes to Firestore and mounts a
+            FlatList on open. Rendering one per FeedPost preemptively meant N
+            instances in memory, dragging feed scroll perf into the floor. */}
+        {shareToFriendOpen && (
+          <SharePickerModal
+            visible
+            onClose={() => setShareToFriendOpen(false)}
+            sharedRef={buildCatchSharedRef(item)}
+          />
+        )}
 
         {socialEnabled ? (
           <>
@@ -530,6 +548,15 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
                     <Ionicons name="repeat-outline" size={26} color={colors.text} />
                   </Pressable>
                 ) : null}
+                {/* Send to friend via DM */}
+                <Pressable
+                  onPress={() => setShareToFriendOpen(true)}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Изпрати на приятел"
+                >
+                  <Ionicons name="send-outline" size={24} color={colors.text} />
+                </Pressable>
                 {/* Share externally */}
                 <Pressable
                   onPress={social.onShare}
@@ -739,46 +766,50 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
               <Text style={styles.timestamp}>{formatTimeAgo(item.date)}</Text>
             </View>
 
-            {/* ── Likers modal ── */}
-            <Modal
-              visible={social.likersOpen}
-              animationType="slide"
-              transparent
-              onRequestClose={() => { sheetPanY.setValue(0); social.setLikersOpen(false); }}
-            >
-              <Pressable style={styles.modalBackdrop} onPress={() => { sheetPanY.setValue(0); social.setLikersOpen(false); }}>
-                <Animated.View
-                  style={[styles.modalSheet, { transform: [{ translateY: sheetPanY }] }]}
-                  {...sheetPanResponder.panHandlers}
-                >
-                  {/* Drag handle */}
-                  <View style={{ alignItems: 'center', marginBottom: spacing.sm }}>
-                    <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border }} />
-                  </View>
-                  <Text style={styles.modalTitle}>Харесали ({social.likeCount})</Text>
-                  {social.likersLoading ? (
-                    <ActivityIndicator color={colors.primary} style={{ marginVertical: spacing.lg }} />
-                  ) : (
-                    <FlatList
-                      data={social.likers}
-                      keyExtractor={(x) => x.uid}
-                      style={{ maxHeight: 360 }}
-                      renderItem={({ item: liker }) => (
-                        <Pressable style={styles.likerRow} onPress={() => { sheetPanY.setValue(0); social.setLikersOpen(false); onPressAuthor(liker.uid, liker.displayName); }}>
-                          <Ionicons name="person-circle-outline" size={28} color={colors.primary} />
-                          <Text style={styles.likerName}>{liker.displayName}</Text>
-                          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-                        </Pressable>
-                      )}
-                      ListEmptyComponent={<Text style={{ ...typography.body, color: colors.textMuted }}>Няма видими харесвания.</Text>}
-                    />
-                  )}
-                  <Pressable onPress={() => { sheetPanY.setValue(0); social.setLikersOpen(false); }} style={{ marginTop: spacing.md, alignItems: 'center' }}>
-                    <Text style={{ ...typography.bodyBold, color: colors.primary }}>Затвори</Text>
-                  </Pressable>
-                </Animated.View>
-              </Pressable>
-            </Modal>
+            {/* ── Likers modal ── Lazy-mounted: the Modal + its FlatList + Animated.View
+                + PanResponder reconcile on every FeedPost render when always-mounted,
+                even though they're invisible. Gate on likersOpen to skip the entire tree. */}
+            {social.likersOpen && (
+              <Modal
+                visible
+                animationType="slide"
+                transparent
+                onRequestClose={() => { sheetPanY.setValue(0); social.setLikersOpen(false); }}
+              >
+                <Pressable style={styles.modalBackdrop} onPress={() => { sheetPanY.setValue(0); social.setLikersOpen(false); }}>
+                  <Animated.View
+                    style={[styles.modalSheet, { transform: [{ translateY: sheetPanY }] }]}
+                    {...sheetPanResponder.panHandlers}
+                  >
+                    {/* Drag handle */}
+                    <View style={{ alignItems: 'center', marginBottom: spacing.sm }}>
+                      <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border }} />
+                    </View>
+                    <Text style={styles.modalTitle}>Харесали ({social.likeCount})</Text>
+                    {social.likersLoading ? (
+                      <ActivityIndicator color={colors.primary} style={{ marginVertical: spacing.lg }} />
+                    ) : (
+                      <FlatList
+                        data={social.likers}
+                        keyExtractor={(x) => x.uid}
+                        style={{ maxHeight: 360 }}
+                        renderItem={({ item: liker }) => (
+                          <Pressable style={styles.likerRow} onPress={() => { sheetPanY.setValue(0); social.setLikersOpen(false); onPressAuthor(liker.uid, liker.displayName); }}>
+                            <Ionicons name="person-circle-outline" size={28} color={colors.primary} />
+                            <Text style={styles.likerName}>{liker.displayName}</Text>
+                            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+                          </Pressable>
+                        )}
+                        ListEmptyComponent={<Text style={{ ...typography.body, color: colors.textMuted }}>Няма видими харесвания.</Text>}
+                      />
+                    )}
+                    <Pressable onPress={() => { sheetPanY.setValue(0); social.setLikersOpen(false); }} style={{ marginTop: spacing.md, alignItems: 'center' }}>
+                      <Text style={{ ...typography.bodyBold, color: colors.primary }}>Затвори</Text>
+                    </Pressable>
+                  </Animated.View>
+                </Pressable>
+              </Modal>
+            )}
           </>
         ) : (
           /* Social disabled: just show caption below the photo */
@@ -822,3 +853,10 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
     </KeyboardAvoidingView>
   );
 }
+
+/** Memoized export — FeedScreen recreates renderItem identity on every viewability
+    tick (visibleIds is in its deps), which without memo would re-render every visible
+    card N times per scroll. Shallow compare suffices: callback props come from
+    useCallback in FeedScreen, item refs come from a useMemo'd data array, and
+    avatarMap is one-shot once an avatar resolves. */
+export const FeedPost = React.memo(FeedPostInner);

@@ -76,6 +76,47 @@ async function sendExpoPush(
 }
 
 // ---------------------------------------------------------------------------
+// Notification preferences — gate every push behind users/{uid}/settings/notifications
+// ---------------------------------------------------------------------------
+
+type NotifPrefs = {
+  likes: boolean;
+  comments: boolean;
+  follows: boolean;
+  messages: boolean;
+  storyReactions: boolean;
+  mentions: boolean;
+};
+
+// Missing prefs default to true (opt-out, not opt-in) so existing users keep
+// receiving notifications until they explicitly disable a category.
+async function getNotifPrefs(uid: string): Promise<NotifPrefs> {
+  const snap = await db.doc(`users/${uid}/settings/notifications`).get();
+  const d = (snap.data() ?? {}) as Partial<NotifPrefs>;
+  return {
+    likes: d.likes !== false,
+    comments: d.comments !== false,
+    follows: d.follows !== false,
+    messages: d.messages !== false,
+    storyReactions: d.storyReactions !== false,
+    mentions: d.mentions !== false,
+  };
+}
+
+function shouldNotify(type: string | undefined, prefs: NotifPrefs): boolean {
+  switch (type) {
+    case "like": return prefs.likes;
+    case "comment": return prefs.comments;
+    case "follow": return prefs.follows;
+    case "message": return prefs.messages;
+    case "mention": return prefs.mentions;
+    case "storyLike":
+    case "storyComment": return prefs.storyReactions;
+    default: return true;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // onNotificationCreated — sends Expo push notifications
 // ---------------------------------------------------------------------------
 
@@ -86,43 +127,62 @@ export const onNotificationCreated = onDocumentCreated(
     const data = event.data?.data() as Record<string, unknown> | undefined;
     if (!data) return;
 
+    const type = data.type as string | undefined;
+
+    // Skip the "message" type — those are written by onNewMessage which already
+    // handles its own push. Avoids a double-push if this function ever fires for
+    // a message-type notification doc.
+    if (type === "message") return;
+
+    // Honor the recipient's notification preferences.
+    const prefs = await getNotifPrefs(userId);
+    if (!shouldNotify(type, prefs)) return;
+
     // Fetch the recipient's push token
     const tokenSnap = await db.doc(`users/${userId}/private/pushToken`).get();
-    const token: string = tokenSnap.data()?.expoPushToken ?? '';
+    const token: string = tokenSnap.data()?.expoPushToken ?? "";
     if (!token || !token.startsWith("ExponentPushToken[")) return;
 
-    const type = data.type as string | undefined;
-    const actorName = (data.actorName ?? "Someone") as string;
+    const actorName = (data.actorName ?? "Рибар") as string;
 
     let title = "Ribolov";
-    let body = "You have a new notification.";
+    let body = "Имаш ново известие.";
 
     switch (type) {
       case "like":
-        title = "New Like";
-        body = `${actorName} liked your catch.`;
+        title = "Ново харесване";
+        body = `${actorName} хареса твой улов.`;
         break;
       case "comment":
-        title = "New Comment";
-        body = `${actorName} commented on your catch.`;
+        title = "Нов коментар";
+        body = `${actorName} коментира твой улов.`;
         break;
       case "follow":
-        title = "New Follower";
-        body = `${actorName} started following you.`;
+        title = "Нов последовател";
+        body = `${actorName} те последва.`;
         break;
       case "storyLike":
-        title = "Story Like";
-        body = `${actorName} liked your story.`;
+        title = "Реакция на история";
+        body = `${actorName} реагира на твоята история.`;
         break;
       case "storyComment":
-        title = "Story Comment";
-        body = `${actorName} commented on your story.`;
+        title = "Коментар на история";
+        body = `${actorName} коментира твоята история.`;
+        break;
+      case "mention":
+        title = "Спомена те";
+        body = `${actorName} те спомена в публикация.`;
         break;
     }
 
     await sendExpoPush(token, title, body, {
       type,
       notifId: event.params.notifId,
+      // Carry catchId/storyId/actorUid so the tap handler can deep-link.
+      catchId: typeof data.catchId === "string" ? data.catchId : "",
+      storyId: typeof data.storyId === "string" ? data.storyId : "",
+      actorUid: typeof data.actorUid === "string" ? data.actorUid : "",
+      actorName,
     });
   }
 );
@@ -141,6 +201,7 @@ export const onNewMessage = onDocumentCreated(
     const senderUid = msgData.senderUid as string | undefined;
     const text = msgData.text as string | undefined;
     const mediaType = msgData.mediaType as string | undefined;
+    const sharedRef = msgData.sharedRef as { kind?: string } | undefined;
 
     // Read conversation to get participants
     const convSnap = await db.doc(`conversations/${convId}`).get();
@@ -154,26 +215,72 @@ export const onNewMessage = onDocumentCreated(
     const recipientUid = participantIds.find((id) => id !== senderUid);
     if (!recipientUid) return;
 
-    // Fetch recipient's push token
-    const tokenSnap = await db.doc(`users/${recipientUid}/private/pushToken`).get();
-    const token: string = tokenSnap.data()?.expoPushToken ?? '';
-    if (!token || !token.startsWith("ExponentPushToken[")) return;
+    // Idempotency guard. onDocumentCreated has at-least-once delivery, so a duplicate
+    // fire would re-increment unreadMessageCount and re-send push. Mark the message
+    // doc atomically and bail on retry. Admin SDK bypasses rules; clients can't
+    // observe or modify `_fnProcessed` thanks to message update rules.
+    const claimed = await db.runTransaction(async (tx) => {
+      const msgSnap = await tx.get(event.data!.ref);
+      if (!msgSnap.exists) return false;
+      if ((msgSnap.data() as Record<string, unknown>)?._fnProcessed) return false;
+      tx.update(event.data!.ref, { _fnProcessed: true });
+      return true;
+    });
+    if (!claimed) return;
 
-    const senderName: string = participantNames[senderUid] ?? "Someone";
+    // Honor "messages" preference for both in-app notification AND push.
+    const prefs = await getNotifPrefs(recipientUid);
+    if (!prefs.messages) return;
+
+    const senderName: string = participantNames[senderUid] ?? "Рибар";
 
     let body: string;
     if (text) {
       body = text;
+    } else if (sharedRef?.kind === "catch") {
+      body = "🎣 Сподели улов";
+    } else if (sharedRef?.kind === "post") {
+      body = "📰 Сподели публикация";
+    } else if (sharedRef?.kind === "spot") {
+      body = "📍 Сподели място";
     } else if (mediaType === "photo") {
       body = "📷 Снимка";
     } else {
       body = "📹 Видео";
     }
 
+    // Write a single in-app notification per conversation (deterministic id).
+    // New messages overwrite the doc so the latest preview rises to the top
+    // and the unread-bell badge reflects one entry per active conversation.
+    await db.doc(`users/${recipientUid}/notifications/message_${convId}`).set({
+      actorUid: senderUid,
+      actorName: senderName.slice(0, 120),
+      type: "message",
+      convId,
+      preview: body.slice(0, 200),
+      read: false,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    // Bump the recipient's per-user unread aggregate. The client can't do this
+    // itself because the users/{uid} rule requires isSelf(uid) — a cross-user
+    // write would reject and roll back the entire send batch. Admin SDK
+    // bypasses rules; merge:true handles the brand-new-user case.
+    await db.doc(`users/${recipientUid}`).set(
+      { unreadMessageCount: FieldValue.increment(1) },
+      { merge: true },
+    );
+
+    // Fetch recipient's push token and send push
+    const tokenSnap = await db.doc(`users/${recipientUid}/private/pushToken`).get();
+    const token: string = tokenSnap.data()?.expoPushToken ?? "";
+    if (!token || !token.startsWith("ExponentPushToken[")) return;
+
     await sendExpoPush(token, senderName, body, {
       type: "message",
       convId,
       senderUid,
+      senderName,
     });
   }
 );
@@ -273,6 +380,32 @@ export const cleanupExpiredLivePins = onSchedule("every 30 minutes", async () =>
   if (snapshot.empty) return;
 
   // Plain delete is fine — no subcollections under live pins.
+  const batch = db.batch();
+  for (const docRef of snapshot.docs) {
+    batch.delete(docRef.ref);
+  }
+  await batch.commit();
+});
+
+// ---------------------------------------------------------------------------
+// cleanupExpiredWaterReports — runs every 6 hours
+// ---------------------------------------------------------------------------
+// Water-condition reports (waterReports) have a 24h TTL. The client used to
+// stamp expiresAt with Date.now() + TTL, which depended on the device clock
+// and could be wildly off. We now rely on the server-stamped createdAt and
+// delete anything older than 24h here.
+
+export const cleanupExpiredWaterReports = onSchedule("every 6 hours", async () => {
+  const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - 24 * 60 * 60 * 1000);
+
+  const snapshot = await db
+    .collection("waterReports")
+    .where("createdAt", "<", cutoff)
+    .limit(500)
+    .get();
+
+  if (snapshot.empty) return;
+
   const batch = db.batch();
   for (const docRef of snapshot.docs) {
     batch.delete(docRef.ref);

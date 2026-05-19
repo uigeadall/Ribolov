@@ -47,7 +47,7 @@ function formatPostDate(iso: string): string {
   return new Date(ms).toLocaleDateString('bg-BG', { day: 'numeric', month: 'short' });
 }
 
-export function PostCard({
+function PostCardInner({
   post, myUid, myDisplayName, myPhotoUrl, resolvedAvatarUrl,
   onPressAuthor, onPressHashtag, onPressMention, onDelete, onReshare,
 }: Props) {
@@ -496,3 +496,5 @@ export function PostCard({
     </View>
   );
 }
+
+export const PostCard = React.memo(PostCardInner);

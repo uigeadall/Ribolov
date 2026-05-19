@@ -44,6 +44,7 @@ import { SpeciesPicker } from '../components/SpeciesPicker';
 import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
 import { isRemoteImageUri } from '../utils/formatCatchDate';
 import { handleError } from '../utils/handleError';
+import { checkImageSize } from '../utils/imageSize';
 import { fetchWeather } from '../services/weather';
 import { DAMS } from '../data/dams';
 import { RIVERS } from '../data/rivers';
@@ -339,6 +340,7 @@ export default function AddCatchScreen() {
       quality: 0.7,
     });
     if (!result.canceled && result.assets[0]) {
+      if (!checkImageSize(result.assets[0])) return;
       dispatch({
         type: 'SET_PHOTO',
         payload: { uri: await compressPhoto(result.assets[0].uri), cameraVerified: false },
@@ -366,6 +368,7 @@ export default function AddCatchScreen() {
     }
     const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
     if (!result.canceled && result.assets[0]) {
+      if (!checkImageSize(result.assets[0])) return;
       dispatch({
         type: 'SET_PHOTO',
         payload: { uri: await compressPhoto(result.assets[0].uri), cameraVerified: true },
@@ -385,6 +388,7 @@ export default function AddCatchScreen() {
       quality: 0.7,
     });
     if (!result.canceled && result.assets[0]) {
+      if (!checkImageSize(result.assets[0])) return;
       dispatch({
         type: 'ADD_EXTRA_PHOTO',
         payload: await compressPhoto(result.assets[0].uri),

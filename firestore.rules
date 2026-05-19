@@ -484,8 +484,90 @@ service cloud.firestore {
             // Photo / video message (text may be empty)
             (request.resource.data.mediaUrl is string
               && request.resource.data.mediaUrl.size() > 0)
+            ||
+            // Shared catch / post / spot card (text may be empty)
+            (request.resource.data.sharedRef is map
+              && request.resource.data.sharedRef.kind in ['catch', 'post', 'spot']
+              && request.resource.data.sharedRef.id is string
+              && request.resource.data.sharedRef.id.size() > 0
+              && request.resource.data.sharedRef.id.size() <= 128)
+          )
+          // Optional replyTo metadata — validated when present.
+          && (!('replyTo' in request.resource.data)
+            || (request.resource.data.replyTo is map
+              && request.resource.data.replyTo.messageId is string
+              && request.resource.data.replyTo.messageId.size() <= 128
+              && request.resource.data.replyTo.senderUid is string
+              && request.resource.data.replyTo.preview is string
+              && request.resource.data.replyTo.preview.size() <= 200))
+          // Optional sharedRef metadata — validated when present (incl. when it's the primary content).
+          && (!('sharedRef' in request.resource.data)
+            || (request.resource.data.sharedRef is map
+              && request.resource.data.sharedRef.kind in ['catch', 'post', 'spot']
+              && request.resource.data.sharedRef.id is string
+              && request.resource.data.sharedRef.id.size() <= 128
+              && (!('title' in request.resource.data.sharedRef)
+                || (request.resource.data.sharedRef.title is string
+                  && request.resource.data.sharedRef.title.size() <= 200))
+              && (!('subtitle' in request.resource.data.sharedRef)
+                || (request.resource.data.sharedRef.subtitle is string
+                  && request.resource.data.sharedRef.subtitle.size() <= 200))
+              && (!('photoUrl' in request.resource.data.sharedRef)
+                || (request.resource.data.sharedRef.photoUrl is string
+                  && request.resource.data.sharedRef.photoUrl.size() <= 2000))))
+          // Per-conversation per-sender rate limit: 250ms cooldown when the previous
+          // message in this conversation was sent by the same user. Stops accidental
+          // floods and casual abuse without hindering normal alternating chat.
+          && (
+            !('lastSenderUid' in get(/databases/$(database)/documents/conversations/$(convId)).data)
+            || get(/databases/$(database)/documents/conversations/$(convId)).data.lastSenderUid != request.auth.uid
+            || !('lastMessageAt' in get(/databases/$(database)/documents/conversations/$(convId)).data)
+            || request.time.toMillis() - get(/databases/$(database)/documents/conversations/$(convId)).data.lastMessageAt.toMillis() > 250
           );
-        allow update, delete: if false;
+        allow update: if signedIn()
+          && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participantIds
+          && (
+            // Recipient stamps readAt for read-receipts.
+            (resource.data.senderUid != request.auth.uid
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt'])
+              && request.resource.data.readAt == request.time)
+            ||
+            // Sender edits their own text within the 15-minute window.
+            (resource.data.senderUid == request.auth.uid
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])
+              && request.resource.data.text is string
+              && request.resource.data.text.size() > 0
+              && request.resource.data.text.size() <= 4000
+              && request.resource.data.editedAt == request.time
+              && resource.data.createdAt is timestamp
+              && resource.data.createdAt.toMillis() > request.time.toMillis() - 15 * 60 * 1000)
+            ||
+            // Sender soft-deletes their own message within the 15-minute window.
+            (resource.data.senderUid == request.auth.uid
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deletedAt'])
+              && request.resource.data.deletedAt == request.time
+              && resource.data.createdAt is timestamp
+              && resource.data.createdAt.toMillis() > request.time.toMillis() - 15 * 60 * 1000)
+          );
+        allow delete: if false;
+      }
+
+      /** Per-message reactions, keyed by messageId. The doc is a map of uid → emoji code.
+          Any participant can react, but only on their own key. */
+      match /reactions/{msgId} {
+        allow read: if signedIn()
+          && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participantIds;
+        allow create: if signedIn()
+          && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participantIds
+          && request.resource.data.keys().hasOnly([request.auth.uid])
+          && (!(request.auth.uid in request.resource.data)
+            || request.resource.data[request.auth.uid] in ['heart','fire','trophy','fish','wow']);
+        allow update: if signedIn()
+          && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participantIds
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([request.auth.uid])
+          && (!(request.auth.uid in request.resource.data)
+            || request.resource.data[request.auth.uid] in ['heart','fire','trophy','fish','wow']);
+        allow delete: if false;
       }
 
       /** Typing indicators — both participants can read/write their own status. */

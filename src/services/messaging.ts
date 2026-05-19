@@ -6,6 +6,7 @@ import {
   getDocs,
   updateDoc,
   deleteDoc,
+  deleteField,
   query,
   orderBy,
   limit,
@@ -16,10 +17,23 @@ import {
   onSnapshot,
   writeBatch,
   runTransaction,
+  Timestamp,
 } from 'firebase/firestore';
 import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
-import type { DirectMessage, ConversationPreview } from '../types';
+import { addBreadcrumb } from './observability';
+import type { DirectMessage, ConversationPreview, MessageReplyRef, SharedRef } from '../types';
+
+/** Window during which the sender can still edit or delete their own message. */
+export const MESSAGE_EDIT_WINDOW_MS = 15 * 60 * 1000;
+/** Typing entries older than this are treated as stale and ignored. */
+const TYPING_STALE_MS = 8_000;
+
+/** Generate a stable client-side message id so retries don't create duplicates. */
+export function makeMessageClientId(): string {
+  const rnd = Math.random().toString(36).slice(2, 10);
+  return `${Date.now().toString(36)}_${rnd}`;
+}
 
 export async function ensureDirectConversation(
   myUid: string,
@@ -64,6 +78,7 @@ export function subscribeMyConversations(
         participantNames?: Record<string, string>;
         lastMessage?: string;
         lastMessageAt?: { toMillis?: () => number } | number;
+        lastSenderUid?: string;
         unreadCounts?: Record<string, number>;
       };
       const other = data.participantIds.find((id) => id !== myUid) ?? '';
@@ -75,6 +90,7 @@ export function subscribeMyConversations(
         otherName: data.participantNames?.[other] ?? 'Рибар',
         lastMessage: data.lastMessage,
         lastMessageAt,
+        lastSenderUid: data.lastSenderUid,
         unreadCount: data.unreadCounts?.[myUid] ?? 0,
       };
     });
@@ -89,13 +105,23 @@ export async function listMyConversations(myUid: string, maxCount = 50): Promise
     where('participantIds', 'array-contains', myUid),
     limit(maxCount),
   );
-  const snap = await getDocs(q);
+  // Permission errors here are usually transient (stale auth token after sign-in,
+  // App Check race, or rules drift on the deployed project). Return [] so callers
+  // — like the share picker — degrade to an empty state instead of crashing the UI.
+  let snap;
+  try {
+    snap = await getDocs(q);
+  } catch (e) {
+    addBreadcrumb('messaging', 'listMyConversations_failed', { error: String(e) });
+    return [];
+  }
   const rows = snap.docs.map((d) => {
     const data = d.data() as {
       participantIds: string[];
       participantNames?: Record<string, string>;
       lastMessage?: string;
       lastMessageAt?: { toMillis?: () => number } | number;
+      lastSenderUid?: string;
       unreadCounts?: Record<string, number>;
     };
     const other = data.participantIds.find((id) => id !== myUid) ?? '';
@@ -109,10 +135,40 @@ export async function listMyConversations(myUid: string, maxCount = 50): Promise
       otherName: data.participantNames?.[other] ?? 'Рибар',
       lastMessage: data.lastMessage,
       lastMessageAt,
+      lastSenderUid: data.lastSenderUid,
       unreadCount: data.unreadCounts?.[myUid] ?? 0,
     };
   });
   return rows.sort((a, b) => (b.lastMessageAt ?? 0) - (a.lastMessageAt ?? 0));
+}
+
+type RawMessageDoc = {
+  senderUid: string;
+  text: string;
+  createdAt?: unknown;
+  mediaUrl?: string;
+  mediaType?: 'photo' | 'video';
+  readAt?: unknown;
+  editedAt?: unknown;
+  deletedAt?: unknown;
+  replyTo?: MessageReplyRef;
+  sharedRef?: SharedRef;
+};
+
+function mapMessage(id: string, data: RawMessageDoc): DirectMessage {
+  return {
+    id,
+    senderUid: data.senderUid,
+    text: data.text,
+    createdAt: data.createdAt,
+    mediaUrl: data.mediaUrl,
+    mediaType: data.mediaType,
+    readAt: data.readAt,
+    editedAt: data.editedAt,
+    deletedAt: data.deletedAt,
+    replyTo: data.replyTo,
+    sharedRef: data.sharedRef,
+  };
 }
 
 export function subscribeConversationMessages(
@@ -130,25 +186,7 @@ export function subscribeConversationMessages(
   return onSnapshot(
     q,
     (snap) => {
-      onNext(
-        snap.docs.reverse().map((d) => {
-          const data = d.data() as {
-            senderUid: string;
-            text: string;
-            createdAt?: unknown;
-            mediaUrl?: string;
-            mediaType?: 'photo' | 'video';
-          };
-          return {
-            id: d.id,
-            senderUid: data.senderUid,
-            text: data.text,
-            createdAt: data.createdAt,
-            mediaUrl: data.mediaUrl,
-            mediaType: data.mediaType,
-          };
-        })
-      );
+      onNext(snap.docs.reverse().map((d) => mapMessage(d.id, d.data() as RawMessageDoc)));
     },
     (err) => onError?.(err as Error)
   );
@@ -167,16 +205,7 @@ export async function loadOlderMessages(
     limit(count)
   );
   const snap = await getDocs(q);
-  return snap.docs.reverse().map((d) => {
-    const data = d.data() as {
-      senderUid: string;
-      text: string;
-      createdAt?: unknown;
-      mediaUrl?: string;
-      mediaType?: 'photo' | 'video';
-    };
-    return { id: d.id, senderUid: data.senderUid, text: data.text, createdAt: data.createdAt, mediaUrl: data.mediaUrl, mediaType: data.mediaType };
-  });
+  return snap.docs.reverse().map((d) => mapMessage(d.id, d.data() as RawMessageDoc));
 }
 
 export async function sendConversationMessage(
@@ -187,22 +216,52 @@ export async function sendConversationMessage(
   senderName?: string,
   mediaUrl?: string,
   mediaType?: 'photo' | 'video',
+  clientId?: string,
+  replyTo?: MessageReplyRef,
+  sharedRef?: SharedRef,
 ): Promise<void> {
   const fb = requireFirebase();
   const trimmed = text.trim();
-  if (!trimmed && !mediaUrl) return;
-  const preview = mediaUrl ? (mediaType === 'video' ? '📹 Видео' : '📷 Снимка') : trimmed;
+  if (!trimmed && !mediaUrl && !sharedRef) return;
+
+  // Idempotency: if a clientId is supplied and a doc already exists, this call is a retry of
+  // an already-committed send. Bail out before re-incrementing unread counts.
+  const msgRef = clientId
+    ? doc(fb.db, 'conversations', convId, 'messages', clientId)
+    : doc(collection(fb.db, 'conversations', convId, 'messages'));
+  if (clientId) {
+    const existing = await getDoc(msgRef).catch(() => null);
+    if (existing?.exists()) return;
+  }
+
+  const preview = sharedRef
+    ? sharedRef.kind === 'catch' ? '🎣 Сподели улов'
+      : sharedRef.kind === 'post' ? '📰 Сподели публикация'
+      : '📍 Сподели място'
+    : mediaUrl ? (mediaType === 'video' ? '📹 Видео' : '📷 Снимка')
+    : trimmed;
   const batch = writeBatch(fb.db);
-  const msgRef = doc(collection(fb.db, 'conversations', convId, 'messages'));
-  batch.set(msgRef, stripUndefinedForFirestore({ senderUid, text: trimmed, createdAt: serverTimestamp(), mediaUrl, mediaType }));
+  batch.set(msgRef, stripUndefinedForFirestore({
+    senderUid,
+    text: trimmed,
+    createdAt: serverTimestamp(),
+    mediaUrl,
+    mediaType,
+    replyTo,
+    sharedRef,
+  }));
   batch.update(doc(fb.db, 'conversations', convId), {
     lastMessage: preview,
     lastMessageAt: serverTimestamp(),
     lastSenderUid: senderUid,
     [`unreadCounts.${recipientUid}`]: increment(1),
   });
-  // Increment the per-user aggregate so the badge only needs one doc read
-  batch.set(doc(fb.db, 'users', recipientUid), { unreadMessageCount: increment(1) }, { merge: true });
+  // NOTE: The recipient's users/{uid}.unreadMessageCount aggregate is bumped by
+  // the onNewMessage Cloud Function (admin SDK), not by the client — the
+  // user-doc rule requires isSelf(userId) which would reject this cross-user
+  // write from the sender. The conversation's unreadCounts.{recipientUid} is
+  // the authoritative per-conversation counter; the aggregate is just a UX
+  // optimization for the global bell badge.
   await batch.commit();
 }
 
@@ -219,6 +278,34 @@ export async function markConversationRead(convId: string, myUid: string): Promi
       tx.set(userRef, { unreadMessageCount: increment(-unread) }, { merge: true });
     }
   }).catch(() => {});
+
+  // Also mark the bell-icon notification entry for this conversation as read.
+  // The Cloud Function writes it with the deterministic id message_{convId}.
+  // Best-effort — the doc may not exist if push didn't fire for this conv yet.
+  await updateDoc(
+    doc(fb.db, 'users', myUid, 'notifications', `message_${convId}`),
+    { read: true },
+  ).catch(() => {});
+}
+
+/** Stamp readAt on incoming messages the caller already has from a subscription snapshot.
+    Avoids the extra getDocs round-trip that a "mark all unread" helper would need. */
+export async function markMessagesReadFromList(
+  convId: string,
+  myUid: string,
+  messages: DirectMessage[],
+): Promise<void> {
+  const targets = messages.filter((m) => m.senderUid !== myUid && !m.readAt);
+  if (targets.length === 0) return;
+  const fb = requireFirebase();
+  const batch = writeBatch(fb.db);
+  let updates = 0;
+  for (const m of targets) {
+    batch.update(doc(fb.db, 'conversations', convId, 'messages', m.id), { readAt: serverTimestamp() });
+    updates += 1;
+    if (updates >= 400) break; // Firestore batch limit is 500; leave room.
+  }
+  await batch.commit().catch(() => {});
 }
 
 export function subscribeUnreadMessagesCount(
@@ -253,8 +340,92 @@ export function subscribeTyping(
   return onSnapshot(
     collection(fb.db, 'conversations', convId, 'typing'),
     (snap) => {
-      const others = snap.docs.filter((d) => d.id !== myUid);
+      const now = Date.now();
+      const others = snap.docs.filter((d) => {
+        if (d.id === myUid) return false;
+        const at = (d.data() as { at?: Timestamp }).at;
+        // Guard against ghost typing docs that were never cleared (app crash, race).
+        if (!at?.toMillis) return false;
+        return now - at.toMillis() < TYPING_STALE_MS;
+      });
       onChange(others.length > 0 ? others[0]!.id : null);
     },
+  );
+}
+
+export async function editMessage(
+  convId: string,
+  messageId: string,
+  myUid: string,
+  newText: string,
+): Promise<void> {
+  const fb = requireFirebase();
+  const trimmed = newText.trim();
+  if (!trimmed) throw new Error('Message text cannot be empty.');
+  const ref = doc(fb.db, 'conversations', convId, 'messages', messageId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error('Message not found.');
+  const data = snap.data() as RawMessageDoc;
+  if (data.senderUid !== myUid) throw new Error('Only the sender can edit a message.');
+  const createdMs = (data.createdAt as Timestamp | undefined)?.toMillis?.() ?? 0;
+  if (Date.now() - createdMs > MESSAGE_EDIT_WINDOW_MS) {
+    throw new Error('Edit window expired.');
+  }
+  await updateDoc(ref, { text: trimmed, editedAt: serverTimestamp() });
+}
+
+export async function deleteMessage(
+  convId: string,
+  messageId: string,
+  myUid: string,
+): Promise<void> {
+  const fb = requireFirebase();
+  const ref = doc(fb.db, 'conversations', convId, 'messages', messageId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  const data = snap.data() as RawMessageDoc;
+  if (data.senderUid !== myUid) throw new Error('Only the sender can delete a message.');
+  const createdMs = (data.createdAt as Timestamp | undefined)?.toMillis?.() ?? 0;
+  if (Date.now() - createdMs > MESSAGE_EDIT_WINDOW_MS) {
+    throw new Error('Delete window expired.');
+  }
+  await updateDoc(ref, { deletedAt: serverTimestamp() });
+}
+
+export async function setMessageReaction(
+  convId: string,
+  messageId: string,
+  uid: string,
+  emoji: 'heart' | 'fire' | 'trophy' | 'fish' | 'wow' | null,
+): Promise<void> {
+  const fb = requireFirebase();
+  const ref = doc(fb.db, 'conversations', convId, 'reactions', messageId);
+  if (emoji === null) {
+    await setDoc(ref, { [uid]: deleteField() }, { merge: true });
+  } else {
+    await setDoc(ref, { [uid]: emoji }, { merge: true });
+  }
+}
+
+export function subscribeConversationReactions(
+  convId: string,
+  onChange: (byMessageId: Record<string, Record<string, string>>) => void,
+): () => void {
+  const fb = requireFirebase();
+  return onSnapshot(
+    collection(fb.db, 'conversations', convId, 'reactions'),
+    (snap) => {
+      const out: Record<string, Record<string, string>> = {};
+      for (const d of snap.docs) {
+        const data = d.data() as Record<string, unknown>;
+        const reactions: Record<string, string> = {};
+        for (const [k, v] of Object.entries(data)) {
+          if (typeof v === 'string') reactions[k] = v;
+        }
+        out[d.id] = reactions;
+      }
+      onChange(out);
+    },
+    () => onChange({}),
   );
 }

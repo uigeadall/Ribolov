@@ -1,17 +1,18 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, Pressable, Platform, TextInput } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Screen } from '../components/Screen';
-import { Card } from '../components/Card';
 import { EmptyState } from '../components/EmptyState';
 import { Skeleton } from '../components/Skeleton';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
-import { subscribeMyConversations } from '../services/messaging';
+import { subscribeMyConversations, subscribeTyping } from '../services/messaging';
+import { subscribeUserPresence } from '../services/userProfile';
+import { getBlockedUids } from '../services/blockUser';
 import { ConversationPreview } from '../types';
 import { useFirestoreSubscription } from '../hooks/useFirestoreSubscription';
 import { useAvatarUrl } from '../hooks/useAvatarUrl';
@@ -21,30 +22,123 @@ function formatTime(ms: number): string {
   if (!ms) return '';
   const now = Date.now();
   const diff = now - ms;
-  if (diff < 60_000) return 'Сега';
+  if (diff < 60_000) return 'сега';
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} мин`;
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} ч`;
+  if (diff < 7 * 86_400_000) return `${Math.floor(diff / 86_400_000)} дн`;
   return new Date(ms).toLocaleDateString('bg-BG', { day: 'numeric', month: 'short' });
 }
 
 function ChatSkeleton({ colors }: { colors: AppColors }) {
   return (
-    <View style={{ padding: spacing.lg, gap: spacing.md }}>
-      {[0, 1, 2, 3].map((i) => (
-        <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.card, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border }}>
-          <Skeleton width={48} height={48} borderRadius={24} />
+    <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md, gap: spacing.lg }}>
+      {[0, 1, 2, 3, 4].map((i) => (
+        <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+          <Skeleton width={54} height={54} borderRadius={27} />
           <View style={{ flex: 1, gap: 8 }}>
-            <Skeleton height={14} width="55%" />
-            <Skeleton height={11} width="80%" />
+            <Skeleton height={14} width="50%" />
+            <Skeleton height={11} width="75%" />
           </View>
-          <Skeleton height={11} width={32} />
+          <View style={{ alignItems: 'flex-end', gap: 6 }}>
+            <Skeleton height={10} width={36} />
+            <Skeleton height={18} width={18} borderRadius={9} />
+          </View>
         </View>
       ))}
     </View>
   );
 }
 
-function createChatsStyles(colors: AppColors) {
+type ChatRowProps = {
+  item: ConversationPreview;
+  myUid: string;
+  styles: ReturnType<typeof createChatsStyles>;
+  colors: AppColors;
+  onPress: (item: ConversationPreview) => void;
+};
+
+/** One conversation row. Subscribes to presence + typing for its own conv so the
+    online dot and "пише…" indicator are live. Capped by the list's 50-item cap
+    upstream, so at most 100 listeners — well within Firestore's per-client budget. */
+function ChatRow({ item, myUid, styles, colors, onPress }: ChatRowProps) {
+  const avatarUrl = useAvatarUrl({
+    ownerUid: item.otherUid,
+    isMine: item.otherUid === myUid,
+    resolvedAvatarUrl: undefined,
+    ownerPhotoUrl: undefined,
+  });
+  const initials = item.otherName.slice(0, 1).toUpperCase();
+
+  const [presence, setPresence] = useState<{ online: boolean }>({ online: false });
+  const [otherTyping, setOtherTyping] = useState(false);
+
+  useEffect(() => {
+    if (!item.otherUid) return;
+    const unsub = subscribeUserPresence(item.otherUid, (p) => setPresence({ online: p.online }));
+    return unsub;
+  }, [item.otherUid]);
+
+  useEffect(() => {
+    if (!item.convId || !myUid) return;
+    const unsub = subscribeTyping(item.convId, myUid, (uid) => setOtherTyping(!!uid));
+    return unsub;
+  }, [item.convId, myUid]);
+
+  const mineLast = item.lastSenderUid === myUid;
+  const unread = item.unreadCount > 0;
+
+  const previewNode = otherTyping ? (
+    <Text style={styles.previewTyping} numberOfLines={1}>пише…</Text>
+  ) : (
+    <Text
+      style={unread ? styles.previewUnread : styles.preview}
+      numberOfLines={1}
+    >
+      {mineLast && item.lastMessage ? <Text style={styles.previewPrefix}>Ти: </Text> : null}
+      {item.lastMessage || 'Без съобщения'}
+    </Text>
+  );
+
+  return (
+    <Pressable
+      onPress={() => onPress(item)}
+      style={({ pressed }) => [styles.row, pressed && { backgroundColor: colors.surfaceAlt }]}
+    >
+      <View style={styles.avatarWrap}>
+        {avatarUrl ? (
+          <Image source={{ uri: avatarUrl }} style={styles.avatarImg} contentFit="cover" cachePolicy="memory-disk" />
+        ) : (
+          <View style={styles.avatarFallback}>
+            <Text style={styles.avatarText}>{initials}</Text>
+          </View>
+        )}
+        {presence.online ? <View style={styles.onlineDot} /> : null}
+      </View>
+
+      <View style={styles.body}>
+        <Text style={styles.name} numberOfLines={1}>{item.otherName}</Text>
+        {previewNode}
+      </View>
+
+      <View style={styles.right}>
+        {item.lastMessageAt ? (
+          <Text style={unread ? styles.timeUnread : styles.time}>{formatTime(item.lastMessageAt)}</Text>
+        ) : null}
+        {unread ? (
+          <View style={styles.unreadPill}>
+            <Text style={styles.unreadPillText}>
+              {item.unreadCount > 99 ? '99+' : item.unreadCount}
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.unreadSpacer} />
+        )}
+      </View>
+    </Pressable>
+  );
+}
+
+function createChatsStyles(colors: AppColors, mode: 'dark' | 'light') {
   return StyleSheet.create({
     searchWrap: {
       flexDirection: 'row',
@@ -61,88 +155,96 @@ function createChatsStyles(colors: AppColors) {
       gap: spacing.sm,
     },
     searchInput: { flex: 1, color: colors.text, ...typography.body, paddingVertical: 2 },
-    center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-    avatar: {
-      width: 48,
-      height: 48,
-      borderRadius: 24,
+
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: spacing.lg,
+      paddingVertical: 12,
+      gap: spacing.md,
+    },
+    avatarWrap: {
+      width: 54,
+      height: 54,
+      borderRadius: 27,
+      overflow: 'visible',
+    },
+    avatarImg: { width: 54, height: 54, borderRadius: 27 },
+    avatarFallback: {
+      width: 54,
+      height: 54,
+      borderRadius: 27,
       backgroundColor: colors.primarySurface,
       alignItems: 'center',
       justifyContent: 'center',
-      overflow: 'hidden',
       borderWidth: 1,
       borderColor: colors.border,
     },
-    avatarImg: { width: 48, height: 48, borderRadius: 24 },
-    avatarText: { color: colors.primary, fontWeight: '700', fontSize: 20 },
-    name: { ...typography.h3, color: colors.text },
-    preview: { ...typography.body, color: colors.textMuted, marginTop: 2 },
-    previewUnread: { ...typography.bodyBold, color: colors.text, marginTop: 2 },
+    avatarText: { color: colors.primary, fontWeight: '700', fontSize: 22 },
+    onlineDot: {
+      position: 'absolute',
+      bottom: 1,
+      right: 1,
+      width: 14,
+      height: 14,
+      borderRadius: 7,
+      backgroundColor: '#2ECC71',
+      borderWidth: 2.5,
+      borderColor: mode === 'dark' ? colors.background : '#FFFFFF',
+    },
+
+    body: { flex: 1, justifyContent: 'center', gap: 3 },
+    name: { ...typography.h3, color: colors.text, fontSize: 16 },
+    preview: { ...typography.body, color: colors.textMuted, fontSize: 14 },
+    previewUnread: { ...typography.bodyBold, color: colors.text, fontSize: 14 },
+    previewPrefix: { color: colors.textMuted, fontWeight: '600' },
+    previewTyping: { ...typography.body, color: colors.primary, fontStyle: 'italic', fontSize: 14 },
+
+    right: { alignItems: 'flex-end', justifyContent: 'center', gap: 6, minWidth: 44 },
+    time: { ...typography.small, color: colors.textMuted, fontSize: 12 },
+    timeUnread: { ...typography.small, color: colors.primary, fontWeight: '700', fontSize: 12 },
+    unreadPill: {
+      minWidth: 22,
+      height: 22,
+      borderRadius: 11,
+      backgroundColor: colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 7,
+    },
+    unreadPillText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+    unreadSpacer: { width: 22, height: 22 },
+
     warn: { ...typography.body, color: colors.textMuted },
-    timeText: { ...typography.small, color: colors.textMuted },
-    unreadDot: {
-      width: 10, height: 10, borderRadius: 5,
-      backgroundColor: colors.primary, marginTop: 2,
+
+    sep: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: colors.border,
+      marginLeft: spacing.lg + 54 + spacing.md,
+    },
+
+    fab: {
+      position: 'absolute',
+      right: spacing.lg,
+      bottom: spacing.xl + spacing.md,
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: '#000',
+      shadowOpacity: 0.18,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 4 },
+      elevation: 6,
     },
   });
-}
-
-type ChatRowProps = {
-  item: ConversationPreview;
-  myUid: string;
-  styles: ReturnType<typeof createChatsStyles>;
-  onPress: (item: ConversationPreview) => void;
-};
-
-function ChatRow({ item, myUid, styles, onPress }: ChatRowProps) {
-  const avatarUrl = useAvatarUrl({
-    ownerUid: item.otherUid,
-    isMine: item.otherUid === myUid,
-    resolvedAvatarUrl: undefined,
-    ownerPhotoUrl: undefined,
-  });
-  const initials = item.otherName.slice(0, 1).toUpperCase();
-
-  return (
-    <Pressable onPress={() => onPress(item)}>
-      <Card>
-        <View style={styles.row}>
-          <View style={styles.avatar}>
-            {avatarUrl ? (
-              <Image source={{ uri: avatarUrl }} style={styles.avatarImg} contentFit="cover" cachePolicy="memory-disk" />
-            ) : (
-              <Text style={styles.avatarText}>{initials}</Text>
-            )}
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.name} numberOfLines={1}>{item.otherName}</Text>
-            <Text
-              style={item.unreadCount > 0 ? styles.previewUnread : styles.preview}
-              numberOfLines={1}
-            >
-              {item.lastMessage || 'Без съобщения'}
-            </Text>
-          </View>
-          <View style={{ alignItems: 'flex-end', gap: 4 }}>
-            {item.lastMessageAt ? (
-              <Text style={styles.timeText}>{formatTime(item.lastMessageAt)}</Text>
-            ) : null}
-            {item.unreadCount > 0 ? (
-              <View style={[styles.unreadDot, { width: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center' }]}>
-                <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{item.unreadCount > 9 ? '9+' : item.unreadCount}</Text>
-              </View>
-            ) : null}
-          </View>
-        </View>
-      </Card>
-    </Pressable>
-  );
 }
 
 export default function ChatsScreen() {
   const { colors, mode } = useTheme();
-  const styles = useMemo(() => createChatsStyles(colors), [colors]);
+  const styles = useMemo(() => createChatsStyles(colors, mode), [colors, mode]);
   const navigation = useAppNavigation();
   const { user, configured } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
@@ -193,11 +295,23 @@ export default function ChatsScreen() {
     [user?.uid],
   );
   const allItems: ConversationPreview[] = data ?? [];
+
+  const [blockedUids, setBlockedUids] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!user?.uid) { setBlockedUids(new Set()); return; }
+    let cancelled = false;
+    getBlockedUids(user.uid).then((set) => { if (!cancelled) setBlockedUids(set); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [user?.uid]);
+
   const items = useMemo(() => {
+    const visible = blockedUids.size > 0
+      ? allItems.filter((c) => !blockedUids.has(c.otherUid))
+      : allItems;
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return allItems;
-    return allItems.filter((c) => c.otherName.toLowerCase().includes(q) || (c.lastMessage ?? '').toLowerCase().includes(q));
-  }, [allItems, searchQuery]);
+    if (!q) return visible;
+    return visible.filter((c) => c.otherName.toLowerCase().includes(q) || (c.lastMessage ?? '').toLowerCase().includes(q));
+  }, [allItems, searchQuery, blockedUids]);
 
   const onPressConv = (item: ConversationPreview) => {
     navigation.navigate('ChatDetail', {
@@ -205,6 +319,11 @@ export default function ChatsScreen() {
       otherUid: item.otherUid,
       otherName: item.otherName,
     });
+  };
+
+  const onCompose = () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (navigation as any).navigate('Friends');
   };
 
   const HeroSection = (
@@ -226,9 +345,7 @@ export default function ChatsScreen() {
         {HeroSection}
         <View style={[S.wave, { flex: 1 }]}>
           <View style={{ padding: spacing.lg, flex: 1 }}>
-            <Card>
-              <Text style={styles.warn}>Влез в профила си и активирай Firebase, за да ползваш чата.</Text>
-            </Card>
+            <Text style={styles.warn}>Влез в профила си и активирай Firebase, за да ползваш чата.</Text>
           </View>
         </View>
       </Screen>
@@ -259,20 +376,31 @@ export default function ChatsScreen() {
             data={items}
             keyExtractor={(item) => item.convId}
             removeClippedSubviews={Platform.OS === 'android'}
-            contentContainerStyle={{ padding: spacing.lg, flexGrow: 1 }}
+            contentContainerStyle={items.length === 0 ? { flexGrow: 1, justifyContent: 'center' } : { paddingBottom: 100 }}
             ListEmptyComponent={
-              <EmptyState
-                icon="chatbubbles-outline"
-                title="Няма разговори"
-                subtitle="В Приятели отвори чат с някой, с когото се следвате взаимно."
-              />
+              <View style={{ paddingHorizontal: spacing.xl }}>
+                <EmptyState
+                  icon="chatbubbles-outline"
+                  title="Все още няма разговори"
+                  subtitle="Открий приятели и започни първия си разговор."
+                />
+              </View>
             }
-            ItemSeparatorComponent={() => <View style={{ height: spacing.md }} />}
+            ItemSeparatorComponent={() => <View style={styles.sep} />}
             renderItem={({ item }) => (
-              <ChatRow item={item} myUid={user.uid} styles={styles} onPress={onPressConv} />
+              <ChatRow item={item} myUid={user.uid} styles={styles} colors={colors} onPress={onPressConv} />
             )}
           />
         )}
+
+        <Pressable
+          onPress={onCompose}
+          style={styles.fab}
+          accessibilityRole="button"
+          accessibilityLabel="Нов разговор"
+        >
+          <Ionicons name="create-outline" size={26} color="#fff" />
+        </Pressable>
       </View>
     </Screen>
   );

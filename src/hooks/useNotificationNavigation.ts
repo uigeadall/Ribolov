@@ -17,6 +17,13 @@ function routeNotification(
       uid: data.actorUid,
       displayName: typeof data.actorName === 'string' ? data.actorName : 'Рибар',
     });
+  } else if (type === 'mention' && typeof data.actorUid === 'string') {
+    // Mentions live on a post — no PostDetail route exists yet, so route to the
+    // mentioner's profile as the best approximation. Future: deep-link to the post.
+    ref.navigate('UserPublicProfile', {
+      uid: data.actorUid,
+      displayName: typeof data.actorName === 'string' ? data.actorName : 'Рибар',
+    });
   } else if ((type === 'like' || type === 'comment') && typeof data.catchId === 'string' && data.catchId) {
     // Navigate directly to the catch that was liked/commented
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -165,6 +165,26 @@ export type Post = {
   reshareOf?: ResharedRef;
 };
 
+/** Denormalized preview of the message being replied to. Inlined so the bubble
+    renders without an extra Firestore round-trip. */
+export type MessageReplyRef = {
+  messageId: string;
+  senderUid: string;
+  /** Plain-text preview of the quoted message (≤200 chars). For media use "📷 Снимка" etc. */
+  preview: string;
+};
+
+/** Reference to a fishing-domain item shared into a chat (catch / post / spot). */
+export type SharedRef = {
+  kind: 'catch' | 'post' | 'spot';
+  id: string;
+  ownerUid?: string;
+  /** Denormalized so the in-chat card renders without an extra fetch. */
+  title?: string;
+  subtitle?: string;
+  photoUrl?: string;
+};
+
 export type DirectMessage = {
   id: string;
   senderUid: string;
@@ -172,6 +192,19 @@ export type DirectMessage = {
   mediaUrl?: string;
   mediaType?: 'photo' | 'video';
   createdAt?: unknown;
+  /** Set when the recipient opens the conversation. Used for read receipts. */
+  readAt?: unknown;
+  /** Set when the sender edits the message text within the edit window. */
+  editedAt?: unknown;
+  /** Set when the sender soft-deletes the message. Client renders a tombstone. */
+  deletedAt?: unknown;
+  replyTo?: MessageReplyRef;
+  sharedRef?: SharedRef;
+};
+
+export type DirectMessageReaction = {
+  /** Map of uid → emoji code ('heart' | 'fire' | 'trophy' | 'fish' | 'wow'). */
+  reactions: Record<string, string>;
 };
 
 export type ConversationPreview = {
@@ -180,5 +213,7 @@ export type ConversationPreview = {
   otherName: string;
   lastMessage?: string;
   lastMessageAt?: number;
+  /** uid of whoever sent the last message — used to prefix "Ти: " when it was me. */
+  lastSenderUid?: string;
   unreadCount: number;
 };
