@@ -1,199 +1,234 @@
-import React, { useEffect, useRef } from 'react';
-import { View, Text, Animated, StyleSheet, Dimensions } from 'react-native';
+import React, { useEffect, useMemo } from 'react';
+import { View, Text, Animated, Easing, StyleSheet, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 
-const { width } = Dimensions.get('window');
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
-const RIPPLE_COUNT = 3;
-const BASE_RADIUS = 68;
-const RIPPLE_SPREAD = 44;
+const LOGO_SIZE = 76;
 
+/**
+ * "Horizon at dawn" splash — a thin water line bisects the screen, with the
+ * fish icon hovering above and a faint mirror reflection below. Single slow
+ * ripple from the waterline gives the screen a calm, atmospheric pulse.
+ */
 export default function AppSplashScreen() {
-  const logoScale = useRef(new Animated.Value(0.72)).current;
-  const logoOpacity = useRef(new Animated.Value(0)).current;
-  const textOpacity = useRef(new Animated.Value(0)).current;
-  const dotOpacity = [
-    useRef(new Animated.Value(0.25)).current,
-    useRef(new Animated.Value(0.25)).current,
-    useRef(new Animated.Value(0.25)).current,
-  ];
-  const rippleScales = Array.from({ length: RIPPLE_COUNT }, () =>
-    useRef(new Animated.Value(1)).current
-  );
-  const rippleOpacities = Array.from({ length: RIPPLE_COUNT }, () =>
-    useRef(new Animated.Value(0)).current
-  );
+  const a = useMemo(() => ({
+    logoOpacity: new Animated.Value(0),
+    logoY: new Animated.Value(-18),
+    horizonScale: new Animated.Value(0),
+    horizonOpacity: new Animated.Value(0),
+    reflectionOpacity: new Animated.Value(0),
+    wordOpacity: new Animated.Value(0),
+    wordY: new Animated.Value(10),
+    ripple: new Animated.Value(0),
+  }), []);
 
   useEffect(() => {
-    // Logo entrance
+    // 1) Logo descends in from above
     Animated.parallel([
-      Animated.spring(logoScale, { toValue: 1, tension: 60, friction: 8, useNativeDriver: true }),
-      Animated.timing(logoOpacity, { toValue: 1, duration: 380, useNativeDriver: true }),
+      Animated.timing(a.logoOpacity, { toValue: 1, duration: 620, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(a.logoY, { toValue: 0, duration: 620, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
     ]).start();
 
-    // Text fades in slightly after
-    Animated.timing(textOpacity, { toValue: 1, duration: 420, delay: 280, useNativeDriver: true }).start();
+    // 2) Horizon line draws outward from the center
+    Animated.parallel([
+      Animated.timing(a.horizonOpacity, { toValue: 1, duration: 480, delay: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(a.horizonScale, { toValue: 1, duration: 760, delay: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]).start();
 
-    // Ripple rings — staggered expanding loops
-    rippleScales.forEach((scale, i) => {
-      const delay = i * 500;
-      const loop = Animated.loop(
-        Animated.parallel([
-          Animated.timing(scale, { toValue: 2.1, duration: 1600, delay, useNativeDriver: true }),
-          Animated.timing(rippleOpacities[i], {
-            toValue: 0,
-            duration: 1600,
-            delay,
-            useNativeDriver: true,
-          }),
-        ])
-      );
-      // Start ripple opacity at 0.55 then loop fades it
-      rippleOpacities[i].setValue(0.55);
-      loop.start();
-    });
+    // 3) Reflection fades in below the line
+    Animated.timing(a.reflectionOpacity, { toValue: 0.22, duration: 700, delay: 560, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
 
-    // Loading dots pulse
-    const dotLoop = (dot: Animated.Value, delay: number) =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(dot, { toValue: 1, duration: 320, delay, useNativeDriver: true }),
-          Animated.timing(dot, { toValue: 0.25, duration: 320, useNativeDriver: true }),
-          Animated.delay(640),
-        ])
-      ).start();
+    // 4) Wordmark + tagline slide up
+    Animated.parallel([
+      Animated.timing(a.wordOpacity, { toValue: 1, duration: 560, delay: 700, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(a.wordY, { toValue: 0, duration: 560, delay: 700, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]).start();
 
-    dotOpacity.forEach((dot, i) => dotLoop(dot, i * 160 + 500));
-  }, []);
+    // Continuous: a single very slow ripple expanding from the waterline center
+    const rippleLoop = Animated.loop(
+      Animated.sequence([
+        Animated.delay(1200),
+        Animated.timing(a.ripple, { toValue: 1, duration: 3600, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(a.ripple, { toValue: 0, duration: 0, useNativeDriver: true }),
+      ]),
+    );
+    rippleLoop.start();
+    return () => { rippleLoop.stop(); };
+  }, [a]);
+
+  const rippleScale = a.ripple.interpolate({ inputRange: [0, 1], outputRange: [0.4, 2.4] });
+  const rippleOpacity = a.ripple.interpolate({ inputRange: [0, 0.15, 1], outputRange: [0, 0.55, 0] });
 
   return (
     <LinearGradient
-      colors={['#030810', '#050C1A', '#0A1A30']}
-      locations={[0, 0.5, 1]}
+      colors={['#020812', '#06192F', '#0A2A4F', '#06192F']}
+      locations={[0, 0.45, 0.55, 1]}
       style={styles.container}
     >
-      {/* Ripple rings */}
-      <View style={styles.rippleContainer} pointerEvents="none">
-        {rippleScales.map((scale, i) => (
-          <Animated.View
-            key={i}
-            style={[
-              styles.ripple,
-              {
-                width: BASE_RADIUS * 2,
-                height: BASE_RADIUS * 2,
-                borderRadius: BASE_RADIUS,
-                marginLeft: -(BASE_RADIUS + RIPPLE_SPREAD * i),
-                marginTop: -(BASE_RADIUS + RIPPLE_SPREAD * i),
-                opacity: rippleOpacities[i],
-                transform: [{ scale }],
-              },
-            ]}
-          />
-        ))}
+      {/* Above the horizon — sky */}
+      <View style={styles.skyHalf} pointerEvents="none">
+        <Animated.View
+          style={[
+            styles.logoFloat,
+            { opacity: a.logoOpacity, transform: [{ translateY: a.logoY }] },
+          ]}
+        >
+          <Ionicons name="fish" size={LOGO_SIZE} color="#FFFFFF" />
+        </Animated.View>
       </View>
 
-      {/* Logo mark */}
+      {/* Horizon line — bisects the screen */}
+      <View style={styles.horizonContainer} pointerEvents="none">
+        <Animated.View
+          style={[
+            styles.horizonLine,
+            {
+              opacity: a.horizonOpacity,
+              transform: [{ scaleX: a.horizonScale }],
+            },
+          ]}
+        >
+          <LinearGradient
+            colors={['rgba(74,168,232,0)', 'rgba(140,200,240,0.7)', 'rgba(74,168,232,0)']}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={StyleSheet.absoluteFillObject}
+          />
+        </Animated.View>
+
+        {/* Single slow ripple from the center of the horizon line */}
+        <Animated.View
+          style={[
+            styles.ripple,
+            {
+              opacity: rippleOpacity,
+              transform: [{ scale: rippleScale }],
+            },
+          ]}
+        />
+      </View>
+
+      {/* Below the horizon — water with reflection */}
+      <View style={styles.waterHalf} pointerEvents="none">
+        <Animated.View style={[styles.reflectionFloat, { opacity: a.reflectionOpacity }]}>
+          <Ionicons
+            name="fish"
+            size={LOGO_SIZE}
+            color="#FFFFFF"
+            style={{ transform: [{ scaleY: -1 }] }}
+          />
+        </Animated.View>
+      </View>
+
+      {/* Wordmark + tagline near the bottom */}
       <Animated.View
         style={[
-          styles.logoWrap,
-          { opacity: logoOpacity, transform: [{ scale: logoScale }] },
+          styles.wordWrap,
+          { opacity: a.wordOpacity, transform: [{ translateY: a.wordY }] },
         ]}
       >
-        <LinearGradient
-          colors={['#2A8FD4', '#0D559A']}
-          start={{ x: 0.15, y: 0 }}
-          end={{ x: 0.85, y: 1 }}
-          style={styles.logoCircle}
-        >
-          {/* Hook shape — two layered emoji for depth */}
-          <Text style={styles.logoEmoji}>🎣</Text>
-        </LinearGradient>
-
-        {/* Shine ring */}
-        <View style={styles.shineRing} pointerEvents="none" />
-      </Animated.View>
-
-      {/* Wordmark */}
-      <Animated.View style={[styles.textBlock, { opacity: textOpacity }]}>
-        <Text style={styles.appName}>РИБОЛОВ</Text>
-        <Text style={styles.tagline}>Твоят риболовен дневник</Text>
-      </Animated.View>
-
-      {/* Loading dots */}
-      <Animated.View style={[styles.dotsRow, { opacity: textOpacity }]}>
-        {dotOpacity.map((op, i) => (
-          <Animated.View key={i} style={[styles.dot, { opacity: op }]} />
-        ))}
+        <Text style={styles.wordmark}>РИБОЛОВ</Text>
+        <Text style={styles.tagline}>Дневник за рибари</Text>
       </Animated.View>
     </LinearGradient>
   );
 }
 
+const HORIZON_Y = SCREEN_H * 0.5;
+const LOGO_OFFSET_FROM_LINE = 72;
+const REFLECTION_OFFSET_FROM_LINE = 18;
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    overflow: 'hidden',
+  },
+
+  // Sky (top half)
+  skyHalf: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: HORIZON_Y,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  logoFloat: {
+    marginBottom: LOGO_OFFSET_FROM_LINE,
+    alignItems: 'center',
+    justifyContent: 'center',
+    // Subtle blue text glow on the icon
+    shadowColor: '#4AA8E8',
+    shadowOpacity: 0.6,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 0 },
+  },
+
+  // Horizon line
+  horizonContainer: {
+    position: 'absolute',
+    top: HORIZON_Y - 1,
+    left: 0,
+    right: 0,
+    height: 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  rippleContainer: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
+  horizonLine: {
+    width: SCREEN_W * 0.86,
+    height: 1,
+    overflow: 'hidden',
   },
   ripple: {
     position: 'absolute',
-    borderWidth: 1.5,
-    borderColor: '#4AA8E8',
-  },
-  logoWrap: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 28,
-  },
-  logoCircle: {
-    width: 104,
-    height: 104,
-    borderRadius: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoEmoji: {
-    fontSize: 46,
-    lineHeight: 54,
-  },
-  shineRing: {
-    position: 'absolute',
-    width: 112,
-    height: 112,
-    borderRadius: 56,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
     borderWidth: 1,
-    borderColor: 'rgba(0, 196, 232, 0.35)',
+    borderColor: 'rgba(74, 168, 232, 0.55)',
   },
-  textBlock: {
+
+  // Water (bottom half)
+  waterHalf: {
+    position: 'absolute',
+    top: HORIZON_Y,
+    left: 0,
+    right: 0,
+    bottom: 0,
     alignItems: 'center',
-    gap: 6,
   },
-  appName: {
-    fontSize: 32,
-    fontWeight: '800',
+  reflectionFloat: {
+    marginTop: REFLECTION_OFFSET_FROM_LINE,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Wordmark
+  wordWrap: {
+    position: 'absolute',
+    bottom: 64,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  wordmark: {
+    fontSize: 28,
+    fontWeight: '300',
     color: '#FFFFFF',
-    letterSpacing: 6,
+    letterSpacing: 8,
+    paddingLeft: 8,
+    textShadowColor: 'rgba(74, 168, 232, 0.45)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 16,
   },
   tagline: {
-    fontSize: 13,
-    color: 'rgba(200, 230, 240, 0.65)',
-    letterSpacing: 0.5,
-  },
-  dotsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 40,
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#4AA8E8',
+    marginTop: 10,
+    fontSize: 11,
+    color: 'rgba(200, 230, 240, 0.55)',
+    letterSpacing: 3,
+    textTransform: 'uppercase',
   },
 });

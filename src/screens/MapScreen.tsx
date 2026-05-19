@@ -35,7 +35,15 @@ import { radius, spacing, typography } from '../theme/typography';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { spotsStore, catchesStore, newId } from '../storage/storage';
 import { Spot } from '../types';
-import type { CatchMapMarker } from '../components/LeafletMap';
+import type { CatchMapMarker, LiveFishingMarker } from '../components/LeafletMap';
+import {
+  subscribeActiveLivePins,
+  createLiveFishingPin,
+  deleteLiveFishingPin,
+  getMyActiveLivePin,
+  type LiveFishingPin,
+} from '../services/liveFishingPins';
+import { ensureDirectConversation } from '../services/cloudSync';
 import { DAMS, Dam } from '../data/dams';
 import { RIVERS, River } from '../data/rivers';
 import { fetchWeather, windDirectionLabel, WeatherSnapshot } from '../services/weather';
@@ -162,6 +170,15 @@ export default function MapScreen() {
   const [layersOpen, setLayersOpen] = useState(false);
   const [catchCountByName, setCatchCountByName] = useState<Map<string, number>>(new Map());
   const [filterSpecies, setFilterSpecies] = useState<string | null>(null);
+
+  // Live "fishing here right now" pins
+  const [livePins, setLivePins] = useState<LiveFishingPin[]>([]);
+  const [myActivePin, setMyActivePin] = useState<LiveFishingPin | null>(null);
+  const [liveSheetOpen, setLiveSheetOpen] = useState(false);
+  const [liveNote, setLiveNote] = useState('');
+  const [liveSaving, setLiveSaving] = useState(false);
+  const [selectedLivePin, setSelectedLivePin] = useState<LiveFishingPin | null>(null);
+  const livePulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const t = setTimeout(() => setHintVisible(false), 5000);
@@ -309,6 +326,150 @@ export default function MapScreen() {
         : null,
     [userCoord]
   );
+
+  // Live pins — real-time subscription to all active pins on the map.
+  useEffect(() => {
+    if (!configured) return;
+    const unsub = subscribeActiveLivePins(setLivePins);
+    return unsub;
+  }, [configured]);
+
+  // Track whether THIS user already has an active pin (so the FAB toggles).
+  useEffect(() => {
+    if (!configured || !user) { setMyActivePin(null); return; }
+    let cancelled = false;
+    getMyActiveLivePin(user.uid).then((p) => { if (!cancelled) setMyActivePin(p); });
+    return () => { cancelled = true; };
+  }, [configured, user, livePins]);
+
+  // Pulse the FAB while an active pin is up — subtle visual cue that a session is running.
+  useEffect(() => {
+    if (!myActivePin) {
+      livePulse.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(livePulse, { toValue: 1, duration: 1100, useNativeDriver: true }),
+        Animated.timing(livePulse, { toValue: 0, duration: 1100, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => { loop.stop(); };
+  }, [myActivePin, livePulse]);
+
+  // Marker form (lat/lng/note) for the native map.
+  const liveMarkers = useMemo<LiveFishingMarker[]>(
+    () => livePins.map((p) => ({
+      id: p.id,
+      latitude: p.latitude,
+      longitude: p.longitude,
+      ownerUid: p.ownerUid,
+      ownerName: p.ownerName,
+      note: p.note,
+      expiresAt: p.expiresAt,
+    })),
+    [livePins],
+  );
+
+  const onLivePinPress = useCallback((id: string) => {
+    const pin = livePins.find((p) => p.id === id);
+    if (pin) setSelectedLivePin(pin);
+  }, [livePins]);
+
+  const startFishingSession = useCallback(async () => {
+    if (!user) return;
+    if (myActivePin) {
+      // Already active — show the pin instead
+      setSelectedLivePin(myActivePin);
+      return;
+    }
+    setLiveSheetOpen(true);
+  }, [user, myActivePin]);
+
+  const confirmFishingSession = useCallback(async () => {
+    if (!user || liveSaving) return;
+    let lat = userCoord?.latitude;
+    let lon = userCoord?.longitude;
+    if (lat == null || lon == null) {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          lat = loc.coords.latitude; lon = loc.coords.longitude;
+          setUserCoord({ latitude: lat, longitude: lon });
+        }
+      } catch { /* ignore */ }
+    }
+    if (lat == null || lon == null) {
+      Alert.alert('Локация', 'За пускане на жив пин е нужна локация. Разреши GPS.');
+      return;
+    }
+    // Auto-detect the nearest dam/river — radius matches what the leaderboard uses.
+    const nearestDam = DAMS
+      .map((d) => ({ name: d.name, km: haversineKm({ latitude: lat!, longitude: lon! }, { latitude: d.latitude, longitude: d.longitude }) }))
+      .filter((d) => d.km <= 5)
+      .sort((a, b) => a.km - b.km)[0];
+    const nearestRiver = nearestDam ? null : RIVERS
+      .map((r) => ({ name: r.name, km: haversineKm({ latitude: lat!, longitude: lon! }, { latitude: r.latitude, longitude: r.longitude }) }))
+      .filter((r) => r.km <= 3)
+      .sort((a, b) => a.km - b.km)[0];
+    const detectedWater = (nearestDam ?? nearestRiver)?.name;
+    setLiveSaving(true);
+    try {
+      const id = await createLiveFishingPin({
+        ownerUid: user.uid,
+        ownerName: user.displayName ?? user.email ?? 'Рибар',
+        ownerPhotoUrl: user.photoURL ?? undefined,
+        latitude: lat,
+        longitude: lon,
+        note: liveNote.trim() || undefined,
+        waterName: detectedWater,
+      });
+      setLiveSheetOpen(false);
+      setLiveNote('');
+      // Optimistically reflect my pin
+      setMyActivePin({
+        id,
+        ownerUid: user.uid,
+        ownerName: user.displayName ?? 'Рибар',
+        ownerPhotoUrl: user.photoURL ?? undefined,
+        latitude: lat,
+        longitude: lon,
+        note: liveNote.trim() || undefined,
+        waterName: detectedWater,
+        expiresAt: Date.now() + 4 * 3600_000,
+      });
+    } catch (e) {
+      handleError(e);
+    } finally {
+      setLiveSaving(false);
+    }
+  }, [user, liveNote, liveSaving, userCoord]);
+
+  const endFishingSession = useCallback(async () => {
+    if (!myActivePin) return;
+    Alert.alert(
+      'Прекрати',
+      'Сигурен ли си? Жив пинът ще изчезне за всички.',
+      [
+        { text: 'Отказ', style: 'cancel' },
+        {
+          text: 'Прекрати',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteLiveFishingPin(myActivePin.id);
+              setMyActivePin(null);
+              setSelectedLivePin(null);
+            } catch (e) {
+              handleError(e);
+            }
+          },
+        },
+      ],
+    );
+  }, [myActivePin]);
 
   useEffect(() => {
     if (!selectedWater) {
@@ -666,6 +827,8 @@ export default function MapScreen() {
             onMarkerPress={onMarkerPress}
             onDamPress={onDamPress}
             onRiverPress={onRiverPress}
+            onLivePinPress={onLivePinPress}
+            liveFishingMarkers={liveMarkers}
             onMapMove={saveMapPos}
           />
         ) : (
@@ -920,6 +1083,205 @@ export default function MapScreen() {
         onRecordCatch={recordCatchAt}
         onToggleFavorite={() => void handleToggleFavorite()}
       />
+
+      {/* Live "fishing here now" FAB — bottom-right above the spot scroll bar */}
+      {user && configured ? (
+        <View
+          style={{
+            position: 'absolute',
+            right: 16,
+            bottom: 130 + 48 + 8 + 40 + 8,
+          }}
+          pointerEvents="box-none"
+        >
+          {/* Pulsing halo behind active FAB */}
+          {myActivePin ? (
+            <Animated.View
+              pointerEvents="none"
+              style={{
+                position: 'absolute',
+                top: -6, left: -6, right: -6, bottom: -6,
+                borderRadius: 32,
+                backgroundColor: '#E85D04',
+                opacity: livePulse.interpolate({ inputRange: [0, 1], outputRange: [0.4, 0] }),
+                transform: [{ scale: livePulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.35] }) }],
+              }}
+            />
+          ) : null}
+          <Pressable
+            onPress={startFishingSession}
+            style={{
+              paddingHorizontal: 14, paddingVertical: 10,
+              borderRadius: 24, flexDirection: 'row', alignItems: 'center', gap: 8,
+              backgroundColor: myActivePin ? '#E85D04' : 'rgba(232,93,4,0.92)',
+              borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)',
+              shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 8,
+              elevation: 6,
+            }}
+            accessibilityLabel="Жив пин на яза"
+          >
+            <Ionicons name={myActivePin ? 'flame' : 'flame-outline'} size={18} color="#fff" />
+            <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>
+              {myActivePin ? 'Активен пин' : 'Тук съм'}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {/* Start session sheet */}
+      <Modal visible={liveSheetOpen} transparent animationType="fade" onRequestClose={() => setLiveSheetOpen(false)}>
+        <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' }} onPress={() => setLiveSheetOpen(false)}>
+          <Pressable onPress={() => {}}>
+            <View style={{
+              backgroundColor: colors.card,
+              borderTopLeftRadius: 28, borderTopRightRadius: 28,
+              padding: spacing.lg, paddingBottom: insets.bottom + spacing.lg,
+              borderTopWidth: 1, borderColor: colors.border,
+            }}>
+              <View style={{ width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2, alignSelf: 'center', marginBottom: spacing.md }} />
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: spacing.sm }}>
+                <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#E85D04', alignItems: 'center', justifyContent: 'center' }}>
+                  <Ionicons name="flame" size={18} color="#fff" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 17, fontFamily: 'Nunito_800ExtraBold', color: colors.text }}>Тук съм за риболов</Text>
+                  <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 2 }}>
+                    Изчезва автоматично след 4 часа
+                  </Text>
+                </View>
+              </View>
+              <Text style={{ fontSize: 11, fontFamily: 'Nunito_700Bold', color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase', marginTop: spacing.md, marginBottom: 4 }}>
+                Кратко съобщение (по избор)
+              </Text>
+              <TextInput
+                style={{
+                  backgroundColor: colors.surfaceAlt,
+                  borderRadius: 12, borderWidth: 1, borderColor: colors.border,
+                  paddingHorizontal: 12, paddingVertical: 10, color: colors.text, fontSize: 14,
+                }}
+                placeholder="напр. Хапе на пиявица, ела при мен"
+                placeholderTextColor={colors.textMuted}
+                value={liveNote}
+                onChangeText={setLiveNote}
+                maxLength={200}
+                multiline
+              />
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: spacing.lg }}>
+                <Pressable
+                  onPress={() => { setLiveSheetOpen(false); setLiveNote(''); }}
+                  style={{ flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', backgroundColor: colors.surfaceAlt }}
+                >
+                  <Text style={{ color: colors.text, fontFamily: 'Nunito_700Bold' }}>Отказ</Text>
+                </Pressable>
+                <Pressable
+                  onPress={confirmFishingSession}
+                  disabled={liveSaving}
+                  style={{ flex: 2, paddingVertical: 12, borderRadius: 12, alignItems: 'center', backgroundColor: '#E85D04', flexDirection: 'row', justifyContent: 'center', gap: 6, opacity: liveSaving ? 0.6 : 1 }}
+                >
+                  {liveSaving ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="flame" size={18} color="#fff" />}
+                  <Text style={{ color: '#fff', fontFamily: 'Nunito_800ExtraBold' }}>{liveSaving ? 'Пускам…' : 'Пусни пин'}</Text>
+                </Pressable>
+              </View>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Live pin detail */}
+      <Modal visible={selectedLivePin != null} transparent animationType="fade" onRequestClose={() => setSelectedLivePin(null)}>
+        <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' }} onPress={() => setSelectedLivePin(null)}>
+          {selectedLivePin ? (
+            <Pressable onPress={() => {}}>
+              <View style={{
+                backgroundColor: colors.card,
+                borderTopLeftRadius: 28, borderTopRightRadius: 28,
+                padding: spacing.lg, paddingBottom: insets.bottom + spacing.lg,
+                borderTopWidth: 1, borderColor: colors.border,
+              }}>
+                <View style={{ width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2, alignSelf: 'center', marginBottom: spacing.md }} />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: spacing.md }}>
+                  <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#E85D04', alignItems: 'center', justifyContent: 'center' }}>
+                    <Ionicons name="flame" size={22} color="#fff" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 17, fontFamily: 'Nunito_800ExtraBold', color: colors.text }}>
+                      {selectedLivePin.ownerName} е тук
+                    </Text>
+                    <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 2 }}>
+                      {selectedLivePin.waterName ? `${selectedLivePin.waterName} · ` : ''}
+                      Изчезва след {Math.max(1, Math.round((selectedLivePin.expiresAt - Date.now()) / 60_000))} мин
+                    </Text>
+                  </View>
+                </View>
+                {selectedLivePin.note ? (
+                  <View style={{
+                    backgroundColor: colors.surfaceAlt, borderRadius: 12, padding: 12,
+                    borderWidth: 1, borderColor: colors.border, marginBottom: spacing.md,
+                  }}>
+                    <Text style={{ fontSize: 14, color: colors.text, lineHeight: 20 }}>{selectedLivePin.note}</Text>
+                  </View>
+                ) : null}
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <Pressable
+                    onPress={() => {
+                      const pin = selectedLivePin;
+                      setSelectedLivePin(null);
+                      mapRef.current?.flyTo(pin.latitude, pin.longitude, 13);
+                    }}
+                    style={{ flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', backgroundColor: colors.surfaceAlt, flexDirection: 'row', justifyContent: 'center', gap: 6 }}
+                  >
+                    <Ionicons name="navigate-outline" size={16} color={colors.primary} />
+                    <Text style={{ color: colors.text, fontFamily: 'Nunito_700Bold' }}>Покажи</Text>
+                  </Pressable>
+                  {user && selectedLivePin.ownerUid === user.uid ? (
+                    <Pressable
+                      onPress={endFishingSession}
+                      style={{ flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', backgroundColor: colors.danger, flexDirection: 'row', justifyContent: 'center', gap: 6 }}
+                    >
+                      <Ionicons name="close-circle-outline" size={16} color="#fff" />
+                      <Text style={{ color: '#fff', fontFamily: 'Nunito_700Bold' }}>Прекрати</Text>
+                    </Pressable>
+                  ) : user && selectedLivePin.ownerUid !== user.uid ? (
+                    <>
+                      <Pressable
+                        onPress={async () => {
+                          const pin = selectedLivePin;
+                          if (!user) return;
+                          try {
+                            const myName = user.displayName ?? user.email ?? 'Рибар';
+                            const convId = await ensureDirectConversation(user.uid, myName, pin.ownerUid, pin.ownerName);
+                            setSelectedLivePin(null);
+                            (navigation as any).navigate('ProfileTab', {
+                              screen: 'ChatDetail',
+                              params: { convId, otherUid: pin.ownerUid, otherName: pin.ownerName },
+                            });
+                          } catch (e) {
+                            handleError(e);
+                          }
+                        }}
+                        style={{ flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', backgroundColor: colors.primary, flexDirection: 'row', justifyContent: 'center', gap: 6 }}
+                      >
+                        <Ionicons name="chatbubble-outline" size={16} color="#fff" />
+                        <Text style={{ color: '#fff', fontFamily: 'Nunito_700Bold' }}>Чат</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => {
+                          const pin = selectedLivePin;
+                          setSelectedLivePin(null);
+                          navigation.navigate('UserPublicProfile', { uid: pin.ownerUid, displayName: pin.ownerName });
+                        }}
+                        style={{ width: 48, paddingVertical: 12, borderRadius: 12, alignItems: 'center', backgroundColor: colors.surfaceAlt, justifyContent: 'center' }}
+                      >
+                        <Ionicons name="person-outline" size={18} color={colors.primary} />
+                      </Pressable>
+                    </>
+                  ) : null}
+                </View>
+              </View>
+            </Pressable>
+          ) : null}
+        </Pressable>
+      </Modal>
     </View>
   );
 }

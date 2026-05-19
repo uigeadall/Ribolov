@@ -253,3 +253,29 @@ export const cleanupExpiredStories = onSchedule("every 1 hours", async () => {
     await db.recursiveDelete(docRef.ref);
   }
 });
+
+// ---------------------------------------------------------------------------
+// cleanupExpiredLivePins — runs every 30 minutes
+// ---------------------------------------------------------------------------
+// Live "fishing here right now" pins have a 4h TTL. Without cleanup, expired
+// pins accumulate in /liveFishingPins forever (clients filter them out but the
+// docs stay). Same shape as cleanupExpiredStories.
+
+export const cleanupExpiredLivePins = onSchedule("every 30 minutes", async () => {
+  const now = Date.now();
+
+  const snapshot = await db
+    .collection("liveFishingPins")
+    .where("expiresAt", "<", now)
+    .limit(500)
+    .get();
+
+  if (snapshot.empty) return;
+
+  // Plain delete is fine — no subcollections under live pins.
+  const batch = db.batch();
+  for (const docRef of snapshot.docs) {
+    batch.delete(docRef.ref);
+  }
+  await batch.commit();
+});

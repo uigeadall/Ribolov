@@ -10,7 +10,7 @@ import React, {
 import { Platform, StyleSheet, View, Text, ViewStyle } from 'react-native';
 import MapView, { Circle, Marker, Polyline, type Region } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
-import type { LeafletMapHandle, LeafletMapProps, LeafletMapType, CatchMapMarker } from './LeafletMap';
+import type { LeafletMapHandle, LeafletMapProps, LeafletMapType, CatchMapMarker, LiveFishingMarker } from './LeafletMap';
 
 const LABEL_THRESHOLD = 0.11;
 
@@ -110,6 +110,17 @@ function DamPin({ name, showLabel }: { name: string; showLabel: boolean }) {
   );
 }
 
+function LiveFishingPin() {
+  return (
+    <View style={[{ alignItems: 'center' }, markerPad]}>
+      <View style={styles.livePlate}>
+        <Ionicons name="flame" size={18} color="#FFF6D8" />
+      </View>
+      <View style={styles.liveTail} />
+    </View>
+  );
+}
+
 function RiverPin({ name, showLabel }: { name: string; showLabel: boolean }) {
   return (
     <View style={[styles.markerCol, markerPad]} accessibilityLabel={name}>
@@ -176,7 +187,7 @@ const WaterMarker = React.memo(function WaterMarker({
 
 export const NativeMapView = forwardRef<LeafletMapHandle, LeafletMapProps>(
   function NativeMapView(props, ref) {
-    const { spots, dams, rivers, catchMarkers, pendingCoord, userCoord, routeLine, mapType, onLongPress, onMarkerPress, onDamPress, onRiverPress, onMapMove } = props;
+    const { spots, dams, rivers, catchMarkers, liveFishingMarkers, pendingCoord, userCoord, routeLine, mapType, onLongPress, onMarkerPress, onDamPress, onRiverPress, onLivePinPress, onMapMove } = props;
 
     const mapRef = useRef<MapView>(null);
 
@@ -324,6 +335,19 @@ export const NativeMapView = forwardRef<LeafletMapHandle, LeafletMapProps>(
           ),
         )}
 
+        {(liveFishingMarkers ?? []).map((p) => (
+          <Marker
+            key={`live-${p.id}`}
+            identifier={`live-${p.id}`}
+            coordinate={{ latitude: p.latitude, longitude: p.longitude }}
+            anchor={{ x: 0.5, y: 1 }}
+            tracksViewChanges={false}
+            onPress={() => onLivePinPress?.(p.id)}
+          >
+            <LiveFishingPin />
+          </Marker>
+        ))}
+
         {pendingCoord ? (
           <Circle
             center={pendingCoord}
@@ -444,6 +468,33 @@ const styles = StyleSheet.create({
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
     borderTopColor: '#2E9B5A',
+    marginTop: -1,
+  },
+  livePlate: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#E85D04',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: '#FFE9C8',
+    shadowColor: '#000',
+    shadowOpacity: 0.38,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: Platform.OS === 'android' ? 0 : 5,
+  },
+  liveTail: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 6,
+    borderRightWidth: 6,
+    borderTopWidth: 9,
+    borderStyle: 'solid',
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: '#E85D04',
     marginTop: -1,
   },
 });

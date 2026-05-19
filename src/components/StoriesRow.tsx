@@ -15,6 +15,7 @@ import { useStoryViewer, type FlyingEmoji } from '../hooks/useStoryViewer';
 import { useAddStory } from '../hooks/useAddStory';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 import { BlurView } from 'expo-blur';
+import { StoryComposer } from './StoryComposer';
 
 const STORY_DURATION = 8000;
 
@@ -416,87 +417,16 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
         ) : null}
       </Modal>
 
-      {/* ── Add story composer ── */}
-      <Modal visible={addOpen} transparent animationType="slide" onRequestClose={() => setAddOpen(false)}>
-        <KeyboardAvoidingView style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.55)' }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <ScrollView contentContainerStyle={{ alignItems: 'center', paddingTop: spacing.lg, paddingBottom: insets.bottom + spacing.lg }} keyboardShouldPersistTaps="handled">
-            <View style={styles.addSheet}>
-              <Text style={{ ...typography.h3, color: colors.text, marginBottom: spacing.md }}>Нов момент</Text>
-              {addStory.mediaUri && addStory.mediaType === 'photo' ? (
-                <View style={{ position: 'relative', marginBottom: spacing.sm }}>
-                  <Image source={{ uri: addStory.mediaUri }} style={styles.mediaPreview} contentFit="cover" />
-                  <Pressable style={styles.removeMedia} onPress={() => { addStory.setMediaUri(null); addStory.setMediaType(null); }}>
-                    <Ionicons name="close" size={16} color="#fff" />
-                  </Pressable>
-                </View>
-              ) : addStory.mediaUri && addStory.mediaType === 'video' ? (
-                <View style={{ position: 'relative' }}>
-                  <View style={styles.videoPlaceholder}>
-                    <Ionicons name="videocam" size={36} color="rgba(255,255,255,0.6)" />
-                    <Text style={{ ...typography.caption, color: 'rgba(255,255,255,0.6)', marginTop: spacing.xs }}>Видео избрано</Text>
-                  </View>
-                  <Pressable style={styles.removeMedia} onPress={() => { addStory.setMediaUri(null); addStory.setMediaType(null); }}>
-                    <Ionicons name="close" size={16} color="#fff" />
-                  </Pressable>
-                </View>
-              ) : null}
-              <View style={styles.mediaBtns}>
-                <Pressable style={styles.mediaBtn} onPress={() => addStory.pickMedia('camera', 'photo')}>
-                  <Ionicons name="camera-outline" size={18} color={colors.primary} />
-                  <Text style={styles.mediaBtnText}>Снимай</Text>
-                </Pressable>
-                <Pressable style={styles.mediaBtn} onPress={() => addStory.pickMedia('library', 'photo')}>
-                  <Ionicons name="image-outline" size={18} color={colors.primary} />
-                  <Text style={styles.mediaBtnText}>Галерия</Text>
-                </Pressable>
-                <Pressable style={styles.mediaBtn} onPress={() => addStory.pickMedia('library', 'video')}>
-                  <Ionicons name="videocam-outline" size={18} color={colors.primary} />
-                  <Text style={styles.mediaBtnText}>Видео</Text>
-                </Pressable>
-              </View>
-              <Text style={styles.label}>ЕМОТИКОН</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.emojiRow}>
-                {EMOJIS.map((e) => (
-                  <Pressable key={e} style={[styles.emojiBtn, addStory.selectedEmoji === e && styles.emojiBtnActive]} onPress={() => addStory.setSelectedEmoji(e)}>
-                    <Text style={{ fontSize: 20 }}>{e}</Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-              <Text style={[styles.label, { marginTop: spacing.sm }]}>СЪОБЩЕНИЕ</Text>
-              <TextInput
-                style={[styles.input, { minHeight: 60, textAlignVertical: 'top' }]}
-                placeholder={addStory.mediaUri ? 'Добави надпис… (по избор)' : 'Риболов при Батак, вода 12°C…'}
-                placeholderTextColor={colors.textMuted}
-                value={addStory.text}
-                onChangeText={addStory.setText}
-                multiline maxLength={280}
-              />
-              <Text style={[styles.label, { marginTop: spacing.sm }]}>МЕСТОПОЛОЖЕНИЕ</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="напр. яз. Огоста"
-                placeholderTextColor={colors.textMuted}
-                value={addStory.location}
-                onChangeText={addStory.setLocation}
-                maxLength={60} returnKeyType="done"
-              />
-              <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg }}>
-                <Pressable onPress={() => { setAddOpen(false); addStory.setMediaUri(null); addStory.setMediaType(null); }} style={{ flex: 1, alignItems: 'center', paddingVertical: spacing.md }}>
-                  <Text style={{ ...typography.body, color: colors.textMuted }}>Отказ</Text>
-                </Pressable>
-                <Pressable
-                  onPress={addStory.handlePost}
-                  disabled={addStory.saving || (!addStory.text.trim() && !addStory.mediaUri)}
-                  style={{ flex: 2, alignItems: 'center', paddingVertical: spacing.md, backgroundColor: colors.primary, borderRadius: radius.md, opacity: addStory.saving || (!addStory.text.trim() && !addStory.mediaUri) ? 0.5 : 1, flexDirection: 'row', justifyContent: 'center', gap: spacing.sm }}
-                >
-                  {addStory.saving ? <ActivityIndicator size="small" color="#fff" /> : null}
-                  <Text style={{ ...typography.bodyBold, color: '#fff' }}>{addStory.saving ? 'Качване…' : 'Сподели'}</Text>
-                </Pressable>
-              </View>
-            </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </Modal>
+      {/* ── Add story composer (redesigned, full-screen) ── */}
+      <StoryComposer
+        visible={addOpen}
+        onClose={() => {
+          setAddOpen(false);
+          addStory.setMediaUri(null);
+          addStory.setMediaType(null);
+        }}
+        addStory={addStory}
+      />
     </>
   );
 }

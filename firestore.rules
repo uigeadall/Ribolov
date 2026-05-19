@@ -36,6 +36,14 @@ service cloud.firestore {
         allow read, write: if isSelf(userId);
       }
 
+      /** Mirror of the user's club memberships. Lets `fetchMyGroups` read directly
+          without needing a collectionGroup index. Written only by the owner; created
+          atomically alongside the matching members/{uid} doc inside each group. */
+      match /groupMemberships/{groupId} {
+        allow read: if isSelf(userId);
+        allow write: if isSelf(userId);
+      }
+
       /** Запазени публикации от лентата (отметка). */
       match /savedCatches/{catchId} {
         allow read, write: if isSelf(userId);
@@ -136,6 +144,73 @@ service cloud.firestore {
           || get(/databases/$(database)/documents/publicCatches/$(catchId)).data.ownerUid == request.auth.uid
         );
       }
+    }
+
+    /** Свободни публикации в лентата (без улов) — текст + опционална снимка + хаштагове / споменавания. */
+    match /posts/{postId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.text is string
+        && request.resource.data.text.size() <= 2000
+        && request.resource.data.ownerName is string
+        && request.resource.data.ownerName.size() <= 120
+        && (!('hashtags' in request.resource.data)
+          || (request.resource.data.hashtags is list
+            && request.resource.data.hashtags.size() <= 20))
+        && (!('mentionUids' in request.resource.data)
+          || (request.resource.data.mentionUids is list
+            && request.resource.data.mentionUids.size() <= 20))
+        && (!('photoUri' in request.resource.data)
+          || (request.resource.data.photoUri is string
+            && request.resource.data.photoUri.size() <= 1000))
+        && (!('reshareOf' in request.resource.data)
+          || (request.resource.data.reshareOf is map
+            && request.resource.data.reshareOf.kind in ['catch', 'post']
+            && request.resource.data.reshareOf.id is string
+            && request.resource.data.reshareOf.id.size() <= 128
+            && request.resource.data.reshareOf.ownerUid is string));
+      allow update: if signedIn() && (
+        // Owner can change anything they could create.
+        resource.data.ownerUid == request.auth.uid
+        ||
+        // Any signed-in user can bump likeCount / commentCount (likes, comments).
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['likeCount', 'commentCount'])
+      );
+      allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
+
+      match /likes/{uid} {
+        allow read: if signedIn();
+        allow write: if isSelf(uid);
+      }
+    }
+
+    /** Live "fishing here right now" pins — opt-in temporary location share, auto-expires. */
+    match /liveFishingPins/{pinId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.latitude is number
+        && request.resource.data.longitude is number
+        && request.resource.data.expiresAt is number
+        // expiresAt must be in the future but no more than ~5 hours ahead.
+        // Client TTL is 4h; the extra 1h is buffer for clock skew.
+        && request.resource.data.expiresAt > request.time.toMillis()
+        && request.resource.data.expiresAt <= request.time.toMillis() + 5 * 60 * 60 * 1000
+        && request.resource.data.ownerName is string
+        && request.resource.data.ownerName.size() <= 120
+        && (!('note' in request.resource.data)
+          || (request.resource.data.note is string
+            && request.resource.data.note.size() <= 200))
+        && (!('waterName' in request.resource.data)
+          || (request.resource.data.waterName is string
+            && request.resource.data.waterName.size() <= 120))
+        && (!('ownerPhotoUrl' in request.resource.data)
+          || (request.resource.data.ownerPhotoUrl is string
+            && request.resource.data.ownerPhotoUrl.size() <= 1000));
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
     }
 
     /** Доклади за злоупотреба — без четене от клиенти; запис само от логнат потребител. */
@@ -279,6 +354,68 @@ service cloud.firestore {
           || get(/databases/$(database)/documents/groups/$(groupId)).data.createdBy == request.auth.uid
         );
         allow update: if false;
+      }
+
+      /** Събития в клуба — създава всеки член; чете всеки логнат; изтрива авторът или админът. */
+      match /events/{eventId} {
+        allow read: if signedIn();
+        allow create: if signedIn()
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.title is string
+          && request.resource.data.title.size() > 0
+          && request.resource.data.title.size() <= 200
+          && request.resource.data.dateIso is string
+          && exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+        allow update: if signedIn() && (
+          // Creator can edit fully
+          resource.data.createdBy == request.auth.uid
+          || get(/databases/$(database)/documents/groups/$(groupId)).data.createdBy == request.auth.uid
+          // Any signed-in member can bump RSVP counts
+          || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rsvpCounts'])
+        );
+        allow delete: if signedIn() && (
+          resource.data.createdBy == request.auth.uid
+          || get(/databases/$(database)/documents/groups/$(groupId)).data.createdBy == request.auth.uid
+        );
+
+        match /rsvps/{uid} {
+          allow read: if signedIn();
+          allow write: if isSelf(uid)
+            && (!('status' in request.resource.data)
+              || request.resource.data.status in ['going','maybe','not_going']);
+        }
+      }
+
+      /** Анкети в клуба — създава всеки член; гласува всеки логнат; изтрива авторът или админът. */
+      match /polls/{pollId} {
+        allow read: if signedIn();
+        allow create: if signedIn()
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.question is string
+          && request.resource.data.question.size() > 0
+          && request.resource.data.question.size() <= 280
+          && request.resource.data.options is list
+          && request.resource.data.options.size() >= 2
+          && request.resource.data.options.size() <= 6
+          && exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+        allow update: if signedIn() && (
+          resource.data.createdBy == request.auth.uid
+          || get(/databases/$(database)/documents/groups/$(groupId)).data.createdBy == request.auth.uid
+          // Any signed-in member can update voteCounts
+          || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['voteCounts'])
+        );
+        allow delete: if signedIn() && (
+          resource.data.createdBy == request.auth.uid
+          || get(/databases/$(database)/documents/groups/$(groupId)).data.createdBy == request.auth.uid
+        );
+
+        match /votes/{uid} {
+          allow read: if signedIn();
+          allow write: if isSelf(uid)
+            && request.resource.data.optionIndex is number
+            && request.resource.data.optionIndex >= 0
+            && request.resource.data.optionIndex <= 5;
+        }
       }
     }
 

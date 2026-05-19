@@ -65,7 +65,11 @@ import PersonalBestsScreen from '../screens/PersonalBestsScreen';
 import GroupsScreen from '../screens/GroupsScreen';
 import GroupDetailScreen from '../screens/GroupDetailScreen';
 import CreateGroupScreen from '../screens/CreateGroupScreen';
+import CreateGroupEventScreen from '../screens/CreateGroupEventScreen';
+import CreateGroupPollScreen from '../screens/CreateGroupPollScreen';
 import ExploreScreen from '../screens/ExploreScreen';
+import CreatePostScreen from '../screens/CreatePostScreen';
+import HashtagFeedScreen from '../screens/HashtagFeedScreen';
 import SpeciesTargetScreen from '../screens/SpeciesTargetScreen';
 import PhotoGalleryScreen from '../screens/PhotoGalleryScreen';
 import TripPlannerScreen from '../screens/TripPlannerScreen';
@@ -137,6 +141,8 @@ function FeedNavigator() {
       <FeedStack.Screen name="Auth" component={AuthScreenWrapped} />
       <FeedStack.Screen name="Friends" component={FriendsScreenWrapped} />
       <FeedStack.Screen name="Explore" component={ExploreScreen} />
+      <FeedStack.Screen name="CreatePost" component={CreatePostScreen} />
+      <FeedStack.Screen name="HashtagFeed" component={HashtagFeedScreen} />
     </FeedStack.Navigator>
   );
 }
@@ -171,6 +177,8 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="Groups" component={GroupsScreen} />
       <ProfileStack.Screen name="GroupDetail" component={GroupDetailScreen} />
       <ProfileStack.Screen name="CreateGroup" component={CreateGroupScreen} />
+      <ProfileStack.Screen name="CreateGroupEvent" component={CreateGroupEventScreen} />
+      <ProfileStack.Screen name="CreateGroupPoll" component={CreateGroupPollScreen} />
       <ProfileStack.Screen name="NotificationPreferences" component={NotificationPreferencesScreen} />
     </ProfileStack.Navigator>
     </ErrorBoundary>

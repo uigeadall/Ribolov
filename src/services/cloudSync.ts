@@ -3,3 +3,8 @@ export * from './userProfile';
 export * from './messaging';
 export * from './social';
 export * from './tournaments';
+export * from './posts';
+export * from './groups';
+export * from './groupEvents';
+export * from './groupPolls';
+export * from './liveFishingPins';

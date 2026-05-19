@@ -32,6 +32,8 @@ export type ProfileStackParamList = {
   Groups: undefined;
   GroupDetail: { groupId: string; groupName: string };
   CreateGroup: undefined;
+  CreateGroupEvent: { groupId: string; groupName: string };
+  CreateGroupPoll: { groupId: string; groupName: string };
   Notifications: undefined;
   Stats: undefined;
   Auth: undefined;
@@ -63,6 +65,8 @@ export type FeedStackParamList = {
   Auth: undefined;
   Friends: undefined;
   Explore: undefined;
+  CreatePost: { reshare?: import('../types').ResharedRef } | undefined;
+  HashtagFeed: { tag: string };
 };
 
 

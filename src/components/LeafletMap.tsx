@@ -20,11 +20,22 @@ export type CatchMapMarker = {
   weightKg?: number;
 };
 
+export type LiveFishingMarker = {
+  id: string;
+  latitude: number;
+  longitude: number;
+  ownerUid: string;
+  ownerName: string;
+  note?: string;
+  expiresAt: number;
+};
+
 type Props = {
   spots: Spot[];
   dams: Dam[];
   rivers: River[];
   catchMarkers?: CatchMapMarker[];
+  liveFishingMarkers?: LiveFishingMarker[];
   pendingCoord: { latitude: number; longitude: number } | null;
   userCoord: { latitude: number; longitude: number } | null;
   /** Полилиния по пътища (lng/lat точки от OSRM и др.), или null за скриване */
@@ -34,6 +45,7 @@ type Props = {
   onMarkerPress: (id: string) => void;
   onDamPress: (id: string) => void;
   onRiverPress: (id: string) => void;
+  onLivePinPress?: (id: string) => void;
   /** Fired after the user pans or zooms (debounced). */
   onMapMove?: (lat: number, lng: number, zoom: number) => void;
 };

@@ -151,9 +151,10 @@ type Props = {
   onPressCatch?: (item: FeedItem) => void;
   onDeletePhoto?: (item: FeedItem) => void;
   onRemovePost?: (item: FeedItem) => void;
+  onReshare?: (item: FeedItem) => void;
 };
 
-export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarUrl, socialEnabled, isVisible = true, onPressAuthor, onPressCatch, onDeletePhoto, onRemovePost }: Props) {
+export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarUrl, socialEnabled, isVisible = true, onPressAuthor, onPressCatch, onDeletePhoto, onRemovePost, onReshare }: Props) {
   const { colors, mode } = useTheme();
   const styles = useMemo(() => feedStyles(colors), [colors]);
   const { width: screenWidth } = useWindowDimensions();
@@ -502,7 +503,13 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
                 <Pressable onPress={() => setCommentsOpen((v) => !v)} hitSlop={8}>
                   <Ionicons name="chatbubble-outline" size={24} color={colors.text} />
                 </Pressable>
-                {/* Share */}
+                {/* Quote-reshare within the app (new post quoting this one) */}
+                {onReshare ? (
+                  <Pressable onPress={() => onReshare(item)} hitSlop={8}>
+                    <Ionicons name="repeat-outline" size={26} color={colors.text} />
+                  </Pressable>
+                ) : null}
+                {/* Share externally */}
                 <Pressable onPress={social.onShare} hitSlop={8}>
                   <Ionicons name="paper-plane-outline" size={24} color={colors.text} />
                 </Pressable>

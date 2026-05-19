@@ -100,7 +100,7 @@ async function waitForResizedUrl(
   return null;
 }
 
-async function uploadLocalPhotoToStorage(
+export async function uploadLocalPhotoToStorage(
   fb: ReturnType<typeof requireFirebase>,
   uri: string,
   storagePath: string,

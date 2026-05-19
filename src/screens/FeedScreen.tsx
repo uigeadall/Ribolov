@@ -12,10 +12,13 @@ import { Card } from '../components/Card';
 import { EmptyState } from '../components/EmptyState';
 import { Button } from '../components/Button';
 import { FeedPost, FeedItem } from '../components/FeedPost';
+import { PostCard } from '../components/PostCard';
+import { PeopleYouMayKnowRow } from '../components/PeopleYouMayKnowRow';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { spacing, typography } from '../theme/typography';
-import { fetchPublicFeed, deletePhotoFromFeedPost, removeFromPublicFeed, getFollowing, getUserPublicSummary, type FeedPage } from '../services/cloudSync';
+import { fetchPublicFeed, deletePhotoFromFeedPost, removeFromPublicFeed, getFollowing, getUserPublicSummary, fetchPublicPosts, deletePost, searchUsersByName, type FeedPage } from '../services/cloudSync';
+import type { Post } from '../types';
 import type { DocumentSnapshot } from 'firebase/firestore';
 import { getBlockedUids } from '../services/blockUser';
 import { StoriesRow } from '../components/StoriesRow';
@@ -82,13 +85,14 @@ export default function FeedScreen() {
   const unreadNotifCount = useUnreadNotifCount(user?.uid);
 
   const [items, setItems] = useState<FeedItem[]>([]);
+  const [posts, setPosts] = useState<Post[]>([]);
   const [myPhotoUrl, setMyPhotoUrl] = useState<string | undefined>();
   const [avatarMap, setAvatarMap] = useState<Record<string, string>>({});
   const visibleIdsRef = useRef<Set<string>>(new Set());
   const [visibleIds, setVisibleIds] = useState<Set<string>>(new Set());
   const mountedRef = useRef(true);
   const loadingMoreRef = useRef(false);
-  const flatListRef = useRef<FlatList<FeedItem>>(null);
+  const flatListRef = useRef<FlatList<any>>(null);
   // Persisted between load/loadMore so pagination passes same ownerUids filter
   const followingUidsRef = useRef<string[]>([]);
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -139,20 +143,34 @@ export default function FeedScreen() {
       ]);
 
       let page: FeedPage;
+      let postsPage: { items: Post[] };
       if (scope === 'following') {
         const uids = followingRows.map((f) => f.uid).filter((uid) => !blockedUids.has(uid));
         followingUidsRef.current = uids;
-        page = uids.length > 0 ? await fetchPublicFeed(20, null, uids) : { items: [], lastDoc: null, hasMore: false };
+        if (uids.length > 0) {
+          [page, postsPage] = await Promise.all([
+            fetchPublicFeed(20, null, uids),
+            fetchPublicPosts(40, null, uids).catch(() => ({ items: [] as Post[], lastDoc: null, hasMore: false })),
+          ]);
+        } else {
+          page = { items: [], lastDoc: null, hasMore: false };
+          postsPage = { items: [] };
+        }
       } else {
         followingUidsRef.current = [];
-        page = await fetchPublicFeed(20);
+        [page, postsPage] = await Promise.all([
+          fetchPublicFeed(20),
+          fetchPublicPosts(40).catch(() => ({ items: [] as Post[], lastDoc: null, hasMore: false })),
+        ]);
       }
 
       // Drop the result if the component unmounted or scope changed while we were waiting.
       if (!mountedRef.current || scopeAtRequest !== scope) return;
 
       let next = page.items.filter((i) => !blockedUids.has(i.ownerUid));
+      const nextPosts = postsPage.items.filter((p) => !blockedUids.has(p.ownerUid));
       setItems(next);
+      setPosts(nextPosts);
       prefetchBatch(next);
       setLastDoc(page.lastDoc);
       setHasMore(scope === 'all' ? page.hasMore : false);
@@ -256,10 +274,88 @@ export default function FeedScreen() {
   const myDisplayName = user?.displayName ?? user?.email ?? 'Аз';
   const socialEnabled = !!user && !!configured;
 
-  const displayedItems = useMemo(() => {
+  /**
+   * Merged feed of catches and free-form posts, sorted by date (newest first).
+   * Each entry is wrapped with a `kind` discriminator so the renderer can
+   * pick the right component.
+   */
+  type MixedFeedItem =
+    | { kind: 'catch'; data: FeedItem; date: string }
+    | { kind: 'post'; data: Post; date: string };
+
+  const displayedItems = useMemo<MixedFeedItem[]>(() => {
     const seen = new Set<string>();
-    return items.filter((i) => { if (seen.has(i.id)) return false; seen.add(i.id); return true; });
-  }, [items]);
+    const dedupedCatches = items.filter((i) => { if (seen.has(i.id)) return false; seen.add(i.id); return true; });
+    const merged: MixedFeedItem[] = [
+      ...dedupedCatches.map((c) => ({ kind: 'catch' as const, data: c, date: c.date ?? '' })),
+      ...posts.map((p) => ({ kind: 'post' as const, data: p, date: p.date ?? '' })),
+    ];
+    merged.sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
+    return merged;
+  }, [items, posts]);
+
+  const onPressHashtag = useCallback((tag: string) => {
+    navigation.navigate('HashtagFeed', { tag });
+  }, [navigation]);
+
+  const onPressMention = useCallback(async (handle: string) => {
+    try {
+      const cleaned = handle.replace(/_/g, ' ');
+      const results = await searchUsersByName(cleaned, { maxResults: 1, excludeUid: user?.uid });
+      if (results[0]) {
+        navigation.navigate('UserPublicProfile', { uid: results[0].uid, displayName: results[0].displayName });
+      }
+    } catch { /* ignore */ }
+  }, [navigation, user?.uid]);
+
+  const onReshareCatch = useCallback((c: FeedItem) => {
+    navigation.navigate('CreatePost', {
+      reshare: {
+        kind: 'catch',
+        id: c.id,
+        ownerUid: c.ownerUid,
+        ownerName: c.ownerName ?? 'Рибар',
+        ownerPhotoUrl: c.ownerPhotoUrl,
+        text: c.notes ?? c.photoTitle ?? undefined,
+        photoUri: c.photoUri,
+        speciesName: c.speciesName,
+        weightKg: c.weightKg,
+        date: c.date,
+      },
+    });
+  }, [navigation]);
+
+  const onResharePost = useCallback((p: Post) => {
+    // If we're resharing a post that's itself a reshare, point at the original
+    // so a chain of reshares doesn't accumulate nested cards.
+    const target = p.reshareOf ?? {
+      kind: 'post' as const,
+      id: p.id,
+      ownerUid: p.ownerUid,
+      ownerName: p.ownerName,
+      ownerPhotoUrl: p.ownerPhotoUrl,
+      text: p.text,
+      photoUri: p.photoUri,
+      date: p.date,
+    };
+    navigation.navigate('CreatePost', { reshare: target });
+  }, [navigation]);
+
+  const onDeletePostItem = useCallback(async (post: Post) => {
+    Alert.alert('Изтрий публикацията', 'Сигурен ли си?', [
+      { text: 'Отказ', style: 'cancel' },
+      {
+        text: 'Изтрий', style: 'destructive', onPress: async () => {
+          try {
+            await deletePost(post.id);
+            setPosts((prev) => prev.filter((p) => p.id !== post.id));
+          } catch {
+            Alert.alert('Грешка', 'Неуспешно изтриване. Опитай отново.');
+          }
+        },
+      },
+    ]);
+  }, []);
 
   const onDeletePhoto = useCallback(async (feedItem: FeedItem) => {
     if (!user) return;
@@ -298,21 +394,41 @@ export default function FeedScreen() {
     ]);
   }, [user]);
 
-  const renderItem = useCallback(({ item }: { item: FeedItem }) => (
-    <FeedPost
-      item={item}
-      onPressCatch={onPressCatch}
-      myUid={user?.uid}
-      myDisplayName={myDisplayName}
-      myPhotoUrl={myPhotoUrl}
-      resolvedAvatarUrl={avatarMap[item.ownerUid]}
-      socialEnabled={socialEnabled}
-      isVisible={visibleIds.has(item.id)}
-      onPressAuthor={onPressAuthor}
-      onDeletePhoto={onDeletePhoto}
-      onRemovePost={onRemovePost}
-    />
-  ), [user?.uid, myDisplayName, myPhotoUrl, avatarMap, socialEnabled, visibleIds, onPressAuthor, onPressCatch, onDeletePhoto, onRemovePost]);
+  const renderItem = useCallback(({ item }: { item: MixedFeedItem }) => {
+    if (item.kind === 'catch') {
+      const c = item.data;
+      return (
+        <FeedPost
+          item={c}
+          onPressCatch={onPressCatch}
+          myUid={user?.uid}
+          myDisplayName={myDisplayName}
+          myPhotoUrl={myPhotoUrl}
+          resolvedAvatarUrl={avatarMap[c.ownerUid]}
+          socialEnabled={socialEnabled}
+          isVisible={visibleIds.has(c.id)}
+          onPressAuthor={onPressAuthor}
+          onDeletePhoto={onDeletePhoto}
+          onRemovePost={onRemovePost}
+          onReshare={user ? onReshareCatch : undefined}
+        />
+      );
+    }
+    const p = item.data;
+    return (
+      <PostCard
+        post={p}
+        myUid={user?.uid}
+        myDisplayName={myDisplayName}
+        resolvedAvatarUrl={avatarMap[p.ownerUid]}
+        onPressAuthor={onPressAuthor}
+        onPressHashtag={onPressHashtag}
+        onPressMention={onPressMention}
+        onDelete={onDeletePostItem}
+        onReshare={user ? onResharePost : undefined}
+      />
+    );
+  }, [user?.uid, user, myDisplayName, myPhotoUrl, avatarMap, socialEnabled, visibleIds, onPressAuthor, onPressCatch, onDeletePhoto, onRemovePost, onPressHashtag, onPressMention, onDeletePostItem, onReshareCatch, onResharePost]);
 
   // No separator — each post has its own bottom border
   const ItemSeparator = useCallback(() => null, []);
@@ -345,8 +461,8 @@ export default function FeedScreen() {
 
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 40 }).current;
   const onViewableItemsChanged = useRef(
-    ({ viewableItems }: { viewableItems: Array<{ item: FeedItem }> }) => {
-      const ids = new Set(viewableItems.map((v) => v.item.id));
+    ({ viewableItems }: { viewableItems: Array<{ item: { kind: string; data: { id: string } } }> }) => {
+      const ids = new Set(viewableItems.map((v) => v.item.data.id));
       visibleIdsRef.current = ids;
       setVisibleIds(ids);
     }
@@ -495,7 +611,7 @@ export default function FeedScreen() {
         <FlatList
           ref={flatListRef}
           data={displayedItems}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => `${item.kind}-${item.data.id}`}
           contentContainerStyle={[styles.listContent, { paddingTop: headerHeight }]}
           refreshControl={<FishingRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           ItemSeparatorComponent={ItemSeparator}
@@ -510,6 +626,7 @@ export default function FeedScreen() {
           initialNumToRender={6}
           updateCellsBatchingPeriod={50}
           ListEmptyComponent={null}
+          ListHeaderComponent={<PeopleYouMayKnowRow />}
           ListFooterComponent={
             loadingMore ? (
               <FeedSkeleton />
@@ -592,6 +709,36 @@ export default function FeedScreen() {
       <View style={{ flex: 1 }}>
         {waveContent}
       </View>
+
+      {/* Create-post FAB — floats above tab bar */}
+      {user && configured ? (
+        <Pressable
+          onPress={() => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            navigation.navigate('CreatePost');
+          }}
+          style={{
+            position: 'absolute',
+            right: spacing.lg,
+            bottom: 100,
+            width: 56,
+            height: 56,
+            borderRadius: 28,
+            backgroundColor: colors.primary,
+            alignItems: 'center',
+            justifyContent: 'center',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 6 },
+            shadowOpacity: 0.35,
+            shadowRadius: 12,
+            elevation: 8,
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Нова публикация"
+        >
+          <Ionicons name="create" size={26} color="#fff" />
+        </Pressable>
+      ) : null}
     </View>
   );
 }

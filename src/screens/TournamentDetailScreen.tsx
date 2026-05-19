@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Text, StyleSheet, View, Pressable, FlatList, Modal, ActivityIndicator,
+  Text, StyleSheet, View, Pressable, FlatList, Modal, ActivityIndicator, Alert,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { doc, getDoc } from 'firebase/firestore';
 import { RouteProp, useRoute } from '@react-navigation/native';
 import { Image } from 'expo-image';
@@ -29,6 +30,7 @@ import {
   toggleTournamentEntryLike,
   type TournamentPhotoEntry,
 } from '../services/tournaments';
+import { createPost } from '../services/cloudSync';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 
 type R = RouteProp<ProfileStackParamList, 'TournamentDetail'>;
@@ -167,6 +169,65 @@ export default function TournamentDetailScreen() {
     setSubmitOpen(true);
   };
 
+  const offerShareToFeed = useCallback(async (c: Catch) => {
+    if (!user || !t) return;
+    // Respect the "don't ask again" preference for this tournament.
+    const skipKey = `@ribolov/skipTournamentShare/${t.id}`;
+    const skip = await AsyncStorage.getItem(skipKey).catch(() => null);
+    if (skip === '1') return;
+    // Generate a hashtag from the tournament name: lowercase, strip non-letter/digit.
+    const tag = t.name
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}_]/gu, '')
+      .slice(0, 30);
+    if (!tag) return;
+    Alert.alert(
+      'Сподели в лентата?',
+      `Публикувай тази снимка в лентата с хаштаг #${tag}, за да я видят повече рибари.`,
+      [
+        {
+          text: 'Никога повече',
+          style: 'destructive',
+          onPress: () => { AsyncStorage.setItem(skipKey, '1').catch(() => {}); },
+        },
+        { text: 'Не сега', style: 'cancel' },
+        {
+          text: 'Сподели',
+          onPress: async () => {
+            try {
+              const intro = c.weightKg != null
+                ? `${c.speciesName} · ${c.weightKg} кг — участвам в „${t.name}". #${tag}`
+                : `${c.speciesName} — участвам в „${t.name}". #${tag}`;
+              await createPost({
+                ownerUid: user.uid,
+                ownerName: user.displayName ?? user.email ?? 'Рибар',
+                ownerPhotoUrl: user.photoURL ?? undefined,
+                text: intro,
+                localPhotoUri: c.photoUri,
+                mentionUids: [],
+                reshareOf: {
+                  kind: 'catch',
+                  id: c.id,
+                  ownerUid: user.uid,
+                  ownerName: user.displayName ?? 'Рибар',
+                  ownerPhotoUrl: user.photoURL ?? undefined,
+                  text: c.notes ?? c.photoTitle,
+                  photoUri: c.photoUri,
+                  speciesName: c.speciesName,
+                  weightKg: c.weightKg,
+                  date: c.date,
+                },
+              });
+              Toast.show({ type: 'success', text1: 'Споделено в лентата', visibilityTime: 1800 });
+            } catch {
+              Toast.show({ type: 'error', text1: 'Грешка при споделяне', visibilityTime: 1800 });
+            }
+          },
+        },
+      ],
+    );
+  }, [user, t]);
+
   const submitCatch = async (c: Catch) => {
     if (!user || !c.photoUri) return;
     setSubmitting(true);
@@ -181,6 +242,8 @@ export default function TournamentDetailScreen() {
       setSubmitOpen(false);
       Toast.show({ type: 'success', text1: 'Снимката е добавена!', visibilityTime: 2000 });
       void loadEntries();
+      // Offer to also share to the public feed with the tournament hashtag.
+      offerShareToFeed(c);
     } catch {
       Toast.show({ type: 'error', text1: 'Грешка', text2: 'Неуспешно добавяне.', visibilityTime: 2500 });
     } finally {

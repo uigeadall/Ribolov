@@ -24,6 +24,11 @@ import { fetchWeather, fetchForecast, windDirectionLabel, type WeatherSnapshot, 
 import { catchesStore } from '../storage/storage';
 import { fetchRankedClassicPhotos, periodStartIso, type RankedClassicPhoto } from '../services/classicsContest';
 import { speciesList } from '../data/species';
+import { DAMS } from '../data/dams';
+import { RIVERS } from '../data/rivers';
+import { haversineKm } from '../services/leaderboards';
+import { BiteForecast } from '../components/BiteForecast';
+import { FeaturedAnglerCard } from '../components/FeaturedAnglerCard';
 import { scheduleForecastNotificationIfGood } from '../services/pushNotifications';
 import { subscribeUnreadMessagesCount } from '../services/cloudSync';
 import { subscribeMyNotifications } from '../services/socialFeed';
@@ -79,24 +84,6 @@ function getSeasonSuggestions(weatherCode: number, month: number): string[] {
 
   return sorted.slice(0, 3).map((s) => s.nameBg);
 }
-
-// ── Feature grid config ───────────────────────────────────────────────────────
-
-type Feature = {
-  icon: React.ComponentProps<typeof Ionicons>['name'];
-  label: string;
-  sub: string;
-  g: [string, string];
-};
-
-const FEATURES: Feature[] = [
-  { icon: 'map',            label: 'Карта',      sub: 'Язовири и реки',     g: ['#2A8FD4', '#0D559A'] },
-  { icon: 'book',           label: 'Дневник',    sub: 'Твоите улови',       g: ['#2E9B5A', '#1B5E35'] },
-  { icon: 'fish',           label: 'Видове',     sub: 'Описания и сезони',  g: ['#7B52AB', '#4A2D80'] },
-  { icon: 'trophy',         label: 'Класации',   sub: 'Топ рибари',         g: ['#C49A00', '#7A5800'] },
-  { icon: 'people',         label: 'Групи',      sub: 'Риболовни клубове',  g: ['#E06400', '#8A3000'] },
-  { icon: 'newspaper',      label: 'Лента',      sub: 'Общност',            g: ['#0A7A8A', '#054050'] },
-];
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
@@ -235,15 +222,15 @@ const S = StyleSheet.create({
   },
   pillBtn: {
     flex: 1, height: 76,
-    borderRadius: 18, overflow: 'hidden',
-    alignItems: 'center', justifyContent: 'center', gap: 5,
+    borderRadius: 18, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center', gap: 6,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.18,
-    shadowRadius: 10,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  pillBtnText: { fontSize: 11, fontFamily: 'Nunito_700Bold', color: '#fff' },
+  pillBtnText: { fontSize: 12, fontFamily: 'Nunito_700Bold' },
 
   // ─── Stats bento grid ────────────────────────────────────────────
   bentoPad: { paddingHorizontal: spacing.xl, marginBottom: spacing.xl },
@@ -331,20 +318,28 @@ const S = StyleSheet.create({
     flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.sm,
   },
 
-  // ─── Feature tiles (horizontal scroll) ──────────────────────────
-  featureScroll: { marginBottom: spacing.xl },
-  featureTile: {
-    width: 130, height: 110, borderRadius: 20,
-    overflow: 'hidden', justifyContent: 'space-between',
-    padding: spacing.md,
+  // ─── Nearest waters list ─────────────────────────────────────────
+  nearbyList: {
+    marginHorizontal: spacing.xl,
+    marginBottom: spacing.xl,
+    gap: spacing.sm,
   },
-  featureLabel: {
-    fontSize: 13, fontFamily: 'Nunito_800ExtraBold', color: '#fff',
+  nearbyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
   },
-  featureSub: {
-    fontSize: 10, fontFamily: 'Nunito_400Regular',
-    color: 'rgba(255,255,255,0.72)', marginTop: 1,
+  nearbyIconWrap: {
+    width: 40, height: 40, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
   },
+  nearbyName: { fontSize: 14, fontFamily: 'Nunito_700Bold' },
+  nearbyMeta: { fontSize: 11, fontFamily: 'Nunito_400Regular', marginTop: 1 },
+  nearbyDistance: { fontSize: 14, fontFamily: 'Nunito_800ExtraBold' },
 
   // ─── Classics card ───────────────────────────────────────────────
   classicsCard: {
@@ -432,6 +427,7 @@ export default function HomeScreen() {
   const [unreadMsgs, setUnreadMsgs]     = useState(0);
   const [unreadNotifs, setUnreadNotifs] = useState(0);
   const [recentCatches, setRecentCatches] = useState<Catch[]>([]);
+  const [userCoord, setUserCoord] = useState<{ latitude: number; longitude: number } | null>(null);
   // ── Data loading ────────────────────────────────────────────────
 
   const loadStats = useCallback(async () => {
@@ -454,14 +450,17 @@ export default function HomeScreen() {
   const loadWeather = useCallback(async () => {
     setWeatherStatus('loading');
     let lat = FALLBACK_COORD.latitude, lng = FALLBACK_COORD.longitude, label = 'София (примерно)';
+    let granted = false;
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status === 'granted') {
         const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
         lat = pos.coords.latitude; lng = pos.coords.longitude; label = 'Твоето местоположение';
+        granted = true;
       }
     } catch { /* use fallback */ }
     setLocLabel(label);
+    setUserCoord(granted ? { latitude: lat, longitude: lng } : { latitude: FALLBACK_COORD.latitude, longitude: FALLBACK_COORD.longitude });
     try {
       const [w, days] = await Promise.all([
         fetchWeather(lat, lng),
@@ -526,16 +525,18 @@ export default function HomeScreen() {
 
   const fLabel = weather ? fishingLabel(weather.fishingRating) : null;
 
-  // ── Feature navigation ──────────────────────────────────────────
-
-  const featureActions = useMemo(() => [
-    () => navigation.navigate('MapTab'),
-    () => navigation.navigate('LogbookTab', { screen: 'LogbookList' }),
-    () => navigation.navigate('ProfileTab', { screen: 'Species', params: { screen: 'SpeciesList' } }),
-    () => navigation.navigate('ProfileTab', { screen: 'Leaderboard' }),
-    () => navigation.navigate('ProfileTab', { screen: 'Groups' }),
-    () => navigation.navigate('FeedTab', { screen: 'FeedList' }),
-  ], [navigation]);
+  // Top 3 closest dams / rivers — only meaningful once we have a coord
+  const nearestWaters = useMemo(() => {
+    if (!userCoord) return [];
+    const all = [
+      ...DAMS.map((d) => ({ kind: 'dam' as const, id: d.id, name: d.name, region: d.region, latitude: d.latitude, longitude: d.longitude })),
+      ...RIVERS.map((r) => ({ kind: 'river' as const, id: r.id, name: r.name, region: r.region, latitude: r.latitude, longitude: r.longitude })),
+    ];
+    return all
+      .map((w) => ({ ...w, km: haversineKm(userCoord.latitude, userCoord.longitude, w.latitude, w.longitude) }))
+      .sort((a, b) => a.km - b.km)
+      .slice(0, 3);
+  }, [userCoord]);
 
   // ── Render ──────────────────────────────────────────────────────
 
@@ -658,23 +659,22 @@ export default function HomeScreen() {
           <Ionicons name="chevron-forward" size={22} color="rgba(255,255,255,0.7)" />
         </ScalePressable>
 
-        {/* ── Pill shortcut row ── */}
+        {/* ── Pill shortcut row — calm surface cards, single accent ── */}
         <View style={S.pillRow}>
-          <ScalePressable style={S.pillBtn} onPress={() => navigation.navigate('MapTab')}>
-            <LinearGradient colors={['#2E9FE6', '#0D559A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFillObject} />
-            <Ionicons name="compass" size={26} color="#fff" />
-            <Text style={S.pillBtnText}>Места</Text>
-          </ScalePressable>
-          <ScalePressable style={S.pillBtn} onPress={() => navigation.navigate('FeedTab', { screen: 'FeedList' })}>
-            <LinearGradient colors={['#F5A020', '#E05E00']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFillObject} />
-            <Ionicons name="telescope" size={26} color="#fff" />
-            <Text style={S.pillBtnText}>Лента</Text>
-          </ScalePressable>
-          <ScalePressable style={S.pillBtn} onPress={() => navigation.navigate('FeedTab', { screen: 'Friends' })}>
-            <LinearGradient colors={['#3AC47D', '#1A7A45']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFillObject} />
-            <Ionicons name="people" size={26} color="#fff" />
-            <Text style={S.pillBtnText}>Приятели</Text>
-          </ScalePressable>
+          {[
+            { icon: 'compass' as const, label: 'Места', onPress: () => navigation.navigate('MapTab') },
+            { icon: 'telescope' as const, label: 'Лента', onPress: () => navigation.navigate('FeedTab', { screen: 'FeedList' }) },
+            { icon: 'people' as const, label: 'Приятели', onPress: () => navigation.navigate('FeedTab', { screen: 'Friends' }) },
+          ].map((p) => (
+            <ScalePressable
+              key={p.label}
+              style={[S.pillBtn, { backgroundColor: cardBg, borderColor: cardBorder }]}
+              onPress={p.onPress}
+            >
+              <Ionicons name={p.icon} size={24} color={primary} />
+              <Text style={[S.pillBtnText, { color: textColor }]}>{p.label}</Text>
+            </ScalePressable>
+          ))}
         </View>
 
         {/* ── Dark weather card ── */}
@@ -841,6 +841,56 @@ export default function HomeScreen() {
           </>
         )}
 
+        {/* ── Bite forecast for today (uses existing component) ── */}
+        {weather && (
+          <View style={{ paddingHorizontal: spacing.xl, marginBottom: spacing.lg }}>
+            <View style={S.sectionRow}>
+              <View style={S.sectionLeft}>
+                <View style={[S.sectionAccent, { backgroundColor: primary }]} />
+                <Text style={[S.sectionLabel, { color: mutedColor }]}>Прогноза за хапки</Text>
+              </View>
+            </View>
+            <BiteForecast weather={weather} />
+          </View>
+        )}
+
+        {/* ── Nearest water bodies ── */}
+        {nearestWaters.length > 0 && (
+          <>
+            <View style={S.sectionRow}>
+              <View style={S.sectionLeft}>
+                <View style={[S.sectionAccent, { backgroundColor: primary }]} />
+                <Text style={[S.sectionLabel, { color: mutedColor }]}>Най-близки водоеми</Text>
+              </View>
+              <Pressable onPress={() => navigation.navigate('MapTab')} hitSlop={8}>
+                <Text style={[S.sectionLink, { color: primary }]}>Виж карта →</Text>
+              </Pressable>
+            </View>
+            <View style={S.nearbyList}>
+              {nearestWaters.map((w) => (
+                <ScalePressable
+                  key={`${w.kind}-${w.id}`}
+                  style={[S.nearbyRow, { backgroundColor: cardBg, borderColor: cardBorder }]}
+                  onPress={() => navigation.navigate('MapTab', w.kind === 'dam' ? { focusDamId: w.id } : { focusRiverId: w.id })}
+                >
+                  <View style={[S.nearbyIconWrap, { backgroundColor: colors.primarySurface }]}>
+                    <Ionicons name={w.kind === 'dam' ? 'layers-outline' : 'git-branch-outline'} size={20} color={primary} />
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={[S.nearbyName, { color: textColor }]} numberOfLines={1}>{w.name}</Text>
+                    <Text style={[S.nearbyMeta, { color: mutedColor }]} numberOfLines={1}>
+                      {w.kind === 'dam' ? 'Язовир' : 'Река'} · {w.region}
+                    </Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={[S.nearbyDistance, { color: primary }]}>{Math.round(w.km)} км</Text>
+                  </View>
+                </ScalePressable>
+              ))}
+            </View>
+          </>
+        )}
+
         {/* ── Recent catches ── */}
         {recentCatches.length > 0 && (
           <>
@@ -886,6 +936,9 @@ export default function HomeScreen() {
             </ScrollView>
           </>
         )}
+
+        {/* ── Featured angler of the week ── */}
+        <FeaturedAnglerCard />
 
         {/* ── Classics highlight ── */}
         {topClassic?.item.photoUri && (
@@ -979,39 +1032,6 @@ export default function HomeScreen() {
             </Pressable>
           </>
         )}
-
-        {/* ── Feature tiles — horizontal scroll ── */}
-        <View style={S.sectionRow}>
-          <View style={S.sectionLeft}>
-            <View style={[S.sectionAccent, { backgroundColor: primary }]} />
-            <Text style={[S.sectionLabel, { color: mutedColor }]}>Бърз достъп</Text>
-          </View>
-        </View>
-        <ScrollView
-          horizontal showsHorizontalScrollIndicator={false}
-          style={S.featureScroll}
-          contentContainerStyle={{ paddingLeft: spacing.xl, paddingRight: spacing.xl, gap: spacing.sm, paddingBottom: 4 }}
-        >
-          {FEATURES.map((f, i) => (
-            <ScalePressable
-              key={f.label}
-              style={S.featureTile}
-              onPress={featureActions[i]}
-              android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
-            >
-              <LinearGradient
-                colors={f.g}
-                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-                style={StyleSheet.absoluteFillObject}
-              />
-              <Ionicons name={`${f.icon}-outline` as any} size={28} color="#fff" />
-              <View>
-                <Text style={S.featureLabel}>{f.label}</Text>
-                <Text style={S.featureSub} numberOfLines={1}>{f.sub}</Text>
-              </View>
-            </ScalePressable>
-          ))}
-        </ScrollView>
 
         <View style={{ height: spacing.xxl }} />
       </View>

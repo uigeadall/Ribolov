@@ -81,6 +81,13 @@ export async function createGroup(
     role: 'admin',
     joinedAt: serverTimestamp(),
   });
+  // Mirror membership under the user's own doc so fetchMyGroups can read it
+  // directly without a collectionGroup index. Without this mirror, listing
+  // "Моите клубове" required an index that may not be deployed/built yet.
+  batch.set(doc(fb.db, 'users', creator.uid, 'groupMemberships', id), {
+    groupId: id,
+    joinedAt: serverTimestamp(),
+  });
   await batch.commit();
   return id;
 }
@@ -96,39 +103,49 @@ export async function fetchGroups(maxCount = 30): Promise<Group[]> {
 export async function fetchMyGroups(uid: string): Promise<Group[]> {
   const fb = requireFirebase();
 
-  // Try collectionGroup query first (requires Firestore index on members.uid)
-  let groupIds: string[] = [];
+  // Primary path: read the user's own membership mirror. This avoids the need
+  // for a collectionGroup index and is O(1) regardless of total group count.
+  const groupIds = new Set<string>();
   try {
-    const memberSnap = await getDocs(
-      query(collectionGroup(fb.db, 'members'), where('uid', '==', uid))
-    );
-    groupIds = memberSnap.docs.map((d) => d.ref.parent.parent!.id);
-  } catch (e: unknown) {
-    const code = (e as { code?: string })?.code ?? '';
-    // Only fall through when the composite index is missing; re-throw other errors.
-    if (!code.includes('failed-precondition') && !code.includes('FAILED_PRECONDITION')) throw e;
+    const snap = await getDocs(collection(fb.db, 'users', uid, 'groupMemberships'));
+    snap.docs.forEach((d) => groupIds.add(d.id));
+  } catch { /* ignore — fall through to legacy paths */ }
+
+  // Backfill: pre-mirror users may still only have docs under groups/{id}/members/{uid}.
+  // Try the collectionGroup query when the mirror is empty; succeeds only if the
+  // composite index is built.
+  if (groupIds.size === 0) {
+    try {
+      const memberSnap = await getDocs(
+        query(collectionGroup(fb.db, 'members'), where('uid', '==', uid))
+      );
+      memberSnap.docs.forEach((d) => {
+        const parent = d.ref.parent.parent;
+        if (parent) groupIds.add(parent.id);
+      });
+    } catch { /* index missing — fall through */ }
   }
 
-  // Fallback: check the user's direct member doc under every group
-  if (groupIds.length === 0) {
+  // Last-resort fallback: scan all groups and check each for our membership doc.
+  // Slow on large /groups collections but correct.
+  if (groupIds.size === 0) {
     try {
       const allSnap = await getDocs(collection(fb.db, 'groups'));
       const checks = await Promise.all(
-        allSnap.docs.map((d) => getDoc(doc(fb.db, 'groups', d.id, 'members', uid)))
+        allSnap.docs.map((d) => getDoc(doc(fb.db, 'groups', d.id, 'members', uid)).catch(() => null))
       );
-      groupIds = allSnap.docs.filter((_, i) => checks[i].exists()).map((d) => d.id);
-    } catch {
-      return [];
-    }
+      allSnap.docs.forEach((d, i) => {
+        if (checks[i]?.exists()) groupIds.add(d.id);
+      });
+    } catch { /* return whatever we have */ }
   }
 
-  try {
-    const unique = [...new Set(groupIds)];
-    const groups = await Promise.all(unique.map((id) => getGroup(id)));
-    return groups.filter((g): g is Group => g !== null);
-  } catch {
-    return [];
-  }
+  if (groupIds.size === 0) return [];
+
+  const ids = [...groupIds];
+  // Use individual try/catch per group so one missing/deleted doc doesn't drop the whole list.
+  const groups = await Promise.all(ids.map((id) => getGroup(id).catch(() => null)));
+  return groups.filter((g): g is Group => g !== null);
 }
 
 export async function getGroup(groupId: string): Promise<Group | null> {
@@ -147,6 +164,10 @@ export async function joinGroup(groupId: string, user: { uid: string; displayNam
     role: 'member',
     joinedAt: serverTimestamp(),
   });
+  batch.set(doc(fb.db, 'users', user.uid, 'groupMemberships', groupId), {
+    groupId,
+    joinedAt: serverTimestamp(),
+  });
   batch.update(doc(fb.db, 'groups', groupId), { memberCount: increment(1) });
   await batch.commit();
 }
@@ -155,6 +176,7 @@ export async function leaveGroup(groupId: string, uid: string): Promise<void> {
   const fb = requireFirebase();
   const batch = writeBatch(fb.db);
   batch.delete(doc(fb.db, 'groups', groupId, 'members', uid));
+  batch.delete(doc(fb.db, 'users', uid, 'groupMemberships', groupId));
   batch.update(doc(fb.db, 'groups', groupId), { memberCount: increment(-1) });
   await batch.commit();
 }

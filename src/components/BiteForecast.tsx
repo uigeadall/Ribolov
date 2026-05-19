@@ -1,103 +1,239 @@
-import React, { useMemo } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { View, Text, Animated, Easing, StyleSheet } from 'react-native';
 import { useTheme } from '../services/themeContext';
-import { radius, spacing, typography } from '../theme/typography';
+import { radius, spacing } from '../theme/typography';
 import type { WeatherSnapshot } from '../services/weather';
-import { StarRatingBar } from './StarRatingBar';
 
-type Window = { label: string; emoji: string; rating: number; tip: string };
+type Window = { key: 'dawn' | 'day' | 'dusk' | 'night'; label: string; range: string; rating: number };
 
 function calcBiteWindows(w: WeatherSnapshot): Window[] {
   const hour = new Date().getHours();
   const base = w.fishingRating;
 
-  // Dawn: 5-9h
   const dawnBonus = (hour >= 5 && hour <= 9 ? 0.8 : 0) + (w.moonPhase < 0.1 || Math.abs(w.moonPhase - 0.5) < 0.08 ? 0.5 : 0);
-  // Midday: 10-16h — usually slower
   const midBonus = w.cloudCover > 60 ? 0.2 : -0.4;
-  // Dusk: 17-21h — second best window
   const duskBonus = (hour >= 17 && hour <= 21 ? 0.6 : 0) + (w.moonPhase < 0.1 || Math.abs(w.moonPhase - 0.5) < 0.08 ? 0.4 : 0);
-  // Night — moon-dependent
   const nightBonus = (w.moonPhase < 0.1 || Math.abs(w.moonPhase - 0.5) < 0.08) ? 0.5 : -0.5;
 
   const clamp = (v: number) => Math.max(1, Math.min(5, Math.round(v)));
-
   const pressureBonus = w.pressureHpa >= 1013 && w.pressureHpa <= 1022 ? 0.3 : w.pressureHpa < 1000 ? -0.5 : 0;
 
   return [
-    {
-      label: 'Сутринта',
-      emoji: '🌅',
-      rating: clamp(base + dawnBonus + pressureBonus),
-      tip: dawnBonus > 0.5 ? 'Пик на хранене при изгрев' : 'Добра сутрешна активност',
-    },
-    {
-      label: 'Денем',
-      emoji: '☀️',
-      rating: clamp(base + midBonus + pressureBonus),
-      tip: w.cloudCover > 60 ? 'Облачността намалява UV — риба е по-активна' : 'Ярко слънце — риба е на дълбочина',
-    },
-    {
-      label: 'Вечерта',
-      emoji: '🌆',
-      rating: clamp(base + duskBonus + pressureBonus),
-      tip: duskBonus > 0.5 ? 'Отличен вечерен прозорец' : 'Умерена вечерна активност',
-    },
-    {
-      label: 'Нощем',
-      emoji: '🌙',
-      rating: clamp(base + nightBonus + pressureBonus),
-      tip: nightBonus > 0 ? `${w.moonPhaseName} — риба е активна нощем` : 'По-слаба нощна активност',
-    },
+    { key: 'dawn',  label: 'Сутрин', range: '05–09', rating: clamp(base + dawnBonus + pressureBonus) },
+    { key: 'day',   label: 'Денем',  range: '10–16', rating: clamp(base + midBonus + pressureBonus) },
+    { key: 'dusk',  label: 'Вечер',  range: '17–21', rating: clamp(base + duskBonus + pressureBonus) },
+    { key: 'night', label: 'Нощем',  range: '22–04', rating: clamp(base + nightBonus + pressureBonus) },
   ];
+}
+
+function currentWindow(): Window['key'] {
+  const h = new Date().getHours();
+  if (h >= 5 && h <= 9) return 'dawn';
+  if (h >= 10 && h <= 16) return 'day';
+  if (h >= 17 && h <= 21) return 'dusk';
+  return 'night';
 }
 
 type Props = { weather: WeatherSnapshot };
 
-export function BiteForecast({ weather }: Props) {
-  const { colors } = useTheme();
-  const windows = useMemo(() => calcBiteWindows(weather), [weather]);
+const BAR_HEIGHT = 64;
 
-  const styles = useMemo(() => StyleSheet.create({
-    container: {
-      backgroundColor: colors.primarySurface,
-      borderRadius: radius.lg,
-      padding: spacing.md,
-      borderWidth: 1,
-      borderColor: colors.border,
-      marginTop: spacing.sm,
-    },
-    title: { ...typography.bodyBold, color: colors.text, marginBottom: spacing.md },
-    grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-    cell: {
-      flex: 1,
-      minWidth: '45%',
-      backgroundColor: colors.card,
-      borderRadius: radius.md,
-      padding: spacing.sm,
-      borderWidth: 1,
-      borderColor: colors.border,
-      alignItems: 'center',
-    },
-    cellLabel: { ...typography.small, color: colors.text, fontWeight: '600', marginTop: 2 },
-    cellEmoji: { fontSize: 20 },
-    cellTip: { ...typography.small, color: colors.textMuted, textAlign: 'center', marginTop: 4, lineHeight: 16 },
-  }), [colors]);
+export function BiteForecast({ weather }: Props) {
+  const { colors, mode } = useTheme();
+  const windows = useMemo(() => calcBiteWindows(weather), [weather]);
+  const peak = useMemo(() => windows.reduce((b, w) => (w.rating > b.rating ? w : b), windows[0]), [windows]);
+  const nowKey = useMemo(() => currentWindow(), []);
+
+  // Animate bars from 0 → rating on mount.
+  const animRefs = useRef(windows.map(() => new Animated.Value(0))).current;
+  useEffect(() => {
+    const anims = windows.map((w, i) =>
+      Animated.timing(animRefs[i], {
+        toValue: w.rating / 5,
+        duration: 720,
+        delay: i * 80,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      })
+    );
+    Animated.parallel(anims).start();
+  }, [windows, animRefs]);
+
+  const trackColor = mode === 'dark' ? 'rgba(74,168,232,0.07)' : 'rgba(21,112,184,0.05)';
+  const inactiveBar = mode === 'dark' ? 'rgba(74,168,232,0.32)' : 'rgba(21,112,184,0.28)';
+
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        container: {
+          backgroundColor: colors.card,
+          borderRadius: radius.lg,
+          borderWidth: 1,
+          borderColor: colors.border,
+          paddingVertical: spacing.md + 2,
+          paddingHorizontal: spacing.md + 2,
+          marginTop: spacing.sm,
+        },
+        // Header
+        headerRow: {
+          flexDirection: 'row',
+          alignItems: 'flex-end',
+          justifyContent: 'space-between',
+        },
+        headerLeft: {
+          flex: 1,
+        },
+        kicker: {
+          fontSize: 10,
+          fontFamily: 'Nunito_700Bold',
+          color: colors.textMuted,
+          letterSpacing: 1.4,
+          textTransform: 'uppercase' as const,
+        },
+        peakName: {
+          fontSize: 22,
+          fontFamily: 'Nunito_800ExtraBold',
+          color: colors.text,
+          marginTop: 4,
+          letterSpacing: -0.3,
+        },
+        peakRange: {
+          fontSize: 12,
+          fontFamily: 'Nunito_600SemiBold',
+          color: colors.textMuted,
+          marginTop: 2,
+          letterSpacing: 0.2,
+        },
+        peakRatingWrap: {
+          alignItems: 'flex-end',
+        },
+        peakRatingNum: {
+          fontSize: 28,
+          fontFamily: 'Nunito_800ExtraBold',
+          color: colors.primary,
+          lineHeight: 30,
+          letterSpacing: -1,
+        },
+        peakRatingMax: {
+          fontSize: 11,
+          fontFamily: 'Nunito_600SemiBold',
+          color: colors.textMuted,
+          letterSpacing: 0.4,
+        },
+        divider: {
+          height: StyleSheet.hairlineWidth,
+          backgroundColor: colors.border,
+          marginTop: spacing.md,
+          marginBottom: spacing.md,
+        },
+        // Chart
+        chartRow: {
+          flexDirection: 'row',
+          alignItems: 'flex-end',
+          height: BAR_HEIGHT,
+          gap: 10,
+        },
+        barWrap: {
+          flex: 1,
+          height: BAR_HEIGHT,
+        },
+        barTrack: {
+          width: '100%',
+          height: '100%',
+          borderRadius: 6,
+          backgroundColor: trackColor,
+          overflow: 'hidden',
+          justifyContent: 'flex-end',
+        },
+        bar: {
+          width: '100%',
+          borderTopLeftRadius: 6,
+          borderTopRightRadius: 6,
+        },
+        // Labels
+        labelsRow: {
+          flexDirection: 'row',
+          gap: 10,
+          marginTop: 10,
+        },
+        labelCol: {
+          flex: 1,
+        },
+        labelText: {
+          fontSize: 10,
+          fontFamily: 'Nunito_700Bold',
+          color: colors.textMuted,
+          letterSpacing: 1,
+          textTransform: 'uppercase' as const,
+        },
+        labelTextActive: {
+          color: colors.text,
+        },
+        labelRange: {
+          fontSize: 10,
+          fontFamily: 'Nunito_600SemiBold',
+          color: colors.textMuted,
+          marginTop: 2,
+          opacity: 0.65,
+        },
+        nowMarker: {
+          width: 14,
+          height: 2,
+          borderRadius: 1,
+          backgroundColor: colors.primary,
+          marginBottom: 5,
+        },
+      }),
+    [colors, mode, trackColor]
+  );
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Прогноза за хапки</Text>
-      <View style={styles.grid}>
-        {windows.map((w) => (
-          <View key={w.label} style={styles.cell}>
-            <Text style={styles.cellEmoji}>{w.emoji}</Text>
-            <Text style={styles.cellLabel}>{w.label}</Text>
-            <View style={{ marginTop: 4 }}>
-              <StarRatingBar rating={w.rating} color="#FFD700" emptyColor={colors.border} size={12} />
+      <View style={styles.headerRow}>
+        <View style={styles.headerLeft}>
+          <Text style={styles.kicker}>Пик днес</Text>
+          <Text style={styles.peakName}>{peak.label}</Text>
+          <Text style={styles.peakRange}>{peak.range}</Text>
+        </View>
+        <View style={styles.peakRatingWrap}>
+          <Text style={styles.peakRatingNum}>{peak.rating}<Text style={styles.peakRatingMax}>/5</Text></Text>
+        </View>
+      </View>
+
+      <View style={styles.divider} />
+
+      <View style={styles.chartRow}>
+        {windows.map((w, i) => {
+          const isPeak = w.key === peak.key;
+          return (
+            <View key={w.key} style={styles.barWrap}>
+              <View style={styles.barTrack}>
+                <Animated.View
+                  style={[
+                    styles.bar,
+                    {
+                      height: animRefs[i].interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }),
+                      backgroundColor: isPeak ? colors.primary : inactiveBar,
+                    },
+                  ]}
+                />
+              </View>
             </View>
-            <Text style={styles.cellTip} numberOfLines={2}>{w.tip}</Text>
-          </View>
-        ))}
+          );
+        })}
+      </View>
+
+      <View style={styles.labelsRow}>
+        {windows.map((w) => {
+          const isNow = w.key === nowKey;
+          return (
+            <View key={w.key} style={styles.labelCol}>
+              {isNow ? <View style={styles.nowMarker} /> : <View style={{ height: 7 }} />}
+              <Text style={[styles.labelText, isNow && styles.labelTextActive]}>{w.label}</Text>
+              <Text style={styles.labelRange}>{w.range}</Text>
+            </View>
+          );
+        })}
       </View>
     </View>
   );
