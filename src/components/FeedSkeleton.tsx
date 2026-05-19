@@ -1,23 +1,43 @@
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, useWindowDimensions } from 'react-native';
 import { Skeleton } from './Skeleton';
 import { useTheme } from '../services/themeContext';
-import { radius, spacing } from '../theme/typography';
+import { spacing } from '../theme/typography';
 
+/**
+ * Skeleton for a FeedPost-style catch card. Dimensions match the real
+ * component (full-bleed, photo is screenWidth × 5/4) so the layout doesn't
+ * "jump" when content swaps in.
+ */
 function PostSkeleton() {
   const { colors } = useTheme();
+  const { width } = useWindowDimensions();
+  const photoHeight = Math.round(width * (5 / 4));
   return (
-    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <Skeleton height={220} borderRadius={0} style={styles.photo} />
-      <View style={styles.inner}>
-        <Skeleton height={18} width="55%" style={{ marginBottom: 8 }} />
-        <Skeleton height={13} width="38%" />
-        <View style={[styles.socialRow, { borderTopColor: colors.border }]}>
-          <Skeleton height={20} width={44} />
-          <Skeleton height={20} width={44} />
-          <Skeleton height={20} width={44} />
-          <Skeleton height={20} width={44} />
+    <View style={[styles.card, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+      {/* Header row: avatar + name */}
+      <View style={styles.header}>
+        <Skeleton width={36} height={36} borderRadius={18} />
+        <View style={{ flex: 1, gap: 6 }}>
+          <Skeleton height={13} width="42%" />
+          <Skeleton height={10} width="22%" />
         </View>
+      </View>
+      {/* Photo */}
+      <Skeleton height={photoHeight} width="100%" borderRadius={0} />
+      {/* Action row */}
+      <View style={styles.actionRow}>
+        <Skeleton height={22} width={22} borderRadius={11} />
+        <Skeleton height={22} width={22} borderRadius={11} />
+        <Skeleton height={22} width={22} borderRadius={11} />
+        <View style={{ flex: 1 }} />
+        <Skeleton height={22} width={22} borderRadius={11} />
+      </View>
+      {/* Caption + meta */}
+      <View style={styles.captionBlock}>
+        <Skeleton height={13} width="38%" style={{ marginBottom: 8 }} />
+        <Skeleton height={14} width="88%" style={{ marginBottom: 6 }} />
+        <Skeleton height={14} width="62%" />
       </View>
     </View>
   );
@@ -25,8 +45,7 @@ function PostSkeleton() {
 
 export function FeedSkeleton() {
   return (
-    <View style={styles.root}>
-      <PostSkeleton />
+    <View>
       <PostSkeleton />
       <PostSkeleton />
     </View>
@@ -34,23 +53,26 @@ export function FeedSkeleton() {
 }
 
 const styles = StyleSheet.create({
-  root: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
   card: {
-    borderRadius: radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginBottom: spacing.lg,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
   },
-  photo: {
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
-  },
-  inner: { padding: spacing.md },
-  socialRow: {
+  header: {
     flexDirection: 'row',
-    gap: spacing.lg,
-    marginTop: spacing.md,
-    paddingTop: spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm + 2,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+  },
+  captionBlock: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
   },
 });

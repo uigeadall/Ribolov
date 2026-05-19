@@ -25,7 +25,7 @@ export type SocialNotification = {
   id: string;
   actorUid: string;
   actorName: string;
-  type: 'like' | 'comment' | 'follow' | 'storyLike' | 'storyComment';
+  type: 'like' | 'comment' | 'follow' | 'storyLike' | 'storyComment' | 'mention';
   catchId?: string;
   storyId?: string;
   preview?: string;

@@ -65,7 +65,7 @@ export function subscribeMyNotifications(myUid: string, onNext: (items: SocialNo
         const data = d.data() as {
           actorUid: string;
           actorName: string;
-          type: 'like' | 'comment' | 'follow' | 'storyLike' | 'storyComment';
+          type: 'like' | 'comment' | 'follow' | 'storyLike' | 'storyComment' | 'mention';
           catchId: string;
           storyId?: string;
           preview?: string;
@@ -129,5 +129,41 @@ export async function sendFollowNotification(
       read: false,
       createdAt: serverTimestamp(),
     })
+  );
+}
+
+/**
+ * Fan-out: notify every @mentioned user when a post is published. One notification
+ * per mentioned UID. Errors are silenced per-recipient so a single rules failure
+ * doesn't kill the rest. Self-mentions are skipped.
+ */
+export async function sendMentionNotifications(
+  mentionedUids: string[],
+  actorUid: string,
+  actorName: string,
+  postId: string,
+  preview: string,
+): Promise<void> {
+  if (!actorUid || mentionedUids.length === 0) return;
+  const fb = requireFirebase();
+  const safeName = (actorName || 'Рибар').trim().slice(0, 120) || 'Рибар';
+  await Promise.all(
+    [...new Set(mentionedUids)]
+      .filter((uid) => uid && uid !== actorUid)
+      .map((uid) =>
+        setDoc(
+          doc(fb.db, 'users', uid, 'notifications', `mention_${actorUid}_${postId}`),
+          stripUndefinedForFirestore({
+            actorUid,
+            actorName: safeName,
+            type: 'mention',
+            // Reuse the catchId slot for the postId — same as comment notifications.
+            catchId: postId,
+            preview: preview.slice(0, 200),
+            read: false,
+            createdAt: serverTimestamp(),
+          }),
+        ).catch(() => {}),
+      ),
   );
 }

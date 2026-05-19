@@ -411,6 +411,8 @@ export default function FeedScreen() {
           onDeletePhoto={onDeletePhoto}
           onRemovePost={onRemovePost}
           onReshare={user ? onReshareCatch : undefined}
+          onPressHashtag={onPressHashtag}
+          onPressMention={onPressMention}
         />
       );
     }

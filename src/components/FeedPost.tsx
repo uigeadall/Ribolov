@@ -23,6 +23,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { FeedItem } from '../services/catchSync';
+import { RichText } from './RichText';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
@@ -152,9 +153,11 @@ type Props = {
   onDeletePhoto?: (item: FeedItem) => void;
   onRemovePost?: (item: FeedItem) => void;
   onReshare?: (item: FeedItem) => void;
+  onPressHashtag?: (tag: string) => void;
+  onPressMention?: (handle: string) => void;
 };
 
-export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarUrl, socialEnabled, isVisible = true, onPressAuthor, onPressCatch, onDeletePhoto, onRemovePost, onReshare }: Props) {
+export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarUrl, socialEnabled, isVisible = true, onPressAuthor, onPressCatch, onDeletePhoto, onRemovePost, onReshare, onPressHashtag, onPressMention }: Props) {
   const { colors, mode } = useTheme();
   const styles = useMemo(() => feedStyles(colors), [colors]);
   const { width: screenWidth } = useWindowDimensions();
@@ -317,14 +320,14 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
     ]).start();
   };
 
-  // Caption text assembled inline
+  // Caption metadata (species, weight, length, released). Notes render
+  // separately below so hashtags/mentions inside them can be tappable.
   const captionBody = [
     item.speciesName,
     item.weightKg != null ? `${item.weightKg} кг` : null,
     item.lengthCm != null ? `${item.lengthCm} см` : null,
     item.released ? 'пуснат' : null,
-    item.notes ? `— ${item.notes}` : null,
-  ].filter(Boolean).join(' · ').replace(' · —', ' —');
+  ].filter(Boolean).join(' · ');
 
   const photoHeight = Math.round(screenWidth * (5 / 4));
 
@@ -547,6 +550,18 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
                 <Text style={styles.captionText}>{captionBody}</Text>
               </Text>
 
+              {/* Notes — rendered separately so #hashtags and @mentions are tappable */}
+              {item.notes ? (
+                <RichText
+                  text={item.notes}
+                  style={[styles.captionText, { marginTop: 4 }]}
+                  linkStyle={{ color: colors.primary, fontWeight: '600' }}
+                  numberOfLines={commentsOpen ? undefined : 3}
+                  onPressHashtag={onPressHashtag}
+                  onPressMention={onPressMention}
+                />
+              ) : null}
+
               {/* Location pill (inline, compact) */}
               {(item.location?.name || (item.location?.latitude != null && item.location.longitude != null)) ? (
                 <Pressable
@@ -746,6 +761,16 @@ export function FeedPost({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvata
               <Text style={styles.captionName}>{displayName} </Text>
               <Text style={styles.captionText}>{captionBody}</Text>
             </Text>
+            {item.notes ? (
+              <RichText
+                text={item.notes}
+                style={[styles.captionText, { marginTop: 4 }]}
+                linkStyle={{ color: colors.primary, fontWeight: '600' }}
+                numberOfLines={3}
+                onPressHashtag={onPressHashtag}
+                onPressMention={onPressMention}
+              />
+            ) : null}
             {(item.location?.name || (item.location?.latitude != null && item.location.longitude != null)) ? (
               <Pressable
                 style={styles.loc}

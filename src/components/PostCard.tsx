@@ -56,6 +56,7 @@ export function PostCard({
   const [likeCount, setLikeCount] = useState(post.likeCount ?? 0);
   const [likeBusy, setLikeBusy] = useState(false);
   const [viewerOpen, setViewerOpen] = useState(false);
+  const [textExpanded, setTextExpanded] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [comments, setComments] = useState<FeedComment[]>([]);
   const [commentDraft, setCommentDraft] = useState('');
@@ -194,6 +195,12 @@ export function PostCard({
       color: colors.primary,
       fontWeight: '600',
     },
+    expandToggle: {
+      ...typography.small,
+      color: colors.primary,
+      fontWeight: '700',
+      marginTop: 4,
+    },
     photoWrap: { width: '100%', aspectRatio: 4 / 3, backgroundColor: colors.surfaceAlt },
     photo: { width: '100%', height: '100%' },
     actions: {
@@ -312,18 +319,31 @@ export function PostCard({
         ) : null}
       </View>
 
-      {/* Body text with hashtags/mentions */}
-      {post.text ? (
-        <View style={styles.body}>
-          <RichText
-            text={post.text}
-            style={styles.text}
-            linkStyle={styles.link}
-            onPressHashtag={onPressHashtag}
-            onPressMention={onPressMention}
-          />
-        </View>
-      ) : null}
+      {/* Body text with hashtags/mentions — truncated at 5 lines / 280 chars unless expanded */}
+      {post.text ? (() => {
+        const TRUNCATE_LIMIT = 280;
+        const LINE_LIMIT = 5;
+        const isLong = post.text.length > TRUNCATE_LIMIT || (post.text.match(/\n/g)?.length ?? 0) >= LINE_LIMIT;
+        return (
+          <View style={styles.body}>
+            <RichText
+              text={post.text}
+              style={styles.text}
+              linkStyle={styles.link}
+              onPressHashtag={onPressHashtag}
+              onPressMention={onPressMention}
+              numberOfLines={!textExpanded && isLong ? LINE_LIMIT : undefined}
+            />
+            {isLong ? (
+              <Pressable onPress={() => setTextExpanded((v) => !v)} hitSlop={6}>
+                <Text style={styles.expandToggle}>
+                  {textExpanded ? 'По-малко' : 'Виж повече'}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+        );
+      })() : null}
 
       {/* Photo */}
       {post.photoUri ? (

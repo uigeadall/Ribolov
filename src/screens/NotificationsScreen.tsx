@@ -134,13 +134,17 @@ function NotifRow({ item, myUid, onOpen, onDismiss, styles, colors }: NotifRowPr
           ? 'коментира твой улов'
           : item.type === 'storyComment'
             ? 'коментира твоята история'
-            : 'те последва';
+            : item.type === 'mention'
+              ? 'те спомена в публикация'
+              : 'те последва';
   const icon =
     item.type === 'like' || item.type === 'storyLike'
       ? 'heart'
       : item.type === 'comment' || item.type === 'storyComment'
         ? 'chatbubble-ellipses-outline'
-        : 'person-add-outline';
+        : item.type === 'mention'
+          ? 'at-outline'
+          : 'person-add-outline';
   const initials = item.actorName.slice(0, 1).toUpperCase();
 
   const onFollowBack = useCallback(async () => {

@@ -356,9 +356,27 @@ export default function CatchDetailScreen() {
                 ))}
               </ScrollView>
               {item.extraPhotoUris!.length > 1 && (
-                <Text style={{ ...typography.caption, color: colors.textMuted, textAlign: 'center', marginTop: 4 }}>
-                  {currentExtraPhoto + 1} / {item.extraPhotoUris!.length}
-                </Text>
+                <View style={{
+                  flexDirection: 'row',
+                  alignSelf: 'center',
+                  gap: 6,
+                  marginTop: spacing.sm,
+                }}>
+                  {item.extraPhotoUris!.map((_, idx) => {
+                    const active = idx === currentExtraPhoto;
+                    return (
+                      <View
+                        key={idx}
+                        style={{
+                          width: active ? 16 : 6,
+                          height: 6,
+                          borderRadius: 3,
+                          backgroundColor: active ? colors.primary : colors.border,
+                        }}
+                      />
+                    );
+                  })}
+                </View>
               )}
             </>
           ) : null}

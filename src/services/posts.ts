@@ -24,7 +24,7 @@ import { stripUndefinedForFirestore } from './firestoreSanitize';
 import { uploadLocalPhotoToStorage } from './catchSync';
 import { extractHashtags } from '../utils/textTokens';
 import { allowComment } from './socialRateLimit';
-import { notifyInteraction } from './socialNotifications';
+import { notifyInteraction, sendMentionNotifications } from './socialNotifications';
 import type { FeedComment } from './socialTypes';
 import type { Post, ResharedRef } from '../types';
 
@@ -104,6 +104,19 @@ export async function createPost(input: CreatePostInput): Promise<string> {
     doc(fb.db, POSTS_COLLECTION, id),
     stripUndefinedForFirestore({ ...payload, createdAt: serverTimestamp() }),
   );
+
+  // Fire-and-forget: notify every mentioned user. Self-mentions and dupes are
+  // filtered inside sendMentionNotifications.
+  if (payload.mentionUids.length > 0) {
+    sendMentionNotifications(
+      payload.mentionUids,
+      input.ownerUid,
+      payload.ownerName,
+      id,
+      text || '',
+    ).catch(() => {});
+  }
+
   return id;
 }
 

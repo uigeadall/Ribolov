@@ -72,7 +72,7 @@ service cloud.firestore {
           && request.resource.data.actorUid == request.auth.uid
           && request.resource.data.actorName is string
           && request.resource.data.actorName.size() <= 120
-          && request.resource.data.type in ['like', 'comment', 'follow', 'storyLike', 'storyComment']
+          && request.resource.data.type in ['like', 'comment', 'follow', 'storyLike', 'storyComment', 'mention']
           && request.resource.data.preview is string
           && request.resource.data.preview.size() <= 200
           && request.resource.data.read == false
@@ -88,6 +88,10 @@ service cloud.firestore {
               && request.resource.data.storyId is string
               && request.resource.data.storyId.size() > 0
               && request.resource.data.storyId.size() <= 128)
+            || (request.resource.data.type == 'mention'
+              && request.resource.data.catchId is string
+              && request.resource.data.catchId.size() > 0
+              && request.resource.data.catchId.size() <= 128)
           );
         allow update: if isSelf(userId)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])
