@@ -184,6 +184,28 @@ service cloud.firestore {
         allow read: if signedIn();
         allow write: if isSelf(uid);
       }
+
+      match /comments/{commentId} {
+        allow read: if signedIn();
+        allow create: if signedIn()
+          && request.resource.data.authorUid == request.auth.uid
+          && request.resource.data.authorName is string
+          && request.resource.data.authorName.size() <= 120
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 2000
+          && request.resource.data.createdAt == request.time;
+        allow update: if signedIn()
+          && resource.data.authorUid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 2000;
+        allow delete: if signedIn() && (
+          resource.data.authorUid == request.auth.uid
+          || get(/databases/$(database)/documents/posts/$(postId)).data.ownerUid == request.auth.uid
+        );
+      }
     }
 
     /** Live "fishing here right now" pins — opt-in temporary location share, auto-expires. */

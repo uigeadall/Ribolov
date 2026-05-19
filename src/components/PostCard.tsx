@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, Pressable, ActionSheetIOS, Alert, Platform,
+  TextInput, ActivityIndicator,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,8 +11,16 @@ import { radius, spacing, typography } from '../theme/typography';
 import type { Post } from '../types';
 import { RichText } from './RichText';
 import { ImageViewer } from './ImageViewer';
-import { subscribePostLike, togglePostLike } from '../services/posts';
+import {
+  subscribePostLike,
+  togglePostLike,
+  subscribePostComments,
+  addPostComment,
+  deletePostComment,
+} from '../services/posts';
+import type { FeedComment } from '../services/socialTypes';
 import { useAvatarUrl } from '../hooks/useAvatarUrl';
+import { useAuth } from '../services/authContext';
 
 type Props = {
   post: Post;
@@ -42,10 +51,16 @@ export function PostCard({
   onPressAuthor, onPressHashtag, onPressMention, onDelete, onReshare,
 }: Props) {
   const { colors } = useTheme();
+  const { configured } = useAuth();
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(post.likeCount ?? 0);
   const [likeBusy, setLikeBusy] = useState(false);
   const [viewerOpen, setViewerOpen] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [comments, setComments] = useState<FeedComment[]>([]);
+  const [commentDraft, setCommentDraft] = useState('');
+  const [sendingComment, setSendingComment] = useState(false);
+  const commentsSubscribedRef = useRef(false);
 
   const isMine = Boolean(myUid && post.ownerUid === myUid);
   const ownerName = post.ownerName || 'Рибар';
@@ -67,6 +82,44 @@ export function PostCard({
   useEffect(() => {
     setLikeCount(post.likeCount ?? 0);
   }, [post.likeCount]);
+
+  // Lazy-subscribe to comments only when the user expands them (saves listener cost).
+  useEffect(() => {
+    if (!commentsOpen || !configured) return;
+    commentsSubscribedRef.current = true;
+    const unsub = subscribePostComments(post.id, setComments);
+    return unsub;
+  }, [commentsOpen, configured, post.id]);
+
+  const onSendComment = useCallback(async () => {
+    if (!myUid || sendingComment) return;
+    const text = commentDraft.trim();
+    if (!text) return;
+    setSendingComment(true);
+    try {
+      await addPostComment(post.id, myUid, myDisplayName, text);
+      setCommentDraft('');
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: unknown) {
+      Alert.alert('Грешка', e instanceof Error ? e.message : 'Неуспешно изпращане.');
+    } finally {
+      setSendingComment(false);
+    }
+  }, [myUid, myDisplayName, commentDraft, sendingComment, post.id]);
+
+  const onDeleteComment = useCallback((commentId: string) => {
+    Alert.alert('Изтрий коментара', undefined, [
+      { text: 'Отказ', style: 'cancel' },
+      {
+        text: 'Изтрий',
+        style: 'destructive',
+        onPress: async () => {
+          try { await deletePostComment(post.id, commentId); }
+          catch { Alert.alert('Грешка', 'Неуспешно изтриване.'); }
+        },
+      },
+    ]);
+  }, [post.id]);
 
   const onToggleLike = useCallback(async () => {
     if (!myUid || likeBusy) return;
@@ -153,6 +206,48 @@ export function PostCard({
     actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5 },
     actionCount: { ...typography.small, color: colors.textMuted, fontSize: 12, fontWeight: '600' },
     actionCountActive: { color: '#E53935' },
+    // Comments
+    commentsPanel: {
+      paddingHorizontal: spacing.lg,
+      paddingBottom: spacing.md,
+      paddingTop: 4,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
+    },
+    commentsEmpty: {
+      ...typography.small,
+      color: colors.textMuted,
+      paddingVertical: spacing.sm,
+      textAlign: 'center',
+    },
+    commentRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
+    },
+    commentAuthor: { ...typography.bodyBold, color: colors.text, fontSize: 13 },
+    commentText: { ...typography.body, color: colors.text, fontSize: 13, lineHeight: 18, marginTop: 1 },
+    commentComposer: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      gap: 8,
+      marginTop: spacing.sm,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
+      paddingTop: spacing.sm,
+    },
+    commentInput: {
+      flex: 1,
+      backgroundColor: colors.surfaceAlt,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 12,
+      paddingVertical: Platform.OS === 'ios' ? 8 : 6,
+      color: colors.text,
+      fontSize: 13,
+      maxHeight: 100,
+    },
     reshareCard: {
       marginHorizontal: spacing.lg,
       marginBottom: spacing.sm,
@@ -290,12 +385,88 @@ export function PostCard({
             <Text style={[styles.actionCount, liked && styles.actionCountActive]}>{likeCount}</Text>
           ) : null}
         </Pressable>
+        <Pressable
+          style={styles.actionBtn}
+          onPress={() => setCommentsOpen((v) => !v)}
+          hitSlop={8}
+        >
+          <Ionicons
+            name={commentsOpen ? 'chatbubble' : 'chatbubble-outline'}
+            size={20}
+            color={commentsOpen ? colors.primary : colors.text}
+          />
+          {(post.commentCount ?? 0) > 0 ? (
+            <Text style={styles.actionCount}>{post.commentCount}</Text>
+          ) : null}
+        </Pressable>
         {onReshare ? (
           <Pressable style={styles.actionBtn} onPress={() => onReshare(post)} hitSlop={8}>
             <Ionicons name="repeat-outline" size={22} color={colors.text} />
           </Pressable>
         ) : null}
       </View>
+
+      {/* Comments panel */}
+      {commentsOpen ? (
+        <View style={styles.commentsPanel}>
+          {comments.length === 0 ? (
+            <Text style={styles.commentsEmpty}>
+              {commentsSubscribedRef.current ? 'Все още няма коментари. Бъди първи!' : 'Зареждане…'}
+            </Text>
+          ) : (
+            <View style={{ gap: 10 }}>
+              {comments.map((c) => {
+                const canDelete = myUid && (c.authorUid === myUid || post.ownerUid === myUid);
+                return (
+                  <View key={c.id} style={styles.commentRow}>
+                    <View style={{ flex: 1 }}>
+                      <Pressable onPress={() => onPressAuthor(c.authorUid, c.authorName)}>
+                        <Text style={styles.commentAuthor}>{c.authorName}</Text>
+                      </Pressable>
+                      <Text style={styles.commentText}>{c.text}</Text>
+                    </View>
+                    {canDelete ? (
+                      <Pressable onPress={() => onDeleteComment(c.id)} hitSlop={8}>
+                        <Ionicons name="trash-outline" size={14} color={colors.textMuted} />
+                      </Pressable>
+                    ) : null}
+                  </View>
+                );
+              })}
+            </View>
+          )}
+
+          {myUid ? (
+            <View style={styles.commentComposer}>
+              <TextInput
+                style={styles.commentInput}
+                placeholder="Напиши коментар…"
+                placeholderTextColor={colors.textMuted}
+                value={commentDraft}
+                onChangeText={setCommentDraft}
+                maxLength={2000}
+                multiline
+                editable={!sendingComment}
+              />
+              <Pressable
+                onPress={onSendComment}
+                disabled={sendingComment || !commentDraft.trim()}
+                hitSlop={8}
+              >
+                {sendingComment ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <Ionicons
+                    name="send"
+                    size={20}
+                    color={commentDraft.trim() ? colors.primary : colors.textMuted}
+                  />
+                )}
+              </Pressable>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
 
       {post.photoUri ? (
         <ImageViewer uri={post.photoUri} visible={viewerOpen} onClose={() => setViewerOpen(false)} />

@@ -1,4 +1,5 @@
 import {
+  addDoc,
   collection,
   doc,
   deleteDoc,
@@ -14,6 +15,7 @@ import {
   increment,
   runTransaction,
   onSnapshot,
+  updateDoc,
   type DocumentSnapshot,
 } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
@@ -21,6 +23,9 @@ import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
 import { uploadLocalPhotoToStorage } from './catchSync';
 import { extractHashtags } from '../utils/textTokens';
+import { allowComment } from './socialRateLimit';
+import { notifyInteraction } from './socialNotifications';
+import type { FeedComment } from './socialTypes';
 import type { Post, ResharedRef } from '../types';
 
 const POSTS_COLLECTION = 'posts';
@@ -175,6 +180,115 @@ export async function getPost(id: string): Promise<Post | null> {
   const fb = requireFirebase();
   const snap = await getDoc(doc(fb.db, POSTS_COLLECTION, id));
   return snap.exists() ? (snap.data() as Post) : null;
+}
+
+/**
+ * Subscribe to comments on a post (chronological, capped at 80).
+ */
+export function subscribePostComments(postId: string, onNext: (comments: FeedComment[]) => void): () => void {
+  const fb = requireFirebase();
+  const q = query(
+    collection(fb.db, POSTS_COLLECTION, postId, 'comments'),
+    orderBy('createdAt', 'asc'),
+    limit(80),
+  );
+  return onSnapshot(q, (snap) => {
+    onNext(
+      snap.docs.map((d) => {
+        const data = d.data() as {
+          authorUid: string;
+          authorName: string;
+          text: string;
+          createdAt?: unknown;
+          editedAt?: unknown;
+          replyToId?: string;
+          replyToName?: string;
+        };
+        return {
+          id: d.id,
+          authorUid: data.authorUid,
+          authorName: data.authorName,
+          text: data.text,
+          createdAt: data.createdAt,
+          editedAt: data.editedAt,
+          replyToId: data.replyToId,
+          replyToName: data.replyToName,
+        };
+      }),
+    );
+  });
+}
+
+export async function addPostComment(
+  postId: string,
+  authorUid: string,
+  authorName: string,
+  text: string,
+  replyTo?: { id: string; name: string },
+): Promise<void> {
+  if (!allowComment(authorUid)) {
+    throw new Error('Твърде много коментари за кратко време. Опитай по-късно.');
+  }
+  const fb = requireFirebase();
+  const trimmed = text.trim();
+  if (!trimmed) return;
+
+  // Look up the post owner now (cheap — single get) so we know whether to
+  // send a notification. We avoid a second round trip later.
+  let ownerUid: string | undefined;
+  try {
+    const snap = await getDoc(doc(fb.db, POSTS_COLLECTION, postId));
+    if (snap.exists()) ownerUid = snap.data()?.ownerUid as string | undefined;
+  } catch { /* ignore */ }
+
+  await addDoc(
+    collection(fb.db, POSTS_COLLECTION, postId, 'comments'),
+    stripUndefinedForFirestore({
+      authorUid,
+      authorName: authorName || 'Рибар',
+      text: trimmed.slice(0, 2000),
+      createdAt: serverTimestamp(),
+      ...(replyTo ? { replyToId: replyTo.id, replyToName: replyTo.name } : {}),
+    }),
+  );
+
+  // Bump the post's commentCount so the badge stays in sync without a re-read.
+  // Best-effort: if this fails (e.g. rules), comments still saved.
+  updateDoc(doc(fb.db, POSTS_COLLECTION, postId), { commentCount: increment(1) }).catch(() => {});
+
+  // Fire-and-forget notification — only when commenter ≠ owner. We piggy-back
+  // on the existing catch-comment notification shape (storing postId in the
+  // catchId slot) so NotificationsScreen renders it the same way. Navigation
+  // from the notification still goes to the catch detail screen, which
+  // gracefully shows "not found" — not ideal but acceptable until the
+  // notifications service grows a separate postId field.
+  if (ownerUid) {
+    notifyInteraction({
+      recipientUid: ownerUid,
+      actorUid: authorUid,
+      actorName: (authorName || 'Рибар').slice(0, 120),
+      type: 'comment',
+      catchId: postId,
+      preview: trimmed.slice(0, 120),
+    }).catch(() => {});
+  }
+}
+
+export async function editPostComment(postId: string, commentId: string, newText: string): Promise<void> {
+  const fb = requireFirebase();
+  const trimmed = newText.trim();
+  if (!trimmed) throw new Error('Текстът не може да е празен.');
+  await updateDoc(doc(fb.db, POSTS_COLLECTION, postId, 'comments', commentId), {
+    text: trimmed.slice(0, 2000),
+    editedAt: serverTimestamp(),
+  });
+}
+
+export async function deletePostComment(postId: string, commentId: string): Promise<void> {
+  const fb = requireFirebase();
+  await deleteDoc(doc(fb.db, POSTS_COLLECTION, postId, 'comments', commentId));
+  // Best-effort decrement
+  updateDoc(doc(fb.db, POSTS_COLLECTION, postId), { commentCount: increment(-1) }).catch(() => {});
 }
 
 /**
