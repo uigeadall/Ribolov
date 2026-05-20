@@ -2,6 +2,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  documentId,
   getDoc,
   getDocs,
   increment,
@@ -11,6 +12,7 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
 } from 'firebase/firestore';
 import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
@@ -96,6 +98,136 @@ export async function toggleTournamentEntryLike(
   await setDoc(likeRef, { uid, likedAt: serverTimestamp() });
   updateDoc(entryRef, { likeCount: increment(1) }).catch(() => {});
   return true;
+}
+
+/** Tournaments the user hosts OR has joined. Merged + de-duped, sorted by
+    endDate (active first, then upcoming, then ended). Used by TournamentsScreen
+    "My tournaments" section. */
+export async function fetchMyTournaments(uid: string): Promise<Tournament[]> {
+  if (!uid) return [];
+  const fb = requireFirebase();
+  const todayIso = new Date().toISOString().slice(0, 10);
+
+  // Hosted: a single index-friendly query on hostUid.
+  const hostedPromise = (async () => {
+    try {
+      const snap = await getDocs(
+        query(collection(fb.db, 'tournaments'), where('hostUid', '==', uid), orderBy('endDate', 'desc'), limit(50))
+      );
+      return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Tournament, 'id'>) }));
+    } catch {
+      return [];
+    }
+  })();
+
+  // Joined: read the subcollection, then hydrate the tournament docs in chunks.
+  const joinedPromise = (async () => {
+    let joinSnap;
+    try {
+      joinSnap = await getDocs(collection(fb.db, 'users', uid, 'joinedTournaments'));
+    } catch {
+      return [];
+    }
+    const ids = joinSnap.docs.map((d) => d.id);
+    if (ids.length === 0) return [];
+    const out: Tournament[] = [];
+    const CHUNK = 30;
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const chunk = ids.slice(i, i + CHUNK);
+      try {
+        const snap = await getDocs(
+          query(collection(fb.db, 'tournaments'), where(documentId(), 'in', chunk))
+        );
+        for (const d of snap.docs) {
+          out.push({ id: d.id, ...(d.data() as Omit<Tournament, 'id'>) });
+        }
+      } catch {
+        // ignore chunk failures
+      }
+    }
+    return out;
+  })();
+
+  const [hosted, joined] = await Promise.all([hostedPromise, joinedPromise]);
+  // Dedupe — a host is auto-joined to their own tournament.
+  const byId = new Map<string, Tournament>();
+  for (const t of hosted) byId.set(t.id, t);
+  for (const t of joined) if (!byId.has(t.id)) byId.set(t.id, t);
+
+  // Sort: active first (endDate >= today), soonest-ending. Then past, most recent first.
+  const all = Array.from(byId.values());
+  all.sort((a, b) => {
+    const aActive = (a.endDate ?? '') >= todayIso;
+    const bActive = (b.endDate ?? '') >= todayIso;
+    if (aActive !== bActive) return aActive ? -1 : 1;
+    if (aActive) return (a.endDate ?? '').localeCompare(b.endDate ?? ''); // soonest end first
+    return (b.endDate ?? '').localeCompare(a.endDate ?? ''); // most-recent past first
+  });
+  return all;
+}
+
+/** Public tournaments anyone can browse. Filters out ones that have already ended
+    and ones explicitly marked isPublic === false. */
+export async function fetchPublicTournaments(maxItems = 50): Promise<Tournament[]> {
+  const fb = requireFirebase();
+  const todayIso = new Date().toISOString().slice(0, 10);
+  try {
+    const snap = await getDocs(
+      query(
+        collection(fb.db, 'tournaments'),
+        where('endDate', '>=', todayIso),
+        orderBy('endDate', 'asc'),
+        limit(maxItems),
+      )
+    );
+    return snap.docs
+      .map((d) => ({ id: d.id, ...(d.data() as Omit<Tournament, 'id'>) }))
+      // isPublic defaults to true if missing (older docs predate the flag).
+      .filter((t) => t.isPublic !== false);
+  } catch {
+    return [];
+  }
+}
+
+/** Returns the tournaments the user has joined whose endDate is today or later,
+    sorted by soonest-ending first. Used by the Home screen "Today" hub to show
+    a live countdown to the next deadline. */
+export async function fetchMyActiveTournaments(uid: string): Promise<Tournament[]> {
+  if (!uid) return [];
+  const fb = requireFirebase();
+  // Read the user's joinedTournaments subcollection — small (subscriber side),
+  // bounded by however many tournaments the user is actually in.
+  let joinSnap;
+  try {
+    joinSnap = await getDocs(collection(fb.db, 'users', uid, 'joinedTournaments'));
+  } catch {
+    return [];
+  }
+  const ids = joinSnap.docs.map((d) => d.id);
+  if (ids.length === 0) return [];
+
+  // Hydrate tournament docs in chunks of 30 — Firestore's `in` limit.
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const results: Tournament[] = [];
+  const CHUNK = 30;
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const chunk = ids.slice(i, i + CHUNK);
+    try {
+      const snap = await getDocs(
+        query(collection(fb.db, 'tournaments'), where(documentId(), 'in', chunk))
+      );
+      for (const d of snap.docs) {
+        const t = { id: d.id, ...(d.data() as Omit<Tournament, 'id'>) };
+        // Keep tournaments that haven't ended yet — string comparison works for
+        // ISO-formatted YYYY-MM-DD dates.
+        if (!t.endDate || t.endDate >= todayIso) results.push(t);
+      }
+    } catch {
+      // ignore chunk failures — partial result is still useful
+    }
+  }
+  results.sort((a, b) => (a.endDate ?? '').localeCompare(b.endDate ?? ''));
+  return results;
 }
 
 export async function getMyLikedEntries(

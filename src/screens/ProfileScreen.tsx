@@ -28,6 +28,7 @@ import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { MenuRow } from '../components/MenuRow';
 import { BadgeIcon } from '../components/BadgeIcon';
+import { ProfileHero, HeroButton } from '../components/ProfileHero';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { accentPresets, type AccentTheme } from '../theme/palette';
@@ -454,6 +455,70 @@ export default function ProfileScreen() {
         scrollContent: {
           paddingBottom: spacing.xxl,
         },
+
+        // ── New: stats card below the redesigned hero ──
+        statsCard: {
+          flexDirection: 'row',
+          marginHorizontal: spacing.lg,
+          marginTop: spacing.lg,
+          borderRadius: radius.lg,
+          backgroundColor: colors.card,
+          borderWidth: 1,
+          borderColor: colors.border,
+          paddingVertical: spacing.md,
+        },
+        statCell: { flex: 1, alignItems: 'center' },
+        statDivider: {
+          width: StyleSheet.hairlineWidth,
+          backgroundColor: colors.border,
+          marginVertical: 4,
+        },
+        statNum: { ...typography.h2, color: colors.text, fontSize: 20, fontWeight: '800' },
+        statLbl: { ...typography.caption, color: colors.textMuted, marginTop: 2, fontSize: 11 },
+
+        // ── New: action row (Edit / Preview) ──
+        actionsRow: {
+          flexDirection: 'row',
+          gap: spacing.sm,
+          marginHorizontal: spacing.lg,
+          marginTop: spacing.md,
+        },
+        actionBtn: {
+          flex: 1,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 6,
+          height: 42,
+          borderRadius: radius.pill,
+          backgroundColor: colors.card,
+          borderWidth: 1,
+          borderColor: colors.border,
+        },
+        actionBtnText: { ...typography.bodyBold, color: colors.primary, fontSize: 13 },
+
+        // ── New: completion nudge as a calm card ──
+        nudgeCard: {
+          marginHorizontal: spacing.lg,
+          marginTop: spacing.md,
+          paddingHorizontal: spacing.md,
+          paddingVertical: spacing.sm,
+          borderRadius: radius.lg,
+          backgroundColor: colors.primarySurface,
+          borderWidth: 1,
+          borderColor: colors.border,
+        },
+        nudgeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+        nudgeText: { ...typography.caption, color: colors.text, flex: 1, fontSize: 12 },
+        nudgePct: { ...typography.caption, color: colors.primary, fontWeight: '800', fontSize: 12 },
+        nudgeBarBg: {
+          height: 5,
+          borderRadius: 3,
+          backgroundColor: colors.border,
+          marginTop: spacing.xs,
+          overflow: 'hidden',
+        },
+        nudgeBarFill: { height: '100%', backgroundColor: colors.primary, borderRadius: 3 },
 
         // ── Hero ──
         hero: {
@@ -1140,163 +1205,100 @@ export default function ProfileScreen() {
         ) : (
           <>
             {/* ════════════════════════════════════════
-                HERO — gradient background
+                HERO + STATS CARD + ACTIONS
+                Uses the shared ProfileHero so this and UserPublicProfileScreen
+                share the same outdoorsy visual language. The old inline hero
+                with the embedded "glass" stats panel is gone — stats now live
+                in their own clean card below the cover.
             ════════════════════════════════════════ */}
-            <View style={styles.hero}>
-              <LinearGradient
-                colors={heroGrad}
-                start={{ x: 0.3, y: 0 }}
-                end={{ x: 0.7, y: 1 }}
-                style={styles.heroBg}
-                pointerEvents="none"
-              />
-
-              <View style={[styles.heroInner, { paddingTop: insets.top + 4 }]}>
-
-                {/* ── Top bar row ── */}
-                <View style={styles.heroBar}>
-                  {/* Left: hamburger menu */}
-                  <Pressable
-                    onPress={() => { void Haptics.selectionAsync(); setSettingsOpen(true); }}
-                    style={styles.heroMenuBtn}
-                    accessibilityRole="button"
-                    accessibilityLabel="Меню"
-                    hitSlop={8}
-                  >
-                    <Ionicons name="menu-outline" size={22} color="#fff" />
-                  </Pressable>
-
-                  {/* Center: subtle app label */}
-                  <Text style={styles.heroBarCenter}>РИБОЛОВ</Text>
-
-                  {/* Right: notifications + theme toggle */}
-                  <View style={styles.heroBarRight}>
-                    <Pressable
-                      onPress={() => navigation.navigate('Notifications')}
-                      style={styles.heroBarIconBtn}
-                      hitSlop={8}
-                      accessibilityRole="button"
-                      accessibilityLabel="Известия"
-                    >
-                      <BadgeIcon
-                        name="notifications-outline"
-                        size={20}
-                        color="rgba(255,255,255,0.9)"
-                        count={unreadNotifs}
-                      />
-                    </Pressable>
-                    <Pressable
-                      onPress={() => { void Haptics.selectionAsync(); toggleMode(); }}
-                      style={styles.heroBarIconBtn}
-                      accessibilityRole="button"
-                      accessibilityLabel={mode === 'dark' ? 'Светла тема' : 'Тъмна тема'}
-                      hitSlop={8}
-                    >
-                      <Ionicons
-                        name={mode === 'dark' ? 'sunny-outline' : 'moon-outline'}
-                        size={20}
-                        color="rgba(255,255,255,0.9)"
-                      />
-                    </Pressable>
-                  </View>
+            <ProfileHero
+              name={displayName.trim() || user.displayName || 'Рибар'}
+              city={city.trim() || undefined}
+              bio={bio.trim() || undefined}
+              photoUrl={avatarUri ?? undefined}
+              initials={initialLetter}
+              onPickAvatar={configured ? pickProfileAvatar : undefined}
+              topLeft={
+                <HeroButton
+                  icon="menu-outline"
+                  onPress={() => { void Haptics.selectionAsync(); setSettingsOpen(true); }}
+                  accessibilityLabel="Меню"
+                />
+              }
+              topRight={
+                <View style={{ flexDirection: 'row', gap: spacing.xs }}>
+                  <HeroButton
+                    icon="notifications-outline"
+                    onPress={() => navigation.navigate('Notifications')}
+                    accessibilityLabel="Известия"
+                    badge={unreadNotifs}
+                  />
+                  <HeroButton
+                    icon={mode === 'dark' ? 'sunny-outline' : 'moon-outline'}
+                    onPress={() => { void Haptics.selectionAsync(); toggleMode(); }}
+                    accessibilityLabel={mode === 'dark' ? 'Светла тема' : 'Тъмна тема'}
+                  />
                 </View>
+              }
+            />
 
-                {/* ── Avatar + name + city + bio ── */}
-                <View style={styles.heroAvatarSection}>
-                  <Pressable
-                    onPress={configured ? pickProfileAvatar : undefined}
-                    disabled={!configured}
-                    accessibilityRole={configured ? 'button' : 'image'}
-                    accessibilityLabel={configured ? 'Промени снимка на профила' : 'Аватар'}
-                  >
-                    <View style={styles.avatarRingWrap}>
-                      <View style={styles.avatarInner}>
-                        {avatarUri ? (
-                          <Image source={{ uri: avatarUri }} style={styles.avatarImg} contentFit="cover" />
-                        ) : (
-                          <Text style={styles.avatarLetter}>{initialLetter}</Text>
-                        )}
-                        {configured ? (
-                          <View style={styles.avatarBadge} pointerEvents="none">
-                            <Ionicons name="camera" size={14} color="#fff" />
-                          </View>
-                        ) : null}
-                      </View>
-                    </View>
-                  </Pressable>
-
-                  <Text style={styles.heroDisplayName} numberOfLines={1}>
-                    {displayName.trim() || user.displayName || 'Рибар'}
-                  </Text>
-                  {city.trim() ? (
-                    <Text style={styles.heroCity} numberOfLines={1}>
-                      📍 {city.trim()}
-                    </Text>
-                  ) : null}
-                  {bio.trim() ? (
-                    <Text style={styles.heroBio} numberOfLines={2}>{bio.trim()}</Text>
-                  ) : null}
-                </View>
-
-                {/* ── Stats strip — glass panel ── */}
-                <View style={styles.heroStatsPanel}>
-                  <View style={styles.heroStatItem}>
-                    <Text style={styles.heroStatNum}>{catchStatsCount}</Text>
-                    <Text style={styles.heroStatLabel}>улова</Text>
-                  </View>
-                  <View style={styles.heroStatDivider} />
-                  <View style={styles.heroStatItem}>
-                    <Text style={styles.heroStatNum}>{catchStatsSpecies}</Text>
-                    <Text style={styles.heroStatLabel}>вида</Text>
-                  </View>
-                  <View style={styles.heroStatDivider} />
-                  <View style={styles.heroStatItem}>
-                    <Text style={styles.heroStatNum}>{catchStatsKg}</Text>
-                    <Text style={styles.heroStatLabel}>кг</Text>
-                  </View>
-                </View>
-
-                {/* ── Action buttons (only when configured) ── */}
-                {configured ? (
-                  <View style={styles.heroActions}>
-                    <Pressable
-                      style={({ pressed }) => [styles.heroActionBtn, pressed && { opacity: 0.75 }]}
-                      onPress={() => { void Haptics.selectionAsync(); setPubExpanded(true); }}
-                      accessibilityRole="button"
-                      accessibilityLabel="Редактирай профил"
-                    >
-                      <Ionicons name="create-outline" size={14} color="#fff" />
-                      <Text style={styles.heroActionBtnText}>Редактирай профил</Text>
-                    </Pressable>
-                    <Pressable
-                      style={({ pressed }) => [styles.heroActionBtn, pressed && { opacity: 0.75 }]}
-                      onPress={openPublicPreview}
-                      accessibilityRole="button"
-                      accessibilityLabel="Публичен изглед"
-                    >
-                      <Ionicons name="eye-outline" size={14} color="#fff" />
-                      <Text style={styles.heroActionBtnText}>Публичен изглед</Text>
-                    </Pressable>
-                  </View>
-                ) : null}
-
-                {/* ── Completion nudge (inside hero) ── */}
-                {completionPct < 100 ? (
-                  <View style={styles.heroNudge}>
-                    <View style={styles.heroNudgeRow}>
-                      <Text style={styles.heroNudgeText}>
-                        {completionHint ? completionHint + ' →' : `Профил ${completionPct}% завършен`}
-                      </Text>
-                      <Text style={styles.heroNudgePct}>{completionPct}%</Text>
-                    </View>
-                    <View style={styles.heroNudgeBarBg}>
-                      <View style={[styles.heroNudgeBarFill, { width: `${completionPct}%` as `${number}%` }]} />
-                    </View>
-                  </View>
-                ) : null}
-
+            {/* ── Stats card — three cells, clean borders, lives below the hero ── */}
+            <View style={styles.statsCard}>
+              <View style={styles.statCell}>
+                <Text style={styles.statNum}>{catchStatsCount}</Text>
+                <Text style={styles.statLbl}>улова</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.statCell}>
+                <Text style={styles.statNum}>{catchStatsSpecies}</Text>
+                <Text style={styles.statLbl}>вида</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.statCell}>
+                <Text style={styles.statNum}>{catchStatsKg}</Text>
+                <Text style={styles.statLbl}>кг</Text>
               </View>
             </View>
+
+            {/* ── Action buttons — outline pill style now that the hero is calmer ── */}
+            {configured ? (
+              <View style={styles.actionsRow}>
+                <Pressable
+                  style={({ pressed }) => [styles.actionBtn, pressed && { opacity: 0.75 }]}
+                  onPress={() => { void Haptics.selectionAsync(); setPubExpanded(true); }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Редактирай профил"
+                >
+                  <Ionicons name="create-outline" size={16} color={colors.primary} />
+                  <Text style={styles.actionBtnText}>Редактирай профил</Text>
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [styles.actionBtn, pressed && { opacity: 0.75 }]}
+                  onPress={openPublicPreview}
+                  accessibilityRole="button"
+                  accessibilityLabel="Публичен изглед"
+                >
+                  <Ionicons name="eye-outline" size={16} color={colors.primary} />
+                  <Text style={styles.actionBtnText}>Публичен изглед</Text>
+                </Pressable>
+              </View>
+            ) : null}
+
+            {/* ── Completion nudge — calmer card style ── */}
+            {completionPct < 100 ? (
+              <View style={styles.nudgeCard}>
+                <View style={styles.nudgeRow}>
+                  <Ionicons name="rocket-outline" size={16} color={colors.primary} />
+                  <Text style={styles.nudgeText}>
+                    {completionHint ? completionHint : `Профил ${completionPct}% завършен`}
+                  </Text>
+                  <Text style={styles.nudgePct}>{completionPct}%</Text>
+                </View>
+                <View style={styles.nudgeBarBg}>
+                  <View style={[styles.nudgeBarFill, { width: `${completionPct}%` as `${number}%` }]} />
+                </View>
+              </View>
+            ) : null}
 
             {/* ════════════════════════════════════════
                 WAVE CONTENT PANEL

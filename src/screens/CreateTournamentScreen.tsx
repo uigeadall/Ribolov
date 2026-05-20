@@ -140,7 +140,7 @@ function formReducer(state: FormState, action: FormAction): FormState {
 
 export default function CreateTournamentScreen() {
   const navigation = useAppNavigation();
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const styles = useMemo(() => createCreateTournamentStyles(colors), [colors]);
   const { user } = useAuth();
 
@@ -294,13 +294,28 @@ export default function CreateTournamentScreen() {
           </Pressable>
         </Card>
         {picking ? (
-          <DateTimePicker
-            mode="date"
-            value={new Date((picking === 'start' ? startDate : endDate) + 'T00:00:00')}
-            onChange={onPickDate}
-            minimumDate={picking === 'end' ? new Date(startDate + 'T00:00:00') : undefined}
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          />
+          // iOS `spinner` inherits the system colour scheme — the wheel becomes
+          // near-invisible if the system theme doesn't match the app theme.
+          // `inline` renders a high-contrast calendar grid; we also force
+          // themeVariant so light/dark always picks the right palette.
+          <Card style={{ marginTop: spacing.sm, padding: 0, overflow: 'hidden' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', padding: spacing.sm }}>
+              <Pressable onPress={() => setPicking(null)} hitSlop={8}>
+                <Text style={{ ...typography.bodyBold, color: colors.primary }}>Готово</Text>
+              </Pressable>
+            </View>
+            <DateTimePicker
+              mode="date"
+              value={new Date((picking === 'start' ? startDate : endDate) + 'T00:00:00')}
+              onChange={onPickDate}
+              minimumDate={picking === 'end' ? new Date(startDate + 'T00:00:00') : undefined}
+              display={Platform.OS === 'ios' ? 'inline' : 'default'}
+              themeVariant={mode === 'dark' ? 'dark' : 'light'}
+              accentColor={colors.primary}
+              textColor={colors.text}
+              locale="bg"
+            />
+          </Card>
         ) : null}
 
         <View style={[styles.toggleRow, { marginTop: spacing.lg }]}>

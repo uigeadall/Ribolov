@@ -11,6 +11,7 @@ import {
   Modal,
   FlatList,
   Clipboard,
+  Linking,
   ToastAndroid,
   Animated,
   PanResponder,
@@ -165,6 +166,14 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [viewerUri, setViewerUri] = useState<string | null>(null);
   const [shareToFriendOpen, setShareToFriendOpen] = useState(false);
+  // Image-load error state — flips when expo-image fails to fetch the photoUri.
+  // A common failure mode is a published catch whose photoUri is still a local
+  // file:// URI because the background upload never completed; we treat that as
+  // an immediate error rather than waiting for the load attempt.
+  const [imageError, setImageError] = useState<string | null>(null);
+  const [imageRetryNonce, setImageRetryNonce] = useState(0);
+  useEffect(() => { setImageError(null); }, [item.photoUri, imageRetryNonce]);
+  const photoLooksLocal = item.photoUri ? item.photoUri.startsWith('file://') : false;
 
   const ownerName = item.ownerName || 'Рибар';
   const initials = ownerName.slice(0, 1).toUpperCase();
@@ -385,12 +394,106 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
         {item.photoUri ? (
           <Pressable onPress={handlePhotoPress}>
             <View style={{ width: '100%', height: photoHeight, backgroundColor: colors.surfaceAlt }}>
-              <Image
-                source={{ uri: item.photoUri }}
-                style={StyleSheet.absoluteFillObject}
-                contentFit="cover"
-                cachePolicy="memory-disk"
-              />
+              {imageError || photoLooksLocal ? (
+                // Fallback for unreachable URIs (failed upload, expired URL, etc.).
+                // Without this the surfaceAlt background would just show as a giant
+                // blank rectangle and the user would have no idea what went wrong.
+                <View style={{
+                  flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8,
+                  paddingHorizontal: 24,
+                }}>
+                  <Ionicons name="fish-outline" size={48} color={colors.textMuted} />
+                  <Text style={{ ...typography.caption, color: colors.textMuted, textAlign: 'center' }}>
+                    {photoLooksLocal
+                      ? 'Снимката още не е качена в облака.'
+                      : 'Снимката не е достъпна.'}
+                  </Text>
+                  {/* Show the start of the URL — usually identifies the hostname
+                      so you can tell at a glance whether it's a Firebase Storage
+                      URL, a Cloudinary URL, or something else weird. */}
+                  {item.photoUri && !photoLooksLocal && __DEV__ ? (
+                    // Dev-only path display so we can debug image-load failures
+                    // without polluting the production UX.
+                    <Text
+                      style={{ ...typography.small, color: colors.textMuted, fontSize: 10, opacity: 0.7, textAlign: 'center' }}
+                      numberOfLines={3}
+                    >
+                      {(() => {
+                        const m = item.photoUri.match(/\/o\/([^?]+)/);
+                        const path = m ? decodeURIComponent(m[1]) : item.photoUri;
+                        return path.slice(0, 140);
+                      })()}
+                    </Text>
+                  ) : null}
+                  {imageError && !photoLooksLocal ? (
+                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                      <Pressable
+                        onPress={() => setImageRetryNonce((n) => n + 1)}
+                        style={{
+                          paddingHorizontal: 14,
+                          paddingVertical: 6,
+                          borderRadius: 14,
+                          backgroundColor: colors.primarySurface,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 4,
+                        }}
+                        hitSlop={8}
+                      >
+                        <Ionicons name="refresh" size={12} color={colors.primary} />
+                        <Text style={{ ...typography.caption, color: colors.primary, fontWeight: '700', fontSize: 12 }}>
+                          Опитай отново
+                        </Text>
+                      </Pressable>
+                      {item.photoUri ? (
+                        <Pressable
+                          onPress={() => {
+                            // Open the URL in the system browser — quickest way
+                            // to tell whether the URL itself is broken vs an
+                            // expo-image / native-fetch issue.
+                            void Linking.openURL(item.photoUri!);
+                          }}
+                          style={{
+                            paddingHorizontal: 14,
+                            paddingVertical: 6,
+                            borderRadius: 14,
+                            backgroundColor: colors.surfaceAlt,
+                            borderWidth: 1,
+                            borderColor: colors.border,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 4,
+                          }}
+                          hitSlop={8}
+                        >
+                          <Ionicons name="open-outline" size={12} color={colors.text} />
+                          <Text style={{ ...typography.caption, color: colors.text, fontWeight: '700', fontSize: 12 }}>
+                            Виж в браузър
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
+                  ) : null}
+                </View>
+              ) : (
+                <Image
+                  // Bump the source URI with a no-op cache-bust query string when
+                  // the user taps retry, so expo-image refetches instead of
+                  // serving the cached failed response.
+                  source={{ uri: imageRetryNonce > 0 ? `${item.photoUri}#r=${imageRetryNonce}` : item.photoUri }}
+                  style={StyleSheet.absoluteFillObject}
+                  contentFit="cover"
+                  cachePolicy="memory-disk"
+                  onError={(e) => {
+                    const message = e?.error ?? 'unknown';
+                    if (__DEV__) {
+                      // eslint-disable-next-line no-console
+                      console.warn('[FeedPost] image failed to load', { catchId: item.id, photoUri: item.photoUri, error: message });
+                    }
+                    setImageError(message);
+                  }}
+                />
+              )}
               {/* Floating double-tap heart */}
               <Animated.Text
                 style={{

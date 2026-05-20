@@ -754,16 +754,33 @@ export default function LogbookScreen() {
           </ScrollView>
         ) : null}
 
-        {/* Date pickers */}
+        {/* Date pickers. iOS `inline` calendar grid; themeVariant locked to app theme
+            so the wheel doesn't go invisible when system + app themes disagree. */}
         {pickFrom ? (
           <>
-            <DateTimePicker mode="date" value={dateFrom ?? new Date()} display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={(e, d) => { if (Platform.OS === 'android') setPickFrom(false); if (e.type === 'set' && d) setDateFrom(d); }} />
+            <DateTimePicker
+              mode="date"
+              value={dateFrom ?? new Date()}
+              display={Platform.OS === 'ios' ? 'inline' : 'default'}
+              themeVariant={mode === 'dark' ? 'dark' : 'light'}
+              accentColor={colors.primary}
+              textColor={colors.text}
+              onChange={(e, d) => { if (Platform.OS === 'android') setPickFrom(false); if (e.type === 'set' && d) setDateFrom(d); }}
+            />
             {Platform.OS === 'ios' ? <View style={{ paddingHorizontal: spacing.xl, paddingBottom: spacing.sm }}><Button title="Готово" variant="secondary" compact onPress={() => setPickFrom(false)} /></View> : null}
           </>
         ) : null}
         {pickTo ? (
           <>
-            <DateTimePicker mode="date" value={dateTo ?? new Date()} display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={(e, d) => { if (Platform.OS === 'android') setPickTo(false); if (e.type === 'set' && d) setDateTo(d); }} />
+            <DateTimePicker
+              mode="date"
+              value={dateTo ?? new Date()}
+              display={Platform.OS === 'ios' ? 'inline' : 'default'}
+              themeVariant={mode === 'dark' ? 'dark' : 'light'}
+              accentColor={colors.primary}
+              textColor={colors.text}
+              onChange={(e, d) => { if (Platform.OS === 'android') setPickTo(false); if (e.type === 'set' && d) setDateTo(d); }}
+            />
             {Platform.OS === 'ios' ? <View style={{ paddingHorizontal: spacing.xl, paddingBottom: spacing.sm }}><Button title="Готово" variant="secondary" compact onPress={() => setPickTo(false)} /></View> : null}
           </>
         ) : null}

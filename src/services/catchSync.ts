@@ -82,19 +82,28 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
   throw lastErr;
 }
 
+/** Poll for the Resize Images extension's webp variant of an uploaded file.
+    The extension typically completes in 1–3 seconds for normal-sized photos
+    but can take longer on cold-start. 15 seconds is forgiving without
+    blocking the save flow forever. Polls every 1.5s. */
 async function waitForResizedUrl(
   storage: ReturnType<typeof requireFirebase>['storage'],
   originalPath: string,
   suffix: string,
-  maxWaitMs = 6_000
+  maxWaitMs = 15_000,
 ): Promise<string | null> {
   const resizedPath = originalPath.replace(/\.[^.]+$/, `${suffix}.webp`);
   const deadline = Date.now() + maxWaitMs;
+  let attempt = 0;
   while (Date.now() < deadline) {
+    attempt += 1;
     try {
-      return await getDownloadURL(ref(storage, resizedPath));
+      const url = await getDownloadURL(ref(storage, resizedPath));
+      // eslint-disable-next-line no-console
+      console.log('[catchSync] resize variant ready', { attempt, resizedPath });
+      return url;
     } catch {
-      await new Promise((r) => setTimeout(r, 3000));
+      await new Promise((r) => setTimeout(r, 1500));
     }
   }
   return null;
@@ -108,12 +117,33 @@ export async function uploadLocalPhotoToStorage(
   const extMatch = uri.split('?')[0].match(/\.(jpg|jpeg|png|webp)$/i);
   const ext = extMatch ? extMatch[1].toLowerCase() : 'jpg';
   const contentType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-  const storageRef = ref(fb.storage, storagePath);
   return withRetry(async () => {
     const currentUser = fb.auth.currentUser;
     if (!currentUser) throw new Error('Не сте влезли в профила');
     const token = await getIdToken(currentUser);
     const { storageBucket } = getFirebaseWebConfig();
+
+    // Sanity-check the source file before uploading. If ImagePicker's temp
+    // file has been cleaned up (a known Expo Go quirk between camera capture
+    // and background sync), uploadAsync silently sends 0 bytes and the
+    // "upload" returns 200 with empty metadata — which is exactly what we've
+    // been seeing.
+    const info = await FileSystem.getInfoAsync(uri);
+    if (!info.exists) {
+      throw new Error(`Source file missing: ${uri}`);
+    }
+    const fileSize = 'size' in info && typeof info.size === 'number' ? info.size : 0;
+    if (fileSize === 0) {
+      throw new Error(`Source file is 0 bytes: ${uri}`);
+    }
+
+    // eslint-disable-next-line no-console
+    console.log('[catchSync] uploading', {
+      uri,
+      bytes: fileSize,
+      to: `${storageBucket}/${storagePath}`,
+    });
+
     const result = await FileSystem.uploadAsync(
       `https://firebasestorage.googleapis.com/v0/b/${storageBucket}/o?uploadType=media&name=${encodeURIComponent(storagePath)}`,
       uri,
@@ -123,10 +153,45 @@ export async function uploadLocalPhotoToStorage(
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': contentType },
       },
     );
+
     if (result.status < 200 || result.status >= 300) {
       throw new Error(`Storage upload HTTP ${result.status}: ${result.body.slice(0, 200)}`);
     }
-    return getDownloadURL(storageRef);
+
+    // Verify the upload response — Firebase Storage returns JSON metadata
+    // including `size`. If `size` is missing or 0, the upload "succeeded"
+    // (HTTP 200) but didn't actually write the file body.
+    let uploadedSize = 0;
+    let uploadedName = '';
+    try {
+      const meta = JSON.parse(result.body) as { size?: string; name?: string };
+      uploadedSize = parseInt(meta.size ?? '0', 10);
+      uploadedName = meta.name ?? '';
+    } catch {
+      // Non-JSON response — log it so we can see what we got.
+    }
+
+    // eslint-disable-next-line no-console
+    console.log('[catchSync] upload response', {
+      status: result.status,
+      uploadedSize,
+      uploadedName,
+      bodyPreview: result.body.slice(0, 400),
+    });
+
+    if (uploadedSize === 0 || !uploadedName) {
+      throw new Error(
+        `Firebase Storage upload reported 0-byte file. Response: ${result.body.slice(0, 200)}`,
+      );
+    }
+
+    // Build the download URL using the actual bucket the upload response
+    // reported (firebaseStorageBucket from config) — uploads land in that
+    // bucket, downloads must use the same.
+    const url =
+      `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(storageBucket)}` +
+      `/o/${encodeURIComponent(uploadedName)}?alt=media`;
+    return url;
   });
 }
 
@@ -147,7 +212,21 @@ export async function ensureCatchPhotoUploadedForCloud(c: Catch, ownerUid: strin
       const ext = extMatch ? extMatch[1].toLowerCase() : 'jpg';
       const path = `publicCatchPhotos/${ownerUid}/${c.id}/${Date.now()}.${ext}`;
       const url = await uploadLocalPhotoToStorage(fb, uri, path);
+      // This project has Firebase's "Resize Images" extension installed, which
+      // creates a `_1200x1200.webp` variant on every upload AND deletes the
+      // original by default. The variant is written via Admin SDK so it gets
+      // a proper `firebaseStorageDownloadTokens` metadata field — which means
+      // its `getDownloadURL` returns a tokenized URL that works for anonymous
+      // fetchers (the original URL we built does not, since raw POST uploads
+      // can't generate that token). Wait for the variant, use it as photoUri.
       const resizedUrl = await waitForResizedUrl(fb.storage, path, '_1200x1200');
+      if (resizedUrl) {
+        // eslint-disable-next-line no-console
+        console.log('[catchSync] using resized variant', { resizedUrl: resizedUrl.slice(0, 120) });
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn('[catchSync] resize variant not ready after 6s, falling back to original (may 404 if extension deletes originals)');
+      }
       updated = { ...updated, photoUri: resizedUrl ?? url, photoStoragePath: path };
     }
   }

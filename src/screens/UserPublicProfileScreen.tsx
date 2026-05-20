@@ -10,18 +10,16 @@ import {
   Dimensions,
 } from 'react-native';
 import { FishingRefreshControl } from '../components/FishingRefreshControl';
-
-const SW = Dimensions.get('window').width;
 import { useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { Skeleton } from '../components/Skeleton';
-import { FeedPost, FeedItem } from '../components/FeedPost';
+import { ProfileHero, HeroButton } from '../components/ProfileHero';
+import { FeedItem } from '../components/FeedPost';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
@@ -40,88 +38,16 @@ import {
 import { sendFollowNotification } from '../services/socialFeed';
 import { handleError } from '../utils/handleError';
 import { blockUser, unblockUser } from '../services/blockUser';
-import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
 import { useAppNavigation } from '../navigation/useAppNavigation';
+
+const SW = Dimensions.get('window').width;
+const GRID_PAD = spacing.lg;
+const GRID_GAP = 2;
+const GRID_CELL = (SW - GRID_PAD * 2 - GRID_GAP * 2) / 3;
 
 function createStyles(colors: AppColors) {
   return StyleSheet.create({
-    /* ── nav bar ── */
-    navBar: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm,
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      zIndex: 10,
-    },
-    navBtn: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      backgroundColor: 'rgba(0,0,0,0.32)',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    navTitle: {
-      ...typography.bodyBold,
-      color: colors.white,
-      flex: 1,
-      textAlign: 'center',
-    },
-
-    /* ── cover / hero ── */
-    coverWrap: { height: 200, width: '100%' },
-    gradient: { ...StyleSheet.absoluteFillObject },
-    avatarWrap: {
-      position: 'absolute',
-      bottom: -48,
-      alignSelf: 'center',
-      width: 96,
-      height: 96,
-      borderRadius: 48,
-      borderWidth: 3,
-      borderColor: colors.card,
-      backgroundColor: colors.card,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.18,
-      shadowRadius: 8,
-      elevation: 8,
-      overflow: 'hidden',
-    },
-    avatarImg: { width: '100%', height: '100%' },
-    avatarInitials: {
-      width: '100%',
-      height: '100%',
-      backgroundColor: colors.primary,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    avatarText: { color: colors.white, fontSize: 34, fontWeight: '800' },
-
-    /* ── identity ── */
-    identity: { alignItems: 'center', marginTop: 56, paddingHorizontal: spacing.lg },
-    name: { ...typography.h2, color: colors.text, fontSize: 22, letterSpacing: -0.3 },
-    cityRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-      marginTop: spacing.xs,
-    },
-    cityText: { ...typography.caption, color: colors.textMuted },
-    bio: {
-      ...typography.body,
-      color: colors.textMuted,
-      textAlign: 'center',
-      lineHeight: 22,
-      marginTop: spacing.sm,
-    },
-
-    /* ── stats strip ── */
+    /* ── stats card ── */
     statsCard: {
       flexDirection: 'row',
       marginHorizontal: spacing.lg,
@@ -130,30 +56,12 @@ function createStyles(colors: AppColors) {
       backgroundColor: colors.card,
       borderWidth: 1,
       borderColor: colors.border,
-      overflow: 'hidden',
-    },
-    statCell: {
-      flex: 1,
-      alignItems: 'center',
       paddingVertical: spacing.md,
     },
-    statDivider: {
-      width: 1,
-      backgroundColor: colors.border,
-      marginVertical: spacing.sm,
-    },
-    statNum: {
-      ...typography.h2,
-      color: colors.text,
-      fontSize: 20,
-      fontWeight: '800',
-    },
-    statLbl: {
-      ...typography.caption,
-      color: colors.textMuted,
-      marginTop: 2,
-      fontSize: 11,
-    },
+    statCell: { flex: 1, alignItems: 'center' },
+    statDivider: { width: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginVertical: 4 },
+    statNum: { ...typography.h2, color: colors.text, fontSize: 20, fontWeight: '800' },
+    statLbl: { ...typography.caption, color: colors.textMuted, marginTop: 2, fontSize: 11 },
 
     /* ── actions ── */
     actionsRow: {
@@ -164,7 +72,7 @@ function createStyles(colors: AppColors) {
     },
     followBtn: {
       flex: 1,
-      height: 44,
+      height: 46,
       borderRadius: radius.pill,
       alignItems: 'center',
       justifyContent: 'center',
@@ -172,16 +80,12 @@ function createStyles(colors: AppColors) {
       gap: 6,
     },
     followBtnActive: { backgroundColor: colors.primary },
-    followBtnInactive: {
-      backgroundColor: colors.card,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    followBtnText: { ...typography.bodyBold, color: colors.white, fontSize: 15 },
+    followBtnInactive: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
+    followBtnText: { ...typography.bodyBold, color: '#fff', fontSize: 15 },
     followBtnTextInactive: { ...typography.bodyBold, color: colors.text, fontSize: 15 },
     msgBtn: {
-      width: 44,
-      height: 44,
+      width: 46,
+      height: 46,
       borderRadius: radius.pill,
       backgroundColor: colors.card,
       borderWidth: 1,
@@ -189,76 +93,58 @@ function createStyles(colors: AppColors) {
       alignItems: 'center',
       justifyContent: 'center',
     },
-
-    /* ── best catch highlight ── */
-    highlightCard: {
-      marginHorizontal: spacing.lg,
-      marginTop: spacing.lg,
-      borderRadius: radius.lg,
-      overflow: 'hidden',
-      backgroundColor: colors.card,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    highlightPhoto: { width: '100%', height: 160 },
-    highlightOverlay: {
-      ...StyleSheet.absoluteFillObject,
-      justifyContent: 'flex-end',
-      padding: spacing.md,
-    },
-    highlightBadge: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 6,
-      backgroundColor: 'rgba(0,0,0,0.55)',
-      alignSelf: 'flex-start',
-      paddingHorizontal: spacing.sm,
-      paddingVertical: 4,
-      borderRadius: radius.pill,
-      marginBottom: spacing.xs,
-    },
-    highlightBadgeText: { ...typography.caption, color: '#FFD700', fontWeight: '700' },
-    highlightTitle: { ...typography.h3, color: colors.white, fontSize: 16 },
-    highlightMeta: { ...typography.caption, color: 'rgba(255,255,255,0.78)', marginTop: 2 },
-    highlightNoPhoto: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      padding: spacing.md,
-      gap: spacing.md,
-    },
-    highlightIconWrap: {
-      width: 48,
-      height: 48,
-      borderRadius: 24,
-      backgroundColor: colors.primarySurface,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    highlightNoPhotoText: { ...typography.bodyBold, color: colors.text },
-    highlightNoPhotoMeta: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
 
     /* ── section header ── */
     sectionHeader: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'space-between',
+      gap: spacing.sm,
       marginHorizontal: spacing.lg,
       marginTop: spacing.xl,
       marginBottom: spacing.sm,
     },
+    sectionAccent: { width: 4, height: 18, borderRadius: 2, backgroundColor: colors.primary },
     sectionTitle: { ...typography.h3, color: colors.text },
     sectionBadge: {
       backgroundColor: colors.primarySurface,
       paddingHorizontal: spacing.sm,
       paddingVertical: 3,
       borderRadius: radius.pill,
+      marginLeft: 'auto',
     },
     sectionBadgeText: { ...typography.caption, color: colors.primary, fontWeight: '700', fontSize: 11 },
 
+    /* ── grid ── */
+    gridWrap: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      paddingHorizontal: GRID_PAD,
+      gap: GRID_GAP,
+    },
+    gridCell: {
+      width: GRID_CELL,
+      height: GRID_CELL,
+      backgroundColor: colors.surfaceAlt,
+      alignItems: 'center',
+      justifyContent: 'center',
+      overflow: 'hidden',
+      borderRadius: 4,
+    },
+    gridImg: { width: '100%', height: '100%' },
+    gridTrophy: {
+      position: 'absolute',
+      top: 6,
+      right: 6,
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      backgroundColor: 'rgba(0,0,0,0.55)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+
     /* ── misc ── */
-    center: { flex: 1, justifyContent: 'center', padding: spacing.xl },
-    hint: { ...typography.body, color: colors.textMuted, textAlign: 'center', lineHeight: 22 },
-    selfHint: {
+    hint: {
       ...typography.caption,
       color: colors.textMuted,
       textAlign: 'center',
@@ -300,14 +186,16 @@ export default function UserPublicProfileScreen() {
   const [followBusy, setFollowBusy] = useState(false);
   const [catches, setCatches] = useState<FeedItem[]>([]);
   const [blocked, setBlocked] = useState(false);
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
   const isSelf = user?.uid === uid;
 
-  const bestCatch = useMemo(
-    () => catches.reduce<FeedItem | null>((m, c) => (!m || (c.weightKg ?? 0) > (m.weightKg ?? 0) ? c : m), null),
-    [catches]
-  );
+  const bestCatchId = useMemo(() => {
+    let best: FeedItem | null = null;
+    for (const c of catches) {
+      if (!best || (c.weightKg ?? 0) > (best.weightKg ?? 0)) best = c;
+    }
+    return best?.id ?? null;
+  }, [catches]);
   const totalKg = useMemo(() => catches.reduce((s, c) => s + (c.weightKg ?? 0), 0), [catches]);
 
   const handleBlockMenu = () => {
@@ -438,28 +326,18 @@ export default function UserPublicProfileScreen() {
     return (
       <Screen padded={false}>
         <View style={{ flex: 1, paddingTop: insets.top }}>
-          {/* Cover band */}
-          <Skeleton height={200} width="100%" borderRadius={0} />
-          {/* Avatar circle that overlaps the cover */}
-          <View style={{ alignItems: 'center', marginTop: -48 }}>
-            <Skeleton width={96} height={96} borderRadius={48} />
+          <Skeleton height={220} width="100%" borderRadius={0} />
+          <View style={{ alignItems: 'center', marginTop: -54 }}>
+            <Skeleton width={108} height={108} borderRadius={54} />
           </View>
-          {/* Name + city */}
           <View style={{ alignItems: 'center', marginTop: spacing.md, gap: 8 }}>
-            <Skeleton width={160} height={20} borderRadius={4} />
+            <Skeleton width={180} height={22} borderRadius={4} />
             <Skeleton width={110} height={12} borderRadius={4} />
-            <Skeleton width={240} height={14} borderRadius={4} />
           </View>
-          {/* Stats strip */}
           <View style={{ flexDirection: 'row', marginHorizontal: spacing.lg, marginTop: spacing.lg, gap: spacing.sm }}>
-            <Skeleton height={64} width="32%" />
-            <Skeleton height={64} width="32%" />
-            <Skeleton height={64} width="32%" />
-          </View>
-          {/* Action row */}
-          <View style={{ flexDirection: 'row', marginHorizontal: spacing.lg, marginTop: spacing.md, gap: spacing.sm }}>
-            <Skeleton height={44} width="80%" borderRadius={radius.pill} />
-            <Skeleton height={44} width={44} borderRadius={radius.pill} />
+            <Skeleton height={72} width="32%" />
+            <Skeleton height={72} width="32%" />
+            <Skeleton height={72} width="32%" />
           </View>
         </View>
       </Screen>
@@ -479,48 +357,31 @@ export default function UserPublicProfileScreen() {
     );
   }
 
+  const initials = summaryName.slice(0, 1).toUpperCase();
+
   const ListHeader = (
     <View>
-      {/* ── Cover + Avatar ── */}
-      <View style={styles.coverWrap}>
-        <LinearGradient
-          colors={[colors.primary, `${colors.primary}99`, colors.background]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.gradient}
-        />
-        <View style={[styles.avatarWrap]}>
-          {photoUrl ? (
-            <Image
-              source={{ uri: photoUrl }}
-              style={styles.avatarImg}
-              contentFit="cover"
-              cachePolicy="memory-disk"
-              transition={200}
-              recyclingKey={photoUrl}
-            />
-          ) : (
-            <View style={styles.avatarInitials}>
-              <Text style={styles.avatarText}>{summaryName.slice(0, 1).toUpperCase()}</Text>
-            </View>
-          )}
-        </View>
-      </View>
+      <ProfileHero
+        name={summaryName}
+        city={city}
+        bio={bio}
+        photoUrl={photoUrl}
+        initials={initials}
+        topLeft={<HeroButton icon="chevron-back" onPress={() => navigation.goBack()} accessibilityLabel="Назад" />}
+        topRight={
+          user && !isSelf
+            ? <HeroButton icon="ellipsis-horizontal" onPress={handleBlockMenu} accessibilityLabel="Опции" />
+            : undefined
+        }
+      />
 
-      {/* ── Name / City / Bio ── */}
-      <View style={styles.identity}>
-        <Text style={styles.name}>{summaryName}</Text>
-        {city ? (
-          <View style={styles.cityRow}>
-            <Ionicons name="location-outline" size={14} color={colors.textMuted} />
-            <Text style={styles.cityText}>{city}</Text>
-          </View>
-        ) : null}
-        {bio ? <Text style={styles.bio}>{bio}</Text> : null}
-      </View>
-
-      {/* ── Stats strip ── */}
+      {/* Stats — three cells: catches / followers / following */}
       <View style={styles.statsCard}>
+        <View style={styles.statCell}>
+          <Text style={styles.statNum}>{catches.length}</Text>
+          <Text style={styles.statLbl}>Улови</Text>
+        </View>
+        <View style={styles.statDivider} />
         <View style={styles.statCell}>
           <Text style={styles.statNum}>{followerCount}</Text>
           <Text style={styles.statLbl}>Последователи</Text>
@@ -530,25 +391,23 @@ export default function UserPublicProfileScreen() {
           <Text style={styles.statNum}>{followingCount}</Text>
           <Text style={styles.statLbl}>Следва</Text>
         </View>
-        <View style={styles.statDivider} />
-        <View style={styles.statCell}>
-          <Text style={styles.statNum}>{catches.length}</Text>
-          <Text style={styles.statLbl}>Улови</Text>
-        </View>
-        <View style={styles.statDivider} />
-        <View style={styles.statCell}>
-          <Text style={styles.statNum}>{totalKg > 0 ? totalKg.toFixed(1) : '—'}</Text>
-          <Text style={styles.statLbl}>кг общо</Text>
-        </View>
       </View>
 
-      {/* ── Action buttons ── */}
+      {/* Bonus stat — total kg, only when there are catches */}
+      {totalKg > 0 ? (
+        <Text style={[styles.hint, { marginTop: spacing.sm }]}>
+          <Text style={{ color: colors.primary, fontWeight: '700' }}>{totalKg.toFixed(1)} кг</Text>
+          <Text> общо споделени</Text>
+        </Text>
+      ) : null}
+
+      {/* Actions */}
       {!user ? (
-        <Text style={[styles.selfHint, { marginTop: spacing.lg }]}>
+        <Text style={[styles.hint, { marginTop: spacing.lg }]}>
           Влез в акаунт, за да следваш или да пишеш на този рибар.
         </Text>
       ) : isSelf ? (
-        <Text style={styles.selfHint}>
+        <Text style={styles.hint}>
           Така изглежда профилът ти за другите рибари.
         </Text>
       ) : (
@@ -559,13 +418,13 @@ export default function UserPublicProfileScreen() {
             disabled={followBusy}
           >
             {followBusy ? (
-              <ActivityIndicator size="small" color={following ? colors.text : colors.white} />
+              <ActivityIndicator size="small" color={following ? colors.text : '#fff'} />
             ) : (
               <>
                 <Ionicons
                   name={following ? 'checkmark-circle' : 'person-add-outline'}
-                  size={17}
-                  color={following ? colors.text : colors.white}
+                  size={18}
+                  color={following ? colors.text : '#fff'}
                 />
                 <Text style={following ? styles.followBtnTextInactive : styles.followBtnText}>
                   {following ? 'Следваш' : 'Следвай'}
@@ -579,96 +438,15 @@ export default function UserPublicProfileScreen() {
         </View>
       )}
 
-      {/* ── Best catch highlight ── */}
-      {bestCatch ? (
-        <>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Най-голям улов</Text>
-          </View>
-          <View style={styles.highlightCard}>
-            {bestCatch.photoUri ? (
-              <View>
-                <Image
-                  source={{ uri: bestCatch.photoUri }}
-                  style={styles.highlightPhoto}
-                  contentFit="cover"
-                  cachePolicy="memory-disk"
-                  transition={200}
-                />
-                <LinearGradient
-                  colors={['transparent', 'rgba(0,0,0,0.72)']}
-                  style={styles.highlightOverlay}
-                  pointerEvents="none"
-                >
-                  <View style={styles.highlightBadge}>
-                    <Ionicons name="trophy" size={12} color="#FFD700" />
-                    <Text style={styles.highlightBadgeText}>Личен рекорд</Text>
-                  </View>
-                  <Text style={styles.highlightTitle}>{bestCatch.speciesName}</Text>
-                  <Text style={styles.highlightMeta}>
-                    {bestCatch.weightKg != null ? `${bestCatch.weightKg} кг` : ''}
-                    {bestCatch.lengthCm != null ? ` · ${bestCatch.lengthCm} см` : ''}
-                    {bestCatch.location?.name ? ` · ${bestCatch.location.name}` : ''}
-                  </Text>
-                </LinearGradient>
-              </View>
-            ) : (
-              <View style={styles.highlightNoPhoto}>
-                <View style={styles.highlightIconWrap}>
-                  <Ionicons name="trophy-outline" size={24} color={colors.primary} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.highlightNoPhotoText}>{bestCatch.speciesName}</Text>
-                  <Text style={styles.highlightNoPhotoMeta}>
-                    {bestCatch.weightKg != null ? `${bestCatch.weightKg} кг` : ''}
-                    {bestCatch.lengthCm != null ? ` · ${bestCatch.lengthCm} см` : ''}
-                    {bestCatch.date ? ` · ${new Date(bestCatch.date).toLocaleDateString('bg-BG')}` : ''}
-                  </Text>
-                </View>
-              </View>
-            )}
-          </View>
-        </>
-      ) : null}
-
-      {/* ── Feed section header with view toggle ── */}
+      {/* Catches grid header */}
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Публична лента</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-          {catches.length > 0 ? (
-            <View style={styles.sectionBadge}>
-              <Text style={styles.sectionBadgeText}>{catches.length}</Text>
-            </View>
-          ) : null}
-          {catches.length > 0 ? (
-            <View style={{ flexDirection: 'row', borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, overflow: 'hidden' }}>
-              <Pressable
-                onPress={() => setViewMode('grid')}
-                style={{
-                  paddingHorizontal: spacing.sm,
-                  paddingVertical: 4,
-                  backgroundColor: viewMode === 'grid' ? colors.primary : colors.card,
-                  borderBottomWidth: viewMode === 'grid' ? 2 : 0,
-                  borderBottomColor: colors.primary,
-                }}
-              >
-                <Ionicons name="grid-outline" size={16} color={viewMode === 'grid' ? colors.white : colors.textMuted} />
-              </Pressable>
-              <Pressable
-                onPress={() => setViewMode('list')}
-                style={{
-                  paddingHorizontal: spacing.sm,
-                  paddingVertical: 4,
-                  backgroundColor: viewMode === 'list' ? colors.primary : colors.card,
-                  borderBottomWidth: viewMode === 'list' ? 2 : 0,
-                  borderBottomColor: colors.primary,
-                }}
-              >
-                <Ionicons name="list-outline" size={16} color={viewMode === 'list' ? colors.white : colors.textMuted} />
-              </Pressable>
-            </View>
-          ) : null}
-        </View>
+        <View style={styles.sectionAccent} />
+        <Text style={styles.sectionTitle}>Улови</Text>
+        {catches.length > 0 ? (
+          <View style={styles.sectionBadge}>
+            <Text style={styles.sectionBadgeText}>{catches.length}</Text>
+          </View>
+        ) : null}
       </View>
 
       {catches.length === 0 ? (
@@ -676,87 +454,49 @@ export default function UserPublicProfileScreen() {
           <Ionicons name="fish-outline" size={40} color={colors.textMuted} />
           <Text style={styles.emptyText}>Няма споделени улови все още.</Text>
         </View>
-      ) : null}
-
-      {/* ── Grid view ── */}
-      {viewMode === 'grid' && catches.length > 0 ? (
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+      ) : (
+        // 3-col grid with trophy badge on the best catch. No more duplicated highlight.
+        <View style={styles.gridWrap}>
           {catches.map((item) => (
             <Pressable
               key={item.id}
               onPress={() => (navigation as any).navigate('LogbookTab', { screen: 'CatchDetail', params: { id: item.id } })}
-              style={{
-                width: SW / 3,
-                height: SW / 3,
-                borderRightWidth: StyleSheet.hairlineWidth,
-                borderBottomWidth: StyleSheet.hairlineWidth,
-                borderColor: colors.border,
-                backgroundColor: colors.primarySurface,
-                alignItems: 'center',
-                justifyContent: 'center',
-                overflow: 'hidden',
-              }}
+              style={styles.gridCell}
             >
               {item.photoUri ? (
                 <Image
                   source={{ uri: item.photoUri }}
-                  style={{ width: SW / 3, height: SW / 3 }}
+                  style={styles.gridImg}
                   contentFit="cover"
                   cachePolicy="memory-disk"
                 />
               ) : (
-                <Text style={{ fontSize: 28 }}>🐟</Text>
+                <Text style={{ fontSize: 32 }}>🐟</Text>
               )}
+              {item.id === bestCatchId ? (
+                <View style={styles.gridTrophy}>
+                  <Ionicons name="trophy" size={12} color="#FFD700" />
+                </View>
+              ) : null}
             </Pressable>
           ))}
         </View>
-      ) : null}
+      )}
     </View>
   );
 
   return (
     <Screen padded={false} safeAreaEdges={['left', 'right']}>
-      {/* Floating nav bar over the cover */}
-      <View style={[styles.navBar, { top: insets.top }]}>
-        <Pressable style={styles.navBtn} onPress={() => navigation.goBack()} hitSlop={8}>
-          <Ionicons name="chevron-back" size={22} color={colors.white} />
-        </Pressable>
-        <Text style={styles.navTitle} numberOfLines={1}>{summaryName}</Text>
-        {user && !isSelf ? (
-          <Pressable style={styles.navBtn} onPress={handleBlockMenu} hitSlop={8}>
-            <Ionicons name="ellipsis-horizontal" size={20} color={colors.white} />
-          </Pressable>
-        ) : (
-          <View style={{ width: 36 }} />
-        )}
-      </View>
-
       <FlatList
-        data={viewMode === 'list' ? catches : []}
-        extraData={{ photoUrl, summaryName, city, bio, following, followerCount, viewMode }}
-        keyExtractor={(item) => item.id}
+        data={[]}
+        extraData={{ photoUrl, summaryName, city, bio, following, followerCount, followingCount }}
+        keyExtractor={() => 'x'}
         ListHeaderComponent={ListHeader}
         contentContainerStyle={{ paddingBottom: spacing.xxl + insets.bottom }}
         refreshControl={
           <FishingRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
-        ItemSeparatorComponent={() => <View style={{ height: spacing.md }} />}
-        ListFooterComponent={<View style={{ height: spacing.lg }} />}
-        {...keyboardAwareScrollProps}
-        renderItem={({ item }) => (
-          <View style={{ paddingHorizontal: spacing.lg }}>
-            <FeedPost
-              item={item}
-              myUid={user?.uid}
-              myDisplayName={user?.displayName ?? user?.email ?? 'Аз'}
-              socialEnabled={Boolean(configured && user)}
-              onPressAuthor={(authorUid, name) => {
-                if (authorUid === uid) return;
-                navigation.navigate('UserPublicProfile', { uid: authorUid, displayName: name });
-              }}
-            />
-          </View>
-        )}
+        renderItem={null}
       />
     </Screen>
   );

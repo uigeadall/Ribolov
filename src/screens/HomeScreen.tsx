@@ -30,7 +30,10 @@ import { haversineKm } from '../services/leaderboards';
 import { BiteForecast } from '../components/BiteForecast';
 import { FeaturedAnglerCard } from '../components/FeaturedAnglerCard';
 import { OnboardingChecklist } from '../components/OnboardingChecklist';
-import { getFollowingCount } from '../services/social';
+import { getFollowingCount, getFollowing } from '../services/social';
+import { fetchPublicFeed, type CloudCatch } from '../services/catchSync';
+import { fetchMyActiveTournaments } from '../services/tournaments';
+import type { Tournament } from '../types';
 import { scheduleForecastNotificationIfGood } from '../services/pushNotifications';
 import { subscribeUnreadMessagesCount } from '../services/cloudSync';
 import { subscribeMyNotifications } from '../services/socialFeed';
@@ -432,6 +435,9 @@ export default function HomeScreen() {
   const [userCoord, setUserCoord] = useState<{ latitude: number; longitude: number } | null>(null);
   const [followingCount, setFollowingCount] = useState(0);
   const [catchCount, setCatchCount] = useState(0);
+  // ── "Today" hub data ────────────────────────────────────────────
+  const [followingCatches, setFollowingCatches] = useState<CloudCatch[]>([]);
+  const [activeTournaments, setActiveTournaments] = useState<Tournament[]>([]);
   // ── Data loading ────────────────────────────────────────────────
 
   const loadStats = useCallback(async () => {
@@ -455,6 +461,35 @@ export default function HomeScreen() {
       getFollowingCount(user.uid).then(setFollowingCount).catch(() => setFollowingCount(0));
     } else {
       setFollowingCount(0);
+    }
+  }, [user, configured]);
+
+  /** Loads the "Today" hub data — catches from people the user follows + their
+      active tournament countdowns. Both are best-effort and silently empty out
+      on failure (Firestore unavailable, no follows, no joined tournaments). */
+  const loadTodayHub = useCallback(async () => {
+    if (!user || !configured) {
+      setFollowingCatches([]);
+      setActiveTournaments([]);
+      return;
+    }
+    try {
+      const following = await getFollowing(user.uid);
+      const followingUids = following.map((f) => f.uid).filter(Boolean);
+      if (followingUids.length === 0) {
+        setFollowingCatches([]);
+      } else {
+        const page = await fetchPublicFeed(12, undefined, followingUids).catch(() => null);
+        setFollowingCatches(page?.items ?? []);
+      }
+    } catch {
+      setFollowingCatches([]);
+    }
+    try {
+      const tours = await fetchMyActiveTournaments(user.uid);
+      setActiveTournaments(tours);
+    } catch {
+      setActiveTournaments([]);
     }
   }, [user, configured]);
 
@@ -496,10 +531,10 @@ export default function HomeScreen() {
       const now = Date.now();
       if (now - lastFetchRef.current < STALE) return;
       lastFetchRef.current = now;
-      loadStats(); loadWeather();
+      loadStats(); loadWeather(); loadTodayHub();
     });
     return () => task.cancel();
-  }, [loadStats, loadWeather]));
+  }, [loadStats, loadWeather, loadTodayHub]));
 
   useEffect(() => {
     if (!user || !configured) return;
@@ -513,7 +548,7 @@ export default function HomeScreen() {
   const onRefresh = async () => {
     lastFetchRef.current = 0;
     setRefreshing(true);
-    await Promise.all([loadStats(), loadWeather()]);
+    await Promise.all([loadStats(), loadWeather(), loadTodayHub()]);
     setRefreshing(false);
   };
 
@@ -872,6 +907,127 @@ export default function HomeScreen() {
             </View>
             <BiteForecast weather={weather} />
           </View>
+        )}
+
+        {/* ── Active tournaments — countdown to soonest ending ── */}
+        {activeTournaments.length > 0 && (
+          <View style={{ paddingHorizontal: spacing.xl, marginBottom: spacing.lg }}>
+            <View style={S.sectionRow}>
+              <View style={S.sectionLeft}>
+                <View style={[S.sectionAccent, { backgroundColor: '#E8902E' }]} />
+                <Text style={[S.sectionLabel, { color: mutedColor }]}>Твои турнири</Text>
+              </View>
+              {activeTournaments.length > 1 ? (
+                <Pressable
+                  onPress={() => (navigation as any).navigate('ProfileTab', { screen: 'Tournaments' })}
+                  hitSlop={8}
+                >
+                  <Text style={[S.sectionLink, { color: primary }]}>Виж всички →</Text>
+                </Pressable>
+              ) : null}
+            </View>
+            {activeTournaments.slice(0, 2).map((t) => {
+              const daysLeft = t.endDate
+                ? Math.max(0, Math.ceil((Date.parse(t.endDate + 'T23:59:59') - Date.now()) / 86_400_000))
+                : null;
+              return (
+                <Pressable
+                  key={t.id}
+                  onPress={() => (navigation as any).navigate('ProfileTab', { screen: 'TournamentDetail', params: { id: t.id } })}
+                  style={{
+                    backgroundColor: cardBg,
+                    borderRadius: radius.lg,
+                    borderWidth: 1,
+                    borderColor: cardBorder,
+                    padding: spacing.md,
+                    marginBottom: spacing.sm,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: spacing.md,
+                  }}
+                >
+                  <View style={{
+                    width: 44, height: 44, borderRadius: 22,
+                    backgroundColor: 'rgba(232,144,46,0.16)',
+                    alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <Ionicons name="trophy" size={22} color="#E8902E" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ ...typography.bodyBold, color: textColor }} numberOfLines={1}>
+                      {t.name}
+                    </Text>
+                    <Text style={{ ...typography.caption, color: mutedColor, marginTop: 2 }} numberOfLines={1}>
+                      {daysLeft === 0
+                        ? 'Завършва днес'
+                        : daysLeft === 1
+                        ? 'Остава 1 ден'
+                        : daysLeft != null
+                        ? `Остават ${daysLeft} дни`
+                        : 'Активен'}
+                      {t.speciesName ? ` · ${t.speciesName}` : ''}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={mutedColor} />
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+
+        {/* ── Following catches — fresh activity from anglers you follow ── */}
+        {followingCatches.length > 0 && (
+          <>
+            <View style={S.sectionRow}>
+              <View style={S.sectionLeft}>
+                <View style={[S.sectionAccent, { backgroundColor: primary }]} />
+                <Text style={[S.sectionLabel, { color: mutedColor }]}>От твоите приятели</Text>
+              </View>
+              <Pressable onPress={() => (navigation as any).navigate('FeedTab')} hitSlop={8}>
+                <Text style={[S.sectionLink, { color: primary }]}>Към лентата →</Text>
+              </Pressable>
+            </View>
+            <ScrollView
+              horizontal showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: spacing.xl, gap: spacing.sm, paddingBottom: spacing.xl }}
+            >
+              {followingCatches.map((c) => (
+                <Pressable
+                  key={c.id}
+                  style={[S.catchCard, { backgroundColor: c.photoUri ? 'transparent' : (mode === 'dark' ? '#0E1E35' : colors.primarySurface) }]}
+                  onPress={() => (navigation as any).navigate('LogbookTab', { screen: 'CatchDetail', params: { id: c.id } })}
+                >
+                  {c.photoUri ? (
+                    <>
+                      <Image source={{ uri: c.photoUri }} contentFit="cover" style={StyleSheet.absoluteFillObject} />
+                      <LinearGradient
+                        colors={['transparent', 'rgba(0,0,0,0.78)']}
+                        start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+                        style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 92, justifyContent: 'flex-end', padding: 10 }}
+                      >
+                        <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 10, fontFamily: 'Nunito_600SemiBold' }} numberOfLines={1}>
+                          {c.ownerName ?? 'Рибар'}
+                        </Text>
+                        <Text style={{ color: '#fff', fontSize: 11, fontFamily: 'Nunito_700Bold', marginTop: 1 }} numberOfLines={1}>
+                          {c.speciesName}
+                        </Text>
+                        {c.weightKg != null ? (
+                          <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 10 }}>{c.weightKg} кг</Text>
+                        ) : null}
+                      </LinearGradient>
+                    </>
+                  ) : (
+                    <View style={S.catchEmpty}>
+                      <Text style={{ fontSize: 28 }}>🐟</Text>
+                      <Text style={{ fontSize: 10, color: textColor, fontFamily: 'Nunito_600SemiBold', textAlign: 'center', marginTop: 4 }} numberOfLines={2}>
+                        {c.speciesName}
+                      </Text>
+                    </View>
+                  )}
+                </Pressable>
+              ))}
+            </ScrollView>
+          </>
         )}
 
         {/* ── Nearest water bodies ── */}

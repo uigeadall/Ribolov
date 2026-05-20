@@ -188,7 +188,13 @@ export default function TripsScreen() {
               <DateTimePicker
                 value={date}
                 mode="date"
-                display="spinner"
+                // inline calendar grid is far more legible than the spinner wheel,
+                // which inherits the system colour scheme and goes near-invisible
+                // when system + app themes disagree.
+                display="inline"
+                themeVariant={mode === 'dark' ? 'dark' : 'light'}
+                accentColor={colors.primary}
+                textColor={colors.text}
                 onChange={(_, selected) => { if (selected) setDate(selected); }}
                 maximumDate={new Date()}
                 locale="bg"

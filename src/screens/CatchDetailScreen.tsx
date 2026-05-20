@@ -17,6 +17,8 @@ import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { ImageViewer } from '../components/ImageViewer';
 import { Skeleton } from '../components/Skeleton';
+import { CatchConditionsCard } from '../components/CatchConditionsCard';
+import { CatchLocationCard } from '../components/CatchLocationCard';
 import { useTheme } from '../services/themeContext';
 import { spacing, typography } from '../theme/typography';
 import { catchesStore } from '../storage/storage';
@@ -309,27 +311,20 @@ export default function CatchDetailScreen() {
           )}
 
           <View style={{ padding: spacing.lg, paddingBottom: spacing.xxl }}>
+          {/* The ViewShot wrapper is captured for the "share as image" action.
+              It keeps the photo title + a single condensed meta line + a small
+              chip row + the watermark so the shared image stays compact. The
+              richer conditions/location cards below sit OUTSIDE the ViewShot
+              so they polish the in-app view without bloating the share image. */}
           <ViewShot ref={cardRef} options={{ format: 'png', quality: 0.95 }}>
             <View style={{ backgroundColor: colors.background }}>
-              {!item.photoUri ? (
-                <>
-                  <Text style={styles.meta}>{metaLine}</Text>
-                  {item.location?.name ? <Text style={styles.meta}>{item.location.name}</Text> : null}
-                  {item.bait ? <Text style={styles.meta}>Стръв: {item.bait}</Text> : null}
-                </>
-              ) : (
-                <>
-                  {item.location?.name ? <Text style={styles.meta}>{item.location.name}</Text> : null}
-                  {item.bait ? <Text style={styles.meta}>Стръв: {item.bait}</Text> : null}
-                </>
-              )}
+              {!item.photoUri ? <Text style={styles.meta}>{metaLine}</Text> : null}
+              {item.bait ? <Text style={styles.meta}>Стръв: {item.bait}</Text> : null}
 
+              {/* Condensed chip row kept only for share-image purposes. */}
               <View style={styles.chipRow}>
-                {item.syncedToCloud ? <View style={styles.chip}><Text style={styles.chipText}>Синхронизиран</Text></View> : null}
                 {item.conditions?.fishingRating != null ? <View style={styles.chip}><Text style={styles.chipText}>{'⭐'.repeat(item.conditions.fishingRating)} риболов</Text></View> : null}
                 {item.conditions?.temperatureC != null ? <View style={styles.chip}><Text style={styles.chipText}>{item.conditions.temperatureC}°C</Text></View> : null}
-                {item.conditions?.windKmh != null ? <View style={styles.chip}><Text style={styles.chipText}>💨 {item.conditions.windKmh} км/ч</Text></View> : null}
-                {item.conditions?.pressureHpa != null ? <View style={styles.chip}><Text style={styles.chipText}>⏱ {item.conditions.pressureHpa} hPa</Text></View> : null}
                 {item.conditions?.moonPhaseName ? <View style={styles.chip}><Text style={styles.chipText}>{item.conditions.moonPhaseName}</Text></View> : null}
               </View>
 
@@ -337,6 +332,10 @@ export default function CatchDetailScreen() {
               <Text style={styles.watermark}>🎣 Риболов</Text>
             </View>
           </ViewShot>
+
+          {/* Rich cards — outside ViewShot so they don't bloat the share image. */}
+          {item.conditions ? <CatchConditionsCard conditions={item.conditions} /> : null}
+          {item.location ? <CatchLocationCard location={item.location} /> : null}
 
           {(item.extraPhotoUris?.length ?? 0) > 0 ? (
             <>

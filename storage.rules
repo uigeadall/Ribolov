@@ -15,7 +15,10 @@ service firebase.storage {
     }
 
     match /profilePhotos/{userId}/{allPaths=**} {
-      allow read: if signedIn();
+      // Avatars appear next to public catches and chat messages where the
+      // viewer may not even know the photo owner. Same anonymous-fetch issue
+      // as publicCatchPhotos — make them publicly readable.
+      allow read;
       allow write: if signedIn()
         && request.auth.uid == userId
         && isImage()
@@ -23,7 +26,14 @@ service firebase.storage {
     }
 
     match /publicCatchPhotos/{userId}/{allPaths=**} {
-      allow read: if signedIn();
+      // Public by definition — these photos render in the global feed and
+      // were uploaded via raw HTTPS POST (which doesn't generate the magic
+      // `firebaseStorageDownloadTokens` metadata that signed download URLs
+      // need to bypass rules). Allow anonymous read so `expo-image` (and any
+      // other fetcher without a Firebase auth header) can load them.
+      // Trade-off: someone could scrape the bucket by URL, but every photo
+      // here is intended to be publicly visible in the feed anyway.
+      allow read;
       allow write: if signedIn()
         && request.auth.uid == userId
         && isImage()
@@ -31,7 +41,8 @@ service firebase.storage {
     }
 
     match /damFeeds/{damId}/{userId}/{fileName} {
-      allow read: if signedIn();
+      // Same reasoning — dam-feed photos appear publicly in the dam screen.
+      allow read;
       allow write: if signedIn()
         && request.auth.uid == userId
         && isImage()

@@ -201,6 +201,10 @@ export default function CreateGroupEventScreen() {
             <DateTimePicker
               value={date}
               mode="date"
+              display={Platform.OS === 'ios' ? 'inline' : 'default'}
+              themeVariant={mode === 'dark' ? 'dark' : 'light'}
+              accentColor={colors.primary}
+              textColor={colors.text}
               onChange={(_, d) => {
                 setShowDatePicker(Platform.OS === 'ios');
                 if (d) {
@@ -215,6 +219,12 @@ export default function CreateGroupEventScreen() {
             <DateTimePicker
               value={date}
               mode="time"
+              // Time picker stays on the wheel (no "inline" variant exists for time mode).
+              // Locking themeVariant keeps it readable in both light and dark.
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              themeVariant={mode === 'dark' ? 'dark' : 'light'}
+              accentColor={colors.primary}
+              textColor={colors.text}
               onChange={(_, d) => {
                 setShowTimePicker(Platform.OS === 'ios');
                 if (d) {

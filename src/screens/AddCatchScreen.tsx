@@ -11,7 +11,7 @@ import {
   Alert,
   ActivityIndicator,
   Linking,
-  Animated,
+  Platform,
 } from 'react-native';
 import { useRoute, RouteProp } from '@react-navigation/native';
 import { useAppNavigation } from '../navigation/useAppNavigation';
@@ -42,7 +42,8 @@ import { checkForNewUnlocks } from '../services/achievements';
 import { AchievementUnlockModal } from '../components/AchievementUnlockModal';
 import { SpeciesPicker } from '../components/SpeciesPicker';
 import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
-import { isRemoteImageUri } from '../utils/formatCatchDate';
+import { isRemoteImageUri, formatCatchDate } from '../utils/formatCatchDate';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { handleError } from '../utils/handleError';
 import { checkImageSize } from '../utils/imageSize';
 import { fetchWeather } from '../services/weather';
@@ -69,6 +70,9 @@ type FormState = {
   cameraVerifiedPhoto: boolean;
   extraPhotoUris: string[];
   tripId: string | undefined;
+  /** Catch date as ISO string. Previously hardcoded to `new Date()` at save time
+      which meant users couldn't log a catch from yesterday. */
+  date: string;
 };
 
 type FormAction =
@@ -87,6 +91,7 @@ type FormAction =
   | { type: 'ADD_EXTRA_PHOTO'; payload: string }
   | { type: 'REMOVE_EXTRA_PHOTO'; payload: number }
   | { type: 'SET_TRIP'; payload: string | undefined }
+  | { type: 'SET_DATE'; payload: string }
   | { type: 'LOAD_CATCH'; payload: Partial<FormState> };
 
 function formReducer(state: FormState, action: FormAction): FormState {
@@ -106,6 +111,7 @@ function formReducer(state: FormState, action: FormAction): FormState {
     case 'ADD_EXTRA_PHOTO': return { ...state, extraPhotoUris: [...state.extraPhotoUris, action.payload] };
     case 'REMOVE_EXTRA_PHOTO': return { ...state, extraPhotoUris: state.extraPhotoUris.filter((_, i) => i !== action.payload) };
     case 'SET_TRIP': return { ...state, tripId: action.payload };
+    case 'SET_DATE': return { ...state, date: action.payload };
     case 'LOAD_CATCH': return { ...state, ...action.payload };
     default: return state;
   }
@@ -134,7 +140,7 @@ export default function AddCatchScreen() {
   const prefill = route.params?.prefillLocation;
   const editCatchId = route.params?.editCatchId;
   const duplicateCatchId = route.params?.duplicateCatchId;
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const styles = useMemo(() => createAddCatchStyles(colors), [colors]);
   const { user, configured } = useAuth();
 
@@ -154,6 +160,7 @@ export default function AddCatchScreen() {
     cameraVerifiedPhoto: false,
     extraPhotoUris: [],
     tripId: undefined,
+    date: new Date().toISOString(),
   });
 
   const [lastCatch, setLastCatch] = useState<Catch | null>(null);
@@ -187,6 +194,10 @@ export default function AddCatchScreen() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [trips, setTrips] = useState<TripPlan[]>([]);
   const [tripPickerOpen, setTripPickerOpen] = useState(false);
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
+  // Collapsible "more details" — expanded by default for new catches, collapsed
+  // when editing (assumption: editor knows the catch and wants summary first).
+  const [detailsOpen, setDetailsOpen] = useState(!editCatchId);
   const formDirtyRef = useRef(false);
   const conditionsRef = useRef<Catch['conditions'] | null>(null);
   // Stable ID prevents duplicate entries on retry
@@ -261,6 +272,7 @@ export default function AddCatchScreen() {
             : null,
           locationName: c.location?.name ?? '',
           tripId: c.tripId,
+          date: c.date ?? new Date().toISOString(),
         },
       });
       if (c.conditions) conditionsRef.current = c.conditions;
@@ -492,7 +504,7 @@ export default function AddCatchScreen() {
       speciesName: selectedSpecies.nameBg,
       weightKg: (() => { const v = parseFloat(form.weight.replace(',', '.')); return isNaN(v) ? undefined : v; })(),
       lengthCm: (() => { const v = parseFloat(form.length.replace(',', '.')); return isNaN(v) ? undefined : v; })(),
-      date: initialCatch?.date ?? new Date().toISOString(),
+      date: form.date,
       bait: form.bait || undefined,
       notes: form.notes || undefined,
       ...(form.photoUri && trimmedPhotoTitle ? { photoTitle: trimmedPhotoTitle } : {}),
@@ -575,28 +587,6 @@ export default function AddCatchScreen() {
     }
   };
 
-  // ── Step indicator ────────────────────────────────────────────────────────
-  const currentStep = useMemo(() => {
-    const hasMedia = !!form.photoUri;
-    const speciesName = selectedSpecies?.nameBg ?? '';
-    const hasDetails = !!(speciesName.trim() && form.weight.trim());
-    const hasLocation = !!(form.locationName?.trim() || form.locationCoords);
-    if (hasDetails && hasLocation) return 4;
-    if (hasDetails) return 3;
-    if (hasMedia || speciesName.trim()) return 2;
-    return 1;
-  }, [form.photoUri, selectedSpecies, form.weight, form.locationName, form.locationCoords]);
-
-  // Progress bar animation
-  const progressAnim = useRef(new Animated.Value(currentStep)).current;
-  useEffect(() => {
-    Animated.timing(progressAnim, {
-      toValue: currentStep,
-      duration: 300,
-      useNativeDriver: false,
-    }).start();
-  }, [currentStep, progressAnim]);
-
   if (editCatchId && !editLoaded) {
     return (
       <Screen>
@@ -615,8 +605,6 @@ export default function AddCatchScreen() {
         <PhotoSection
           photoUri={form.photoUri}
           shareToFeed={form.shareToFeed}
-          editCatchId={editCatchId}
-          currentStep={currentStep}
           colors={colors}
           styles={styles}
           onPickPhoto={() => void pickPhoto()}
@@ -681,227 +669,126 @@ export default function AddCatchScreen() {
             </Pressable>
           ) : null}
 
-          {/* ── SPECIES BLOCK ── */}
-          <View style={styles.speciesBlock}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.speciesName}>{selectedSpecies.nameBg}</Text>
-              <Text style={styles.speciesLatin}>{selectedSpecies.nameLatin}</Text>
-            </View>
-            <Pressable onPress={() => setPickerOpen(true)} style={styles.speciesChangeBtn}>
-              <Ionicons name="swap-horizontal" size={14} color={colors.primary} />
-              <Text style={styles.speciesChangeBtnText}>Промени</Text>
+          {/* ════════════════════════════════════════
+              ① SUMMARY CARD — the only "must fill" section.
+              Species + weight + length + date + released, all together.
+          ════════════════════════════════════════ */}
+          <View style={styles.summaryCard}>
+            {/* Species — tap to change */}
+            <Pressable
+              onPress={() => setPickerOpen(true)}
+              style={styles.summarySpeciesRow}
+              accessibilityRole="button"
+              accessibilityLabel="Промени вид"
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.summarySpeciesName}>{selectedSpecies.nameBg}</Text>
+                <Text style={styles.summarySpeciesLatin}>{selectedSpecies.nameLatin}</Text>
+              </View>
+              <View style={styles.summarySpeciesPill}>
+                <Ionicons name="swap-horizontal" size={13} color={colors.primary} />
+                <Text style={styles.summarySpeciesPillText}>Промени</Text>
+              </View>
             </Pressable>
-          </View>
-          <BanPeriodCard speciesName={selectedSpecies.nameBg} banInfo={banInfo} />
 
-          {/* ── PHOTO META (when photoUri exists) ── */}
-          {form.photoUri ? (
-            <View style={styles.photoMetaCard}>
-              <TextInput
-                value={form.photoTitle}
-                onChangeText={(t) => dispatch({ type: 'SET_PHOTO_TITLE', payload: t })}
-                placeholder="Заглавие на снимката (по избор)"
-                style={styles.photoMetaInput}
-                placeholderTextColor={colors.textMuted}
-              />
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ gap: 8, paddingTop: 10 }}
-              >
-                {form.extraPhotoUris.map((uri, i) => (
-                  <View key={i} style={{ position: 'relative' }}>
-                    <Image source={{ uri }} style={{ width: 64, height: 64, borderRadius: 12 }} contentFit="cover" />
-                    <Pressable
-                      onPress={() => dispatch({ type: 'REMOVE_EXTRA_PHOTO', payload: i })}
-                      hitSlop={4}
-                      style={{
-                        position: 'absolute',
-                        top: -5,
-                        right: -5,
-                        backgroundColor: colors.danger,
-                        borderRadius: 9,
-                        width: 18,
-                        height: 18,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      <Ionicons name="close" size={11} color="#fff" />
-                    </Pressable>
-                  </View>
-                ))}
-                {form.extraPhotoUris.length < 4 && (
-                  <Pressable
-                    onPress={() => void addExtraPhoto()}
-                    style={{
-                      width: 64,
-                      height: 64,
-                      borderRadius: 12,
-                      backgroundColor: colors.surfaceAlt,
-                      borderWidth: 1,
-                      borderColor: colors.border,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <Ionicons name="add" size={24} color={colors.primary} />
+            <View style={styles.summaryDivider} />
+
+            {/* Weight + Length tiles */}
+            <View style={styles.summaryMetricsRow}>
+              <View style={styles.summaryMetric}>
+                <Text style={styles.summaryMetricLabel}>Тегло</Text>
+                <View style={styles.summaryMetricInputRow}>
+                  <TextInput
+                    value={form.weight}
+                    onChangeText={(v) => dispatch({ type: 'SET_WEIGHT', payload: v })}
+                    placeholder="—"
+                    keyboardType="decimal-pad"
+                    returnKeyType="next"
+                    style={styles.summaryMetricInput}
+                    placeholderTextColor={colors.border}
+                  />
+                  <Text style={styles.summaryMetricUnit}>кг</Text>
+                </View>
+                <WeightEstimator
+                  length={form.length}
+                  weight={form.weight}
+                  speciesId={form.speciesId}
+                  colors={colors}
+                  onAccept={(w) => dispatch({ type: 'SET_WEIGHT', payload: w })}
+                />
+              </View>
+              <View style={styles.summaryMetricVDivider} />
+              <View style={styles.summaryMetric}>
+                <Text style={styles.summaryMetricLabel}>Дължина</Text>
+                <View style={styles.summaryMetricInputRow}>
+                  <TextInput
+                    value={form.length}
+                    onChangeText={(v) => dispatch({ type: 'SET_LENGTH', payload: v })}
+                    placeholder="—"
+                    keyboardType="decimal-pad"
+                    style={styles.summaryMetricInput}
+                    placeholderTextColor={colors.border}
+                  />
+                  <Text style={styles.summaryMetricUnit}>см</Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.summaryDivider} />
+
+            {/* Date — new! tap-to-pick */}
+            <Pressable
+              onPress={() => setDatePickerOpen((v) => !v)}
+              style={styles.summaryDateRow}
+              accessibilityRole="button"
+              accessibilityLabel="Промени дата"
+            >
+              <View style={styles.summaryRowIcon}>
+                <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.summaryRowLabel}>Дата</Text>
+                <Text style={styles.summaryRowValue}>{formatCatchDate(form.date)}</Text>
+              </View>
+              <Ionicons name={datePickerOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} />
+            </Pressable>
+
+            {datePickerOpen ? (
+              <View style={styles.datePickerWrap}>
+                <DateTimePicker
+                  value={new Date(form.date)}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                  themeVariant={mode === 'dark' ? 'dark' : 'light'}
+                  accentColor={colors.primary}
+                  textColor={colors.text}
+                  maximumDate={new Date()}
+                  locale="bg"
+                  onChange={(e, picked) => {
+                    if (Platform.OS === 'android') setDatePickerOpen(false);
+                    if (e.type === 'set' && picked) {
+                      dispatch({ type: 'SET_DATE', payload: picked.toISOString() });
+                    }
+                  }}
+                />
+                {Platform.OS === 'ios' ? (
+                  <Pressable onPress={() => setDatePickerOpen(false)} style={styles.datePickerDone} hitSlop={8}>
+                    <Text style={styles.datePickerDoneText}>Готово</Text>
                   </Pressable>
-                )}
-              </ScrollView>
-            </View>
-          ) : null}
-
-          {/* ── METRIC TILES ── */}
-          <View style={styles.metricRow}>
-            <View style={styles.metricTile}>
-              <Text style={styles.metricTileLabel}>Тегло</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 4 }}>
-                <TextInput
-                  value={form.weight}
-                  onChangeText={(v) => dispatch({ type: 'SET_WEIGHT', payload: v })}
-                  placeholder="—"
-                  keyboardType="decimal-pad"
-                  returnKeyType="next"
-                  style={styles.metricTileInput}
-                  placeholderTextColor={colors.border}
-                />
-                <Text style={styles.metricTileUnit}>кг</Text>
+                ) : null}
               </View>
-              <WeightEstimator
-                length={form.length}
-                weight={form.weight}
-                speciesId={form.speciesId}
-                colors={colors}
-                onAccept={(w) => dispatch({ type: 'SET_WEIGHT', payload: w })}
-              />
-            </View>
-            <View style={styles.metricTileDivider} />
-            <View style={styles.metricTile}>
-              <Text style={styles.metricTileLabel}>Дължина</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 4 }}>
-                <TextInput
-                  value={form.length}
-                  onChangeText={(v) => dispatch({ type: 'SET_LENGTH', payload: v })}
-                  placeholder="—"
-                  keyboardType="decimal-pad"
-                  style={styles.metricTileInput}
-                  placeholderTextColor={colors.border}
-                />
-                <Text style={styles.metricTileUnit}>см</Text>
-              </View>
-            </View>
-          </View>
+            ) : null}
 
-          {/* ── DETAIL ROWS CARD ── */}
-          <View style={styles.detailCard}>
-            {/* Bait row */}
-            <View style={styles.detailRow}>
-              <View style={styles.detailIcon}>
-                <Ionicons name="leaf-outline" size={18} color={colors.primary} />
+            <View style={styles.summaryDivider} />
+
+            {/* Released toggle inline — the most-toggled switch belongs here */}
+            <View style={styles.summarySwitchRow}>
+              <View style={styles.summaryRowIcon}>
+                <Ionicons name="refresh-circle-outline" size={20} color={colors.primary} />
               </View>
               <View style={{ flex: 1 }}>
-                <TextInput
-                  value={form.bait}
-                  onChangeText={(v) => dispatch({ type: 'SET_BAIT', payload: v })}
-                  placeholder="Стръв / примамка..."
-                  returnKeyType="next"
-                  style={styles.detailInput}
-                  placeholderTextColor={colors.textMuted}
-                />
-                {recentBaits.length > 0 && (
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={{ gap: 6, paddingTop: 8, paddingBottom: 4 }}
-                    keyboardShouldPersistTaps="handled"
-                  >
-                    {recentBaits.map((b) => (
-                      <Pressable
-                        key={b}
-                        onPress={() => dispatch({ type: 'SET_BAIT', payload: b })}
-                        style={[styles.baitPill, form.bait === b && styles.baitPillActive]}
-                      >
-                        <Text style={[styles.baitPillText, form.bait === b && styles.baitPillTextActive]}>{b}</Text>
-                      </Pressable>
-                    ))}
-                  </ScrollView>
-                )}
-              </View>
-            </View>
-
-            <View style={styles.detailDivider} />
-
-            {/* Location row */}
-            <View style={styles.detailRow}>
-              <View style={styles.detailIcon}>
-                <Ionicons name="location-outline" size={18} color={colors.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={form.locationCoords ? styles.detailInput : [styles.detailInput, { color: colors.textMuted }]}
-                  numberOfLines={1}
-                >
-                  {form.locationCoords
-                    ? (form.locationName || `${form.locationCoords.lat.toFixed(4)}, ${form.locationCoords.lon.toFixed(4)}`)
-                    : 'Без координати'}
-                </Text>
-              </View>
-              <Pressable onPress={() => void grabLocation()} style={styles.detailButton}>
-                <Text style={styles.detailButtonText}>{form.locationCoords ? 'Обнови' : 'Маркирай'}</Text>
-              </Pressable>
-            </View>
-
-            <View style={styles.detailDivider} />
-
-            {/* Notes row */}
-            <View style={[styles.detailRow, { alignItems: 'flex-start' }]}>
-              <View style={[styles.detailIcon, { marginTop: 2 }]}>
-                <Ionicons name="create-outline" size={18} color={colors.primary} />
-              </View>
-              <TextInput
-                value={form.notes}
-                onChangeText={(v) => dispatch({ type: 'SET_NOTES', payload: v })}
-                placeholder="Бележки — условия, час, какво е работило..."
-                multiline
-                style={[styles.detailInput, { height: 80, textAlignVertical: 'top', flex: 1 }]}
-                placeholderTextColor={colors.textMuted}
-              />
-            </View>
-          </View>
-
-          {/* ── TRIP PICKER (conditional) ── */}
-          {trips.length > 0 ? (
-            <>
-              <View style={styles.detailCard}>
-                <Pressable onPress={() => setTripPickerOpen(true)} style={styles.detailRow}>
-                  <View style={styles.detailIcon}>
-                    <Ionicons name="calendar-outline" size={18} color={colors.primary} />
-                  </View>
-                  <Text style={[styles.detailInput, !form.tripId && { color: colors.textMuted }]}>
-                    {form.tripId ? (trips.find((t) => t.id === form.tripId)?.title ?? 'Излет') : 'Избери излет (по избор)'}
-                  </Text>
-                  <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-                </Pressable>
-              </View>
-              <TripPickerModal
-                visible={tripPickerOpen}
-                trips={trips}
-                selectedTripId={form.tripId}
-                onSelect={(id) => dispatch({ type: 'SET_TRIP', payload: id })}
-                onClose={() => setTripPickerOpen(false)}
-              />
-            </>
-          ) : null}
-
-          {/* ── SETTINGS CARD ── */}
-          <View style={styles.detailCard}>
-            {/* C&R switch */}
-            <View style={styles.switchRow}>
-              <Ionicons name="refresh-circle-outline" size={20} color={colors.primary} style={{ marginRight: 12 }} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.switchLabel}>Пуснат обратно</Text>
-                <Text style={styles.switchSub}>Catch &amp; release</Text>
+                <Text style={styles.summaryRowLabel}>Пуснат обратно</Text>
+                <Text style={styles.summaryRowSub}>Catch &amp; release</Text>
               </View>
               <Switch
                 value={form.released}
@@ -909,16 +796,28 @@ export default function AddCatchScreen() {
                 trackColor={{ true: colors.primary, false: colors.border }}
               />
             </View>
+          </View>
 
-            <View style={styles.detailDivider} />
+          <BanPeriodCard speciesName={selectedSpecies.nameBg} banInfo={banInfo} />
 
-            {/* Share to feed switch */}
-            <View style={styles.switchRow}>
-              <Ionicons name="earth-outline" size={20} color={colors.primary} style={{ marginRight: 12 }} />
+          {/* ════════════════════════════════════════
+              ② SHARING CARD — pulled up so the engagement hook is visible.
+              Public-feed + leaderboard live here.
+          ════════════════════════════════════════ */}
+          <View style={styles.sharingCard}>
+            <View style={styles.sharingHeader}>
+              <View style={styles.sharingAccent} />
+              <Text style={styles.sharingTitle}>Споделяне</Text>
+            </View>
+
+            <View style={styles.summarySwitchRow}>
+              <View style={styles.summaryRowIcon}>
+                <Ionicons name="earth-outline" size={20} color={colors.primary} />
+              </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.switchLabel}>Сподели публично</Text>
-                <Text style={styles.switchSub}>
-                  {user ? 'В лентата; снимка от камерата.' : 'Изисква акаунт.'}
+                <Text style={styles.summaryRowLabel}>Сподели в лентата</Text>
+                <Text style={styles.summaryRowSub}>
+                  {user ? 'Видим за всички, изисква снимка от камерата.' : 'Изисква акаунт.'}
                 </Text>
               </View>
               <Switch
@@ -948,15 +847,16 @@ export default function AddCatchScreen() {
               />
             </View>
 
-            {/* Leaderboard switch — only when shareToFeed */}
             {form.shareToFeed ? (
               <>
-                <View style={styles.detailDivider} />
-                <View style={styles.switchRow}>
-                  <Ionicons name="trophy-outline" size={20} color={colors.primary} style={{ marginRight: 12 }} />
+                <View style={styles.summaryDivider} />
+                <View style={styles.summarySwitchRow}>
+                  <View style={styles.summaryRowIcon}>
+                    <Ionicons name="trophy-outline" size={20} color={colors.primary} />
+                  </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.switchLabel}>Участвай в класацията</Text>
-                    <Text style={styles.switchSub}>Седмична и месечна класация.</Text>
+                    <Text style={styles.summaryRowLabel}>Участвай в класацията</Text>
+                    <Text style={styles.summaryRowSub}>Седмична и месечна класация.</Text>
                   </View>
                   <Switch
                     value={form.enterLeaderboard}
@@ -968,13 +868,194 @@ export default function AddCatchScreen() {
             ) : null}
           </View>
 
-          {/* ── SAVE BUTTON ── */}
+          {/* ════════════════════════════════════════
+              ③ MORE DETAILS — collapsed by default when editing.
+              Bait, location, notes, trip, extra photos all hide behind one tap.
+          ════════════════════════════════════════ */}
+          <Pressable
+            onPress={() => setDetailsOpen((v) => !v)}
+            style={styles.detailsToggle}
+            accessibilityRole="button"
+            accessibilityLabel={detailsOpen ? 'Скрий повече детайли' : 'Покажи повече детайли'}
+          >
+            <Text style={styles.detailsToggleText}>Повече детайли</Text>
+            <Ionicons name={detailsOpen ? 'chevron-up' : 'chevron-down'} size={18} color={colors.primary} />
+          </Pressable>
+
+          {detailsOpen ? (
+            <>
+              {/* Bait + recents */}
+              <View style={styles.detailCard}>
+                <View style={styles.detailRow}>
+                  <View style={styles.detailIcon}>
+                    <Ionicons name="leaf-outline" size={18} color={colors.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <TextInput
+                      value={form.bait}
+                      onChangeText={(v) => dispatch({ type: 'SET_BAIT', payload: v })}
+                      placeholder="Стръв / примамка..."
+                      returnKeyType="next"
+                      style={styles.detailInput}
+                      placeholderTextColor={colors.textMuted}
+                    />
+                    {recentBaits.length > 0 && (
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={{ gap: 6, paddingTop: 8, paddingBottom: 4 }}
+                        keyboardShouldPersistTaps="handled"
+                      >
+                        {recentBaits.map((b) => (
+                          <Pressable
+                            key={b}
+                            onPress={() => dispatch({ type: 'SET_BAIT', payload: b })}
+                            style={[styles.baitPill, form.bait === b && styles.baitPillActive]}
+                          >
+                            <Text style={[styles.baitPillText, form.bait === b && styles.baitPillTextActive]}>{b}</Text>
+                          </Pressable>
+                        ))}
+                      </ScrollView>
+                    )}
+                  </View>
+                </View>
+
+                <View style={styles.detailDivider} />
+
+                {/* Location */}
+                <View style={styles.detailRow}>
+                  <View style={styles.detailIcon}>
+                    <Ionicons name="location-outline" size={18} color={colors.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={form.locationCoords ? styles.detailInput : [styles.detailInput, { color: colors.textMuted }]}
+                      numberOfLines={1}
+                    >
+                      {form.locationCoords
+                        ? (form.locationName || `${form.locationCoords.lat.toFixed(4)}, ${form.locationCoords.lon.toFixed(4)}`)
+                        : 'Без координати'}
+                    </Text>
+                  </View>
+                  <Pressable onPress={() => void grabLocation()} style={styles.detailButton}>
+                    <Text style={styles.detailButtonText}>{form.locationCoords ? 'Обнови' : 'Маркирай'}</Text>
+                  </Pressable>
+                </View>
+
+                <View style={styles.detailDivider} />
+
+                {/* Notes */}
+                <View style={[styles.detailRow, { alignItems: 'flex-start' }]}>
+                  <View style={[styles.detailIcon, { marginTop: 2 }]}>
+                    <Ionicons name="create-outline" size={18} color={colors.primary} />
+                  </View>
+                  <TextInput
+                    value={form.notes}
+                    onChangeText={(v) => dispatch({ type: 'SET_NOTES', payload: v })}
+                    placeholder="Бележки — условия, час, какво е работило..."
+                    multiline
+                    style={[styles.detailInput, { height: 80, textAlignVertical: 'top', flex: 1 }]}
+                    placeholderTextColor={colors.textMuted}
+                  />
+                </View>
+              </View>
+
+              {/* Trip picker — only when user has trips */}
+              {trips.length > 0 ? (
+                <>
+                  <View style={styles.detailCard}>
+                    <Pressable onPress={() => setTripPickerOpen(true)} style={styles.detailRow}>
+                      <View style={styles.detailIcon}>
+                        <Ionicons name="briefcase-outline" size={18} color={colors.primary} />
+                      </View>
+                      <Text style={[styles.detailInput, !form.tripId && { color: colors.textMuted }]}>
+                        {form.tripId ? (trips.find((t) => t.id === form.tripId)?.title ?? 'Излет') : 'Избери излет (по избор)'}
+                      </Text>
+                      <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                    </Pressable>
+                  </View>
+                  <TripPickerModal
+                    visible={tripPickerOpen}
+                    trips={trips}
+                    selectedTripId={form.tripId}
+                    onSelect={(id) => dispatch({ type: 'SET_TRIP', payload: id })}
+                    onClose={() => setTripPickerOpen(false)}
+                  />
+                </>
+              ) : null}
+
+              {/* Extra photos — only relevant when there's a primary photo */}
+              {form.photoUri ? (
+                <View style={styles.detailCard}>
+                  <TextInput
+                    value={form.photoTitle}
+                    onChangeText={(t) => dispatch({ type: 'SET_PHOTO_TITLE', payload: t })}
+                    placeholder="Заглавие на снимката (по избор)"
+                    style={styles.photoMetaInput}
+                    placeholderTextColor={colors.textMuted}
+                  />
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={{ gap: 8, paddingTop: 10 }}
+                  >
+                    {form.extraPhotoUris.map((uri, i) => (
+                      <View key={i} style={{ position: 'relative' }}>
+                        <Image source={{ uri }} style={{ width: 64, height: 64, borderRadius: 12 }} contentFit="cover" />
+                        <Pressable
+                          onPress={() => dispatch({ type: 'REMOVE_EXTRA_PHOTO', payload: i })}
+                          hitSlop={4}
+                          style={{
+                            position: 'absolute',
+                            top: -5,
+                            right: -5,
+                            backgroundColor: colors.danger,
+                            borderRadius: 9,
+                            width: 18,
+                            height: 18,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <Ionicons name="close" size={11} color="#fff" />
+                        </Pressable>
+                      </View>
+                    ))}
+                    {form.extraPhotoUris.length < 4 && (
+                      <Pressable
+                        onPress={() => void addExtraPhoto()}
+                        style={{
+                          width: 64,
+                          height: 64,
+                          borderRadius: 12,
+                          backgroundColor: colors.surfaceAlt,
+                          borderWidth: 1,
+                          borderColor: colors.border,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <Ionicons name="add" size={24} color={colors.primary} />
+                      </Pressable>
+                    )}
+                  </ScrollView>
+                </View>
+              ) : null}
+            </>
+          ) : null}
+
+          {/* ── SAVE BUTTON ── primary app colour, not the old Material blue */}
           <Pressable
             onPress={() => void save()}
             disabled={saving}
-            style={{ borderRadius: 20, overflow: 'hidden', marginTop: 8 }}
+            style={{ borderRadius: 20, overflow: 'hidden', marginTop: 16 }}
           >
-            <LinearGradient colors={['#1976D2', '#0D47A1']} style={styles.saveBtn}>
+            <LinearGradient
+              colors={[colors.primary, colors.primaryDark ?? colors.primary]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.saveBtn}
+            >
               {saving
                 ? <ActivityIndicator color="#fff" />
                 : <Text style={styles.saveBtnText}>{editCatchId ? 'Запази промените' : 'Запази улова'}</Text>
@@ -1012,8 +1093,6 @@ export default function AddCatchScreen() {
 type PhotoSectionProps = {
   photoUri: string | undefined;
   shareToFeed: boolean;
-  editCatchId: string | undefined;
-  currentStep: number;
   colors: AppColors;
   styles: ReturnType<typeof createAddCatchStyles>;
   onPickPhoto: () => void;
@@ -1025,8 +1104,6 @@ type PhotoSectionProps = {
 function PhotoSection({
   photoUri,
   shareToFeed,
-  editCatchId,
-  currentStep,
   colors,
   styles,
   onPickPhoto,
@@ -1041,31 +1118,13 @@ function PhotoSection({
         <Ionicons name="chevron-back" size={22} color="#fff" />
       </Pressable>
 
-      {/* Progress dots — absolute top-center, only !editCatchId */}
-      {!editCatchId && (
-        <View style={styles.heroDots}>
-          {[1, 2, 3, 4].map((step) => (
-            <View
-              key={step}
-              style={[
-                styles.heroDot,
-                currentStep >= step && styles.heroDotActive,
-                currentStep === step && styles.heroDotCurrent,
-              ]}
-            />
-          ))}
-        </View>
-      )}
-
       {photoUri ? (
         <>
           <Image source={{ uri: photoUri }} style={StyleSheet.absoluteFillObject} contentFit="cover" />
-          {/* Dark overlay at top for back button readability */}
           <LinearGradient
             colors={['rgba(0,0,0,0.55)', 'rgba(0,0,0,0)']}
             style={styles.heroTopGrad}
           />
-          {/* Controls overlay at bottom */}
           <LinearGradient
             colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.6)']}
             style={styles.heroBottomGrad}
@@ -1087,27 +1146,31 @@ function PhotoSection({
         </>
       ) : (
         <>
-          {/* Gradient placeholder — looks like camera viewfinder */}
+          {/* Outdoorsy dawn-water gradient — matches the rest of the redesigned screens.
+              Replaces the old hardcoded Material blue that clashed with the new palette. */}
           <LinearGradient
-            colors={['#0D2B5E', '#0D47A1', '#1565C0']}
+            colors={['#0A3A57', '#1F6F92', '#0E4D64']}
+            start={{ x: 0.1, y: 0 }}
+            end={{ x: 0.9, y: 1 }}
             style={StyleSheet.absoluteFillObject}
           />
-          {/* Subtle grid overlay for depth */}
-          <View style={styles.heroGrid} pointerEvents="none" />
-          {/* Camera shutter button */}
-          <Pressable onPress={onTakePhoto} style={styles.heroShutter}>
-            <View style={styles.heroShutterOuter}>
-              <View style={styles.heroShutterInner} />
+          <View style={styles.heroPlaceholderInner}>
+            <Ionicons name="fish-outline" size={48} color="rgba(255,255,255,0.7)" />
+            <Text style={styles.heroPlaceholderText}>Сними улова</Text>
+            <Text style={styles.heroPlaceholderSub}>Снимка не е задължителна, но прави спомена по-силен.</Text>
+            <View style={styles.heroEmptyActions}>
+              <Pressable onPress={onTakePhoto} style={styles.heroPrimaryBtn}>
+                <Ionicons name="camera" size={18} color="#0E4D64" />
+                <Text style={styles.heroPrimaryBtnText}>Камера</Text>
+              </Pressable>
+              {!shareToFeed && (
+                <Pressable onPress={onPickPhoto} style={styles.heroSecondaryBtn}>
+                  <Ionicons name="images-outline" size={18} color="#fff" />
+                  <Text style={styles.heroSecondaryBtnText}>Галерия</Text>
+                </Pressable>
+              )}
             </View>
-          </Pressable>
-          <Text style={styles.heroPlaceholderText}>Сними улова</Text>
-          {/* Gallery link at bottom */}
-          {!shareToFeed && (
-            <Pressable onPress={onPickPhoto} style={styles.heroGalleryLink}>
-              <Ionicons name="images-outline" size={14} color="rgba(255,255,255,0.7)" />
-              <Text style={styles.heroGalleryLinkText}>Избери от галерията</Text>
-            </Pressable>
-          )}
+          </View>
         </>
       )}
     </View>
@@ -1158,9 +1221,58 @@ function createAddCatchStyles(colors: AppColors) {
       width: '100%',
       height: 320,
       overflow: 'hidden',
-      backgroundColor: '#0D47A1',
+      backgroundColor: '#0E4D64',
       alignItems: 'center',
       justifyContent: 'center',
+    },
+    // New empty-state container — replaces the old shutter button + grid overlay.
+    heroPlaceholderInner: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 24,
+      gap: 8,
+    },
+    heroPlaceholderSub: {
+      fontSize: 12,
+      fontFamily: 'Nunito_400Regular',
+      color: 'rgba(255,255,255,0.65)',
+      textAlign: 'center',
+      paddingHorizontal: 16,
+      marginBottom: 14,
+    },
+    heroEmptyActions: {
+      flexDirection: 'row',
+      gap: 10,
+      marginTop: 4,
+    },
+    heroPrimaryBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor: '#fff',
+      borderRadius: 22,
+      paddingHorizontal: 18,
+      paddingVertical: 10,
+    },
+    heroPrimaryBtnText: {
+      fontSize: 14,
+      fontFamily: 'Nunito_700Bold',
+      color: '#0E4D64',
+    },
+    heroSecondaryBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      borderRadius: 22,
+      paddingHorizontal: 18,
+      paddingVertical: 10,
+      borderWidth: 1.5,
+      borderColor: 'rgba(255,255,255,0.6)',
+    },
+    heroSecondaryBtnText: {
+      fontSize: 14,
+      fontFamily: 'Nunito_700Bold',
+      color: '#fff',
     },
     heroBack: {
       position: 'absolute',
@@ -1514,6 +1626,209 @@ function createAddCatchStyles(colors: AppColors) {
       fontSize: 12,
       color: colors.textMuted,
       marginTop: 1,
+    },
+
+    // ════════════════════════════════════════════════════════════════════
+    // New 2026 redesign styles
+    // ════════════════════════════════════════════════════════════════════
+
+    // ── Summary card — hero card under the photo, combines species + metrics + date + released ──
+    summaryCard: {
+      backgroundColor: colors.card,
+      borderRadius: 20,
+      marginTop: 4,
+      marginBottom: 14,
+      overflow: 'hidden',
+      shadowColor: '#000',
+      shadowOpacity: 0.05,
+      shadowRadius: 8,
+      elevation: 2,
+    },
+    summarySpeciesRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 18,
+      paddingTop: 18,
+      paddingBottom: 14,
+      gap: 12,
+    },
+    summarySpeciesName: {
+      fontSize: 24,
+      fontFamily: 'Nunito_800ExtraBold',
+      color: colors.text,
+      lineHeight: 28,
+      letterSpacing: -0.3,
+    },
+    summarySpeciesLatin: {
+      fontSize: 12,
+      fontFamily: 'Nunito_400Regular',
+      color: colors.textMuted,
+      fontStyle: 'italic',
+      marginTop: 2,
+    },
+    summarySpeciesPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: colors.primarySurface,
+      borderRadius: 14,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+    },
+    summarySpeciesPillText: {
+      fontSize: 12,
+      fontFamily: 'Nunito_700Bold',
+      color: colors.primary,
+    },
+    summaryDivider: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: colors.border,
+      marginHorizontal: 18,
+    },
+    summaryMetricsRow: {
+      flexDirection: 'row',
+      paddingHorizontal: 4,
+    },
+    summaryMetric: {
+      flex: 1,
+      paddingVertical: 16,
+      paddingHorizontal: 14,
+    },
+    summaryMetricVDivider: {
+      width: StyleSheet.hairlineWidth,
+      backgroundColor: colors.border,
+      marginVertical: 12,
+    },
+    summaryMetricLabel: {
+      fontSize: 11,
+      fontFamily: 'Nunito_700Bold',
+      color: colors.textMuted,
+      letterSpacing: 0.8,
+      textTransform: 'uppercase',
+      marginBottom: 6,
+    },
+    summaryMetricInputRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      gap: 4,
+    },
+    summaryMetricInput: {
+      fontSize: 30,
+      fontFamily: 'Nunito_800ExtraBold',
+      color: colors.text,
+      padding: 0,
+      minWidth: 56,
+      letterSpacing: -0.5,
+    },
+    summaryMetricUnit: {
+      fontSize: 14,
+      fontFamily: 'Nunito_600SemiBold',
+      color: colors.textMuted,
+      marginBottom: 5,
+    },
+    summaryDateRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 18,
+      paddingVertical: 14,
+      gap: 12,
+    },
+    summarySwitchRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 18,
+      paddingVertical: 14,
+      gap: 12,
+    },
+    summaryRowIcon: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: colors.primarySurface,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    summaryRowLabel: {
+      fontSize: 11,
+      fontFamily: 'Nunito_700Bold',
+      color: colors.textMuted,
+      letterSpacing: 0.8,
+      textTransform: 'uppercase',
+    },
+    summaryRowValue: {
+      fontSize: 16,
+      fontFamily: 'Nunito_700Bold',
+      color: colors.text,
+      marginTop: 2,
+    },
+    summaryRowSub: {
+      fontSize: 12,
+      fontFamily: 'Nunito_400Regular',
+      color: colors.textMuted,
+      marginTop: 2,
+    },
+
+    // ── Date picker (inline calendar) ──
+    datePickerWrap: {
+      paddingHorizontal: 8,
+      paddingBottom: 8,
+    },
+    datePickerDone: {
+      alignSelf: 'flex-end',
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+    },
+    datePickerDoneText: {
+      fontSize: 14,
+      fontFamily: 'Nunito_700Bold',
+      color: colors.primary,
+    },
+
+    // ── Sharing card — promoted above details ──
+    sharingCard: {
+      backgroundColor: colors.card,
+      borderRadius: 20,
+      marginBottom: 14,
+      overflow: 'hidden',
+      shadowColor: '#000',
+      shadowOpacity: 0.05,
+      shadowRadius: 8,
+      elevation: 2,
+    },
+    sharingHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: 18,
+      paddingTop: 16,
+      paddingBottom: 8,
+    },
+    sharingAccent: {
+      width: 4,
+      height: 18,
+      borderRadius: 2,
+      backgroundColor: colors.primary,
+    },
+    sharingTitle: {
+      fontSize: 15,
+      fontFamily: 'Nunito_700Bold',
+      color: colors.text,
+    },
+
+    // ── Details collapsible toggle ──
+    detailsToggle: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      paddingVertical: 12,
+      marginBottom: 4,
+    },
+    detailsToggleText: {
+      fontSize: 14,
+      fontFamily: 'Nunito_700Bold',
+      color: colors.primary,
+      letterSpacing: 0.2,
     },
 
     // ── Save button ──
