@@ -34,6 +34,7 @@ import { useAuth } from '../services/authContext';
 import { formatFirebaseError } from '../services/firebaseErrors';
 import { captureException } from '../services/observability';
 import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
+import { notifyError } from '../utils/notify';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 import * as Haptics from 'expo-haptics';
 import { useUnreadNotifCount } from '../hooks/useUnreadNotifCount';
@@ -129,6 +130,17 @@ export default function FeedScreen() {
   const [error, setError] = useState<string | null>(null);
   const [lastDoc, setLastDoc] = useState<DocumentSnapshot | null>(null);
   const [hasMore, setHasMore] = useState(false);
+  // "X нови" pill state — counts items that appeared at the top of the feed
+  // since the user last saw the top. seenTopIdRef tracks the most-recent
+  // top item id the user has observed (updated on scroll-to-top + pill-tap).
+  // itemsRef mirrors items so the onScroll listener can read fresh data
+  // without forcing a listener re-create on every items change.
+  const [newPostsCount, setNewPostsCount] = useState(0);
+  const [stickyTabsVisible, setStickyTabsVisible] = useState(false);
+  const seenTopIdRef = useRef<string | null>(null);
+  const isAtTopRef = useRef(true);
+  const itemsRef = useRef<FeedItem[]>([]);
+  const newPostsCountRef = useRef(0);
 
   const prefetchBatch = useCallback((list: FeedItem[]) => {
     list.forEach((item) => {
@@ -175,7 +187,25 @@ export default function FeedScreen() {
 
       let next = page.items.filter((i) => !blockedUids.has(i.ownerUid));
       const nextPosts = postsPage.items.filter((p) => !blockedUids.has(p.ownerUid));
+
+      // "New posts" pill detection: if the user is scrolled away from the top
+      // and new items arrived above the previously-seen tip, show a pill with
+      // the count. When the user is at the top, just track the latest tip.
+      const newTopId = next[0]?.id ?? null;
+      if (newTopId && seenTopIdRef.current && newTopId !== seenTopIdRef.current && !isAtTopRef.current) {
+        const seenIdx = next.findIndex((i) => i.id === seenTopIdRef.current);
+        const delta = seenIdx > 0 ? seenIdx : next.length;
+        newPostsCountRef.current = delta;
+        setNewPostsCount(delta);
+      } else if (isAtTopRef.current) {
+        // User can see the top — they've effectively "seen" the new items.
+        seenTopIdRef.current = newTopId;
+        newPostsCountRef.current = 0;
+        setNewPostsCount(0);
+      }
+
       setItems(next);
+      itemsRef.current = next;
       setPosts(nextPosts);
       prefetchBatch(next);
       setLastDoc(page.lastDoc);
@@ -356,7 +386,7 @@ export default function FeedScreen() {
             await deletePost(post.id);
             setPosts((prev) => prev.filter((p) => p.id !== post.id));
           } catch {
-            Alert.alert('Грешка', 'Неуспешно изтриване. Опитай отново.');
+            notifyError('Неуспешно изтриване', 'Опитай отново.');
           }
         },
       },
@@ -376,7 +406,7 @@ export default function FeedScreen() {
               : i
             ));
           } catch {
-            Alert.alert('Грешка', 'Снимката не можа да бъде изтрита. Опитай отново.');
+            notifyError('Снимката не можа да бъде изтрита', 'Опитай отново.');
           }
         },
       },
@@ -393,7 +423,7 @@ export default function FeedScreen() {
             await removeFromPublicFeed(feedItem.id, user.uid);
             setItems((prev) => prev.filter((i) => i.id !== feedItem.id));
           } catch {
-            Alert.alert('Грешка', 'Публикацията не можа да бъде премахната. Опитай отново.');
+            notifyError('Публикацията не можа да бъде премахната', 'Опитай отново.');
           }
         },
       },
@@ -452,7 +482,8 @@ export default function FeedScreen() {
       {
         useNativeDriver: true,
         listener: (e: { nativeEvent: { contentOffset: { y: number } } }) => {
-          const show = e.nativeEvent.contentOffset.y > 400;
+          const y = e.nativeEvent.contentOffset.y;
+          const show = y > 400;
           setShowScrollTop((prev) => {
             if (prev !== show) {
               Animated.spring(scrollTopAnim, {
@@ -464,6 +495,21 @@ export default function FeedScreen() {
             }
             return show;
           });
+          // Track "is at top" — within ~80px counts as "you can see the latest".
+          // When the user returns to the top, the "X нови" pill clears itself
+          // and the seen-tip is updated so future new items count from there.
+          const atTop = y < 80;
+          if (atTop !== isAtTopRef.current) {
+            isAtTopRef.current = atTop;
+            if (atTop && newPostsCountRef.current > 0) {
+              newPostsCountRef.current = 0;
+              setNewPostsCount(0);
+              seenTopIdRef.current = itemsRef.current[0]?.id ?? null;
+            }
+          }
+          // Toggle compact sticky tabs when the user scrolls past the main header.
+          const shouldShowSticky = y > 200;
+          setStickyTabsVisible((prev) => prev === shouldShowSticky ? prev : shouldShowSticky);
         },
       },
     ),
@@ -473,6 +519,17 @@ export default function FeedScreen() {
   const scrollToTop = useCallback(() => {
     flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
     void Haptics.selectionAsync();
+  }, []);
+
+  // Tap the "X нови" pill → scroll to top, mark all as seen, clear count.
+  // The scroll-end will also clear the pill via the onScroll listener, but
+  // we clear eagerly here so the pill disappears immediately on tap.
+  const onPressNewPosts = useCallback(() => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+    seenTopIdRef.current = itemsRef.current[0]?.id ?? null;
+    newPostsCountRef.current = 0;
+    setNewPostsCount(0);
   }, []);
 
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 40 }).current;
@@ -709,6 +766,126 @@ export default function FeedScreen() {
             <Text style={{ ...typography.small, color: colors.white, fontWeight: '700' }}>Нагоре</Text>
           </Pressable>
         </Animated.View>
+
+        {/* Sticky compact tabs — fade in once the big header has scrolled away,
+            so users can switch scope without scrolling back to top. The main
+            header's tabs still work; this is a duplicate that lives over the
+            content during deep scrolls. */}
+        {configured && user && stickyTabsVisible ? (
+          <Animated.View
+            style={{
+              position: 'absolute',
+              top: insets.top,
+              left: 0,
+              right: 0,
+              zIndex: 11,
+              paddingHorizontal: spacing.lg,
+              paddingVertical: spacing.sm,
+              backgroundColor: colors.background + 'F0',
+              borderBottomWidth: StyleSheet.hairlineWidth,
+              borderBottomColor: colors.border,
+              opacity: scrollY.interpolate({
+                inputRange: [180, 240],
+                outputRange: [0, 1],
+                extrapolate: 'clamp',
+              }),
+            }}
+          >
+            <View style={{
+              flexDirection: 'row',
+              backgroundColor: colors.surfaceAlt,
+              borderRadius: 14,
+              borderWidth: 1,
+              borderColor: colors.border,
+              overflow: 'hidden',
+              padding: 3,
+            }}>
+              <Pressable
+                onPress={() => {
+                  if (scope !== 'all') {
+                    setItems([]);
+                    setScope('all');
+                    void Haptics.selectionAsync();
+                  }
+                }}
+                style={{
+                  flex: 1,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  paddingVertical: 8,
+                  borderRadius: 11,
+                  backgroundColor: scope === 'all' ? colors.primary : 'transparent',
+                }}
+              >
+                <Ionicons name="grid-outline" size={16} color={scope === 'all' ? '#fff' : colors.textMuted} />
+                <Text style={{ fontSize: 13, fontWeight: '700', color: scope === 'all' ? '#fff' : colors.textMuted }}>Всички</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  if (scope !== 'following') {
+                    setItems([]);
+                    setScope('following');
+                    void Haptics.selectionAsync();
+                  }
+                }}
+                style={{
+                  flex: 1,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  paddingVertical: 8,
+                  borderRadius: 11,
+                  backgroundColor: scope === 'following' ? colors.primary : 'transparent',
+                }}
+              >
+                <Ionicons name="people-outline" size={16} color={scope === 'following' ? '#fff' : colors.textMuted} />
+                <Text style={{ fontSize: 13, fontWeight: '700', color: scope === 'following' ? '#fff' : colors.textMuted }}>Следвани</Text>
+              </Pressable>
+            </View>
+          </Animated.View>
+        ) : null}
+
+        {/* "X нови" pill — appears under the header when new items arrive while
+            the user is scrolled away. Tap to scroll to the top and clear. */}
+        {newPostsCount > 0 ? (
+          <View
+            pointerEvents="box-none"
+            style={{
+              position: 'absolute',
+              top: headerHeight + spacing.sm,
+              left: 0,
+              right: 0,
+              alignItems: 'center',
+              zIndex: 9,
+            }}
+          >
+            <Pressable
+              onPress={onPressNewPosts}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                backgroundColor: colors.primary,
+                borderRadius: 20,
+                paddingHorizontal: spacing.md,
+                paddingVertical: 8,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.25,
+                shadowRadius: 8,
+                elevation: 8,
+              }}
+            >
+              <Ionicons name="arrow-up" size={14} color="#fff" />
+              <Text style={{ ...typography.small, color: '#fff', fontWeight: '800' }}>
+                {newPostsCount} {newPostsCount === 1 ? 'нова публикация' : 'нови публикации'}
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
       </View>
     );
   })();

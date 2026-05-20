@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   StyleSheet,
@@ -13,7 +14,6 @@ import type { User } from 'firebase/auth';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
-import { Button } from './Button';
 import { Card } from './Card';
 import { createDamFeedPost, deleteDamFeedPost, subscribeDamFeedPosts, type DamFeedPostDoc } from '../services/damFeed';
 import { checkImageSize } from '../utils/imageSize';
@@ -31,6 +31,29 @@ export function DamFeedSection({ damId, damName, user, firebaseConfigured }: Pro
     () =>
       StyleSheet.create({
         title: { ...typography.overline, color: colors.textMuted, marginBottom: spacing.sm },
+        headerRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: spacing.sm,
+        },
+        uploadPill: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 4,
+          paddingHorizontal: spacing.sm,
+          paddingVertical: 5,
+          borderRadius: radius.pill,
+          backgroundColor: colors.primarySurface,
+          borderWidth: 1,
+          borderColor: colors.primary,
+        },
+        uploadPillText: {
+          ...typography.caption,
+          color: colors.primary,
+          fontWeight: '700',
+          fontSize: 12,
+        },
         row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
         thumb: {
           width: 160,
@@ -93,7 +116,28 @@ export function DamFeedSection({ damId, damName, user, firebaseConfigured }: Pro
 
   return (
     <View style={{ marginTop: spacing.lg }}>
-      <Text style={styles.title}>Снимки от мястото</Text>
+      {/* Header row — title on the left, compact upload pill on the right.
+          The previous full-width primary green button dominated the sheet;
+          a small icon-pill matches the rest of the calmer action design. */}
+      <View style={styles.headerRow}>
+        <Text style={[styles.title, { marginBottom: 0 }]}>Снимки от мястото</Text>
+        {firebaseConfigured && user ? (
+          <Pressable
+            onPress={pickAndUpload}
+            disabled={busy}
+            style={({ pressed }) => [styles.uploadPill, (pressed || busy) && { opacity: 0.7 }]}
+            accessibilityRole="button"
+            accessibilityLabel="Качи снимка"
+          >
+            {busy ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <Ionicons name="camera-outline" size={14} color={colors.primary} />
+            )}
+            <Text style={styles.uploadPillText}>{busy ? 'Качване…' : 'Качи'}</Text>
+          </Pressable>
+        ) : null}
+      </View>
 
       {!firebaseConfigured ? (
         <Card>
@@ -105,7 +149,6 @@ export function DamFeedSection({ damId, damName, user, firebaseConfigured }: Pro
         </Card>
       ) : (
         <>
-          <Button title={busy ? 'Качване…' : 'Качи снимка'} onPress={pickAndUpload} loading={busy} />
           {posts.length === 0 ? (
             <Text style={[styles.muted, { marginTop: spacing.md }]}>
               Още няма качени снимки за този язовир. Бъди пръв!

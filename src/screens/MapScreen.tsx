@@ -1734,7 +1734,10 @@ const WaterBodySheet = React.memo(function WaterBodySheet({
             <View {...panResponder.panHandlers} style={{ alignItems: 'center', paddingTop: spacing.sm, paddingBottom: spacing.sm }}>
               <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border }} />
             </View>
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: spacing.xxl + 24 }}
+            >
               {selectedWater ? (
                 <>
                   <LinearGradient
@@ -2124,46 +2127,55 @@ const WaterBodySheet = React.memo(function WaterBodySheet({
                     firebaseConfigured={firebaseConfigured}
                   />
 
-                  <View style={styles.actionGrid}>
-                    <Pressable style={styles.actionBtn} onPress={onRecordCatch}>
-                      <Ionicons name="fish-outline" size={22} color={colors.primary} />
-                      <Text style={styles.actionBtnText}>Запиши улов</Text>
+                  {/* Primary CTA — the action we actually want users to take. */}
+                  <Pressable
+                    onPress={onRecordCatch}
+                    style={({ pressed }) => [styles.primaryCta, pressed && { opacity: 0.85 }]}
+                  >
+                    <Ionicons name="fish" size={20} color="#fff" />
+                    <Text style={styles.primaryCtaText}>Запиши улов от тук</Text>
+                  </Pressable>
+
+                  {/* Secondary actions — compact icon pills, horizontal scroll
+                      so we never have wrap issues regardless of label length. */}
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.pillRowContent}
+                  >
+                    <Pressable style={styles.iconPill} onPress={onSaveAsFavorite}>
+                      <Ionicons name="star-outline" size={18} color="#C49A00" />
+                      <Text style={styles.iconPillText}>Любими</Text>
                     </Pressable>
-                    <Pressable style={styles.actionBtn} onPress={onSaveAsFavorite}>
-                      <Ionicons name="star-outline" size={22} color="#C49A00" />
-                      <Text style={styles.actionBtnText}>Любими</Text>
-                    </Pressable>
-                    <Pressable style={styles.actionBtn} onPress={onShowOnMap}>
-                      <Ionicons name="map-outline" size={22} color={colors.primary} />
-                      <Text style={styles.actionBtnText}>На карта</Text>
+                    <Pressable style={styles.iconPill} onPress={onShowOnMap}>
+                      <Ionicons name="map-outline" size={18} color={colors.primary} />
+                      <Text style={styles.iconPillText}>На карта</Text>
                     </Pressable>
                     <Pressable
-                      style={[styles.actionBtn, routeLoading && { opacity: 0.6 }]}
+                      style={[styles.iconPill, routeLoading && { opacity: 0.6 }]}
                       onPress={onOpenInAppRoute}
                       disabled={routeLoading}
                     >
                       {routeLoading
                         ? <ActivityIndicator size="small" color={colors.primary} />
-                        : <Ionicons name="navigate-outline" size={22} color={colors.primary} />}
-                      <Text style={styles.actionBtnText}>Маршрут</Text>
+                        : <Ionicons name="navigate-outline" size={18} color={colors.primary} />}
+                      <Text style={styles.iconPillText}>Маршрут</Text>
                     </Pressable>
-                    <Pressable style={styles.actionBtn} onPress={onExternalRoute}>
-                      <Ionicons name="open-outline" size={22} color={colors.primary} />
-                      <Text style={styles.actionBtnText}>Навигация</Text>
+                    <Pressable style={styles.iconPill} onPress={onExternalRoute}>
+                      <Ionicons name="open-outline" size={18} color={colors.primary} />
+                      <Text style={styles.iconPillText}>Навигация</Text>
                     </Pressable>
-                    <Pressable style={styles.actionBtn} onPress={onOpenLeaderboard}>
-                      <Ionicons name="trophy-outline" size={22} color="#C49A00" />
-                      <Text style={styles.actionBtnText}>Класиране</Text>
+                    <Pressable style={styles.iconPill} onPress={onOpenLeaderboard}>
+                      <Ionicons name="trophy-outline" size={18} color="#C49A00" />
+                      <Text style={styles.iconPillText}>Класиране</Text>
                     </Pressable>
-                  </View>
+                  </ScrollView>
                 </>
               ) : null}
-              <Pressable
-                onPress={onClose}
-                style={{ alignItems: 'center', marginTop: spacing.md, paddingBottom: spacing.md }}
-              >
-                <Text style={{ color: colors.textMuted, ...typography.body }}>Затвори</Text>
-              </Pressable>
+              {/* Standalone "Затвори" text removed — the drag handle is the
+                  affordance for closing the sheet. Removed both the visual
+                  noise and the overlap bug where the text collided with the
+                  last row of the old 3x2 action grid. */}
             </ScrollView>
           </Animated.View>
         </View>
@@ -2639,6 +2651,51 @@ function createMapStyles(colors: AppColors) {
       color: colors.text,
       fontWeight: '600',
       textAlign: 'center',
+    },
+    // New dam-sheet action styles — primary CTA + horizontal icon pill row
+    primaryCta: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      backgroundColor: colors.primary,
+      paddingVertical: 14,
+      paddingHorizontal: spacing.lg,
+      borderRadius: radius.pill,
+      marginTop: spacing.lg,
+      shadowColor: colors.primary,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.18,
+      shadowRadius: 10,
+      elevation: 3,
+    },
+    primaryCtaText: {
+      ...typography.bodyBold,
+      color: '#fff',
+      fontSize: 16,
+      letterSpacing: 0.2,
+    },
+    pillRowContent: {
+      gap: spacing.sm,
+      paddingVertical: spacing.md,
+      paddingRight: spacing.lg,
+    },
+    iconPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: spacing.md,
+      paddingVertical: 8,
+      borderRadius: radius.pill,
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    iconPillText: {
+      ...typography.small,
+      color: colors.text,
+      fontWeight: '700',
+      fontSize: 13,
     },
   });
 }

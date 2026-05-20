@@ -128,21 +128,62 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
   // Reset swipe position when story changes
   useEffect(() => { swipeX.setValue(0); }, [viewingIndex, swipeX]);
 
-  // Start/reset progress bar when viewing changes
-  useEffect(() => {
-    setImageError(false);
-    if (progressTimer.current) { progressTimer.current.stop(); }
-    progressAnim.setValue(0);
-    if (viewingIndex < 0) return;
+  // Helper to start (or resume from a given progress 0..1) the timing run.
+  // Used by both the initial story-changed effect and the hold-to-pause logic.
+  const startProgressFrom = useCallback((startValue: number) => {
+    if (progressTimer.current) progressTimer.current.stop();
+    progressAnim.setValue(startValue);
+    const remainingMs = STORY_DURATION * (1 - startValue);
+    if (remainingMs <= 0) {
+      goNextRef.current();
+      return;
+    }
     const anim = Animated.timing(progressAnim, {
       toValue: 1,
-      duration: STORY_DURATION,
+      duration: remainingMs,
       useNativeDriver: false,
     });
     progressTimer.current = anim;
     anim.start(({ finished }) => { if (finished) goNextRef.current(); });
-    return () => { anim.stop(); };
-  }, [viewingIndex, progressAnim]);
+  }, [progressAnim]);
+
+  // Start/reset progress bar when viewing changes
+  useEffect(() => {
+    setImageError(false);
+    if (viewingIndex < 0) {
+      if (progressTimer.current) progressTimer.current.stop();
+      progressAnim.setValue(0);
+      return;
+    }
+    startProgressFrom(0);
+    return () => {
+      if (progressTimer.current) progressTimer.current.stop();
+    };
+  }, [viewingIndex, progressAnim, startProgressFrom]);
+
+  // Hold-to-pause — Instagram-style. When user presses and holds the story
+  // area, pause the progress animation; resume when they release. Also
+  // distinguish a quick tap (<200ms) from a hold so the tap zones still
+  // advance/rewind on quick taps.
+  const pressStartedAtRef = useRef(0);
+  const wasPausedRef = useRef(false);
+  const pauseProgress = useCallback(() => {
+    if (progressTimer.current) {
+      progressTimer.current.stop();
+      // After stop(), progressAnim retains its current value internally.
+      wasPausedRef.current = true;
+    }
+  }, []);
+  const resumeProgress = useCallback(() => {
+    if (!wasPausedRef.current) return;
+    wasPausedRef.current = false;
+    // Read current value via a one-shot listener — Animated.Value doesn't
+    // expose a public getValue() in the strict typings.
+    let current = 0;
+    const id = progressAnim.addListener((s) => { current = s.value; });
+    progressAnim.removeListener(id);
+    startProgressFrom(current);
+  }, [progressAnim, startProgressFrom]);
 
   // Swipe gesture — fix: use refs so closure is always fresh
   const panResponder = useRef(
@@ -232,7 +273,7 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
             <View style={[styles.ring, styles.addRing]}>
               <Ionicons name="add" size={28} color={colors.primary} />
             </View>
-            <Text style={styles.name}>Мо��енти</Text>
+            <Text style={styles.name}>Моменти</Text>
           </Pressable>
         ) : null}
         {stories.map((s) => (
@@ -298,17 +339,44 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
                 )}
               </Animated.View>
 
-              {/* Left tap zone — previous story */}
+              {/* Left tap zone — quick tap = previous story; hold = pause */}
               {viewingIndex > 0 ? (
                 <Pressable
                   style={{ position: 'absolute', left: 0, top: insets.top + 48, bottom: 220, width: SW * 0.32, zIndex: 10 }}
-                  onPress={() => animateAndGo('right')}
+                  onPressIn={() => {
+                    pressStartedAtRef.current = Date.now();
+                    // Wait briefly before pausing so quick taps don't strobe the timer.
+                    setTimeout(() => {
+                      if (Date.now() - pressStartedAtRef.current >= 180) pauseProgress();
+                    }, 200);
+                  }}
+                  onPressOut={() => {
+                    const heldMs = Date.now() - pressStartedAtRef.current;
+                    if (heldMs < 200) {
+                      animateAndGo('right');
+                    } else {
+                      resumeProgress();
+                    }
+                  }}
                 />
               ) : null}
-              {/* Right tap zone — next story */}
+              {/* Right tap zone — quick tap = next story; hold = pause */}
               <Pressable
                 style={{ position: 'absolute', right: 0, top: insets.top + 48, bottom: 220, width: SW * 0.45, zIndex: 10 }}
-                onPress={() => animateAndGo('left')}
+                onPressIn={() => {
+                  pressStartedAtRef.current = Date.now();
+                  setTimeout(() => {
+                    if (Date.now() - pressStartedAtRef.current >= 180) pauseProgress();
+                  }, 200);
+                }}
+                onPressOut={() => {
+                  const heldMs = Date.now() - pressStartedAtRef.current;
+                  if (heldMs < 200) {
+                    animateAndGo('left');
+                  } else {
+                    resumeProgress();
+                  }
+                }}
               />
 
               {viewer.flyingEmojis.map((fe) => (

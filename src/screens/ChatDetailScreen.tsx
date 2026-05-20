@@ -21,6 +21,7 @@ import { useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as Haptics from 'expo-haptics';
 import { uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -49,6 +50,7 @@ import { enqueueMessage } from '../services/messageSyncQueue';
 import { ensureFirebase } from '../services/firebase';
 import { getBlockedUids, blockUser, unblockUser } from '../services/blockUser';
 import { handleError } from '../utils/handleError';
+import { notifyInfo } from '../utils/notify';
 import { checkImageSize } from '../utils/imageSize';
 
 type R = RouteProp<ProfileStackParamList, 'ChatDetail'>;
@@ -330,10 +332,13 @@ export default function ChatDetailScreen() {
   const send = useCallback(async () => {
     if (!user || !text.trim()) return;
     if (blockedByMe) {
-      Alert.alert('Блокиран потребител', 'Разблокирай го от менюто, за да изпратиш съобщение.');
+      notifyInfo('Блокиран потребител', 'Разблокирай го от менюто, за да изпратиш съобщение.');
       return;
     }
     setSending(true);
+    // Subtle confirmation that the send was registered, even before the network
+    // round-trip completes. Light feedback so back-to-back messages don't buzz.
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const trimmed = text.trim();
     clearTypingStatus();
 
@@ -363,7 +368,7 @@ export default function ChatDetailScreen() {
       if (code === 'unavailable' || code === 'failed-precondition') {
         const myName = user.displayName ?? user.email ?? 'Рибар';
         await enqueueMessage(convId, user.uid, trimmed, otherUid, myName, undefined, undefined, clientId, replyRef).catch(() => {});
-        Alert.alert('Офлайн', 'Съобщението ще бъде изпратено, когато се свържеш с интернет.');
+        notifyInfo('Офлайн', 'Съобщението ще бъде изпратено, когато се свържеш с интернет.');
       } else {
         setText(trimmed);
         if (replyRef) setReplyingTo(replyingTo);
@@ -386,14 +391,14 @@ export default function ChatDetailScreen() {
   const pickAndSendMedia = useCallback(async (source: 'camera' | 'gallery') => {
     if (!user) return;
     if (blockedByMe) {
-      Alert.alert('Блокиран потребител', 'Разблокирай го, за да изпратиш медия.');
+      notifyInfo('Блокиран потребител', 'Разблокирай го, за да изпратиш медия.');
       return;
     }
     const perm = source === 'camera'
       ? await ImagePicker.requestCameraPermissionsAsync()
       : await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (perm.status !== 'granted') {
-      Alert.alert('Няма достъп', 'Разреши достъп до камерата/галерията.');
+      notifyInfo('Няма достъп', 'Разреши достъп до камерата/галерията.');
       return;
     }
     const opts: ImagePicker.ImagePickerOptions = { mediaTypes: 'images', quality: 0.5 };
@@ -1103,7 +1108,7 @@ export default function ChatDetailScreen() {
           <Pressable
             onPress={() => {
               if (blockedByMe) {
-                Alert.alert('Блокиран потребител', 'Разблокирай го, за да изпратиш медия.');
+                notifyInfo('Блокиран потребител', 'Разблокирай го, за да изпратиш медия.');
                 return;
               }
               Alert.alert('Изпрати медия', undefined, [

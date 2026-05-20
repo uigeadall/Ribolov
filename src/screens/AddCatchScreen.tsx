@@ -45,6 +45,7 @@ import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
 import { isRemoteImageUri, formatCatchDate } from '../utils/formatCatchDate';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { handleError } from '../utils/handleError';
+import { notifyInfo, notifyError } from '../utils/notify';
 import { checkImageSize } from '../utils/imageSize';
 import { fetchWeather } from '../services/weather';
 import { DAMS } from '../data/dams';
@@ -344,7 +345,7 @@ export default function AddCatchScreen() {
     }
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert('Нужно е разрешение', 'Разреши достъп до галерията, за да добавиш снимка.');
+      notifyInfo('Нужно е разрешение', 'Разреши достъп до галерията, за да добавиш снимка.');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -375,7 +376,7 @@ export default function AddCatchScreen() {
     }
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert('Достъп до камерата', 'Разреши достъп до камерата в настройките на телефона.');
+      notifyInfo('Достъп до камерата', 'Разреши достъп до камерата в настройките на телефона.');
       return;
     }
     const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
@@ -392,7 +393,7 @@ export default function AddCatchScreen() {
     if (form.extraPhotoUris.length >= 4) return;
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert('Достъп до галерията', 'Разреши достъп до галерията в настройките на телефона.');
+      notifyInfo('Достъп до галерията', 'Разреши достъп до галерията в настройките на телефона.');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -411,7 +412,7 @@ export default function AddCatchScreen() {
   const grabLocation = async () => {
     const perm = await Location.requestForegroundPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert('Нужно е разрешение', 'Разреши достъп до локацията.');
+      notifyInfo('Нужно е разрешение', 'Разреши достъп до локацията.');
       return;
     }
     const loc = await Location.getCurrentPositionAsync({});
@@ -578,7 +579,7 @@ export default function AddCatchScreen() {
           }
         })();
       } else if (form.shareToFeed) {
-        Alert.alert('Нужен е акаунт', 'За да споделиш публично, влез/регистрирай се в Профил.');
+        notifyInfo('Нужен е акаунт', 'За да споделиш публично, влез/регистрирай се в Профил.');
       }
     } catch (e: unknown) {
       handleError(e);

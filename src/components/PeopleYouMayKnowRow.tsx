@@ -55,6 +55,11 @@ export function PeopleYouMayKnowRow({ collapseWhenEmpty = true }: Props) {
       await followUser(user.uid, u.uid, u.displayName);
       await sendFollowNotification(u.uid, user.uid, user.displayName ?? 'Рибар').catch(() => {});
       setFollowed((prev) => new Set([...prev, u.uid]));
+      // Brief confirmation flash, then remove the tile so the row stays fresh
+      // and the user can see new suggestions instead of a pile of "Следваш" pills.
+      setTimeout(() => {
+        setDismissed((prev) => new Set([...prev, u.uid]));
+      }, 700);
     } finally {
       setFollowBusy((prev) => { const s = new Set(prev); s.delete(u.uid); return s; });
     }

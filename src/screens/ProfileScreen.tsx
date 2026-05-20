@@ -28,7 +28,8 @@ import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { MenuRow } from '../components/MenuRow';
 import { BadgeIcon } from '../components/BadgeIcon';
-import { ProfileHero, HeroButton } from '../components/ProfileHero';
+import { TrophyHero, TrophyHeroButton } from '../components/TrophyHero';
+import { TrophyShelf } from '../components/TrophyShelf';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { accentPresets, type AccentTheme } from '../theme/palette';
@@ -435,6 +436,16 @@ export default function ProfileScreen() {
   const catchStatsCount = catches.length;
   const catchStatsSpecies = new Set(catches.map((c) => c.speciesId)).size;
   const catchStatsKg = catches.reduce((s, c) => s + (c.weightKg ?? 0), 0).toFixed(1);
+
+  // Personal-best catch — drives the TrophyHero backdrop + PR badge.
+  const bestCatch = useMemo(() => {
+    let best: Catch | null = null;
+    for (const c of catches) {
+      if (typeof c.weightKg !== 'number') continue;
+      if (!best || (c.weightKg ?? 0) > (best.weightKg ?? 0)) best = c;
+    }
+    return best;
+  }, [catches]);
 
   // ── Design tokens ───────────────────────────────────────────────────────────
 
@@ -1205,21 +1216,26 @@ export default function ProfileScreen() {
         ) : (
           <>
             {/* ════════════════════════════════════════
-                HERO + STATS CARD + ACTIONS
-                Uses the shared ProfileHero so this and UserPublicProfileScreen
-                share the same outdoorsy visual language. The old inline hero
-                with the embedded "glass" stats panel is gone — stats now live
-                in their own clean card below the cover.
+                TROPHY HERO — the angler's biggest catch fills the entire
+                top-of-screen as a dramatic backdrop. Identity sits in a glass
+                card overlapping the bottom. Falls back to a dawn-water gradient
+                when there's no catch yet.
             ════════════════════════════════════════ */}
-            <ProfileHero
+            <TrophyHero
               name={displayName.trim() || user.displayName || 'Рибар'}
               city={city.trim() || undefined}
               bio={bio.trim() || undefined}
-              photoUrl={avatarUri ?? undefined}
+              avatarUrl={avatarUri ?? undefined}
               initials={initialLetter}
+              bestCatch={bestCatch ? {
+                photoUri: bestCatch.photoUri,
+                speciesName: bestCatch.speciesName,
+                weightKg: bestCatch.weightKg,
+                date: bestCatch.date,
+              } : undefined}
               onPickAvatar={configured ? pickProfileAvatar : undefined}
               topLeft={
-                <HeroButton
+                <TrophyHeroButton
                   icon="menu-outline"
                   onPress={() => { void Haptics.selectionAsync(); setSettingsOpen(true); }}
                   accessibilityLabel="Меню"
@@ -1227,13 +1243,13 @@ export default function ProfileScreen() {
               }
               topRight={
                 <View style={{ flexDirection: 'row', gap: spacing.xs }}>
-                  <HeroButton
+                  <TrophyHeroButton
                     icon="notifications-outline"
                     onPress={() => navigation.navigate('Notifications')}
                     accessibilityLabel="Известия"
                     badge={unreadNotifs}
                   />
-                  <HeroButton
+                  <TrophyHeroButton
                     icon={mode === 'dark' ? 'sunny-outline' : 'moon-outline'}
                     onPress={() => { void Haptics.selectionAsync(); toggleMode(); }}
                     accessibilityLabel={mode === 'dark' ? 'Светла тема' : 'Тъмна тема'}
@@ -1299,6 +1315,20 @@ export default function ProfileScreen() {
                 </View>
               </View>
             ) : null}
+
+            {/* ── Trophy shelf — top 3 biggest catches with podium ribbons. ── */}
+            <TrophyShelf
+              catches={catches.map((c) => ({
+                id: c.id,
+                speciesName: c.speciesName,
+                weightKg: c.weightKg,
+                photoUri: c.photoUri,
+                date: c.date,
+              }))}
+              onPressCatch={(id) =>
+                (navigation as any).navigate('LogbookTab', { screen: 'CatchDetail', params: { id } })
+              }
+            />
 
             {/* ════════════════════════════════════════
                 WAVE CONTENT PANEL
@@ -1430,9 +1460,14 @@ export default function ProfileScreen() {
                     ))}
                   </ScrollView>
                 ) : (
-                  <View style={styles.emptySection}>
-                    <Text style={styles.emptySectionText}>Все още няма приятели — намери рибари от лентата!</Text>
-                  </View>
+                  <Pressable
+                    onPress={() => navigation.navigate('Friends')}
+                    style={[styles.emptySection, { flexDirection: 'row', alignItems: 'center', gap: spacing.sm }]}
+                  >
+                    <Ionicons name="people-outline" size={20} color={colors.primary} />
+                    <Text style={[styles.emptySectionText, { flex: 1 }]}>Все още няма приятели — намери рибари</Text>
+                    <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                  </Pressable>
                 )}
               </View>
 
@@ -1617,25 +1652,42 @@ export default function ProfileScreen() {
 
               <View style={styles.settingsDivider} />
 
-              {/* Menu rows */}
+              {/* Menu rows — grouped into 4 logical sections so the previous
+                  flat list of 16+ items no longer feels overwhelming. */}
               <View style={{ paddingHorizontal: spacing.xs, paddingVertical: 2, marginHorizontal: spacing.xs }}>
-                <Text style={[styles.menuCardTitle, { paddingHorizontal: spacing.sm, paddingTop: spacing.sm }]}>Навигация</Text>
+
+                {/* ── Моят риболов — personal stats, achievements, saved content ── */}
+                <Text style={[styles.menuCardTitle, { paddingHorizontal: spacing.sm, paddingTop: spacing.sm }]}>Моят риболов</Text>
                 <Card style={styles.menuCardWrap}>
-                  <MenuRow dense icon="notifications-outline" title="Настройки за известия" onPress={() => { setSettingsOpen(false); navigation.navigate('NotificationPreferences'); }} showDivider />
-                  <MenuRow dense icon="stats-chart-outline" title="Статистики" onPress={() => { setSettingsOpen(false); navigation.navigate('Stats'); }} showDivider />
-                  <MenuRow dense icon="trophy-outline" title="Лични рекорди" onPress={() => { setSettingsOpen(false); navigation.navigate('PersonalBests'); }} showDivider />
-                  <MenuRow dense icon="people-outline" title="Клубове" onPress={() => { setSettingsOpen(false); navigation.navigate('Groups'); }} showDivider />
-                  <MenuRow dense icon="newspaper-outline" title="Лента" onPress={() => { setSettingsOpen(false); navigation.navigate('Feed'); }} showDivider />
-                  <MenuRow dense icon="images-outline" title="Седмични и месечни класации" onPress={() => { setSettingsOpen(false); navigation.navigate('Classics'); }} showDivider />
-                  <MenuRow dense icon="bookmark-outline" title="Запазени" onPress={() => { setSettingsOpen(false); navigation.navigate('SavedPosts'); }} showDivider />
-                  <MenuRow dense icon="notifications-outline" title="Известия" onPress={() => { setSettingsOpen(false); navigation.navigate('Notifications'); }} showDivider rightBadge={unreadNotifs || undefined} />
-                  <MenuRow dense icon="people-outline" title="Приятели" onPress={() => { setSettingsOpen(false); navigation.navigate('Friends'); }} showDivider />
-                  <MenuRow dense icon="trophy-outline" title="Постижения" onPress={() => { setSettingsOpen(false); navigation.navigate('Achievements'); }} showDivider />
                   <MenuRow dense icon="calendar-outline" title="Излети" onPress={() => { setSettingsOpen(false); navigation.navigate('Trips'); }} showDivider />
-                  <MenuRow dense icon="ribbon-outline" title="Турнири" onPress={() => { setSettingsOpen(false); navigation.navigate('Tournaments'); }} showDivider />
-                  <MenuRow dense icon="podium-outline" title="Класирания" onPress={() => { setSettingsOpen(false); navigation.navigate('Leaderboard'); }} showDivider />
-                  <MenuRow dense icon="chatbubbles-outline" title="Съобщения" onPress={() => { setSettingsOpen(false); navigation.navigate('Chats'); }} showDivider />
+                  <MenuRow dense icon="trophy-outline" title="Лични рекорди" onPress={() => { setSettingsOpen(false); navigation.navigate('PersonalBests'); }} showDivider />
+                  <MenuRow dense icon="ribbon-outline" title="Постижения" onPress={() => { setSettingsOpen(false); navigation.navigate('Achievements'); }} showDivider />
+                  <MenuRow dense icon="stats-chart-outline" title="Статистики" onPress={() => { setSettingsOpen(false); navigation.navigate('Stats'); }} showDivider />
                   <MenuRow dense icon="bulb-outline" title="Инсайти" onPress={() => { setSettingsOpen(false); navigation.navigate('Insights'); }} showDivider />
+                  <MenuRow dense icon="bookmark-outline" title="Запазени" onPress={() => { setSettingsOpen(false); navigation.navigate('SavedPosts'); }} />
+                </Card>
+
+                {/* ── Социални — people, clubs, messages ── */}
+                <Text style={[styles.menuCardTitle, { paddingHorizontal: spacing.sm, paddingTop: spacing.md }]}>Социални</Text>
+                <Card style={styles.menuCardWrap}>
+                  <MenuRow dense icon="people-outline" title="Приятели" onPress={() => { setSettingsOpen(false); navigation.navigate('Friends'); }} showDivider />
+                  <MenuRow dense icon="people-circle-outline" title="Клубове" onPress={() => { setSettingsOpen(false); navigation.navigate('Groups'); }} showDivider />
+                  <MenuRow dense icon="chatbubbles-outline" title="Съобщения" onPress={() => { setSettingsOpen(false); navigation.navigate('Chats'); }} showDivider />
+                  <MenuRow dense icon="notifications-outline" title="Известия" onPress={() => { setSettingsOpen(false); navigation.navigate('Notifications'); }} rightBadge={unreadNotifs || undefined} />
+                </Card>
+
+                {/* ── Класации — competition / leaderboards ── */}
+                <Text style={[styles.menuCardTitle, { paddingHorizontal: spacing.sm, paddingTop: spacing.md }]}>Класации</Text>
+                <Card style={styles.menuCardWrap}>
+                  <MenuRow dense icon="trophy-outline" title="Турнири" onPress={() => { setSettingsOpen(false); navigation.navigate('Tournaments'); }} showDivider />
+                  <MenuRow dense icon="podium-outline" title="Класирания" onPress={() => { setSettingsOpen(false); navigation.navigate('Leaderboard'); }} showDivider />
+                  <MenuRow dense icon="images-outline" title="Седмични и месечни класации" onPress={() => { setSettingsOpen(false); navigation.navigate('Classics'); }} />
+                </Card>
+
+                {/* ── Настройки — preferences / legal / destructive ── */}
+                <Text style={[styles.menuCardTitle, { paddingHorizontal: spacing.sm, paddingTop: spacing.md }]}>Настройки</Text>
+                <Card style={styles.menuCardWrap}>
+                  <MenuRow dense icon="settings-outline" title="Настройки за известия" onPress={() => { setSettingsOpen(false); navigation.navigate('NotificationPreferences'); }} showDivider />
                   <MenuRow
                     dense
                     icon="document-text-outline"

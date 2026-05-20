@@ -5,6 +5,7 @@ import { FishingRefreshControl } from '../components/FishingRefreshControl';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
+import { EmptyState } from '../components/EmptyState';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 
@@ -375,22 +376,16 @@ export default function StatsScreen() {
     return (
       <Screen padded={false}>
         <SimpleHero title="Статистики" />
-        <View style={{ flex: 1, backgroundColor: waveColor, borderTopLeftRadius: 28, borderTopRightRadius: 28, marginTop: -28, padding: spacing.lg }}>
-          <Card style={{ marginTop: spacing.lg, alignItems: 'center', paddingVertical: spacing.xl }}>
-            <Ionicons name="bar-chart-outline" size={48} color={colors.textMuted} style={{ marginBottom: spacing.md }} />
-            <Text style={{ ...typography.bodyBold, color: colors.text, marginBottom: spacing.sm }}>
-              Все още няма статистики
-            </Text>
-            <Text style={{ ...typography.body, color: colors.textMuted, textAlign: 'center', marginBottom: spacing.lg }}>
-              Добави първия си улов в дневника, за да видиш графики и анализи.
-            </Text>
-            <TouchableOpacity
-              onPress={() => (navigation as any).navigate('LogbookTab', { screen: 'AddCatch', params: {} })}
-              style={{ backgroundColor: colors.primary, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: 20 }}
-            >
-              <Text style={{ color: '#fff', fontWeight: '700', ...typography.body }}>Добави улов</Text>
-            </TouchableOpacity>
-          </Card>
+        <View style={{ flex: 1, backgroundColor: waveColor, borderTopLeftRadius: 28, borderTopRightRadius: 28, marginTop: -28, justifyContent: 'center', paddingHorizontal: spacing.lg }}>
+          <EmptyState
+            icon="bar-chart-outline"
+            title="Все още няма статистики"
+            subtitle="Добави първия си улов в дневника, за да видиш графики и анализи."
+            action={{
+              label: 'Запиши улов',
+              onPress: () => (navigation as any).navigate('LogbookTab', { screen: 'AddCatch', params: {} }),
+            }}
+          />
         </View>
       </Screen>
     );

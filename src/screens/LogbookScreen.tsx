@@ -89,20 +89,22 @@ const CatchCard = React.memo(function CatchCard({
   const accent = speciesAccent(item.speciesName);
 
   const renderRightActions = () => (
-    <View style={{ flexDirection: 'row', alignItems: 'stretch', marginBottom: 12 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'stretch', marginBottom: 12, marginLeft: 6 }}>
       <Pressable
         onPress={() => { void Haptics.selectionAsync(); onEdit(item); }}
-        style={{ backgroundColor: colors.primary, width: 70, alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 14, marginRight: 6 }}
+        // Edit button widened to 84px and label shortened to "Промени" — the
+        // original "Редактирай" wrapped onto two lines at 70px width / fontSize 11.
+        style={{ backgroundColor: colors.primary, width: 84, alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 14, marginRight: 6 }}
       >
         <Ionicons name="pencil-outline" size={20} color="#fff" />
-        <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>Редактирай</Text>
+        <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }} numberOfLines={1}>Промени</Text>
       </Pressable>
       <Pressable
         onPress={() => { void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); onDelete(item); }}
-        style={{ backgroundColor: colors.danger, width: 70, alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 14 }}
+        style={{ backgroundColor: colors.danger, width: 84, alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 14 }}
       >
         <Ionicons name="trash-outline" size={20} color="#fff" />
-        <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>Изтрий</Text>
+        <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }} numberOfLines={1}>Изтрий</Text>
       </Pressable>
     </View>
   );

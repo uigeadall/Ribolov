@@ -227,7 +227,7 @@ export default function TripsScreen() {
             <EmptyState
               icon="calendar-outline"
               title="Още няма записани излети"
-              subtitle="Попълни формата горе или добави бележка след риболов."
+              subtitle="Записвай къде, кога и какво си хванал — после намираш всичко на едно място."
             />
           }
           renderItem={({ item }) => {

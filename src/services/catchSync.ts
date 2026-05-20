@@ -380,21 +380,31 @@ async function _fetchPublicFeedImpl(
 ): Promise<FeedPage> {
   const fb = requireFirebase();
 
-  // Firestore 'in' operator is limited to 30 values — chunk when the list is larger.
+  // Firestore 'in' operator is limited to 30 values — chunk when the list is
+  // larger. Fire the chunks in parallel via Promise.all (was serial before).
+  // For a power user with 200 follows that's ~7 chunks running concurrently
+  // instead of sequentially — ~5× wall-time speedup on first feed load.
   if (ownerUids && ownerUids.length > 30) {
-    const allItems: CloudCatch[] = [];
     const CHUNK = 30;
+    const chunks: string[][] = [];
     for (let i = 0; i < ownerUids.length; i += CHUNK) {
-      const chunk = ownerUids.slice(i, i + CHUNK);
-      const snap = await getDocs(
-        query(
-          collection(fb.db, 'publicCatches'),
-          where('ownerUid', 'in', chunk),
-          orderBy('date', 'desc'),
-          limit(maxItems + 1),
+      chunks.push(ownerUids.slice(i, i + CHUNK));
+    }
+    const snaps = await Promise.all(
+      chunks.map((chunk) =>
+        getDocs(
+          query(
+            collection(fb.db, 'publicCatches'),
+            where('ownerUid', 'in', chunk),
+            orderBy('date', 'desc'),
+            limit(maxItems + 1),
+          ),
         ),
-      );
-      snap.docs.forEach((d) => allItems.push(d.data() as CloudCatch));
+      ),
+    );
+    const allItems: CloudCatch[] = [];
+    for (const snap of snaps) {
+      for (const d of snap.docs) allItems.push(d.data() as CloudCatch);
     }
     allItems.sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
     const hasMore = allItems.length > maxItems;

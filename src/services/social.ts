@@ -244,3 +244,12 @@ export async function getFeaturedAnglerOfWeek(excludeUid?: string): Promise<Feat
     return null;
   }
 }
+
+/** Drop every entry from the in-memory social caches. Call this on sign-out so
+    user B doesn't see user A's follow list (or suggestions / featured angler)
+    on a shared device while A's TTL window is still active. */
+export function resetSocialCaches(): void {
+  followingCache.clear();
+  suggestionsCache.clear();
+  featuredCache = null;
+}

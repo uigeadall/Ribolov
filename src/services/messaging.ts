@@ -66,9 +66,13 @@ export function subscribeMyConversations(
   onError?: (e: Error) => void,
 ): () => void {
   const fb = requireFirebase();
+  // orderBy('lastMessageAt', 'desc') is critical for users with >50 conversations
+  // — without it Firestore returns an arbitrary 50, not the most recent ones.
+  // The local sort below is kept as a tiebreaker so display order is stable.
   const q = query(
     collection(fb.db, 'conversations'),
     where('participantIds', 'array-contains', myUid),
+    orderBy('lastMessageAt', 'desc'),
     limit(50),
   );
   return onSnapshot(q, (snap) => {
@@ -100,9 +104,12 @@ export function subscribeMyConversations(
 
 export async function listMyConversations(myUid: string, maxCount = 50): Promise<ConversationPreview[]> {
   const fb = requireFirebase();
+  // orderBy ensures the `limit` actually returns the most-recent conversations,
+  // not an arbitrary slice (see subscribeMyConversations above for the same fix).
   const q = query(
     collection(fb.db, 'conversations'),
     where('participantIds', 'array-contains', myUid),
+    orderBy('lastMessageAt', 'desc'),
     limit(maxCount),
   );
   // Permission errors here are usually transient (stale auth token after sign-in,

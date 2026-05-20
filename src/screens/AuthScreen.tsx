@@ -1,10 +1,10 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TextInput, KeyboardAvoidingView, Platform, Alert, Pressable } from 'react-native';
+import { View, Text, StyleSheet, TextInput, KeyboardAvoidingView, Platform, Alert, Pressable, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 import { Screen } from '../components/Screen';
-import { Card } from '../components/Card';
-import { Button } from '../components/Button';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
@@ -14,82 +14,198 @@ import { AppleSignInSection } from '../components/AppleSignInSection';
 import { FacebookSignInSection } from '../components/FacebookSignInButton';
 import Toast from 'react-native-toast-message';
 
+/** Dawn-water palette used across the redesigned profile + AddCatch hero.
+    Keeps the auth screen visually consistent with the rest of the app. */
+function heroGradient(mode: 'dark' | 'light'): [string, string, string] {
+  return mode === 'dark'
+    ? ['#06121F', '#102C44', '#8C4F1F']
+    : ['#0A3A57', '#1F6F92', '#E8902E'];
+}
+
 export default function AuthScreen() {
   const navigation = useAppNavigation();
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
+  const insets = useSafeAreaInsets();
   const { signIn, signUp, signInWithGoogleIdToken, signInWithApple, signInWithFacebook, resetPassword, configured, loading } = useAuth();
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<{ name?: string; email?: string; password?: string }>({});
+
+  const gradient = useMemo(() => heroGradient(mode), [mode]);
+  const waveColor = mode === 'dark' ? '#0E1628' : colors.background;
 
   const styles = useMemo(
     () =>
       StyleSheet.create({
-        brandWrap: { alignItems: 'center', paddingTop: spacing.xl, paddingBottom: spacing.xl },
-        brandIconWrap: {
-          width: 80,
-          height: 80,
-          borderRadius: 40,
-          backgroundColor: colors.primary,
+        // ── Hero ──
+        hero: {
+          paddingTop: insets.top + spacing.xl,
+          paddingHorizontal: spacing.xl,
+          paddingBottom: spacing.xxl + spacing.md,
+          alignItems: 'center',
+        },
+        heroIconRing: {
+          width: 92,
+          height: 92,
+          borderRadius: 46,
+          backgroundColor: 'rgba(255,255,255,0.16)',
+          borderWidth: 1.5,
+          borderColor: 'rgba(255,255,255,0.32)',
           alignItems: 'center',
           justifyContent: 'center',
           marginBottom: spacing.md,
         },
-        brandTitle: { ...typography.h2, color: colors.text, textAlign: 'center' },
-        brandSub: {
+        heroTitle: {
+          fontSize: 32,
+          fontFamily: 'Nunito_800ExtraBold',
+          color: '#fff',
+          letterSpacing: -0.5,
+        },
+        heroSub: {
           ...typography.body,
-          color: colors.textMuted,
+          color: 'rgba(255,255,255,0.85)',
           textAlign: 'center',
           marginTop: spacing.xs,
+          paddingHorizontal: spacing.lg,
           lineHeight: 22,
         },
-        input: {
+
+        // ── Wave panel ──
+        wave: {
+          flex: 1,
+          backgroundColor: waveColor,
+          borderTopLeftRadius: 28,
+          borderTopRightRadius: 28,
+          marginTop: -28,
+          paddingHorizontal: spacing.lg,
+          paddingTop: spacing.xl,
+          paddingBottom: spacing.xl,
+        },
+
+        // ── Segmented control ──
+        segmented: {
+          flexDirection: 'row',
+          backgroundColor: colors.surfaceAlt,
+          borderRadius: radius.pill,
+          padding: 4,
           borderWidth: 1,
           borderColor: colors.border,
-          borderRadius: radius.md,
-          paddingHorizontal: spacing.md,
-          paddingVertical: Platform.OS === 'ios' ? spacing.sm + 2 : spacing.sm,
-          fontSize: 16,
-          color: colors.text,
-          backgroundColor: colors.surfaceAlt,
-          marginBottom: spacing.xs,
+          marginBottom: spacing.lg,
         },
-        inputError: {
-          borderColor: colors.danger,
+        segmentedItem: {
+          flex: 1,
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingVertical: 10,
+          borderRadius: radius.pill,
         },
-        fieldError: {
-          ...typography.small,
-          color: colors.danger,
-          marginBottom: spacing.sm,
-          marginTop: 2,
+        segmentedItemActive: {
+          backgroundColor: colors.primary,
         },
+        segmentedText: { ...typography.bodyBold, color: colors.textMuted, fontSize: 14 },
+        segmentedTextActive: { color: '#fff' },
+
+        // ── Form fields ──
+        fieldGroup: { marginBottom: spacing.md },
         fieldLabel: {
           ...typography.small,
           fontWeight: '700',
           color: colors.textMuted,
-          letterSpacing: 0.4,
-          marginBottom: spacing.xs,
-          marginTop: spacing.sm,
+          letterSpacing: 0.5,
+          marginBottom: 6,
+          textTransform: 'uppercase',
         },
-        row: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg },
+        fieldWrap: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          backgroundColor: colors.card,
+          borderWidth: 1,
+          borderColor: colors.border,
+          borderRadius: radius.md,
+          paddingHorizontal: spacing.md,
+        },
+        fieldWrapError: { borderColor: colors.danger },
+        fieldIcon: { marginRight: spacing.sm },
+        input: {
+          flex: 1,
+          fontSize: 16,
+          color: colors.text,
+          paddingVertical: Platform.OS === 'ios' ? spacing.sm + 4 : spacing.sm,
+        },
+        eyeBtn: { padding: 6, marginLeft: 4 },
+        fieldError: {
+          ...typography.small,
+          color: colors.danger,
+          marginTop: 4,
+          marginLeft: 2,
+        },
+
+        // ── Primary submit ──
+        primaryBtn: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: spacing.sm,
+          backgroundColor: colors.primary,
+          paddingVertical: 14,
+          borderRadius: radius.pill,
+          marginTop: spacing.md,
+          shadowColor: colors.primary,
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.22,
+          shadowRadius: 10,
+          elevation: 3,
+        },
+        primaryBtnText: {
+          ...typography.bodyBold,
+          color: '#fff',
+          fontSize: 16,
+          letterSpacing: 0.2,
+        },
+        forgotBtn: { alignItems: 'center', paddingVertical: spacing.sm, marginTop: spacing.xs },
+        forgotText: { ...typography.caption, color: colors.primary, fontWeight: '600' },
+
+        // ── Divider ──
         divider: {
           flexDirection: 'row',
           alignItems: 'center',
           gap: spacing.sm,
           marginVertical: spacing.lg,
         },
-        dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
-        dividerText: { ...typography.caption, color: colors.textMuted },
+        dividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: colors.border },
+        dividerText: {
+          ...typography.caption,
+          color: colors.textMuted,
+          textTransform: 'uppercase',
+          letterSpacing: 0.6,
+          fontSize: 11,
+        },
+
+        // ── Social providers stack ──
+        socialStack: { gap: spacing.sm },
+
+        // ── Firebase warning banner ──
+        warnBanner: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: spacing.sm,
+          backgroundColor: 'rgba(232,144,46,0.16)',
+          borderRadius: radius.md,
+          padding: spacing.md,
+          marginBottom: spacing.lg,
+        },
+        warnText: { ...typography.caption, color: colors.text, flex: 1, fontSize: 12 },
       }),
-    [colors]
+    [colors, mode, insets.top, waveColor]
   );
 
   const validate = (): boolean => {
     const next: typeof errors = {};
-    if (mode === 'register' && !name.trim()) {
+    if (authMode === 'register' && !name.trim()) {
       next.name = 'Въведи показвано пред другите.';
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
@@ -112,7 +228,7 @@ export default function AuthScreen() {
     try {
       const cleanEmail = email.trim();
       const cleanName = name.trim();
-      if (mode === 'login') await signIn(cleanEmail, password);
+      if (authMode === 'login') await signIn(cleanEmail, password);
       else await signUp(cleanEmail, password, cleanName);
       navigation.goBack();
     } catch (e: unknown) {
@@ -123,170 +239,259 @@ export default function AuthScreen() {
   };
 
   const switchMode = (next: 'login' | 'register') => {
-    setMode(next);
+    setAuthMode(next);
     setErrors({});
+  };
+
+  const onForgot = () => {
+    const target = email.trim();
+    if (!target) {
+      Alert.alert('Забравена парола', 'Въведи имейл адреса си в полето по-горе, след което натисни тук.');
+      return;
+    }
+    Alert.alert(
+      'Нулиране на парола',
+      `Ще изпратим линк за нулиране на ${target}.`,
+      [
+        { text: 'Отказ', style: 'cancel' },
+        {
+          text: 'Изпрати',
+          onPress: async () => {
+            try {
+              await resetPassword(target);
+              Toast.show({
+                type: 'success',
+                text1: 'Изпратено',
+                text2: 'Провери пощата си за линк за нулиране на паролата.',
+                visibilityTime: 3000,
+              });
+            } catch (e: unknown) {
+              handleError(e);
+            }
+          },
+        },
+      ]
+    );
   };
 
   if (loading) {
     return (
       <Screen>
-        <Text style={{ ...typography.body, color: colors.textMuted }}>Зареждане…</Text>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator color={colors.primary} size="large" />
+        </View>
       </Screen>
     );
   }
 
   return (
-    <Screen scroll avoidKeyboard>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={styles.brandWrap}>
-          <View style={styles.brandIconWrap}>
-            <Ionicons name="fish" size={36} color={colors.white} />
-          </View>
-          <Text style={styles.brandTitle}>Риболов</Text>
-          <Text style={styles.brandSub}>Следи уловите, разгледай общността</Text>
-        </View>
+    <Screen padded={false} safeAreaEdges={['left', 'right']}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
+      >
+        <View style={{ flex: 1 }}>
+          {/* Outdoorsy hero — matches the dawn-water gradient used across the
+              redesigned profile / AddCatch screens. */}
+          <LinearGradient
+            colors={gradient}
+            start={{ x: 0.1, y: 0 }}
+            end={{ x: 0.9, y: 1 }}
+            style={styles.hero}
+          >
+            <View style={styles.heroIconRing}>
+              <Ionicons name="fish" size={42} color="#fff" />
+            </View>
+            <Text style={styles.heroTitle}>Риболов</Text>
+            <Text style={styles.heroSub}>
+              {authMode === 'login'
+                ? 'Влез и продължи дневника си.'
+                : 'Започни дневника, ленти, рекорди и турнири.'}
+            </Text>
+          </LinearGradient>
 
-        <View style={styles.row}>
-          <Button
-            title="Вход"
-            variant={mode === 'login' ? 'primary' : 'secondary'}
-            onPress={() => switchMode('login')}
-            style={{ flex: 1 }}
-          />
-          <Button
-            title="Регистрация"
-            variant={mode === 'register' ? 'primary' : 'secondary'}
-            onPress={() => switchMode('register')}
-            style={{ flex: 1 }}
-          />
-        </View>
+          {/* Wave panel containing the form */}
+          <View style={styles.wave}>
+            {!configured ? (
+              <View style={styles.warnBanner}>
+                <Ionicons name="warning-outline" size={18} color="#E8902E" />
+                <Text style={styles.warnText}>
+                  Firebase не е конфигуриран. Добави ключове в app.json или EXPO_PUBLIC_FIREBASE_*.
+                </Text>
+              </View>
+            ) : null}
 
-        <Card>
-          {mode === 'register' ? (
-            <>
-              <Text style={styles.fieldLabel}>ИМЕ</Text>
-              <TextInput
-                placeholder="Показвано пред другите"
-                placeholderTextColor={colors.textMuted}
-                value={name}
-                onChangeText={(v) => { setName(v); if (errors.name) setErrors((p) => ({ ...p, name: undefined })); }}
-                style={[styles.input, errors.name && styles.inputError]}
-              />
-              {errors.name ? <Text style={styles.fieldError}>{errors.name}</Text> : null}
-            </>
-          ) : null}
-          <Text style={styles.fieldLabel}>ИМЕЙЛ</Text>
-          <TextInput
-            placeholder="твоят@имейл.bg"
-            placeholderTextColor={colors.textMuted}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            value={email}
-            onChangeText={(v) => { setEmail(v); if (errors.email) setErrors((p) => ({ ...p, email: undefined })); }}
-            style={[styles.input, errors.email && styles.inputError]}
-          />
-          {errors.email ? <Text style={styles.fieldError}>{errors.email}</Text> : null}
-          <Text style={styles.fieldLabel}>ПАРОЛА</Text>
-          <TextInput
-            placeholder="••••••••"
-            placeholderTextColor={colors.textMuted}
-            secureTextEntry
-            value={password}
-            onChangeText={(v) => { setPassword(v); if (errors.password) setErrors((p) => ({ ...p, password: undefined })); }}
-            style={[styles.input, errors.password && styles.inputError]}
-          />
-          {errors.password ? <Text style={styles.fieldError}>{errors.password}</Text> : null}
-          <Button
-            title={mode === 'login' ? 'Влез' : 'Създай акаунт'}
-            onPress={submit}
-            loading={busy}
-            style={{ marginTop: spacing.sm }}
-          />
-          {mode === 'login' ? (
+            {/* Segmented control — cleaner than two side-by-side buttons */}
+            <View style={styles.segmented}>
+              <Pressable
+                style={[styles.segmentedItem, authMode === 'login' && styles.segmentedItemActive]}
+                onPress={() => switchMode('login')}
+              >
+                <Text style={[styles.segmentedText, authMode === 'login' && styles.segmentedTextActive]}>
+                  Вход
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[styles.segmentedItem, authMode === 'register' && styles.segmentedItemActive]}
+                onPress={() => switchMode('register')}
+              >
+                <Text style={[styles.segmentedText, authMode === 'register' && styles.segmentedTextActive]}>
+                  Регистрация
+                </Text>
+              </Pressable>
+            </View>
+
+            {/* Form */}
+            {authMode === 'register' ? (
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>Име</Text>
+                <View style={[styles.fieldWrap, errors.name && styles.fieldWrapError]}>
+                  <Ionicons name="person-outline" size={18} color={colors.textMuted} style={styles.fieldIcon} />
+                  <TextInput
+                    placeholder="Показвано пред другите"
+                    placeholderTextColor={colors.textMuted}
+                    value={name}
+                    onChangeText={(v) => { setName(v); if (errors.name) setErrors((p) => ({ ...p, name: undefined })); }}
+                    style={styles.input}
+                    returnKeyType="next"
+                  />
+                </View>
+                {errors.name ? <Text style={styles.fieldError}>{errors.name}</Text> : null}
+              </View>
+            ) : null}
+
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>Имейл</Text>
+              <View style={[styles.fieldWrap, errors.email && styles.fieldWrapError]}>
+                <Ionicons name="mail-outline" size={18} color={colors.textMuted} style={styles.fieldIcon} />
+                <TextInput
+                  placeholder="твоят@имейл.bg"
+                  placeholderTextColor={colors.textMuted}
+                  autoCapitalize="none"
+                  autoComplete="email"
+                  keyboardType="email-address"
+                  value={email}
+                  onChangeText={(v) => { setEmail(v); if (errors.email) setErrors((p) => ({ ...p, email: undefined })); }}
+                  style={styles.input}
+                  returnKeyType="next"
+                />
+              </View>
+              {errors.email ? <Text style={styles.fieldError}>{errors.email}</Text> : null}
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>Парола</Text>
+              <View style={[styles.fieldWrap, errors.password && styles.fieldWrapError]}>
+                <Ionicons name="lock-closed-outline" size={18} color={colors.textMuted} style={styles.fieldIcon} />
+                <TextInput
+                  placeholder="••••••••"
+                  placeholderTextColor={colors.textMuted}
+                  secureTextEntry={!showPassword}
+                  value={password}
+                  onChangeText={(v) => { setPassword(v); if (errors.password) setErrors((p) => ({ ...p, password: undefined })); }}
+                  style={styles.input}
+                  returnKeyType="done"
+                  onSubmitEditing={submit}
+                />
+                <Pressable
+                  onPress={() => setShowPassword((v) => !v)}
+                  style={styles.eyeBtn}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={showPassword ? 'Скрий паролата' : 'Покажи паролата'}
+                >
+                  <Ionicons
+                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                    size={18}
+                    color={colors.textMuted}
+                  />
+                </Pressable>
+              </View>
+              {errors.password ? <Text style={styles.fieldError}>{errors.password}</Text> : null}
+            </View>
+
             <Pressable
-              onPress={() => {
-                const target = email.trim();
-                if (!target) {
-                  Alert.alert('Забравена парола', 'Въведи имейл адреса си в полето по-горе, след което натисни тук.');
-                  return;
-                }
-                Alert.alert(
-                  'Нулиране на парола',
-                  `Ще изпратим линк за нулиране на ${target}.`,
-                  [
-                    { text: 'Отказ', style: 'cancel' },
-                    {
-                      text: 'Изпрати',
-                      onPress: async () => {
-                        try {
-                          await resetPassword(target);
-                          Toast.show({ type: 'success', text1: 'Изпратено', text2: 'Провери пощата си за линк за нулиране на паролата.', visibilityTime: 3000 });
-                        } catch (e: unknown) {
-                          handleError(e);
-                        }
-                      },
-                    },
-                  ]
-                );
-              }}
-              style={{ alignItems: 'center', paddingVertical: spacing.sm, marginTop: spacing.xs }}
-              hitSlop={8}
+              onPress={submit}
+              disabled={busy}
+              style={({ pressed }) => [styles.primaryBtn, (pressed || busy) && { opacity: 0.85 }]}
             >
-              <Text style={{ ...typography.caption, color: colors.primary }}>Забравена парола?</Text>
+              {busy ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Ionicons
+                    name={authMode === 'login' ? 'log-in-outline' : 'person-add-outline'}
+                    size={18}
+                    color="#fff"
+                  />
+                  <Text style={styles.primaryBtnText}>
+                    {authMode === 'login' ? 'Влез' : 'Създай акаунт'}
+                  </Text>
+                </>
+              )}
             </Pressable>
-          ) : null}
-        </Card>
 
-        <View style={styles.divider}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>или</Text>
-          <View style={styles.dividerLine} />
+            {authMode === 'login' ? (
+              <Pressable onPress={onForgot} style={styles.forgotBtn} hitSlop={8}>
+                <Text style={styles.forgotText}>Забравена парола?</Text>
+              </Pressable>
+            ) : null}
+
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>или продължи с</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            {/* Provider buttons — keep their own internal styling, just stack them */}
+            <View style={styles.socialStack}>
+              <GoogleSignInSection
+                disabled={busy || !configured}
+                onIdToken={async (idToken) => {
+                  setBusy(true);
+                  try {
+                    await signInWithGoogleIdToken(idToken);
+                    navigation.goBack();
+                  } catch (e: unknown) {
+                    handleError(e);
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              />
+
+              <AppleSignInSection
+                disabled={busy || !configured}
+                onAppleTokens={async (idToken, rawNonce) => {
+                  setBusy(true);
+                  try {
+                    await signInWithApple(idToken, rawNonce);
+                    navigation.goBack();
+                  } catch (e: unknown) {
+                    handleError(e);
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              />
+
+              <FacebookSignInSection
+                disabled={busy || !configured}
+                onAccessToken={async (accessToken) => {
+                  setBusy(true);
+                  try {
+                    await signInWithFacebook(accessToken);
+                    navigation.goBack();
+                  } catch (e: unknown) {
+                    handleError(e);
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              />
+            </View>
+          </View>
         </View>
-
-        <GoogleSignInSection
-          disabled={busy || !configured}
-          onIdToken={async (idToken) => {
-            setBusy(true);
-            try {
-              await signInWithGoogleIdToken(idToken);
-              navigation.goBack();
-            } catch (e: unknown) {
-              handleError(e);
-            } finally {
-              setBusy(false);
-            }
-          }}
-        />
-
-        <AppleSignInSection
-          disabled={busy || !configured}
-          onAppleTokens={async (idToken, rawNonce) => {
-            setBusy(true);
-            try {
-              await signInWithApple(idToken, rawNonce);
-              navigation.goBack();
-            } catch (e: unknown) {
-              handleError(e);
-            } finally {
-              setBusy(false);
-            }
-          }}
-        />
-
-        <FacebookSignInSection
-          disabled={busy || !configured}
-          onAccessToken={async (accessToken) => {
-            setBusy(true);
-            try {
-              await signInWithFacebook(accessToken);
-              navigation.goBack();
-            } catch (e: unknown) {
-              handleError(e);
-            } finally {
-              setBusy(false);
-            }
-          }}
-        />
       </KeyboardAvoidingView>
     </Screen>
   );

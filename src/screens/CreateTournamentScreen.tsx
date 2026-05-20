@@ -27,6 +27,7 @@ import { speciesList } from '../data/species';
 import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 import { handleError } from '../utils/handleError';
+import { notifyInfo } from '../utils/notify';
 
 const CATEGORIES: { id: TournamentCategory; label: string; icon: keyof typeof Ionicons.glyphMap; hint: string }[] = [
   { id: 'weight', label: 'Общо тегло', icon: 'scale-outline', hint: 'Сборът от теглата на всички улови' },
@@ -181,15 +182,15 @@ export default function CreateTournamentScreen() {
 
   const submit = async () => {
     if (!user) {
-      Alert.alert('Нужен е акаунт', 'Влез или се регистрирай.');
+      notifyInfo('Нужен е акаунт', 'Влез или се регистрирай.');
       return;
     }
     if (!name.trim()) {
-      Alert.alert('Име', 'Дай име на турнира.');
+      notifyInfo('Име', 'Дай име на турнира.');
       return;
     }
     if (new Date(endDate).getTime() < new Date(startDate).getTime()) {
-      Alert.alert('Дати', 'Крайната дата трябва да е след началната.');
+      notifyInfo('Дати', 'Крайната дата трябва да е след началната.');
       return;
     }
     setSaving(true);

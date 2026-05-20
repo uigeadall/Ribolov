@@ -17,8 +17,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
+import * as Haptics from 'expo-haptics';
 import { Skeleton } from '../components/Skeleton';
-import { ProfileHero, HeroButton } from '../components/ProfileHero';
+import { TrophyHero, TrophyHeroButton } from '../components/TrophyHero';
+import { TrophyShelf } from '../components/TrophyShelf';
 import { FeedItem } from '../components/FeedPost';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
@@ -189,13 +191,15 @@ export default function UserPublicProfileScreen() {
 
   const isSelf = user?.uid === uid;
 
-  const bestCatchId = useMemo(() => {
+  const bestCatch = useMemo(() => {
     let best: FeedItem | null = null;
     for (const c of catches) {
+      if (typeof c.weightKg !== 'number') continue;
       if (!best || (c.weightKg ?? 0) > (best.weightKg ?? 0)) best = c;
     }
-    return best?.id ?? null;
+    return best;
   }, [catches]);
+  const bestCatchId = bestCatch?.id ?? null;
   const totalKg = useMemo(() => catches.reduce((s, c) => s + (c.weightKg ?? 0), 0), [catches]);
 
   const handleBlockMenu = () => {
@@ -290,6 +294,11 @@ export default function UserPublicProfileScreen() {
   const toggleFollow = async () => {
     if (!user || isSelf) return;
     setFollowBusy(true);
+    // Light haptic when following; selection-style when unfollowing. Match
+    // the rest of the app (PeopleYouMayKnowRow uses Light on follow).
+    void Haptics.impactAsync(
+      following ? Haptics.ImpactFeedbackStyle.Soft : Haptics.ImpactFeedbackStyle.Light,
+    );
     try {
       if (following) {
         await unfollowUser(user.uid, uid);
@@ -361,16 +370,22 @@ export default function UserPublicProfileScreen() {
 
   const ListHeader = (
     <View>
-      <ProfileHero
+      <TrophyHero
         name={summaryName}
         city={city}
         bio={bio}
-        photoUrl={photoUrl}
+        avatarUrl={photoUrl}
         initials={initials}
-        topLeft={<HeroButton icon="chevron-back" onPress={() => navigation.goBack()} accessibilityLabel="Назад" />}
+        bestCatch={bestCatch ? {
+          photoUri: bestCatch.photoUri,
+          speciesName: bestCatch.speciesName,
+          weightKg: bestCatch.weightKg,
+          date: bestCatch.date,
+        } : undefined}
+        topLeft={<TrophyHeroButton icon="chevron-back" onPress={() => navigation.goBack()} accessibilityLabel="Назад" />}
         topRight={
           user && !isSelf
-            ? <HeroButton icon="ellipsis-horizontal" onPress={handleBlockMenu} accessibilityLabel="Опции" />
+            ? <TrophyHeroButton icon="ellipsis-horizontal" onPress={handleBlockMenu} accessibilityLabel="Опции" />
             : undefined
         }
       />
@@ -437,6 +452,20 @@ export default function UserPublicProfileScreen() {
           </Pressable>
         </View>
       )}
+
+      {/* Trophy shelf — top 3 biggest catches with podium ribbons */}
+      <TrophyShelf
+        catches={catches.map((c) => ({
+          id: c.id,
+          speciesName: c.speciesName,
+          weightKg: c.weightKg,
+          photoUri: c.photoUri,
+          date: c.date,
+        }))}
+        onPressCatch={(id) =>
+          (navigation as any).navigate('LogbookTab', { screen: 'CatchDetail', params: { id } })
+        }
+      />
 
       {/* Catches grid header */}
       <View style={styles.sectionHeader}>

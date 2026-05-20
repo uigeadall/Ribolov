@@ -193,6 +193,10 @@ function TabNavigator() {
   const [feedBadge, setFeedBadge] = React.useState<string | undefined>(undefined);
   const [mapBadge, setMapBadge] = React.useState<string | undefined>(undefined);
 
+  // Track the highest nearby-count the user has already seen, so we only badge
+  // when there are NEW nearby catches — not on every cold start with the same
+  // count (which read as a misleading "unread" indicator).
+  const nearbyCountRef = React.useRef<number>(0);
   React.useEffect(() => {
     (async () => {
       try {
@@ -207,9 +211,17 @@ function TabNavigator() {
           const dist = Math.sqrt(dlat * dlat + dlng * dlng) * 111;
           return dist < 50;
         });
-        if (nearby.length > 0) {
-          setMapBadge(String(nearby.length));
-        }
+        const currentCount = nearby.length;
+        nearbyCountRef.current = currentCount;
+        if (currentCount === 0) return;
+        const lastSeen = parseInt(
+          (await AsyncStorage.getItem('@ribolov/nearbyBadgeSeen')) ?? '0',
+          10,
+        );
+        // Only badge if more nearby catches than last time the user looked.
+        // The badge then shows just the delta — e.g. "2" means two new ones.
+        const delta = currentCount - lastSeen;
+        if (delta > 0) setMapBadge(String(delta));
       } catch {}
     })();
   }, []);
@@ -330,7 +342,15 @@ function TabNavigator() {
         component={MapScreenWrapped}
         options={{ title: 'Карта', tabBarBadge: mapBadge }}
         listeners={() => ({
-          tabPress: () => { setMapBadge(undefined); },
+          tabPress: () => {
+            setMapBadge(undefined);
+            // Persist the dismissal so we don't re-badge on next cold start
+            // unless the user adds MORE nearby catches.
+            AsyncStorage.setItem(
+              '@ribolov/nearbyBadgeSeen',
+              String(nearbyCountRef.current),
+            ).catch(() => {});
+          },
         })}
       />
       <Tabs.Screen

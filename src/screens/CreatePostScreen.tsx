@@ -20,6 +20,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createPost, getUserPublicSummary } from '../services/cloudSync';
 import { searchUsersByName, type SearchUserResult } from '../services/userProfile';
 import { handleError } from '../utils/handleError';
+import { notifyInfo } from '../utils/notify';
 import { checkImageSize } from '../utils/imageSize';
 import { useRoute, RouteProp } from '@react-navigation/native';
 import type { FeedStackParamList } from '../navigation/types';
@@ -115,7 +116,7 @@ export default function CreatePostScreen() {
   const pickPhoto = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert('Достъп до галерията', 'Разреши достъп в настройките на телефона.');
+      notifyInfo('Достъп до галерията', 'Разреши достъп в настройките на телефона.');
       return;
     }
     const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', quality: 0.7 });
@@ -128,7 +129,7 @@ export default function CreatePostScreen() {
   const takePhoto = async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert('Достъп до камерата', 'Разреши достъп в настройките на телефона.');
+      notifyInfo('Достъп до камерата', 'Разреши достъп в настройките на телефона.');
       return;
     }
     const r = await ImagePicker.launchCameraAsync({ quality: 0.7 });
@@ -141,7 +142,7 @@ export default function CreatePostScreen() {
   const submit = async () => {
     if (!user || posting) return;
     if (!text.trim() && !photoUri && !reshare) {
-      Alert.alert('Празна публикация', 'Добави текст или снимка.');
+      notifyInfo('Празна публикация', 'Добави текст или снимка.');
       return;
     }
     setPosting(true);

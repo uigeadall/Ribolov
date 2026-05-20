@@ -36,6 +36,11 @@ export function ensureFirebase(): FirebaseBundle | null {
     bundle = {
       app,
       auth: authForApp(app),
+      // Memory cache is the only option for `firebase/firestore` on React Native:
+      // `persistentLocalCache` requires IndexedDB, which RN doesn't provide, and
+      // the SDK falls back to memory cache anyway while logging a noisy warning.
+      // For real offline persistence we'd need `@react-native-firebase/firestore`
+      // (native bridge, different API). Not done yet.
       db: initializeFirestore(app, { localCache: memoryLocalCache() }),
       storage: getStorage(app),
     };

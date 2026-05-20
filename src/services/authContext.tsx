@@ -25,6 +25,8 @@ import { clearCatchSyncQueue, flushPendingCatchSync } from './catchSyncQueue';
 import { flushPendingMessages } from './messageSyncQueue';
 import { registerForPushNotifications } from './pushNotifications';
 import { restoreAchievementsFromCloud } from './achievements';
+import { resetSocialCaches } from './social';
+import { resetRateLimits } from './socialRateLimit';
 
 export type AuthContextValue = {
   user: User | null;
@@ -156,6 +158,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await wipeAllLocalAppData().catch(() => undefined);
     await clearCatchSyncQueue().catch(() => undefined);
     await AsyncStorage.removeItem(LAST_UID_KEY).catch(() => undefined);
+    // Drop in-memory caches so the next account on this device doesn't see
+    // the previous user's follow list, suggestions, or rate-limit state.
+    resetSocialCaches();
+    resetRateLimits();
     if (fb) await firebaseSignOut(fb.auth);
     else setUser(null);
   }, []);

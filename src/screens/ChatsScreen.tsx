@@ -383,6 +383,7 @@ export default function ChatsScreen() {
                   icon="chatbubbles-outline"
                   title="Все още няма разговори"
                   subtitle="Открий приятели и започни първия си разговор."
+                  action={{ label: 'Към приятели', onPress: onCompose }}
                 />
               </View>
             }

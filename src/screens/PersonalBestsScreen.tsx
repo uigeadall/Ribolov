@@ -96,6 +96,10 @@ export default function PersonalBestsScreen() {
             icon="trophy-outline"
             title="Все още няма рекорди"
             subtitle="Добавяй улови с тегло и дължина — рекордите ще се появят автоматично."
+            action={{
+              label: 'Запиши улов',
+              onPress: () => (navigation as any).navigate('LogbookTab', { screen: 'AddCatch' }),
+            }}
           />
         </View>
       ) : (
