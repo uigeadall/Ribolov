@@ -59,6 +59,14 @@ service cloud.firestore {
         allow read, write: if isSelf(userId);
       }
 
+      /** Online presence + lastSeen. Pulled out of the heavy parent user doc
+          so subscribers don't re-fire on photo/displayName/unread changes.
+          Read by any signed-in user; only the owner can write. */
+      match /presence/{document} {
+        allow read: if signedIn();
+        allow write: if isSelf(userId);
+      }
+
       /** Блокирани потребители — само собственикът чете/пише. */
       match /blockedUsers/{targetUid} {
         allow read, write: if isSelf(userId);

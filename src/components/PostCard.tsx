@@ -22,6 +22,7 @@ import type { FeedComment } from '../services/socialTypes';
 import { useAvatarUrl } from '../hooks/useAvatarUrl';
 import { useAuth } from '../services/authContext';
 import { CommentLikeButton } from './CommentLikeButton';
+import { getImageVariant, ImageSize } from '../utils/imageVariants';
 
 type Props = {
   post: Post;
@@ -300,7 +301,7 @@ function PostCardInner({
         <Pressable onPress={() => onPressAuthor(post.ownerUid, displayName)} hitSlop={6}>
           <View style={styles.avatar}>
             {avatarUrl ? (
-              <Image source={{ uri: avatarUrl }} style={{ width: 40, height: 40 }} contentFit="cover" />
+              <Image source={{ uri: getImageVariant(avatarUrl, ImageSize.avatar) ?? avatarUrl }} style={{ width: 40, height: 40 }} contentFit="cover" />
             ) : (
               <Text style={styles.avatarText}>{initials}</Text>
             )}
@@ -357,7 +358,7 @@ function PostCardInner({
           style={styles.photoWrap}
           onPress={() => { setViewerOpen(true); }}
         >
-          <Image source={{ uri: post.photoUri }} style={styles.photo} contentFit="cover" cachePolicy="memory-disk" />
+          <Image source={{ uri: getImageVariant(post.photoUri, ImageSize.feed) ?? post.photoUri }} style={styles.photo} contentFit="cover" cachePolicy="memory-disk" />
         </Pressable>
       ) : null}
 
@@ -370,7 +371,7 @@ function PostCardInner({
           <View style={styles.reshareHeader}>
             <View style={styles.reshareAvatar}>
               {post.reshareOf.ownerPhotoUrl ? (
-                <Image source={{ uri: post.reshareOf.ownerPhotoUrl }} style={{ width: 24, height: 24 }} contentFit="cover" />
+                <Image source={{ uri: getImageVariant(post.reshareOf.ownerPhotoUrl, ImageSize.avatar) ?? post.reshareOf.ownerPhotoUrl }} style={{ width: 24, height: 24 }} contentFit="cover" />
               ) : (
                 <Text style={styles.reshareAvatarText}>{post.reshareOf.ownerName.slice(0, 1).toUpperCase()}</Text>
               )}
@@ -394,7 +395,7 @@ function PostCardInner({
             )}
           </View>
           {post.reshareOf.photoUri ? (
-            <Image source={{ uri: post.reshareOf.photoUri }} style={styles.resharePhoto} contentFit="cover" />
+            <Image source={{ uri: getImageVariant(post.reshareOf.photoUri, ImageSize.feed) ?? post.reshareOf.photoUri }} style={styles.resharePhoto} contentFit="cover" />
           ) : null}
         </Pressable>
       ) : null}

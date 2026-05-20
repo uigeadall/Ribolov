@@ -35,6 +35,7 @@ import { useFeedPostSocial } from '../hooks/useFeedPostSocial';
 import { ImageViewer } from './ImageViewer';
 import { SharePickerModal, buildCatchSharedRef } from './SharePickerModal';
 import { CommentLikeButton } from './CommentLikeButton';
+import { getImageVariant, ImageSize } from '../utils/imageVariants';
 import * as Haptics from 'expo-haptics';
 
 function feedStyles(colors: AppColors) {
@@ -364,7 +365,7 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
               )}
               <View style={styles.avatar}>
                 {avatarUrl ? (
-                  <Image source={{ uri: avatarUrl }} style={styles.avatarImg} contentFit="cover" cachePolicy="memory-disk" />
+                  <Image source={{ uri: getImageVariant(avatarUrl, ImageSize.avatar) ?? avatarUrl }} style={styles.avatarImg} contentFit="cover" cachePolicy="memory-disk" />
                 ) : (
                   <Text style={styles.avatarText}>{initials}</Text>
                 )}
@@ -480,8 +481,13 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                 <Image
                   // Bump the source URI with a no-op cache-bust query string when
                   // the user taps retry, so expo-image refetches instead of
-                  // serving the cached failed response.
-                  source={{ uri: imageRetryNonce > 0 ? `${item.photoUri}#r=${imageRetryNonce}` : item.photoUri }}
+                  // serving the cached failed response. Request the 800px
+                  // variant — covers full-width feed renders without paying
+                  // 1200×1200 bandwidth costs.
+                  source={{ uri: (() => {
+                    const sized = getImageVariant(item.photoUri, ImageSize.feed) ?? item.photoUri;
+                    return imageRetryNonce > 0 ? `${sized}#r=${imageRetryNonce}` : sized;
+                  })() }}
                   style={StyleSheet.absoluteFillObject}
                   contentFit="cover"
                   cachePolicy="memory-disk"

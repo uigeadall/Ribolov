@@ -57,7 +57,7 @@ export type ProfileStackParamList = {
 };
 
 export type FeedStackParamList = {
-  FeedList: undefined;
+  FeedList: { focusPostId?: string } | undefined;
   CatchDetail: { id: string; focusComment?: { authorName: string } };
   Classics: undefined;
   SavedPosts: undefined;

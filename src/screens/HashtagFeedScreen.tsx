@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { View, Text, StyleSheet, FlatList, Pressable, Alert, Platform, ActionSheetIOS } from 'react-native';
 import { useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -33,6 +34,17 @@ export default function HashtagFeedScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [tagFollowed, setTagFollowed] = useState(false);
   const [tagFollowBusy, setTagFollowBusy] = useState(false);
+  // Cached own avatar URL so one-tap reposts from this screen render with
+  // the correct author photo, matching FeedScreen's behavior. Without this
+  // the repost would fall back to initials in the feed.
+  const [myPhotoUrl, setMyPhotoUrl] = useState<string | undefined>();
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    AsyncStorage.getItem(`@ribolov/profilePhoto/${user.uid}`)
+      .then((v) => { if (v) setMyPhotoUrl(v); })
+      .catch(() => {});
+  }, [user?.uid]);
 
   useEffect(() => {
     if (!user || !configured) return;
@@ -106,8 +118,8 @@ export default function HashtagFeedScreen() {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       await createPost({
         ownerUid: user.uid,
-        ownerName: user.displayName ?? user.email ?? 'Рибар',
-        ownerPhotoUrl: undefined,
+        ownerName: user.displayName?.trim() || user.email?.trim() || 'Рибар',
+        ownerPhotoUrl: myPhotoUrl,
         text: '',
         mentionUids: [],
         reshareOf: target,
@@ -116,7 +128,7 @@ export default function HashtagFeedScreen() {
     } catch (e) {
       notifyError('Грешка при споделяне', e instanceof Error ? e.message : 'Неуспешно споделяне.');
     }
-  }, [user]);
+  }, [user, myPhotoUrl]);
 
   const onReshare = useCallback((p: Post) => {
     const target: ResharedRef = p.reshareOf ?? {

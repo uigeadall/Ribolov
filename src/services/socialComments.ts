@@ -62,7 +62,7 @@ export function subscribeCatchComments(catchId: string, onNext: (comments: FeedC
         };
       })
     );
-  });
+  }, () => onNext([]));
 }
 
 /** Subscribes to whether the current user has liked a specific comment.

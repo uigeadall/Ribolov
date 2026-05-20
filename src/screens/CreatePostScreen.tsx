@@ -183,7 +183,7 @@ export default function CreatePostScreen() {
 
       await createPost({
         ownerUid: user.uid,
-        ownerName: user.displayName ?? user.email ?? 'Рибар',
+        ownerName: user.displayName?.trim() || user.email?.trim() || 'Рибар',
         ownerPhotoUrl: ownerPhotoUrl || undefined,
         text,
         localPhotoUri: photoUri,

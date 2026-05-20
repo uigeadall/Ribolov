@@ -10,7 +10,8 @@ const AnimatedFlatList = Animated.createAnimatedComponent(FlatList) as unknown a
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useRoute, type RouteProp } from '@react-navigation/native';
+import type { FeedStackParamList } from '../navigation/types';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
@@ -94,6 +95,13 @@ export default function FeedScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const unreadNotifCount = useUnreadNotifCount(user?.uid);
+
+  // Optional deep-link target: when navigated here from a mention
+  // notification we'll receive { focusPostId } and scroll to that post once
+  // the list renders.
+  const route = useRoute<RouteProp<FeedStackParamList, 'FeedList'>>();
+  const focusPostId = route.params?.focusPostId;
+  const focusHandledRef = useRef<string | null>(null);
 
   const [items, setItems] = useState<FeedItem[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
@@ -223,17 +231,21 @@ export default function FeedScreen() {
         .filter((p) => !blockedUids.has(p.ownerUid))
         .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
 
-      // "New posts" pill detection: if the user is scrolled away from the top
-      // and new items arrived above the previously-seen tip, show a pill with
-      // the count. When the user is at the top, just track the latest tip.
+      // "New posts" pill: surface the delta on every refresh whenever the
+      // top-of-feed id has changed since the last time the user saw it. We
+      // used to gate this on !isAtTopRef.current so the pill only appeared
+      // mid-scroll, which meant a user at the top got fresh posts silently
+      // appended without any "N нови публикации" hint. Now it shows for both
+      // cases — if they're already at the top, they tap the pill (or just
+      // scroll) and we'll clear it on next scroll-to-top.
       const newTopId = next[0]?.id ?? null;
-      if (newTopId && seenTopIdRef.current && newTopId !== seenTopIdRef.current && !isAtTopRef.current) {
+      if (newTopId && seenTopIdRef.current && newTopId !== seenTopIdRef.current) {
         const seenIdx = next.findIndex((i) => i.id === seenTopIdRef.current);
         const delta = seenIdx > 0 ? seenIdx : next.length;
         newPostsCountRef.current = delta;
         setNewPostsCount(delta);
-      } else if (isAtTopRef.current) {
-        // User can see the top — they've effectively "seen" the new items.
+      } else if (!seenTopIdRef.current) {
+        // First load — seed the tip without showing a pill.
         seenTopIdRef.current = newTopId;
         newPostsCountRef.current = 0;
         setNewPostsCount(0);
@@ -365,6 +377,24 @@ export default function FeedScreen() {
     return merged;
   }, [items, posts]);
 
+  // Mention-notification deep link: scroll to the focused post once it
+  // appears in the merged list. focusHandledRef gates this to once per
+  // distinct focusPostId so re-renders don't keep yanking the user.
+  useEffect(() => {
+    if (!focusPostId || focusHandledRef.current === focusPostId) return;
+    const idx = displayedItems.findIndex(
+      (it) => it.kind === 'post' && it.data.id === focusPostId,
+    );
+    if (idx < 0) return;
+    focusHandledRef.current = focusPostId;
+    // Defer to next frame so the FlatList has measured the row.
+    setTimeout(() => {
+      try {
+        flatListRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.15 });
+      } catch { /* invalid index briefly during settle — onScrollToIndexFailed handles it */ }
+    }, 120);
+  }, [focusPostId, displayedItems]);
+
   const onPressHashtag = useCallback((tag: string) => {
     navigation.navigate('HashtagFeed', { tag });
   }, [navigation]);
@@ -388,7 +418,7 @@ export default function FeedScreen() {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       await createPost({
         ownerUid: user.uid,
-        ownerName: user.displayName ?? user.email ?? 'Рибар',
+        ownerName: user.displayName?.trim() || user.email?.trim() || 'Рибар',
         ownerPhotoUrl: myPhotoUrl,
         text: '',
         mentionUids: [],
@@ -787,6 +817,12 @@ export default function FeedScreen() {
           windowSize={5}
           initialNumToRender={6}
           updateCellsBatchingPeriod={50}
+          onScrollToIndexFailed={(info) => {
+            // Row not yet measured — let RN estimate and retry once.
+            setTimeout(() => {
+              flatListRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0.15 });
+            }, 120);
+          }}
           ListEmptyComponent={null}
           ListHeaderComponent={<PeopleYouMayKnowRow />}
           ListFooterComponent={
@@ -992,12 +1028,34 @@ export default function FeedScreen() {
         {waveContent}
       </View>
 
-      {/* Create-post FAB — floats above tab bar */}
+      {/* Compose FAB — opens an action sheet so the user can pick between
+          a catch entry and a free-form post without losing this screen as
+          their back destination. */}
       {user && configured ? (
         <Pressable
           onPress={() => {
             void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            navigation.navigate('CreatePost');
+            const onCatch = () => (navigation as any).navigate('LogbookTab', { screen: 'AddCatch', params: {} });
+            const onPost = () => navigation.navigate('CreatePost');
+            if (Platform.OS === 'ios') {
+              ActionSheetIOS.showActionSheetWithOptions(
+                {
+                  title: 'Какво искаш да споделиш?',
+                  options: ['Сподели улов', 'Напиши пост', 'Отказ'],
+                  cancelButtonIndex: 2,
+                },
+                (idx) => {
+                  if (idx === 0) onCatch();
+                  else if (idx === 1) onPost();
+                },
+              );
+            } else {
+              Alert.alert('Какво искаш да споделиш?', undefined, [
+                { text: 'Сподели улов', onPress: onCatch },
+                { text: 'Напиши пост', onPress: onPost },
+                { text: 'Отказ', style: 'cancel' },
+              ]);
+            }
           }}
           style={{
             position: 'absolute',
@@ -1016,9 +1074,9 @@ export default function FeedScreen() {
             elevation: 8,
           }}
           accessibilityRole="button"
-          accessibilityLabel="Нова публикация"
+          accessibilityLabel="Сподели"
         >
-          <Ionicons name="create" size={26} color="#fff" />
+          <Ionicons name="add" size={30} color="#fff" />
         </Pressable>
       ) : null}
     </View>

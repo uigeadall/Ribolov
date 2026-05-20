@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -27,6 +27,7 @@ import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
 import { RootStackParamList } from '../navigation/types';
+import { getImageVariant, ImageSize } from '../utils/imageVariants';
 import { useAuth } from '../services/authContext';
 import {
   fetchPublicCatchesByOwner,
@@ -72,7 +73,7 @@ function CatchGridCell({
         <Ionicons name="fish-outline" size={28} color={colors.textMuted} />
       ) : (
         <Image
-          source={{ uri: item.photoUri }}
+          source={{ uri: getImageVariant(item.photoUri, ImageSize.gridThumb) ?? item.photoUri }}
           style={styles.gridImg}
           contentFit="cover"
           cachePolicy="memory-disk"
@@ -245,6 +246,13 @@ export default function UserPublicProfileScreen() {
   const [blocked, setBlocked] = useState(false);
   const [activeTab, setActiveTab] = useState<ProfileTabKey>('posts');
   const [mutualFollowers, setMutualFollowers] = useState<{ uid: string; displayName: string }[]>([]);
+  // How many catches the Posts tab is currently showing. We page in chunks
+  // of 10 (initial) → 20 → all so even a profile with 50 catches doesn't
+  // mount every FeedPost up front. "Виж всички" jumps straight to the end.
+  const [postsShown, setPostsShown] = useState(10);
+  // Reset back to a small window whenever the user navigates to a different
+  // profile so a long-scroll session on one doesn't leak into another.
+  useEffect(() => { setPostsShown(10); }, [uid]);
 
   const isSelf = user?.uid === uid;
 
@@ -259,6 +267,34 @@ export default function UserPublicProfileScreen() {
   const bestCatchId = bestCatch?.id ?? null;
   const totalKg = useMemo(() => catches.reduce((s, c) => s + (c.weightKg ?? 0), 0), [catches]);
   const speciesCount = useMemo(() => new Set(catches.map((c) => c.speciesName)).size, [catches]);
+
+  // Fishing-style summary — top species, favorite spot, average weight.
+  // Pure client-side derivation from the already-loaded catches array.
+  const fishingStyle = useMemo(() => {
+    if (catches.length < 3) return null; // not enough signal
+    const speciesTally: Record<string, number> = {};
+    const spotTally: Record<string, number> = {};
+    let weightSum = 0;
+    let weightCount = 0;
+    for (const c of catches) {
+      const sp = c.speciesName?.trim();
+      if (sp) speciesTally[sp] = (speciesTally[sp] ?? 0) + 1;
+      const spot = c.location?.name?.trim();
+      if (spot) spotTally[spot] = (spotTally[spot] ?? 0) + 1;
+      if (typeof c.weightKg === 'number' && c.weightKg > 0) {
+        weightSum += c.weightKg;
+        weightCount += 1;
+      }
+    }
+    const topSpecies = Object.entries(speciesTally).sort((a, b) => b[1] - a[1])[0];
+    const topSpot = Object.entries(spotTally).sort((a, b) => b[1] - a[1])[0];
+    const avgWeight = weightCount > 0 ? weightSum / weightCount : null;
+    return {
+      topSpecies: topSpecies ? { name: topSpecies[0], count: topSpecies[1] } : null,
+      topSpot: topSpot ? { name: topSpot[0], count: topSpot[1] } : null,
+      avgWeight,
+    };
+  }, [catches]);
 
   const handleBlockMenu = () => {
     if (!user || isSelf) return;
@@ -694,6 +730,66 @@ export default function UserPublicProfileScreen() {
         </Pressable>
       ) : null}
 
+      {/* Fishing-style summary card — top species / favorite water /
+          average weight. Pure social-proof / get-to-know-this-user content.
+          Hidden when the user has fewer than 3 catches (not enough signal). */}
+      {fishingStyle ? (
+        <View style={{
+          marginHorizontal: spacing.lg,
+          marginTop: spacing.md,
+          marginBottom: spacing.sm,
+          padding: spacing.md,
+          borderRadius: radius.lg,
+          backgroundColor: colors.card,
+          borderWidth: 1,
+          borderColor: colors.border,
+        }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: spacing.sm }}>
+            <Ionicons name="trophy-outline" size={14} color={colors.primary} />
+            <Text style={{ ...typography.bodyBold, color: colors.textMuted, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase' }}>
+              Стил на риболов
+            </Text>
+          </View>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: spacing.sm }}>
+            {fishingStyle.topSpecies ? (
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={{ ...typography.caption, color: colors.textMuted, fontSize: 10 }}>НАЙ-ЧЕСТО</Text>
+                <Text style={{ ...typography.bodyBold, color: colors.text, fontSize: 14 }} numberOfLines={1}>
+                  {fishingStyle.topSpecies.name}
+                </Text>
+                <Text style={{ ...typography.caption, color: colors.textMuted, fontSize: 11 }}>
+                  {fishingStyle.topSpecies.count}× уловен
+                </Text>
+              </View>
+            ) : null}
+            {fishingStyle.topSpot ? (
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={{ ...typography.caption, color: colors.textMuted, fontSize: 10 }}>ЛЮБИМО МЯСТО</Text>
+                <Text style={{ ...typography.bodyBold, color: colors.text, fontSize: 14 }} numberOfLines={1}>
+                  {fishingStyle.topSpot.name}
+                </Text>
+                <Text style={{ ...typography.caption, color: colors.textMuted, fontSize: 11 }}>
+                  {fishingStyle.topSpot.count}× посетено
+                </Text>
+              </View>
+            ) : null}
+            {fishingStyle.avgWeight != null ? (
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={{ ...typography.caption, color: colors.textMuted, fontSize: 10 }}>СРЕДНО ТЕГЛО</Text>
+                <Text style={{ ...typography.bodyBold, color: colors.text, fontSize: 14 }}>
+                  {fishingStyle.avgWeight < 1
+                    ? `${Math.round(fishingStyle.avgWeight * 1000)} г`
+                    : `${fishingStyle.avgWeight.toFixed(1)} кг`}
+                </Text>
+                <Text style={{ ...typography.caption, color: colors.textMuted, fontSize: 11 }}>
+                  на улов
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        </View>
+      ) : null}
+
       <ProfileTabs
         active={activeTab}
         onChange={setActiveTab}
@@ -706,18 +802,57 @@ export default function UserPublicProfileScreen() {
   );
 
   // Posts tab streams into FlatList data so virtualization works; every other
-  // tab is empty data + static header. Without this, a profile with 80+
-  // catches mounted every FeedPost (with its likes/reactions/comments subs)
-  // on first render.
-  const postsData = activeTab === 'posts' ? catches : [];
+  // tab is empty data + static header. We also cap the visible count via
+  // `postsShown` so even a profile with 80+ catches doesn't mount every
+  // FeedPost up front. A footer offers "Виж още N" and "Виж всички (N)".
+  const postsData = activeTab === 'posts' ? catches.slice(0, postsShown) : [];
+  const remainingPosts = Math.max(0, catches.length - postsShown);
 
   return (
     <Screen padded={false} safeAreaEdges={['left', 'right']}>
       <FlatList
         data={postsData}
-        extraData={{ photoUrl, summaryName, city, bio, following, followerCount, followingCount, activeTab }}
+        extraData={{ photoUrl, summaryName, city, bio, following, followerCount, followingCount, activeTab, postsShown }}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={ListHeader}
+        ListFooterComponent={
+          activeTab === 'posts' && remainingPosts > 0 ? (
+            <View style={{ flexDirection: 'row', justifyContent: 'center', gap: spacing.sm, paddingVertical: spacing.lg }}>
+              <Pressable
+                onPress={() => setPostsShown((n) => n + 10)}
+                style={({ pressed }) => ({
+                  paddingHorizontal: spacing.lg,
+                  paddingVertical: 10,
+                  borderRadius: radius.pill,
+                  backgroundColor: pressed ? colors.surfaceAlt : colors.card,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                })}
+                accessibilityRole="button"
+                accessibilityLabel={`Виж още ${Math.min(10, remainingPosts)}`}
+              >
+                <Text style={{ ...typography.bodyBold, color: colors.text, fontSize: 13 }}>
+                  Виж още {Math.min(10, remainingPosts)}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setPostsShown(catches.length)}
+                style={({ pressed }) => ({
+                  paddingHorizontal: spacing.lg,
+                  paddingVertical: 10,
+                  borderRadius: radius.pill,
+                  backgroundColor: pressed ? colors.primaryDark : colors.primary,
+                })}
+                accessibilityRole="button"
+                accessibilityLabel={`Виж всички ${catches.length}`}
+              >
+                <Text style={{ ...typography.bodyBold, color: '#fff', fontSize: 13 }}>
+                  Виж всички ({catches.length})
+                </Text>
+              </Pressable>
+            </View>
+          ) : null
+        }
         contentContainerStyle={{ paddingBottom: spacing.xxl + insets.bottom }}
         refreshControl={
           <FishingRefreshControl refreshing={refreshing} onRefresh={onRefresh} />

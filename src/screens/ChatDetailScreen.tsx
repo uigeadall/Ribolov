@@ -57,6 +57,7 @@ import { getBlockedUids, blockUser, unblockUser } from '../services/blockUser';
 import { handleError } from '../utils/handleError';
 import { notifyInfo } from '../utils/notify';
 import { checkImageSize } from '../utils/imageSize';
+import { getImageVariant, ImageSize } from '../utils/imageVariants';
 
 type R = RouteProp<ProfileStackParamList, 'ChatDetail'>;
 
@@ -179,6 +180,10 @@ export default function ChatDetailScreen() {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
+  // Staged media: a photo the user picked but hasn't sent yet. The composer
+  // shows a thumbnail preview above the input + treats the text field as
+  // the caption. Pressing send uploads and dispatches; the X clears it.
+  const [pendingMedia, setPendingMedia] = useState<{ uri: string; type: 'photo' } | null>(null);
   const [otherPresence, setOtherPresence] = useState<{ online: boolean; lastSeen?: number }>({ online: false });
   const [typingUid, setTypingUid] = useState<string | null>(null);
   const [viewerUri, setViewerUri] = useState('');
@@ -387,12 +392,103 @@ export default function ChatDetailScreen() {
     }
   }, [convId, hasMoreOlder, loadingOlder, olderMsgs, tailMsgs]);
 
+
+  const cancelEdit = useCallback(() => {
+    setEditingMsg(null);
+    setText('');
+  }, []);
+
+  const cancelReply = useCallback(() => {
+    setReplyingTo(null);
+  }, []);
+
+  // Stage a photo into pendingMedia rather than sending immediately — the
+  // composer's send button will upload + dispatch on the next tap, with the
+  // text field doubling as a caption.
+  const pickMedia = useCallback(async (source: 'camera' | 'gallery') => {
+    if (!user) return;
+    if (blockedByMe) {
+      notifyInfo('Блокиран потребител', 'Разблокирай го, за да изпратиш медия.');
+      return;
+    }
+    const perm = source === 'camera'
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (perm.status !== 'granted') {
+      notifyInfo('Няма достъп', 'Разреши достъп до камерата/галерията.');
+      return;
+    }
+    const opts: ImagePicker.ImagePickerOptions = { mediaTypes: 'images', quality: 0.5 };
+    const result = source === 'camera'
+      ? await ImagePicker.launchCameraAsync(opts)
+      : await ImagePicker.launchImageLibraryAsync(opts);
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    if (!checkImageSize(asset)) return;
+    setPendingMedia({ uri: asset.uri, type: 'photo' });
+  }, [user, blockedByMe]);
+
+  // Uploads a staged photo and dispatches it as a message with an optional
+  // caption. Extracted so both the new staged-flow and any future
+  // "send-immediately" path can share it.
+  const uploadAndSendMedia = useCallback(async (mediaUri: string, caption: string) => {
+    if (!user) return;
+    const clientId = makeMessageClientId();
+    const replyRef = replyingTo ? buildReplyRef(replyingTo) : undefined;
+    setReplyingTo(null);
+    setUploading(true);
+    try {
+      const fb = ensureFirebase();
+      if (!fb) throw new Error('Firebase не е наличен.');
+      const token = await fb.auth.currentUser?.getIdToken(true);
+      if (!token) throw new Error('Не е влезено в акаунт.');
+      const bucket = fb.auth.app.options.storageBucket;
+      if (!bucket) throw new Error('Firebase Storage не е конфигуриран.');
+      const storagePath = `chatMedia/${convId}/${user.uid}_${Date.now()}.jpg`;
+      const uploadResult = await uploadAsync(
+        `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o?uploadType=media&name=${encodeURIComponent(storagePath)}`,
+        mediaUri,
+        {
+          httpMethod: 'POST',
+          uploadType: FileSystemUploadType.BINARY_CONTENT,
+          headers: { 'Content-Type': 'image/jpeg', Authorization: `Bearer ${token}` },
+        },
+      );
+      if (uploadResult.status < 200 || uploadResult.status >= 300) {
+        throw new Error(`Upload failed (${uploadResult.status}): ${uploadResult.body}`);
+      }
+      const meta = JSON.parse(uploadResult.body) as { name: string; downloadTokens: string };
+      const url = `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o/${encodeURIComponent(meta.name)}?alt=media&token=${meta.downloadTokens}`;
+      const myName = user.displayName?.trim() || user.email?.trim() || 'Рибар';
+      await sendConversationMessage(convId, user.uid, caption.trim(), otherUid, myName, url, 'photo', clientId, replyRef);
+    } catch (e) {
+      if (replyRef) setReplyingTo(replyingTo);
+      handleError(e);
+    } finally {
+      setUploading(false);
+    }
+  }, [user, convId, otherUid, blockedByMe, replyingTo]);
+
   const send = useCallback(async () => {
-    if (!user || !text.trim()) return;
+    if (!user) return;
     if (blockedByMe) {
       notifyInfo('Блокиран потребител', 'Разблокирай го от менюто, за да изпратиш съобщение.');
       return;
     }
+    // Staged media path: upload the photo (text becomes its caption) and
+    // clear both the media slot and the input afterward. We do this first
+    // so a user with both pending media AND typed text gets one combined
+    // message rather than two separate ones.
+    if (pendingMedia && !editingMsg) {
+      const caption = text.trim();
+      const mediaUri = pendingMedia.uri;
+      setPendingMedia(null);
+      setText('');
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      await uploadAndSendMedia(mediaUri, caption);
+      return;
+    }
+    if (!text.trim()) return;
     setSending(true);
     // Subtle confirmation that the send was registered, even before the network
     // round-trip completes. Light feedback so back-to-back messages don't buzz.
@@ -435,74 +531,7 @@ export default function ChatDetailScreen() {
     } finally {
       setSending(false);
     }
-  }, [convId, text, user, otherUid, clearTypingStatus, editingMsg, blockedByMe, replyingTo]);
-
-  const cancelEdit = useCallback(() => {
-    setEditingMsg(null);
-    setText('');
-  }, []);
-
-  const cancelReply = useCallback(() => {
-    setReplyingTo(null);
-  }, []);
-
-  const pickAndSendMedia = useCallback(async (source: 'camera' | 'gallery') => {
-    if (!user) return;
-    if (blockedByMe) {
-      notifyInfo('Блокиран потребител', 'Разблокирай го, за да изпратиш медия.');
-      return;
-    }
-    const perm = source === 'camera'
-      ? await ImagePicker.requestCameraPermissionsAsync()
-      : await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (perm.status !== 'granted') {
-      notifyInfo('Няма достъп', 'Разреши достъп до камерата/галерията.');
-      return;
-    }
-    const opts: ImagePicker.ImagePickerOptions = { mediaTypes: 'images', quality: 0.5 };
-    const result = source === 'camera'
-      ? await ImagePicker.launchCameraAsync(opts)
-      : await ImagePicker.launchImageLibraryAsync(opts);
-    if (result.canceled || !result.assets?.[0]) return;
-
-    const asset = result.assets[0];
-    if (!checkImageSize(asset)) return;
-
-    setUploading(true);
-    const clientId = makeMessageClientId();
-    const replyRef = replyingTo ? buildReplyRef(replyingTo) : undefined;
-    setReplyingTo(null);
-    try {
-      const fb = ensureFirebase();
-      if (!fb) throw new Error('Firebase не е наличен.');
-      const token = await fb.auth.currentUser?.getIdToken(true);
-      if (!token) throw new Error('Не е влезено в акаунт.');
-      const bucket = fb.auth.app.options.storageBucket;
-      if (!bucket) throw new Error('Firebase Storage не е конфигуриран.');
-      const storagePath = `chatMedia/${convId}/${user.uid}_${Date.now()}.jpg`;
-      const uploadResult = await uploadAsync(
-        `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o?uploadType=media&name=${encodeURIComponent(storagePath)}`,
-        asset.uri,
-        {
-          httpMethod: 'POST',
-          uploadType: FileSystemUploadType.BINARY_CONTENT,
-          headers: { 'Content-Type': 'image/jpeg', Authorization: `Bearer ${token}` },
-        },
-      );
-      if (uploadResult.status < 200 || uploadResult.status >= 300) {
-        throw new Error(`Upload failed (${uploadResult.status}): ${uploadResult.body}`);
-      }
-      const meta = JSON.parse(uploadResult.body) as { name: string; downloadTokens: string };
-      const url = `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o/${encodeURIComponent(meta.name)}?alt=media&token=${meta.downloadTokens}`;
-      const myName = user.displayName ?? user.email ?? 'Рибар';
-      await sendConversationMessage(convId, user.uid, '', otherUid, myName, url, 'photo', clientId, replyRef);
-    } catch (e) {
-      if (replyRef) setReplyingTo(replyingTo);
-      handleError(e);
-    } finally {
-      setUploading(false);
-    }
-  }, [user, convId, otherUid, blockedByMe, replyingTo]);
+  }, [convId, text, user, otherUid, clearTypingStatus, editingMsg, blockedByMe, replyingTo, pendingMedia, uploadAndSendMedia]);
 
   const handleLongPressMessage = useCallback((msg: DirectMessage) => {
     if (!user) return;
@@ -618,6 +647,32 @@ export default function ChatDetailScreen() {
       backgroundColor: colors.background,
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: colors.border,
+    },
+    // Staged photo preview that sits above the composer when the user has
+    // picked an image but not sent yet.
+    mediaPreviewRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      backgroundColor: colors.surfaceAlt,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
+    },
+    mediaPreviewThumb: {
+      width: 56,
+      height: 56,
+      borderRadius: 10,
+      backgroundColor: colors.background,
+    },
+    mediaPreviewClose: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      backgroundColor: 'rgba(0,0,0,0.55)',
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     // Round "+" attach button — matches the send button's footprint so both ends balance.
     attachBtn: {
@@ -836,7 +891,11 @@ export default function ChatDetailScreen() {
   }
 
   const hasSendText = text.trim().length > 0;
-  const sendDisabled = sending || !hasSendText || blockedByMe;
+  // With staged media the send button works even when the caption is empty,
+  // so it can dispatch a photo-only message. Disabled solely when blocked,
+  // already sending, or there's nothing at all to send.
+  const sendDisabled = sending || uploading || blockedByMe || (!hasSendText && !pendingMedia);
+  const sendActive = (hasSendText || !!pendingMedia) && !blockedByMe;
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -862,7 +921,7 @@ export default function ChatDetailScreen() {
             >
               <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
                 {avatarUrl ? (
-                  <Image source={{ uri: avatarUrl }} style={{ width: 42, height: 42, borderRadius: 21 }} contentFit="cover" cachePolicy="memory-disk" />
+                  <Image source={{ uri: getImageVariant(avatarUrl, ImageSize.avatar) ?? avatarUrl }} style={{ width: 42, height: 42, borderRadius: 21 }} contentFit="cover" cachePolicy="memory-disk" />
                 ) : (
                   <Text style={{ color: '#fff', fontWeight: '700', fontSize: 18 }}>{otherInitials}</Text>
                 )}
@@ -1128,7 +1187,7 @@ export default function ChatDetailScreen() {
                       style={styles.sharedCard}
                     >
                       {item.sharedRef.photoUrl ? (
-                        <Image source={{ uri: item.sharedRef.photoUrl }} style={styles.sharedCardImage} contentFit="cover" cachePolicy="memory-disk" />
+                        <Image source={{ uri: getImageVariant(item.sharedRef.photoUrl, ImageSize.gridThumb) ?? item.sharedRef.photoUrl }} style={styles.sharedCardImage} contentFit="cover" cachePolicy="memory-disk" />
                       ) : (
                         <View style={[styles.sharedCardImage, { alignItems: 'center', justifyContent: 'center' }]}>
                           <Ionicons
@@ -1153,7 +1212,7 @@ export default function ChatDetailScreen() {
                   ) : item.mediaUrl && item.mediaType === 'photo' ? (
                     <Pressable onPress={() => { setViewerUri(item.mediaUrl!); setViewerVisible(true); }}>
                       <Image
-                        source={{ uri: item.mediaUrl }}
+                        source={{ uri: getImageVariant(item.mediaUrl, ImageSize.gridThumb) ?? item.mediaUrl }}
                         style={{ width: 200, height: 150, borderRadius: 10 }}
                         contentFit="cover"
                       />
@@ -1250,6 +1309,32 @@ export default function ChatDetailScreen() {
           </Pressable>
         )}
 
+        {/* Staged media preview — sits directly above the composer when the
+            user has picked a photo but hasn't sent yet. Shows a 56px thumb
+            with an X to discard. The text input below doubles as the caption. */}
+        {pendingMedia ? (
+          <View style={styles.mediaPreviewRow}>
+            <Image source={{ uri: pendingMedia.uri }} style={styles.mediaPreviewThumb} contentFit="cover" />
+            <View style={{ flex: 1 }}>
+              <Text style={{ ...typography.caption, color: colors.text, fontWeight: '700' }}>
+                Готово за изпращане
+              </Text>
+              <Text style={{ ...typography.caption, color: colors.textMuted, fontSize: 11 }} numberOfLines={1}>
+                Добави описание или натисни изпращане.
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => setPendingMedia(null)}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Премахни снимката"
+              style={styles.mediaPreviewClose}
+            >
+              <Ionicons name="close" size={18} color="#fff" />
+            </Pressable>
+          </View>
+        ) : null}
+
         {/* Input row */}
         <View style={[styles.inputRow, { paddingBottom: Math.max(12, insets.bottom) }]}>
           <Pressable
@@ -1259,8 +1344,8 @@ export default function ChatDetailScreen() {
                 return;
               }
               Alert.alert('Изпрати медия', undefined, [
-                { text: 'Камера', onPress: () => pickAndSendMedia('camera') },
-                { text: 'Галерия', onPress: () => pickAndSendMedia('gallery') },
+                { text: 'Камера', onPress: () => pickMedia('camera') },
+                { text: 'Галерия', onPress: () => pickMedia('gallery') },
                 { text: 'Отказ', style: 'cancel' },
               ]);
             }}
@@ -1277,7 +1362,12 @@ export default function ChatDetailScreen() {
           <View style={styles.inputWrap}>
             <TextInput
               style={styles.input}
-              placeholder={blockedByMe ? 'Блокиран потребител' : editingMsg ? 'Редактирай съобщението…' : 'Съобщение…'}
+              placeholder={
+                blockedByMe ? 'Блокиран потребител'
+                : editingMsg ? 'Редактирай съобщението…'
+                : pendingMedia ? 'Добави описание (по желание)…'
+                : 'Съобщение…'
+              }
               placeholderTextColor={colors.textMuted}
               value={text}
               editable={!blockedByMe}
@@ -1302,11 +1392,11 @@ export default function ChatDetailScreen() {
           <Pressable
             onPress={send}
             disabled={sendDisabled}
-            style={[styles.sendBtn, { backgroundColor: hasSendText && !blockedByMe ? colors.primary : colors.surfaceAlt }]}
+            style={[styles.sendBtn, { backgroundColor: sendActive ? colors.primary : colors.surfaceAlt }]}
           >
-            {sending
-              ? <ActivityIndicator size="small" color={hasSendText ? '#fff' : colors.textMuted} />
-              : <Ionicons name={editingMsg ? 'checkmark' : 'arrow-up'} size={20} color={hasSendText && !blockedByMe ? '#fff' : colors.textMuted} />
+            {sending || uploading
+              ? <ActivityIndicator size="small" color={sendActive ? '#fff' : colors.textMuted} />
+              : <Ionicons name={editingMsg ? 'checkmark' : 'arrow-up'} size={20} color={sendActive ? '#fff' : colors.textMuted} />
             }
           </Pressable>
         </View>
@@ -1464,7 +1554,7 @@ export default function ChatDetailScreen() {
                   borderWidth: 2, borderColor: otherPresence.online ? '#2ECC71' : colors.border,
                 }}>
                   {avatarUrl ? (
-                    <Image source={{ uri: avatarUrl }} style={{ width: 84, height: 84, borderRadius: 42 }} contentFit="cover" cachePolicy="memory-disk" />
+                    <Image source={{ uri: getImageVariant(avatarUrl, ImageSize.avatar) ?? avatarUrl }} style={{ width: 84, height: 84, borderRadius: 42 }} contentFit="cover" cachePolicy="memory-disk" />
                   ) : (
                     <Text style={{ color: colors.primary, fontWeight: '800', fontSize: 36 }}>{otherInitials}</Text>
                   )}

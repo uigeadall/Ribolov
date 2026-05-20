@@ -237,7 +237,7 @@ export function subscribePostComments(postId: string, onNext: (comments: FeedCom
         };
       }),
     );
-  });
+  }, () => onNext([]));
 }
 
 /** Subscribes to whether the current user has liked a specific post comment. */

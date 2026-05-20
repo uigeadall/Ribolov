@@ -102,6 +102,60 @@ export function subscribeMyConversations(
   }, (err) => onError?.(err as Error));
 }
 
+/** Page in older conversations beyond the 50-doc live tail. Uses a
+    `lastMessageAt < beforeMs` filter rather than a cursor doc because the
+    live subscription's snapshot isn't shared with callers — passing a
+    timestamp boundary is the simpler API and avoids stale-doc footguns.
+    Returns at most `n` results. */
+export async function fetchOlderConversations(
+  myUid: string,
+  beforeMs: number,
+  n = 30,
+): Promise<ConversationPreview[]> {
+  const fb = requireFirebase();
+  if (!myUid || !beforeMs) return [];
+  // Composite (participantIds CONTAINS, lastMessageAt DESC) index already
+  // exists for the live subscription — same query shape works here.
+  const q = query(
+    collection(fb.db, 'conversations'),
+    where('participantIds', 'array-contains', myUid),
+    where('lastMessageAt', '<', beforeMs),
+    orderBy('lastMessageAt', 'desc'),
+    limit(n),
+  );
+  let snap;
+  try {
+    snap = await getDocs(q);
+  } catch (e) {
+    addBreadcrumb('messaging', 'fetchOlderConversations_failed', { error: String(e) });
+    return [];
+  }
+  return snap.docs.map((d) => {
+    const data = d.data() as {
+      participantIds: string[];
+      participantNames?: Record<string, string>;
+      lastMessage?: string;
+      lastMessageAt?: { toMillis?: () => number } | number;
+      lastSenderUid?: string;
+      unreadCounts?: Record<string, number>;
+    };
+    const other = data.participantIds.find((id) => id !== myUid) ?? '';
+    const ts = data.lastMessageAt;
+    const lastMessageAt = ts
+      ? typeof ts === 'number' ? ts : ts.toMillis?.() ?? 0
+      : 0;
+    return {
+      convId: d.id,
+      otherUid: other,
+      otherName: data.participantNames?.[other] ?? 'Рибар',
+      lastMessage: data.lastMessage,
+      lastMessageAt,
+      lastSenderUid: data.lastSenderUid,
+      unreadCount: data.unreadCounts?.[myUid] ?? 0,
+    };
+  });
+}
+
 export async function listMyConversations(myUid: string, maxCount = 50): Promise<ConversationPreview[]> {
   const fb = requireFirebase();
   // orderBy ensures the `limit` actually returns the most-recent conversations,
@@ -241,12 +295,27 @@ export async function sendConversationMessage(
     if (existing?.exists()) return;
   }
 
-  const preview = sharedRef
-    ? sharedRef.kind === 'catch' ? '🎣 Сподели улов'
-      : sharedRef.kind === 'post' ? '📰 Сподели публикация'
-      : '📍 Сподели място'
-    : mediaUrl ? (mediaType === 'video' ? '📹 Видео' : '📷 Снимка')
-    : trimmed;
+  // Build the inbox preview. We layer the sentinel emoji + label, then
+  // append the title or caption when present so the row tells the user more
+  // than just "media". Caps the total so a long caption can't blow out the
+  // row layout in the inbox.
+  const buildPreview = (): string => {
+    if (sharedRef) {
+      const kindLabel = sharedRef.kind === 'catch'
+        ? '🎣 Улов'
+        : sharedRef.kind === 'post'
+          ? '📰 Публикация'
+          : '📍 Място';
+      const title = sharedRef.title?.trim();
+      return title ? `${kindLabel}: ${title}` : kindLabel;
+    }
+    if (mediaUrl) {
+      const kindLabel = mediaType === 'video' ? '📹 Видео' : '📷 Снимка';
+      return trimmed ? `${kindLabel}: ${trimmed}` : kindLabel;
+    }
+    return trimmed;
+  };
+  const preview = buildPreview().slice(0, 220);
   const batch = writeBatch(fb.db);
   batch.set(msgRef, stripUndefinedForFirestore({
     senderUid,
@@ -361,13 +430,34 @@ export function subscribeUnreadMessagesCount(
   myUid: string,
   onNext: (count: number) => void,
 ): () => void {
-  // Single-doc listener on the user aggregate — O(1) instead of scanning all conversations
-  const fb = requireFirebase();
-  return onSnapshot(
-    doc(fb.db, 'users', myUid),
-    (snap) => onNext(Math.max(0, (snap.data()?.unreadMessageCount as number) ?? 0)),
-    () => onNext(0),
-  );
+  // Mute-aware: sums unread across conversations the user hasn't muted. The
+  // user-aggregate field `users/{uid}.unreadMessageCount` is still maintained
+  // by markConversationRead/Unread and the onNewMessage Cloud Function, but
+  // we deliberately don't read it for the badge — it doesn't know about
+  // muting, so it would show a count the Inbox "Непрочетени" tab disagrees
+  // with. Cost is one extra listener per session (the same conv list the
+  // Inbox already subscribes to); Firestore deduplicates the network reads.
+  let convs: ConversationPreview[] = [];
+  let muted: Set<string> = new Set();
+  const emit = () => {
+    let count = 0;
+    for (const c of convs) {
+      if (!muted.has(c.convId)) count += c.unreadCount;
+    }
+    onNext(Math.max(0, count));
+  };
+  const unsubConvs = subscribeMyConversations(myUid, (next) => {
+    convs = next;
+    emit();
+  });
+  const unsubMuted = subscribeMutedConversations(myUid, (next) => {
+    muted = next;
+    emit();
+  });
+  return () => {
+    unsubConvs();
+    unsubMuted();
+  };
 }
 
 export async function setTypingStatus(convId: string, uid: string, isTyping: boolean): Promise<void> {

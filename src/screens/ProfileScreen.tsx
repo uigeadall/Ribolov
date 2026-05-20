@@ -30,6 +30,7 @@ import { Button } from '../components/Button';
 import { MenuRow } from '../components/MenuRow';
 import { BadgeIcon } from '../components/BadgeIcon';
 import { FacebookProfileHero, FacebookHeroButton } from '../components/FacebookProfileHero';
+import { getImageVariant, ImageSize } from '../utils/imageVariants';
 import { ProfileTabs, type ProfileTabKey } from '../components/ProfileTabs';
 import { TrophyShelf } from '../components/TrophyShelf';
 import { FeedPost } from '../components/FeedPost';
@@ -1438,6 +1439,26 @@ export default function ProfileScreen() {
                 <Text style={{ ...typography.body, color: colors.textMuted, textAlign: 'center' }}>
                   Все още няма качени снимки.
                 </Text>
+                <Pressable
+                  onPress={() => (navigation as any).navigate('LogbookTab', { screen: 'AddCatch', params: {} })}
+                  style={({ pressed }) => ({
+                    marginTop: spacing.md,
+                    paddingHorizontal: spacing.lg,
+                    paddingVertical: 10,
+                    borderRadius: radius.pill,
+                    backgroundColor: pressed ? colors.primaryDark : colors.primary,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 6,
+                  })}
+                  accessibilityRole="button"
+                  accessibilityLabel="Сподели първата си риба"
+                >
+                  <Text style={{ ...typography.bodyBold, color: '#fff', fontSize: 13 }}>
+                    Сподели първата си риба
+                  </Text>
+                  <Ionicons name="arrow-forward" size={14} color="#fff" />
+                </Pressable>
               </View>
             ) : (
               <View style={[styles.sectionWrap, { marginTop: spacing.lg }]}>
@@ -1456,7 +1477,7 @@ export default function ProfileScreen() {
                         onPress={() => (navigation as any).navigate('LogbookTab', { screen: 'CatchDetail', params: { id: c.id } })}
                         style={{ width: size, height: size, backgroundColor: colors.surfaceAlt, borderRadius: 4, overflow: 'hidden' }}
                       >
-                        <Image source={{ uri: c.photoUri! }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
+                        <Image source={{ uri: getImageVariant(c.photoUri!, ImageSize.gridThumb) ?? c.photoUri! }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
                       </Pressable>
                     );
                   })}

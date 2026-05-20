@@ -220,6 +220,21 @@ html,body,#map{margin:0;padding:0;height:100%;width:100%;}
     el.addEventListener(ev, function(){ clearTimeout(lpTimer); lpTimer=null; }, {passive:true});
   });
 
+  // Inner short-circuit: cache the last payload string and skip the marker
+  // rebuild when it hasn't changed. The RN side already de-dupes most calls
+  // but a parent re-render that recreates the spots/dams arrays will still
+  // come through — this catches the no-op case cheaply.
+  window.__lastPayloadKey = '';
+  var __innerRefresh = window.__refreshMarkersFromRn;
+  window.__refreshMarkersFromRn = function(payload){
+    try {
+      var key = JSON.stringify(payload);
+      if (key === window.__lastPayloadKey) return;
+      window.__lastPayloadKey = key;
+    } catch(e){}
+    __innerRefresh(payload);
+  };
+
   POST({type:'ready'});
 })();
 </script>
@@ -244,6 +259,13 @@ export const LeafletMap = forwardRef<LeafletMapHandle, Props>(function LeafletMa
   const webRef = useRef<WebView>(null);
   const readyRef = useRef(false);
   const [webZoom, setWebZoom] = useState(7);
+  // Remember the last payload string we actually injected. When the parent
+  // re-renders and gives us new array references with identical content,
+  // payloadJson's memo deps see a change but the resulting string doesn't.
+  // Skipping the injectJavaScript call avoids hammering the WebView with
+  // no-op marker rebuilds (which were a measurable scroll-stutter source
+  // with ~50 markers on screen).
+  const lastInjectedRef = useRef<string>('');
 
   const payloadJson = useMemo(
     () =>
@@ -262,6 +284,8 @@ export const LeafletMap = forwardRef<LeafletMapHandle, Props>(function LeafletMa
   );
 
   const injectRefresh = useCallback(() => {
+    if (payloadJson === lastInjectedRef.current) return;
+    lastInjectedRef.current = payloadJson;
     webRef.current?.injectJavaScript(`
       try {
         var payload = ${payloadJson};

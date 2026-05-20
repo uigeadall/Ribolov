@@ -8,6 +8,9 @@ import {
   Pressable,
   ScrollView,
   InteractionManager,
+  Platform,
+  ActionSheetIOS,
+  Alert,
 } from 'react-native';
 import { FishingRefreshControl } from '../components/FishingRefreshControl';
 import * as Haptics from 'expo-haptics';
@@ -586,7 +589,37 @@ export default function HomeScreen() {
 
   // ── Render ──────────────────────────────────────────────────────
 
+  // Compose action sheet — surfaced both from the existing big CTA card
+  // (which still goes straight to AddCatch) and from a new floating FAB
+  // that lets the user pick post vs catch from anywhere on the screen.
+  const openComposeSheet = useCallback(() => {
+    if (!user || !configured) return;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const onCatch = () => (navigation as any).navigate('LogbookTab', { screen: 'AddCatch', params: {} });
+    const onPost = () => (navigation as any).navigate('FeedTab', { screen: 'CreatePost' });
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          title: 'Какво искаш да споделиш?',
+          options: ['Сподели улов', 'Напиши пост', 'Отказ'],
+          cancelButtonIndex: 2,
+        },
+        (idx) => {
+          if (idx === 0) onCatch();
+          else if (idx === 1) onPost();
+        },
+      );
+    } else {
+      Alert.alert('Какво искаш да споделиш?', undefined, [
+        { text: 'Сподели улов', onPress: onCatch },
+        { text: 'Напиши пост', onPress: onPost },
+        { text: 'Отказ', style: 'cancel' },
+      ]);
+    }
+  }, [user, configured, navigation]);
+
   return (
+    <View style={{ flex: 1 }}>
     <Screen
       scroll padded={false}
       scrollProps={{ refreshControl: <FishingRefreshControl refreshing={refreshing} onRefresh={onRefresh} /> }}
@@ -1212,5 +1245,33 @@ export default function HomeScreen() {
         <View style={{ height: spacing.xxl }} />
       </View>
     </Screen>
+    {/* Floating compose button — outside Screen so it stays pinned while
+        the rest of the page scrolls. Hidden until auth is configured. */}
+    {user && configured ? (
+      <Pressable
+        onPress={openComposeSheet}
+        accessibilityRole="button"
+        accessibilityLabel="Сподели"
+        style={{
+          position: 'absolute',
+          right: spacing.lg,
+          bottom: 100,
+          width: 56,
+          height: 56,
+          borderRadius: 28,
+          backgroundColor: '#F5A020',
+          alignItems: 'center',
+          justifyContent: 'center',
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 6 },
+          shadowOpacity: 0.35,
+          shadowRadius: 12,
+          elevation: 8,
+        }}
+      >
+        <Ionicons name="add" size={30} color="#fff" />
+      </Pressable>
+    ) : null}
+    </View>
   );
 }

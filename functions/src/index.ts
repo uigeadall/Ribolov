@@ -232,6 +232,16 @@ export const onNewMessage = onDocumentCreated(
     const prefs = await getNotifPrefs(recipientUid);
     if (!prefs.messages) return;
 
+    // Muted-conversation check. When the recipient has muted this specific
+    // conv we suppress BOTH the in-app notification doc and the Expo push,
+    // but still bump the unread aggregate so toggling unmute later + opening
+    // the chat decrements correctly. The client-side bell-badge subscriber
+    // already filters muted convs out of the visible count.
+    const mutedSnap = await db
+      .doc(`users/${recipientUid}/mutedConversations/${convId}`)
+      .get();
+    const isMuted = mutedSnap.exists;
+
     const senderName: string = participantNames[senderUid] ?? "Рибар";
 
     let body: string;
@@ -252,26 +262,32 @@ export const onNewMessage = onDocumentCreated(
     // Write a single in-app notification per conversation (deterministic id).
     // New messages overwrite the doc so the latest preview rises to the top
     // and the unread-bell badge reflects one entry per active conversation.
-    await db.doc(`users/${recipientUid}/notifications/message_${convId}`).set({
-      actorUid: senderUid,
-      actorName: senderName.slice(0, 120),
-      type: "message",
-      convId,
-      preview: body.slice(0, 200),
-      read: false,
-      createdAt: FieldValue.serverTimestamp(),
-    });
+    // Skipped entirely for muted convs.
+    if (!isMuted) {
+      await db.doc(`users/${recipientUid}/notifications/message_${convId}`).set({
+        actorUid: senderUid,
+        actorName: senderName.slice(0, 120),
+        type: "message",
+        convId,
+        preview: body.slice(0, 200),
+        read: false,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    }
 
     // Bump the recipient's per-user unread aggregate. The client can't do this
     // itself because the users/{uid} rule requires isSelf(uid) — a cross-user
     // write would reject and roll back the entire send batch. Admin SDK
-    // bypasses rules; merge:true handles the brand-new-user case.
+    // bypasses rules; merge:true handles the brand-new-user case. We bump
+    // even for muted convs so unmute + open still decrements correctly.
     await db.doc(`users/${recipientUid}`).set(
       { unreadMessageCount: FieldValue.increment(1) },
       { merge: true },
     );
 
-    // Fetch recipient's push token and send push
+    // Push is also gated on mute — the OS notification is the noisiest part
+    // of "muted means muted".
+    if (isMuted) return;
     const tokenSnap = await db.doc(`users/${recipientUid}/private/pushToken`).get();
     const token: string = tokenSnap.data()?.expoPushToken ?? "";
     if (!token || !token.startsWith("ExponentPushToken[")) return;
@@ -411,4 +427,60 @@ export const cleanupExpiredWaterReports = onSchedule("every 6 hours", async () =
     batch.delete(docRef.ref);
   }
   await batch.commit();
+});
+
+// ---------------------------------------------------------------------------
+// cleanupOldNotifications — runs daily
+// ---------------------------------------------------------------------------
+// Notification docs accumulate forever under users/{uid}/notifications. At
+// scale this dominates Firestore storage cost. Strategy: delete anything
+// that is BOTH read AND older than 30 days. Unread notifs stick around
+// forever — losing one to a sweep would be a bad UX call.
+//
+// Runs daily at low-traffic hour. Per invocation we process at most
+// MAX_DOCS_PER_RUN deletes across a collectionGroup query to keep runtime
+// bounded; if a tenant accumulates more than that, the next run mops up.
+
+const NOTIFS_MAX_AGE_DAYS = 30;
+const NOTIFS_MAX_DOCS_PER_RUN = 4000;
+
+export const cleanupOldNotifications = onSchedule("every day 04:00", async () => {
+  const cutoff = admin.firestore.Timestamp.fromMillis(
+    Date.now() - NOTIFS_MAX_AGE_DAYS * 24 * 60 * 60 * 1000,
+  );
+
+  // collectionGroup spans every users/{uid}/notifications subcollection.
+  // Requires a collectionGroup index on (read ASC, createdAt ASC) — added
+  // to firestore.indexes.json alongside this function.
+  const snapshot = await db
+    .collectionGroup("notifications")
+    .where("read", "==", true)
+    .where("createdAt", "<", cutoff)
+    .limit(NOTIFS_MAX_DOCS_PER_RUN)
+    .get();
+
+  if (snapshot.empty) {
+    // eslint-disable-next-line no-console
+    console.log("[cleanupOldNotifications] no expired notifs to delete");
+    return;
+  }
+
+  // Batch in groups of 400 (Firestore caps batches at 500; leave headroom).
+  let processed = 0;
+  let batch = db.batch();
+  let inBatch = 0;
+  for (const docRef of snapshot.docs) {
+    batch.delete(docRef.ref);
+    inBatch += 1;
+    processed += 1;
+    if (inBatch >= 400) {
+      await batch.commit();
+      batch = db.batch();
+      inBatch = 0;
+    }
+  }
+  if (inBatch > 0) await batch.commit();
+
+  // eslint-disable-next-line no-console
+  console.log(`[cleanupOldNotifications] deleted ${processed} expired read notifications`);
 });

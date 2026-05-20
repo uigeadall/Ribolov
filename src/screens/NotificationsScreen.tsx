@@ -5,6 +5,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Screen } from '../components/Screen';
+import { FishingRefreshControl } from '../components/FishingRefreshControl';
 import { Card } from '../components/Card';
 import { EmptyState } from '../components/EmptyState';
 import { Skeleton } from '../components/Skeleton';
@@ -431,6 +432,15 @@ export default function NotificationsScreen() {
     },
   }), [waveColor]);
   const [notifTab, setNotifTab] = useState<'all' | 'likes' | 'comments'>('all');
+  // Tactile pull-to-refresh — notifications stream via subscription, so we
+  // flash a brief refreshing state for the FishingRefreshControl visual
+  // and resolve. Matches FeedScreen + ChatsScreen.
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setTimeout(() => setRefreshing(false), 800);
+  }, []);
 
   const { data, loading, setData } = useFirestoreSubscription<SocialNotification[]>(
     (cb) => {
@@ -438,6 +448,7 @@ export default function NotificationsScreen() {
       return subscribeMyNotifications(user.uid, cb);
     },
     [configured, user?.uid],
+    { pauseInBackground: true },
   );
   const items = data ?? [];
   const unreadCount = items.filter((n) => !n.read).length;
@@ -447,10 +458,28 @@ export default function NotificationsScreen() {
       if (!user?.uid) return;
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       if (!n.read) {
-        setData((prev) => prev ? prev.map((item) => item.id === n.id ? { ...item, read: true } : item) : prev);
-        markNotificationRead(user.uid, n.id).catch(() => {});
+        // If this row represents a group (e.g. 5 collapsed follow notifications),
+        // mark every notification in the group as read — not just the
+        // representative. Otherwise the next snapshot regroups the still-unread
+        // members and the row keeps showing as unread.
+        const groupIds = (n as SocialNotification & { groupIds?: string[] }).groupIds;
+        const idsToMark = groupIds && groupIds.length > 0 ? groupIds : [n.id];
+        const idSet = new Set(idsToMark);
+        setData((prev) => prev ? prev.map((item) => idSet.has(item.id) ? { ...item, read: true } : item) : prev);
+        for (const id of idsToMark) markNotificationRead(user.uid, id).catch(() => {});
       }
-      if (n.type === 'follow' || n.type === 'mention') {
+      if (n.type === 'mention' && n.catchId) {
+        // The mention pipeline reuses `catchId` to carry the post id. Land
+        // the user in the feed with the post anchored at the top — the
+        // FeedScreen reads `focusPostId` and scrolls there on first paint.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (navigation.navigate as any)('FeedTab', {
+          screen: 'FeedList',
+          params: { focusPostId: n.catchId },
+        });
+      } else if (n.type === 'follow' || n.type === 'mention') {
+        // Mention without a post id (legacy/edge) falls back to the actor's
+        // profile so the notification isn't a dead end.
         navigation.navigate('UserPublicProfile', { uid: n.actorUid, displayName: n.actorName });
       } else if (n.type === 'storyLike' || n.type === 'storyComment') {
         navigation.navigate('UserPublicProfile', { uid: n.actorUid, displayName: n.actorName });
@@ -620,6 +649,7 @@ export default function NotificationsScreen() {
             contentContainerStyle={styles.listContent}
             ItemSeparatorComponent={() => <View style={styles.sep} />}
             stickySectionHeadersEnabled
+            refreshControl={<FishingRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
             renderSectionHeader={({ section }) => (
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionHeaderText}>{section.title}</Text>

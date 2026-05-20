@@ -62,7 +62,11 @@ export function subscribeHashtagFollowed(
 ): () => void {
   const t = normalize(tag);
   const fb = requireFirebase();
-  return onSnapshot(doc(fb.db, 'users', myUid, 'followedHashtags', t), (snap) =>
-    cb(snap.exists()),
+  return onSnapshot(
+    doc(fb.db, 'users', myUid, 'followedHashtags', t),
+    (snap) => cb(snap.exists()),
+    // On permission/network error, fall through to "not followed" so the
+    // Follow button stays clickable rather than freezing in a stale state.
+    () => cb(false),
   );
 }

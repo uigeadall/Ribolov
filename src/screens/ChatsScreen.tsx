@@ -8,6 +8,8 @@ import * as Haptics from 'expo-haptics';
 import { Screen } from '../components/Screen';
 import { EmptyState } from '../components/EmptyState';
 import { Skeleton } from '../components/Skeleton';
+import { FishingRefreshControl } from '../components/FishingRefreshControl';
+import { getImageVariant, ImageSize } from '../utils/imageVariants';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
@@ -21,6 +23,7 @@ import {
   markConversationRead,
   markConversationUnread,
   ensureDirectConversation,
+  fetchOlderConversations,
 } from '../services/messaging';
 import { subscribeUserPresence, getUserPublicSummary } from '../services/userProfile';
 import { getBlockedUids } from '../services/blockUser';
@@ -158,7 +161,7 @@ function ChatRow({ item, myUid, muted, styles, colors, onPress, onToggleMute, on
       >
         <View style={styles.avatarWrap}>
           {avatarUrl ? (
-            <Image source={{ uri: avatarUrl }} style={styles.avatarImg} contentFit="cover" cachePolicy="memory-disk" />
+            <Image source={{ uri: getImageVariant(avatarUrl, ImageSize.avatar) ?? avatarUrl }} style={styles.avatarImg} contentFit="cover" cachePolicy="memory-disk" />
           ) : (
             <View style={styles.avatarFallback}>
               <Text style={styles.avatarText}>{initials}</Text>
@@ -326,7 +329,7 @@ function ActiveContactsRail({
                 overflow: 'hidden',
               }}>
                 {c.photoUrl ? (
-                  <Image source={{ uri: c.photoUrl }} style={{ width: 56, height: 56, borderRadius: 28 }} contentFit="cover" cachePolicy="memory-disk" />
+                  <Image source={{ uri: getImageVariant(c.photoUrl, ImageSize.avatar) ?? c.photoUrl }} style={{ width: 56, height: 56, borderRadius: 28 }} contentFit="cover" cachePolicy="memory-disk" />
                 ) : (
                   <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 22 }}>{initial}</Text>
                 )}
@@ -507,6 +510,15 @@ export default function ChatsScreen() {
   const { user, configured } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [tab, setTab] = useState<InboxTab>('all');
+  // Inbox is a live Firestore subscription, so refresh is purely tactile —
+  // we flash a brief refreshing state so the FishingRefreshControl animation
+  // plays through and then resolves. Matches the FeedScreen look.
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setTimeout(() => setRefreshing(false), 800);
+  }, []);
 
   // Track open Swipeable rows so we can close the previously-open one when
   // the user starts swiping a different row (iMessage behavior). Keyed by
@@ -557,8 +569,52 @@ export default function ChatsScreen() {
       return subscribeMyConversations(user.uid, cb);
     },
     [user?.uid],
+    { pauseInBackground: true },
   );
-  const allItems: ConversationPreview[] = data ?? [];
+  // Older conversations beyond the 50-doc live tail. Append-only, fetched in
+  // chunks when the user scrolls past the tail.
+  const [olderConvs, setOlderConvs] = useState<ConversationPreview[]>([]);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  // null = haven't tried, true = more available, false = caught up.
+  const [hasMoreOlder, setHasMoreOlder] = useState<boolean | null>(null);
+  // Reset pagination state when the user changes.
+  useEffect(() => {
+    setOlderConvs([]);
+    setHasMoreOlder(null);
+  }, [user?.uid]);
+
+  // Merge live + paginated by id (live wins on overlap), then sort by recency.
+  const allItems: ConversationPreview[] = useMemo(() => {
+    const live = data ?? [];
+    if (olderConvs.length === 0) return live;
+    const byId = new Map<string, ConversationPreview>();
+    for (const c of olderConvs) byId.set(c.convId, c);
+    for (const c of live) byId.set(c.convId, c);
+    return Array.from(byId.values()).sort((a, b) => (b.lastMessageAt ?? 0) - (a.lastMessageAt ?? 0));
+  }, [data, olderConvs]);
+
+  const loadOlder = useCallback(async () => {
+    if (!user?.uid || loadingOlder || hasMoreOlder === false) return;
+    const oldest = allItems[allItems.length - 1];
+    const beforeMs = oldest?.lastMessageAt ?? 0;
+    if (!beforeMs) return;
+    setLoadingOlder(true);
+    try {
+      const batch = await fetchOlderConversations(user.uid, beforeMs, 30);
+      if (batch.length === 0) {
+        setHasMoreOlder(false);
+      } else {
+        setOlderConvs((prev) => {
+          const seen = new Set(prev.map((c) => c.convId));
+          const dedup = batch.filter((c) => !seen.has(c.convId));
+          return [...prev, ...dedup];
+        });
+        setHasMoreOlder(batch.length === 30);
+      }
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [user?.uid, loadingOlder, hasMoreOlder, allItems]);
 
   const [blockedUids, setBlockedUids] = useState<Set<string>>(new Set());
   useEffect(() => {
@@ -742,6 +798,16 @@ export default function ChatsScreen() {
             removeClippedSubviews={Platform.OS === 'android'}
             contentContainerStyle={items.length === 0 ? { flexGrow: 1, paddingBottom: 100 } : { paddingBottom: 100 }}
             ListHeaderComponent={ListHeader}
+            onEndReached={loadOlder}
+            onEndReachedThreshold={0.4}
+            ListFooterComponent={
+              loadingOlder ? (
+                <View style={{ paddingVertical: spacing.lg, alignItems: 'center' }}>
+                  <Skeleton width={120} height={12} />
+                </View>
+              ) : null
+            }
+            refreshControl={<FishingRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
             ListEmptyComponent={
               <View style={{ paddingHorizontal: spacing.xl, paddingTop: spacing.xl }}>
                 <EmptyState

@@ -4,6 +4,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getImageVariant, ImageSize } from '../utils/imageVariants';
 import { useTheme } from '../services/themeContext';
 import { spacing, typography } from '../theme/typography';
 import type { AppColors } from '../theme/palette';
@@ -200,7 +201,7 @@ export function FacebookProfileHero({
       <View style={styles.avatarInner}>
         {avatarUrl ? (
           <Image
-            source={{ uri: avatarUrl }}
+            source={{ uri: getImageVariant(avatarUrl, ImageSize.avatar) ?? avatarUrl }}
             style={styles.avatarImg}
             contentFit="cover"
             cachePolicy="memory-disk"
@@ -226,7 +227,7 @@ export function FacebookProfileHero({
       <View style={styles.cover}>
         {coverUrl ? (
           <Image
-            source={{ uri: coverUrl }}
+            source={{ uri: getImageVariant(coverUrl, ImageSize.feed) ?? coverUrl }}
             style={styles.coverImage}
             contentFit="cover"
             cachePolicy="memory-disk"

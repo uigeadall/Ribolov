@@ -37,6 +37,12 @@ export function CommentLikeButton({
   const [liked, setLiked] = useState(false);
   const [count, setCount] = useState(initialCount);
   const busyRef = useRef(false);
+  // Locks the liked state once the user has interacted, so a late-arriving
+  // initial-fetch result can't overwrite the optimistic toggle. Without this,
+  // tapping the heart before the mount-time getDoc resolves caused the UI to
+  // snap back to the fetched value, leaving the displayed state inconsistent
+  // with the actual write that just succeeded.
+  const userInteractedRef = useRef(false);
 
   useEffect(() => {
     setCount(initialCount);
@@ -50,7 +56,7 @@ export function CommentLikeButton({
         const isLiked = kind === 'catch'
           ? await fetchCatchCommentLike(parentId, commentId, myUid)
           : await fetchPostCommentLike(parentId, commentId, myUid);
-        if (!cancelled) setLiked(isLiked);
+        if (!cancelled && !userInteractedRef.current) setLiked(isLiked);
       } catch {
         // Best-effort — if the lookup fails we leave liked=false; the toggle
         // will overwrite this on user interaction.
@@ -62,6 +68,7 @@ export function CommentLikeButton({
   const onPress = async () => {
     if (!myUid || busyRef.current) return;
     busyRef.current = true;
+    userInteractedRef.current = true;
     const wasLiked = liked;
     setLiked(!wasLiked);
     setCount((c) => Math.max(0, c + (wasLiked ? -1 : 1)));

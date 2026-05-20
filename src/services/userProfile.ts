@@ -221,27 +221,85 @@ export async function tryGetStoredProfileAvatarUrl(uid: string): Promise<string 
   }
 }
 
+// Presence lives in users/{uid}/presence/state — a dedicated tiny doc so
+// presence subscribers don't re-fire on every unrelated field change on the
+// parent user doc (photoUrl, unreadMessageCount, displayName, etc.). The old
+// users/{uid}.online / .lastSeen fields are intentionally not cleaned up;
+// they become orphaned data that nothing reads anymore.
 export async function updateUserPresence(uid: string, online: boolean): Promise<void> {
   const fb = requireFirebase();
-  await updateDoc(doc(fb.db, 'users', uid), {
-    online,
-    lastSeen: serverTimestamp(),
-  }).catch(() => {});
+  await setDoc(
+    doc(fb.db, 'users', uid, 'presence', 'state'),
+    stripUndefinedForFirestore({ online, lastSeen: serverTimestamp() }),
+    { merge: true },
+  ).catch(() => {});
 }
+
+// Module-level registry of active presence subscriptions, keyed by uid. When
+// multiple components (e.g. ChatRow + ChatDetail header + ActiveContactsRail)
+// all subscribe to the same user's presence, they share one Firestore
+// listener instead of opening N. Each component gets its own callback fired
+// from the shared snapshot dispatch. Counts callbacks per uid; the Firestore
+// unsubscribe runs only when the last subscriber drops.
+type PresenceState = { online: boolean; lastSeen?: number };
+type PresenceListener = (p: PresenceState) => void;
+type PresenceRegistryEntry = {
+  listeners: Set<PresenceListener>;
+  last: PresenceState;
+  unsubFirestore: () => void;
+};
+const presenceRegistry = new Map<string, PresenceRegistryEntry>();
 
 export function subscribeUserPresence(
   uid: string,
-  onNext: (presence: { online: boolean; lastSeen?: number }) => void,
+  onNext: PresenceListener,
 ): () => void {
-  const fb = requireFirebase();
-  return onSnapshot(doc(fb.db, 'users', uid), (snap) => {
-    if (!snap.exists()) { onNext({ online: false }); return; }
-    const d = snap.data() as { online?: boolean; lastSeen?: { toMillis?: () => number } };
-    onNext({
-      online: !!d.online,
-      lastSeen: d.lastSeen?.toMillis?.() ?? undefined,
-    });
-  }, () => onNext({ online: false }));
+  if (!uid) { onNext({ online: false }); return () => {}; }
+  let entry = presenceRegistry.get(uid);
+  if (!entry) {
+    const fb = requireFirebase();
+    const listeners = new Set<PresenceListener>();
+    const initialState: PresenceState = { online: false };
+    const dispatch = (next: PresenceState) => {
+      // Only re-render subscribers when something actually changed.
+      const e = presenceRegistry.get(uid);
+      if (!e) return;
+      if (e.last.online === next.online && e.last.lastSeen === next.lastSeen) return;
+      e.last = next;
+      for (const cb of e.listeners) {
+        try { cb(next); } catch { /* swallow per-subscriber errors */ }
+      }
+    };
+    const unsubFirestore = onSnapshot(
+      doc(fb.db, 'users', uid, 'presence', 'state'),
+      (snap) => {
+        if (!snap.exists()) { dispatch({ online: false }); return; }
+        const d = snap.data() as { online?: boolean; lastSeen?: { toMillis?: () => number } };
+        dispatch({
+          online: !!d.online,
+          lastSeen: d.lastSeen?.toMillis?.() ?? undefined,
+        });
+      },
+      () => dispatch({ online: false }),
+    );
+    entry = { listeners, last: initialState, unsubFirestore };
+    presenceRegistry.set(uid, entry);
+  }
+  entry.listeners.add(onNext);
+  // Push the cached last value synchronously so new subscribers don't see a
+  // flash of offline before Firestore re-emits.
+  if (entry.last.online || entry.last.lastSeen) onNext(entry.last);
+
+  return () => {
+    const e = presenceRegistry.get(uid);
+    if (!e) return;
+    e.listeners.delete(onNext);
+    // Last subscriber dropped — tear down the Firestore listener too.
+    if (e.listeners.size === 0) {
+      e.unsubFirestore();
+      presenceRegistry.delete(uid);
+    }
+  };
 }
 
 export async function deleteAllUserCloudData(uid: string): Promise<void> {
