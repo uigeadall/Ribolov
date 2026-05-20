@@ -523,17 +523,24 @@ export async function markConversationUnread(convId: string, myUid: string): Pro
   if (!convId || !myUid) return;
   const fb = requireFirebase();
   const convRef = doc(fb.db, 'conversations', convId);
+  // Only bump the user aggregate when we actually transition from 0 → 1.
+  // If the conv was already unread the transaction is a no-op, and we MUST
+  // skip the aggregate increment too — otherwise repeated mark-unread swipes
+  // on the same row leak phantom counts into the bell badge.
+  let didFlip = false;
   await runTransaction(fb.db, async (tx) => {
     const snap = await tx.get(convRef);
     if (!snap.exists()) return;
     const current = (snap.data().unreadCounts?.[myUid] as number) ?? 0;
     if (current > 0) return;
     tx.update(convRef, { [`unreadCounts.${myUid}`]: 1 });
+    didFlip = true;
   }).catch(() => undefined);
-  // Bump user-aggregate so the bell badge picks it up too.
-  await setDoc(
-    doc(fb.db, 'users', myUid),
-    { uid: myUid, unreadMessageCount: increment(1) },
-    { merge: true },
-  ).catch(() => undefined);
+  if (didFlip) {
+    await setDoc(
+      doc(fb.db, 'users', myUid),
+      { uid: myUid, unreadMessageCount: increment(1) },
+      { merge: true },
+    ).catch(() => undefined);
+  }
 }
