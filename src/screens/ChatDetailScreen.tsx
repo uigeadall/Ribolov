@@ -316,12 +316,15 @@ export default function ChatDetailScreen() {
   useEffect(() => {
     if (!configured || !user) return;
     // Read the per-user unread count BEFORE clearing it so we know how many
-    // messages to flag with the "N нови" divider. Best-effort — if the read
-    // fails we just skip the divider (it's a nicety, not load-bearing).
-    fetchMyUnreadInConversation(convId, user.uid).then((count) => {
+    // messages to flag with the "N нови" divider. We must await this — firing
+    // it concurrently with markConversationRead means the transaction may zero
+    // unreadCounts before the read sees it, and the divider never appears.
+    // Best-effort: if the read fails we just skip the divider.
+    (async () => {
+      const count = await fetchMyUnreadInConversation(convId, user.uid).catch(() => 0);
       if (count > 0) setInitialUnreadCount(count);
-    }).catch(() => {});
-    markConversationRead(convId, user.uid).catch(() => {});
+      markConversationRead(convId, user.uid).catch(() => {});
+    })();
     const unsubMsgs = subscribeConversationMessages(convId, (next) => {
       setTailMsgs(next);
       // A full 100-message tail signals there may be older history — enable the load-earlier

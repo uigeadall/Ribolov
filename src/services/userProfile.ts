@@ -123,13 +123,17 @@ export async function pushUserProfilePublic(
   patch: { displayName?: string; city?: string; bio?: string; photoUrl?: string | null }
 ): Promise<void> {
   const fb = requireFirebase();
+  // Only write fields that are explicitly present in `patch`. The old version
+  // defaulted missing fields to empty strings, which with `merge: true`
+  // overwrote the user's existing values — so a photoUrl-only patch (the
+  // avatar auto-save flow) would wipe displayName/city/bio.
   const docPayload: Record<string, unknown> = {
     uid,
-    displayName: patch.displayName ?? '',
-    city: patch.city ?? '',
-    bio: patch.bio ?? '',
     updatedAt: serverTimestamp(),
   };
+  if (patch.displayName !== undefined) docPayload.displayName = patch.displayName;
+  if (patch.city !== undefined) docPayload.city = patch.city;
+  if (patch.bio !== undefined) docPayload.bio = patch.bio;
   if (patch.photoUrl !== undefined) {
     docPayload.photoUrl =
       patch.photoUrl != null && String(patch.photoUrl).trim()

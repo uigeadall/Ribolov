@@ -19,7 +19,7 @@ import AppSplashScreen from './src/components/AppSplashScreen';
 
 const ONBOARDING_KEY = '@ribolov/onboarding_done';
 
-const MIN_SPLASH_MS = 2200;
+const MIN_SPLASH_MS = 3500;
 
 export default function App() {
   const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
