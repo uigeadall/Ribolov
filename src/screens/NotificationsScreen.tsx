@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, Pressable, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, FlatList, SectionList, Pressable, Alert, Platform } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -55,6 +55,19 @@ function NotifSkeleton() {
   );
 }
 
+/** Per-type accent color used for the leading stripe on unread rows. Keeps
+    scanning fast — you can spot like vs comment vs follow from across the
+    screen without reading text. */
+const TYPE_COLORS: Record<string, string> = {
+  like: '#E53935',
+  storyLike: '#E53935',
+  comment: '#1E88E5',
+  storyComment: '#1E88E5',
+  mention: '#FB8C00',
+  follow: '#2E9B5A',
+  message: '#8E24AA',
+};
+
 function createStyles(colors: AppColors) {
   return StyleSheet.create({
     row: {
@@ -62,8 +75,33 @@ function createStyles(colors: AppColors) {
       gap: spacing.md,
       alignItems: 'flex-start',
       opacity: 1,
+      // Padding-left makes room for the 3px stripe on unread cards. We render
+      // the stripe as an absolute-positioned bar inside the Card so it can
+      // hug the corner radius cleanly.
     },
     rowUnread: { backgroundColor: colors.surfaceAlt },
+    typeStripe: {
+      position: 'absolute',
+      left: 0,
+      top: 0,
+      bottom: 0,
+      width: 4,
+      borderTopLeftRadius: radius.md,
+      borderBottomLeftRadius: radius.md,
+    },
+    sectionHeader: {
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.lg,
+      paddingBottom: spacing.sm,
+      backgroundColor: colors.background,
+    },
+    sectionHeaderText: {
+      ...typography.bodyBold,
+      color: colors.textMuted,
+      fontSize: 11,
+      textTransform: 'uppercase',
+      letterSpacing: 0.6,
+    },
     avatar: {
       width: 40,
       height: 40,
@@ -175,6 +213,11 @@ function NotifRow({ item, myUid, onOpen, onDismiss, styles, colors }: NotifRowPr
     <Swipeable renderRightActions={renderRight} onSwipeableOpen={onDismiss} rightThreshold={60} overshootRight={false}>
     <Pressable onPress={() => onOpen(item)}>
       <Card style={[styles.row, !item.read && styles.rowUnread]}>
+        {/* Type-colored leading stripe on unread rows — read rows lose it
+            so the inbox visually quiets down as the user catches up. */}
+        {!item.read ? (
+          <View style={[styles.typeStripe, { backgroundColor: TYPE_COLORS[item.type] ?? colors.primary }]} />
+        ) : null}
         <View style={styles.avatar}>
           {avatarUrl ? (
             <Image source={{ uri: avatarUrl }} style={styles.avatarImg} contentFit="cover" cachePolicy="memory-disk" />
@@ -311,6 +354,35 @@ function groupNotifications(items: SocialNotification[]): GroupedNotification[] 
   return result;
 }
 
+/** Bucket a list of grouped notifications into time-based sections. We use 4
+    coarse buckets so users with a quiet week still see something under
+    "Тази седмица" instead of a single endless "По-стари". Ordered newest
+    first within each bucket; bucket order matches that. */
+function bucketByDay(items: GroupedNotification[]): { title: string; data: GroupedNotification[] }[] {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+  const weekAgo = new Date(today); weekAgo.setDate(today.getDate() - 7);
+
+  const buckets: Record<string, GroupedNotification[]> = {
+    'Днес': [],
+    'Вчера': [],
+    'Тази седмица': [],
+    'По-стари': [],
+  };
+  for (const n of items) {
+    const ms = getCreatedAtMs(n.createdAt);
+    if (!ms) { buckets['По-стари'].push(n); continue; }
+    if (ms >= today.getTime()) buckets['Днес'].push(n);
+    else if (ms >= yesterday.getTime()) buckets['Вчера'].push(n);
+    else if (ms >= weekAgo.getTime()) buckets['Тази седмица'].push(n);
+    else buckets['По-стари'].push(n);
+  }
+  return ['Днес', 'Вчера', 'Тази седмица', 'По-стари']
+    .filter((k) => buckets[k].length > 0)
+    .map((k) => ({ title: k, data: buckets[k] }));
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function NotificationsScreen() {
@@ -389,11 +461,17 @@ export default function NotificationsScreen() {
           params: { convId: n.convId, otherUid: n.actorUid, otherName: n.actorName },
         });
       } else if (n.catchId) {
-        // like / comment — go directly to the catch in the logbook tab
+        // Comments → land in the catch detail AND focus the reply composer
+        // with @actorName pre-filled. Likes/etc. just land on the catch.
+        // (storyComment is handled above, so only `comment` reaches here.)
+        const wantsFocus = n.type === 'comment';
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (navigation.navigate as any)('LogbookTab', {
           screen: 'CatchDetail',
-          params: { id: n.catchId },
+          params: {
+            id: n.catchId,
+            ...(wantsFocus ? { focusComment: { authorName: n.actorName } } : {}),
+          },
         });
       } else {
         navigation.navigate('UserPublicProfile', { uid: user.uid, displayName: user.displayName ?? 'Моят профил' });
@@ -445,6 +523,7 @@ export default function NotificationsScreen() {
   }, [items, notifTab]);
 
   const groupedItems = useMemo(() => groupNotifications(filteredItems), [filteredItems]);
+  const sections = useMemo(() => bucketByDay(groupedItems), [groupedItems]);
 
   const TabBar = (
     <View style={{
@@ -534,12 +613,18 @@ export default function NotificationsScreen() {
             }
           />
         ) : (
-          <FlatList
-            data={groupedItems}
+          <SectionList
+            sections={sections}
             keyExtractor={(n) => n.id}
             removeClippedSubviews={Platform.OS === 'android'}
             contentContainerStyle={styles.listContent}
             ItemSeparatorComponent={() => <View style={styles.sep} />}
+            stickySectionHeadersEnabled
+            renderSectionHeader={({ section }) => (
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionHeaderText}>{section.title}</Text>
+              </View>
+            )}
             renderItem={({ item }) => (
               <NotifRow
                 item={item}

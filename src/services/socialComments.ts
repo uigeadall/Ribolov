@@ -4,10 +4,13 @@ import {
   deleteDoc,
   doc,
   getCountFromServer,
+  getDoc,
+  increment,
   limit,
   onSnapshot,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   updateDoc,
 } from 'firebase/firestore';
@@ -44,6 +47,7 @@ export function subscribeCatchComments(catchId: string, onNext: (comments: FeedC
           createdAt?: unknown;
           replyToId?: string;
           replyToName?: string;
+          likeCount?: number;
         };
         return {
           id: d.id,
@@ -54,9 +58,68 @@ export function subscribeCatchComments(catchId: string, onNext: (comments: FeedC
           editedAt: (data as { editedAt?: unknown }).editedAt,
           replyToId: data.replyToId,
           replyToName: data.replyToName,
+          likeCount: typeof data.likeCount === 'number' ? data.likeCount : 0,
         };
       })
     );
+  });
+}
+
+/** Subscribes to whether the current user has liked a specific comment.
+    Tiny doc (just createdAt+displayName), cheap to listen to. */
+export function subscribeCatchCommentLike(
+  catchId: string,
+  commentId: string,
+  myUid: string,
+  cb: (liked: boolean) => void,
+): () => void {
+  const fb = requireFirebase();
+  return onSnapshot(
+    doc(fb.db, 'publicCatches', catchId, 'comments', commentId, 'likes', myUid),
+    (snap) => cb(snap.exists()),
+  );
+}
+
+/** One-shot fetch: has the current user liked this catch comment? Used by
+    `CommentLikeButton` to avoid mounting an `onSnapshot` per visible comment.
+    Optimistic local toggling covers the live-update case in practice. */
+export async function fetchCatchCommentLike(
+  catchId: string,
+  commentId: string,
+  myUid: string,
+): Promise<boolean> {
+  const fb = requireFirebase();
+  const snap = await getDoc(
+    doc(fb.db, 'publicCatches', catchId, 'comments', commentId, 'likes', myUid),
+  );
+  return snap.exists();
+}
+
+/** Toggles a like on a catch comment. Increments/decrements the comment doc's
+    `likeCount` in the same transaction so the counter stays in sync without a
+    re-read. Returns the new liked state. */
+export async function toggleCatchCommentLike(
+  catchId: string,
+  commentId: string,
+  myUid: string,
+  myDisplayName: string,
+): Promise<boolean> {
+  const fb = requireFirebase();
+  const likeRef = doc(fb.db, 'publicCatches', catchId, 'comments', commentId, 'likes', myUid);
+  const commentRef = doc(fb.db, 'publicCatches', catchId, 'comments', commentId);
+  return runTransaction(fb.db, async (txn) => {
+    const snap = await txn.get(likeRef);
+    if (snap.exists()) {
+      txn.delete(likeRef);
+      txn.update(commentRef, { likeCount: increment(-1) });
+      return false;
+    }
+    txn.set(likeRef, stripUndefinedForFirestore({
+      createdAt: serverTimestamp(),
+      displayName: (myDisplayName || 'Рибар').slice(0, 120),
+    }));
+    txn.update(commentRef, { likeCount: increment(1) });
+    return true;
   });
 }
 

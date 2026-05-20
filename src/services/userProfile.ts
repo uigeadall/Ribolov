@@ -38,7 +38,13 @@ export type SearchUserResult = {
   photoUrl?: string;
 };
 
-/** Prefix search on the users collection by displayName. Requires at least 2 characters. */
+/** Prefix search on the users collection by displayName. Requires at least 2
+    characters. The Firestore index on `displayName` is case-sensitive, so
+    `иван` would never surface `Иван`. We work around that by issuing
+    parallel prefix queries for the raw input AND the variant with the first
+    character switched in case — covers the realistic scenario where users
+    saved their name with a capital letter and someone types lowercase (or
+    vice versa). De-duplicated by uid before returning. */
 export async function searchUsersByName(
   q: string,
   opts?: { excludeUid?: string; maxResults?: number },
@@ -46,26 +52,70 @@ export async function searchUsersByName(
   const fb = requireFirebase();
   const trimmed = q.trim();
   if (trimmed.length < 2) return [];
-  const snap = await getDocs(
-    query(
-      collection(fb.db, 'users'),
-      orderBy('displayName'),
-      startAt(trimmed),
-      endAt(trimmed + ''),
-      limit(opts?.maxResults ?? 20),
-    ),
-  );
-  return snap.docs
-    .filter((d) => d.id !== opts?.excludeUid)
-    .map((d) => {
+  const perVariantLimit = opts?.maxResults ?? 20;
+
+  // Build the case variants we'll search. toLocaleUpperCase/LowerCase with
+  // 'bg' handles Cyrillic correctly. The Set dedupes when the user already
+  // typed the canonical case so we don't run identical queries.
+  const firstCharUpper = trimmed.charAt(0).toLocaleUpperCase('bg') + trimmed.slice(1);
+  const firstCharLower = trimmed.charAt(0).toLocaleLowerCase('bg') + trimmed.slice(1);
+  const variants = Array.from(new Set([trimmed, firstCharUpper, firstCharLower]));
+
+  const runQuery = async (anchor: string) => {
+    const snap = await getDocs(
+      query(
+        collection(fb.db, 'users'),
+        orderBy('displayName'),
+        startAt(anchor),
+        endAt(anchor + ''),
+        limit(perVariantLimit),
+      ),
+    );
+    return snap.docs;
+  };
+
+  const docLists = await Promise.all(variants.map(runQuery));
+  const byUid = new Map<string, SearchUserResult>();
+  for (const docs of docLists) {
+    for (const d of docs) {
+      if (d.id === opts?.excludeUid) continue;
+      if (byUid.has(d.id)) continue;
       const data = d.data() as { displayName?: string; city?: string; photoUrl?: string };
-      return {
+      byUid.set(d.id, {
         uid: d.id,
-        displayName: data.displayName?.trim() || 'Рибар',
+        // Empty string when missing — callers decide their own fallback rather
+        // than inheriting the literal "Рибар" placeholder, which had been
+        // clobbering caller-known display names downstream.
+        displayName: data.displayName?.trim() || '',
         city: data.city?.trim() || undefined,
         photoUrl: data.photoUrl?.trim() || undefined,
-      };
-    });
+      });
+    }
+  }
+  return Array.from(byUid.values()).slice(0, perVariantLimit);
+}
+
+/** Best-effort backfill: if the Firestore users/{uid} doc has no displayName
+    field, write the one from Firebase Auth so the user is visible to the
+    @-mention autocomplete. Skips when there's nothing to write or when the
+    field already exists (we never overwrite a user-edited name). */
+export async function mirrorAuthDisplayNameIfMissing(
+  uid: string,
+  authDisplayName: string | null | undefined,
+): Promise<void> {
+  const name = authDisplayName?.trim();
+  if (!uid || !name) return;
+  const fb = requireFirebase();
+  const ref = doc(fb.db, 'users', uid);
+  const snap = await getDoc(ref).catch(() => null);
+  if (snap && snap.exists() && (snap.data() as { displayName?: string }).displayName) {
+    return;
+  }
+  await setDoc(
+    ref,
+    stripUndefinedForFirestore({ uid, displayName: name, updatedAt: serverTimestamp() }),
+    { merge: true },
+  ).catch(() => undefined);
 }
 
 export async function pushUserProfilePublic(
@@ -105,7 +155,10 @@ export async function getUserPublicSummary(uid: string): Promise<UserPublicSumma
   const photoUrl =
     d.photoUrl != null && String(d.photoUrl).trim() ? String(d.photoUrl).trim() : undefined;
   return {
-    displayName: (d.displayName && String(d.displayName).trim()) || 'Рибар',
+    // Empty string when the Firestore user doc has no displayName field.
+    // Returning the literal 'Рибар' here was clobbering caller-known names
+    // (e.g. the Auth user's displayName) in UserPublicProfileScreen.
+    displayName: (d.displayName && String(d.displayName).trim()) || '',
     email: d.email,
     city,
     bio,

@@ -88,6 +88,33 @@ export async function getFollowing(myUid: string) {
   return data;
 }
 
+/** Returns the people who follow `theirUid` AND whom `myUid` also follows
+    (intersection of "their followers" ∩ "my following"). Used for the
+    "Followed by @ivan, @stoyan and 4 others you follow" badge on public
+    profiles. Capped at maxRead because a viral account's followers
+    subcollection could be huge — undercount is fine since the badge says
+    "and N others" anyway. */
+export async function listMutualFollowers(
+  myUid: string,
+  theirUid: string,
+  maxRead = 200,
+): Promise<{ uid: string; displayName: string }[]> {
+  if (!myUid || !theirUid || myUid === theirUid) return [];
+  const fb = requireFirebase();
+  const [myFollowing, theirFollowersSnap] = await Promise.all([
+    getFollowing(myUid),
+    getDocs(query(collection(fb.db, 'users', theirUid, 'followers'), limit(maxRead))),
+  ]);
+  if (myFollowing.length === 0 || theirFollowersSnap.empty) return [];
+  const nameByUid = new Map(myFollowing.map((f) => [f.uid, f.displayName] as const));
+  const out: { uid: string; displayName: string }[] = [];
+  for (const d of theirFollowersSnap.docs) {
+    const name = nameByUid.get(d.id);
+    if (name != null) out.push({ uid: d.id, displayName: name });
+  }
+  return out;
+}
+
 export async function isMutualFollow(myUid: string, otherUid: string): Promise<boolean> {
   const fb = requireFirebase();
   if (!myUid || !otherUid || myUid === otherUid) return false;

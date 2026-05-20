@@ -23,7 +23,11 @@ import { PeopleYouMayKnowRow } from '../components/PeopleYouMayKnowRow';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { spacing, typography } from '../theme/typography';
-import { fetchPublicFeed, deletePhotoFromFeedPost, removeFromPublicFeed, getFollowing, getUserPublicSummary, fetchPublicPosts, deletePost, searchUsersByName, type FeedPage } from '../services/cloudSync';
+import { fetchPublicFeed, deletePhotoFromFeedPost, removeFromPublicFeed, getFollowing, getUserPublicSummary, fetchPublicPosts, deletePost, searchUsersByName, createPost, type FeedPage } from '../services/cloudSync';
+import Toast from 'react-native-toast-message';
+import type { ResharedRef } from '../types';
+import { listFollowedHashtags } from '../services/hashtags';
+import { fetchPostsByHashtag } from '../services/posts';
 import type { Post } from '../types';
 import type { DocumentSnapshot } from 'firebase/firestore';
 import { getBlockedUids } from '../services/blockUser';
@@ -162,17 +166,38 @@ export default function FeedScreen() {
 
       let page: FeedPage;
       let postsPage: { items: Post[] };
+      let hashtagPosts: Post[] = [];
       if (scope === 'following') {
         const uids = followingRows.map((f) => f.uid).filter((uid) => !blockedUids.has(uid));
         followingUidsRef.current = uids;
+        // Fetch followed-hashtag posts in parallel so they mix into the
+        // "Следваш" tab. Capped to 5 tags × 10 posts so the fan-out stays
+        // bounded even for power users; dedupe happens after the merge.
+        const tagsP = listFollowedHashtags(user.uid).catch(() => [] as string[]);
         if (uids.length > 0) {
-          [page, postsPage] = await Promise.all([
+          const [pageRes, postsRes, tags] = await Promise.all([
             fetchPublicFeed(20, null, uids),
             fetchPublicPosts(40, null, uids).catch(() => ({ items: [] as Post[], lastDoc: null, hasMore: false })),
+            tagsP,
           ]);
+          page = pageRes;
+          postsPage = postsRes;
+          if (tags.length > 0) {
+            const tagLists = await Promise.all(
+              tags.slice(0, 5).map((t) => fetchPostsByHashtag(t, 10).catch(() => [] as Post[])),
+            );
+            hashtagPosts = tagLists.flat();
+          }
         } else {
           page = { items: [], lastDoc: null, hasMore: false };
           postsPage = { items: [] };
+          const tags = await tagsP;
+          if (tags.length > 0) {
+            const tagLists = await Promise.all(
+              tags.slice(0, 5).map((t) => fetchPostsByHashtag(t, 10).catch(() => [] as Post[])),
+            );
+            hashtagPosts = tagLists.flat();
+          }
         }
       } else {
         followingUidsRef.current = [];
@@ -186,7 +211,17 @@ export default function FeedScreen() {
       if (!mountedRef.current || scopeAtRequest !== scope) return;
 
       let next = page.items.filter((i) => !blockedUids.has(i.ownerUid));
-      const nextPosts = postsPage.items.filter((p) => !blockedUids.has(p.ownerUid));
+      // Merge followed-hashtag posts into the post stream, dedupe by id, and
+      // exclude posts from blocked users / by the user themselves (those
+      // already appear in their main feed).
+      const mergedPostsById = new Map<string, Post>();
+      for (const p of postsPage.items) mergedPostsById.set(p.id, p);
+      for (const p of hashtagPosts) {
+        if (!mergedPostsById.has(p.id)) mergedPostsById.set(p.id, p);
+      }
+      const nextPosts = Array.from(mergedPostsById.values())
+        .filter((p) => !blockedUids.has(p.ownerUid))
+        .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
 
       // "New posts" pill detection: if the user is scrolled away from the top
       // and new items arrived above the previously-seen tip, show a pill with
@@ -344,22 +379,68 @@ export default function FeedScreen() {
     } catch { /* ignore */ }
   }, [navigation, user?.uid]);
 
+  // Helper: an instant repost — creates a Post doc with just the reshareOf
+  // payload (no text, no photo). Goes through the feed immediately. The user
+  // can still pick "Сподели с коментар" to land in the compose screen.
+  const instantRepost = useCallback(async (target: ResharedRef) => {
+    if (!user) return;
+    try {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      await createPost({
+        ownerUid: user.uid,
+        ownerName: user.displayName ?? user.email ?? 'Рибар',
+        ownerPhotoUrl: myPhotoUrl,
+        text: '',
+        mentionUids: [],
+        reshareOf: target,
+      });
+      Toast.show({ type: 'success', text1: 'Споделено в лентата', visibilityTime: 1500 });
+    } catch (e) {
+      notifyError('Грешка при споделяне', e instanceof Error ? e.message : 'Неуспешно споделяне.');
+    }
+  }, [user, myPhotoUrl]);
+
+  // Show the user the two reshare modes — instant share or compose with a
+  // comment. Uses the native iOS ActionSheet when available so it feels like
+  // the rest of the app's destructive prompts; Android falls back to Alert.
+  const promptReshareMode = useCallback((target: ResharedRef) => {
+    const onCompose = () => navigation.navigate('CreatePost', { reshare: target });
+    const onInstant = () => { void instantRepost(target); };
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          title: 'Сподели',
+          options: ['Сподели във лентата', 'Сподели с коментар', 'Отказ'],
+          cancelButtonIndex: 2,
+        },
+        (idx) => {
+          if (idx === 0) onInstant();
+          else if (idx === 1) onCompose();
+        },
+      );
+    } else {
+      Alert.alert('Сподели', undefined, [
+        { text: 'Сподели във лентата', onPress: onInstant },
+        { text: 'Сподели с коментар', onPress: onCompose },
+        { text: 'Отказ', style: 'cancel' },
+      ]);
+    }
+  }, [navigation, instantRepost]);
+
   const onReshareCatch = useCallback((c: FeedItem) => {
-    navigation.navigate('CreatePost', {
-      reshare: {
-        kind: 'catch',
-        id: c.id,
-        ownerUid: c.ownerUid,
-        ownerName: c.ownerName ?? 'Рибар',
-        ownerPhotoUrl: c.ownerPhotoUrl,
-        text: c.notes ?? c.photoTitle ?? undefined,
-        photoUri: c.photoUri,
-        speciesName: c.speciesName,
-        weightKg: c.weightKg,
-        date: c.date,
-      },
+    promptReshareMode({
+      kind: 'catch',
+      id: c.id,
+      ownerUid: c.ownerUid,
+      ownerName: c.ownerName ?? 'Рибар',
+      ownerPhotoUrl: c.ownerPhotoUrl,
+      text: c.notes ?? c.photoTitle ?? undefined,
+      photoUri: c.photoUri,
+      speciesName: c.speciesName,
+      weightKg: c.weightKg,
+      date: c.date,
     });
-  }, [navigation]);
+  }, [promptReshareMode]);
 
   const onResharePost = useCallback((p: Post) => {
     // If we're resharing a post that's itself a reshare, point at the original
@@ -374,8 +455,8 @@ export default function FeedScreen() {
       photoUri: p.photoUri,
       date: p.date,
     };
-    navigation.navigate('CreatePost', { reshare: target });
-  }, [navigation]);
+    promptReshareMode(target);
+  }, [promptReshareMode]);
 
   const onDeletePostItem = useCallback(async (post: Post) => {
     Alert.alert('Изтрий публикацията', 'Сигурен ли си?', [

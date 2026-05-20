@@ -86,7 +86,7 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
     The extension typically completes in 1–3 seconds for normal-sized photos
     but can take longer on cold-start. 15 seconds is forgiving without
     blocking the save flow forever. Polls every 1.5s. */
-async function waitForResizedUrl(
+export async function waitForResizedUrl(
   storage: ReturnType<typeof requireFirebase>['storage'],
   originalPath: string,
   suffix: string,

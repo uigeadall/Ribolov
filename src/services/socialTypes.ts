@@ -19,6 +19,7 @@ export type FeedComment = {
   editedAt?: unknown;
   replyToId?: string;
   replyToName?: string;
+  likeCount?: number;
 };
 
 export type SocialNotification = {

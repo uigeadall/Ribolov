@@ -272,19 +272,61 @@ export async function sendConversationMessage(
   await batch.commit();
 }
 
+/** One-shot read of the current user's unread count for a conversation. Used
+    by ChatDetailScreen to snapshot the count BEFORE calling
+    markConversationRead, so we can render an "N нови" divider above the
+    first unseen message. Returns 0 if the conv doesn't exist or the read
+    fails. */
+export async function fetchMyUnreadInConversation(convId: string, myUid: string): Promise<number> {
+  if (!convId || !myUid) return 0;
+  const fb = requireFirebase();
+  try {
+    const snap = await getDoc(doc(fb.db, 'conversations', convId));
+    if (!snap.exists()) return 0;
+    const data = snap.data() as { unreadCounts?: Record<string, number> };
+    return data.unreadCounts?.[myUid] ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
 export async function markConversationRead(convId: string, myUid: string): Promise<void> {
   const fb = requireFirebase();
   const convRef = doc(fb.db, 'conversations', convId);
   const userRef = doc(fb.db, 'users', myUid);
-  await runTransaction(fb.db, async (tx) => {
-    const snap = await tx.get(convRef);
-    if (!snap.exists()) return;
-    const unread: number = (snap.data().unreadCounts?.[myUid] as number) ?? 0;
-    tx.update(convRef, { [`unreadCounts.${myUid}`]: 0 });
-    if (unread > 0) {
-      tx.set(userRef, { unreadMessageCount: increment(-unread) }, { merge: true });
-    }
-  }).catch(() => {});
+
+  // Clear the per-conversation unread count FIRST, on its own transaction. The
+  // earlier implementation bundled this with the user-aggregate decrement, but
+  // the user-doc rule requires `request.resource.data.uid == userId` — and a
+  // merge write that didn't include `uid` (because the user doc was first
+  // created by the Cloud Function without setting it) would be rejected,
+  // aborting the whole transaction and leaving the per-conversation badge
+  // stuck. Splitting them means a failed aggregate decrement no longer rolls
+  // back the conv-doc clear.
+  let unread = 0;
+  try {
+    await runTransaction(fb.db, async (tx) => {
+      const snap = await tx.get(convRef);
+      if (!snap.exists()) return;
+      unread = (snap.data().unreadCounts?.[myUid] as number) ?? 0;
+      tx.update(convRef, { [`unreadCounts.${myUid}`]: 0 });
+    });
+  } catch {
+    // Conv-doc clear failed (likely permission). Caller will retry on next
+    // snapshot since markConversationRead is called per-snapshot from the
+    // message subscription.
+  }
+
+  // Decrement the user aggregate as a separate best-effort write. Includes
+  // `uid: myUid` so the user-doc rule passes even if the doc was previously
+  // created by the Cloud Function without that field.
+  if (unread > 0) {
+    await setDoc(
+      userRef,
+      { uid: myUid, unreadMessageCount: increment(-unread) },
+      { merge: true },
+    ).catch(() => {});
+  }
 
   // Also mark the bell-icon notification entry for this conversation as read.
   // The Cloud Function writes it with the deterministic id message_{convId}.
@@ -435,4 +477,63 @@ export function subscribeConversationReactions(
     },
     () => onChange({}),
   );
+}
+
+/** Per-user conversation mute. Stored under users/{uid}/mutedConversations/{convId}
+    so the rule surface stays "you can write your own private prefs" and the
+    other participant never sees your mute state. Mute is local-effect only:
+    we still receive the messages, we just suppress push (via the Cloud
+    Function checking this set) and hide the unread badge in the inbox. */
+export async function muteConversation(myUid: string, convId: string): Promise<void> {
+  if (!myUid || !convId) return;
+  const fb = requireFirebase();
+  await setDoc(
+    doc(fb.db, 'users', myUid, 'mutedConversations', convId),
+    stripUndefinedForFirestore({ convId, mutedAt: serverTimestamp() }),
+    { merge: true },
+  );
+}
+
+export async function unmuteConversation(myUid: string, convId: string): Promise<void> {
+  if (!myUid || !convId) return;
+  const fb = requireFirebase();
+  await deleteDoc(doc(fb.db, 'users', myUid, 'mutedConversations', convId));
+}
+
+/** Subscribe to the set of conversation IDs I've muted. Tiny collection (one
+    doc per muted conv), cheap to watch. */
+export function subscribeMutedConversations(
+  myUid: string,
+  cb: (mutedIds: Set<string>) => void,
+): () => void {
+  const fb = requireFirebase();
+  return onSnapshot(
+    collection(fb.db, 'users', myUid, 'mutedConversations'),
+    (snap) => cb(new Set(snap.docs.map((d) => d.id))),
+    () => cb(new Set()),
+  );
+}
+
+/** Mark a conversation as unread by setting its unreadCounts.{myUid} to at
+    least 1. Used by the swipe action so a long thread you've already read
+    pops back to the top of the inbox with a badge. We don't track which
+    specific message — just "needs attention". The next open clears it via
+    markConversationRead. */
+export async function markConversationUnread(convId: string, myUid: string): Promise<void> {
+  if (!convId || !myUid) return;
+  const fb = requireFirebase();
+  const convRef = doc(fb.db, 'conversations', convId);
+  await runTransaction(fb.db, async (tx) => {
+    const snap = await tx.get(convRef);
+    if (!snap.exists()) return;
+    const current = (snap.data().unreadCounts?.[myUid] as number) ?? 0;
+    if (current > 0) return;
+    tx.update(convRef, { [`unreadCounts.${myUid}`]: 1 });
+  }).catch(() => undefined);
+  // Bump user-aggregate so the bell badge picks it up too.
+  await setDoc(
+    doc(fb.db, 'users', myUid),
+    { uid: myUid, unreadMessageCount: increment(1) },
+    { merge: true },
+  ).catch(() => undefined);
 }

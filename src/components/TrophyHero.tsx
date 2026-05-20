@@ -67,11 +67,14 @@ function createStyles(colors: AppColors, topPad: number) {
     },
     topSlotPlaceholder: { width: 40, height: 40 },
 
-    // Personal-record badge — pinned top-right under the topbar
+    // Personal-record badge — pinned to the LEFT side under the topbar so it
+    // doesn't fight the right-aligned topRight icon group (which on the own
+    // profile is notifications + theme + ~88px wide, leaving only 8px between
+    // the badge and the buttons before this change).
     pbBadge: {
       position: 'absolute',
       top: topPad + 56,
-      right: spacing.md,
+      left: spacing.md,
       flexDirection: 'row',
       alignItems: 'center',
       gap: 4,
@@ -262,6 +265,7 @@ export function TrophyHero({
                 onPress={onPickAvatar}
                 accessibilityRole="button"
                 accessibilityLabel="Промени снимка на профила"
+                hitSlop={12}
               >
                 {avatarNode}
               </Pressable>
@@ -280,12 +284,14 @@ export function TrophyHero({
             </View>
           </View>
 
-          {/* PB strip — species + weight + date — only when we have something */}
-          {bestCatch?.speciesName && bestCatch?.weightKg != null ? (
+          {/* PB strip — species + weight + date — only when there's a real weight.
+              Gate matches the PB badge (weightKg > 0) so a catch logged with
+              weight=0 doesn't surface a confusing "0.0 кг" personal record. */}
+          {bestCatch?.speciesName && typeof bestCatch.weightKg === 'number' && bestCatch.weightKg > 0 ? (
             <View style={[styles.identityInner, styles.pbStrip, { paddingTop: spacing.sm, paddingBottom: spacing.sm }]}>
               <Ionicons name="fish" size={14} color="#FFD700" />
               <Text style={styles.pbStripText} numberOfLines={1}>
-                {bestCatch.speciesName} · {bestCatch.weightKg.toFixed(1)} кг
+                {bestCatch.speciesName} · {Number.isInteger(bestCatch.weightKg) ? bestCatch.weightKg : bestCatch.weightKg.toFixed(1)} кг
                 {bestCatch.date ? ` · ${formatPbDate(bestCatch.date)}` : ''}
               </Text>
             </View>

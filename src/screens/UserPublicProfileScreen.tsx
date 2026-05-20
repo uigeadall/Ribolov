@@ -19,9 +19,10 @@ import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import * as Haptics from 'expo-haptics';
 import { Skeleton } from '../components/Skeleton';
-import { TrophyHero, TrophyHeroButton } from '../components/TrophyHero';
+import { FacebookProfileHero, FacebookHeroButton } from '../components/FacebookProfileHero';
+import { ProfileTabs, type ProfileTabKey } from '../components/ProfileTabs';
 import { TrophyShelf } from '../components/TrophyShelf';
-import { FeedItem } from '../components/FeedPost';
+import { FeedItem, FeedPost } from '../components/FeedPost';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
@@ -36,10 +37,11 @@ import {
   ensureDirectConversation,
   getFollowerCount,
   getFollowingCount,
+  listMutualFollowers,
 } from '../services/cloudSync';
 import { sendFollowNotification } from '../services/socialFeed';
 import { handleError } from '../utils/handleError';
-import { blockUser, unblockUser } from '../services/blockUser';
+import { blockUser, unblockUser, isBlockedBy } from '../services/blockUser';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 
 const SW = Dimensions.get('window').width;
@@ -47,10 +49,114 @@ const GRID_PAD = spacing.lg;
 const GRID_GAP = 2;
 const GRID_CELL = (SW - GRID_PAD * 2 - GRID_GAP * 2) / 3;
 
+/** Single grid cell with its own image-error state — broken URLs fall back
+    to a fish-icon placeholder instead of a black tile. */
+function CatchGridCell({
+  item,
+  isBest,
+  styles,
+  colors,
+  onPress,
+}: {
+  item: FeedItem;
+  isBest: boolean;
+  styles: ReturnType<typeof createStyles>;
+  colors: AppColors;
+  onPress: () => void;
+}) {
+  const [imgError, setImgError] = useState(false);
+  const showFallback = !item.photoUri || imgError;
+  return (
+    <Pressable onPress={onPress} style={styles.gridCell}>
+      {showFallback ? (
+        <Ionicons name="fish-outline" size={28} color={colors.textMuted} />
+      ) : (
+        <Image
+          source={{ uri: item.photoUri }}
+          style={styles.gridImg}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          onError={() => setImgError(true)}
+        />
+      )}
+      {isBest ? (
+        <View style={styles.gridTrophy}>
+          <Ionicons name="trophy" size={12} color="#FFD700" />
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
 function createStyles(colors: AppColors) {
   return StyleSheet.create({
-    /* ── stats card ── */
-    statsCard: {
+    // ── Action button row (sits under name in FacebookProfileHero) ──
+    actionsRow: { flexDirection: 'row', gap: spacing.sm },
+    primaryActionBtn: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      height: 40,
+      borderRadius: 8,
+    },
+    primaryFollow: { backgroundColor: colors.primary },
+    primaryFollowing: { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
+    primaryFollowText: { ...typography.bodyBold, color: '#fff', fontSize: 14 },
+    primaryFollowingText: { ...typography.bodyBold, color: colors.text, fontSize: 14 },
+    msgBtn: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      height: 40,
+      borderRadius: 8,
+      backgroundColor: colors.surfaceAlt,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    msgBtnText: { ...typography.bodyBold, color: colors.text, fontSize: 14 },
+
+    // ── Tab content shared ──
+    tabBody: { paddingTop: spacing.lg, paddingBottom: spacing.xxl },
+    sectionTitle: {
+      ...typography.h3,
+      color: colors.text,
+      marginHorizontal: spacing.lg,
+      marginBottom: spacing.sm,
+    },
+
+    // ── Info tab ──
+    infoCard: {
+      backgroundColor: colors.card,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      borderColor: colors.border,
+      marginHorizontal: spacing.lg,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+    },
+    infoRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingVertical: spacing.sm,
+    },
+    infoIcon: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: colors.primarySurface,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    infoLabel: { ...typography.caption, color: colors.textMuted, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4 },
+    infoValue: { ...typography.body, color: colors.text, fontSize: 14, marginTop: 2 },
+    infoDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginLeft: 40 },
+
+    statsRow: {
       flexDirection: 'row',
       marginHorizontal: spacing.lg,
       marginTop: spacing.lg,
@@ -65,58 +171,7 @@ function createStyles(colors: AppColors) {
     statNum: { ...typography.h2, color: colors.text, fontSize: 20, fontWeight: '800' },
     statLbl: { ...typography.caption, color: colors.textMuted, marginTop: 2, fontSize: 11 },
 
-    /* ── actions ── */
-    actionsRow: {
-      flexDirection: 'row',
-      gap: spacing.sm,
-      marginHorizontal: spacing.lg,
-      marginTop: spacing.md,
-    },
-    followBtn: {
-      flex: 1,
-      height: 46,
-      borderRadius: radius.pill,
-      alignItems: 'center',
-      justifyContent: 'center',
-      flexDirection: 'row',
-      gap: 6,
-    },
-    followBtnActive: { backgroundColor: colors.primary },
-    followBtnInactive: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
-    followBtnText: { ...typography.bodyBold, color: '#fff', fontSize: 15 },
-    followBtnTextInactive: { ...typography.bodyBold, color: colors.text, fontSize: 15 },
-    msgBtn: {
-      width: 46,
-      height: 46,
-      borderRadius: radius.pill,
-      backgroundColor: colors.card,
-      borderWidth: 1,
-      borderColor: colors.border,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-
-    /* ── section header ── */
-    sectionHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.sm,
-      marginHorizontal: spacing.lg,
-      marginTop: spacing.xl,
-      marginBottom: spacing.sm,
-    },
-    sectionAccent: { width: 4, height: 18, borderRadius: 2, backgroundColor: colors.primary },
-    sectionTitle: { ...typography.h3, color: colors.text },
-    sectionBadge: {
-      backgroundColor: colors.primarySurface,
-      paddingHorizontal: spacing.sm,
-      paddingVertical: 3,
-      borderRadius: radius.pill,
-      marginLeft: 'auto',
-    },
-    sectionBadgeText: { ...typography.caption, color: colors.primary, fontWeight: '700', fontSize: 11 },
-
-    /* ── grid ── */
+    // ── Grid (posts + photos tabs) ──
     gridWrap: {
       flexDirection: 'row',
       flexWrap: 'wrap',
@@ -145,7 +200,7 @@ function createStyles(colors: AppColors) {
       justifyContent: 'center',
     },
 
-    /* ── misc ── */
+    // ── Misc ──
     hint: {
       ...typography.caption,
       color: colors.textMuted,
@@ -188,6 +243,8 @@ export default function UserPublicProfileScreen() {
   const [followBusy, setFollowBusy] = useState(false);
   const [catches, setCatches] = useState<FeedItem[]>([]);
   const [blocked, setBlocked] = useState(false);
+  const [activeTab, setActiveTab] = useState<ProfileTabKey>('posts');
+  const [mutualFollowers, setMutualFollowers] = useState<{ uid: string; displayName: string }[]>([]);
 
   const isSelf = user?.uid === uid;
 
@@ -201,6 +258,7 @@ export default function UserPublicProfileScreen() {
   }, [catches]);
   const bestCatchId = bestCatch?.id ?? null;
   const totalKg = useMemo(() => catches.reduce((s, c) => s + (c.weightKg ?? 0), 0), [catches]);
+  const speciesCount = useMemo(() => new Set(catches.map((c) => c.speciesName)).size, [catches]);
 
   const handleBlockMenu = () => {
     if (!user || isSelf) return;
@@ -255,12 +313,14 @@ export default function UserPublicProfileScreen() {
     setError(null);
     try {
       const self = user?.uid === uid;
-      const [sum, list, fol, fc, fwc] = await Promise.all([
+      const [sum, list, fol, fc, fwc, blk, mutuals] = await Promise.all([
         getUserPublicSummary(uid),
         fetchPublicCatchesByOwner(uid, 50),
         user && !self ? isFollowingUser(user.uid, uid) : Promise.resolve(false),
         getFollowerCount(uid),
         getFollowingCount(uid),
+        user && !self ? isBlockedBy(user.uid, uid) : Promise.resolve(false),
+        user && !self ? listMutualFollowers(user.uid, uid) : Promise.resolve([] as { uid: string; displayName: string }[]),
       ]);
       if (sum?.displayName) setSummaryName(sum.displayName);
       setCity(sum?.city);
@@ -273,6 +333,8 @@ export default function UserPublicProfileScreen() {
       setFollowing(!!fol);
       setFollowerCount(fc);
       setFollowingCount(fwc);
+      setBlocked(!!blk);
+      setMutualFollowers(mutuals);
     } catch (e: unknown) {
       handleError(e);
     } finally {
@@ -294,8 +356,6 @@ export default function UserPublicProfileScreen() {
   const toggleFollow = async () => {
     if (!user || isSelf) return;
     setFollowBusy(true);
-    // Light haptic when following; selection-style when unfollowing. Match
-    // the rest of the app (PeopleYouMayKnowRow uses Light on follow).
     void Haptics.impactAsync(
       following ? Haptics.ImpactFeedbackStyle.Soft : Haptics.ImpactFeedbackStyle.Light,
     );
@@ -334,19 +394,19 @@ export default function UserPublicProfileScreen() {
   if (loading && !refreshing) {
     return (
       <Screen padded={false}>
-        <View style={{ flex: 1, paddingTop: insets.top }}>
-          <Skeleton height={220} width="100%" borderRadius={0} />
-          <View style={{ alignItems: 'center', marginTop: -54 }}>
-            <Skeleton width={108} height={108} borderRadius={54} />
+        <View style={{ flex: 1 }}>
+          <Skeleton height={200 + insets.top} width="100%" borderRadius={0} />
+          {/* Avatar silhouette overlapping the cover */}
+          <View style={{ position: 'absolute', top: 200 + insets.top - 76, left: spacing.lg }}>
+            <Skeleton width={120} height={120} borderRadius={60} />
           </View>
-          <View style={{ alignItems: 'center', marginTop: spacing.md, gap: 8 }}>
+          <View style={{ paddingTop: 60, paddingHorizontal: spacing.lg, gap: 8 }}>
             <Skeleton width={180} height={22} borderRadius={4} />
-            <Skeleton width={110} height={12} borderRadius={4} />
-          </View>
-          <View style={{ flexDirection: 'row', marginHorizontal: spacing.lg, marginTop: spacing.lg, gap: spacing.sm }}>
-            <Skeleton height={72} width="32%" />
-            <Skeleton height={72} width="32%" />
-            <Skeleton height={72} width="32%" />
+            <Skeleton width={110} height={13} borderRadius={4} />
+            <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
+              <Skeleton height={40} width="48%" borderRadius={8} />
+              <Skeleton height={40} width="48%" borderRadius={8} />
+            </View>
           </View>
         </View>
       </Screen>
@@ -368,164 +428,321 @@ export default function UserPublicProfileScreen() {
 
   const initials = summaryName.slice(0, 1).toUpperCase();
 
-  const ListHeader = (
-    <View>
-      <TrophyHero
-        name={summaryName}
-        city={city}
-        bio={bio}
-        avatarUrl={photoUrl}
-        initials={initials}
-        bestCatch={bestCatch ? {
-          photoUri: bestCatch.photoUri,
-          speciesName: bestCatch.speciesName,
-          weightKg: bestCatch.weightKg,
-          date: bestCatch.date,
-        } : undefined}
-        topLeft={<TrophyHeroButton icon="chevron-back" onPress={() => navigation.goBack()} accessibilityLabel="Назад" />}
-        topRight={
-          user && !isSelf
-            ? <TrophyHeroButton icon="ellipsis-horizontal" onPress={handleBlockMenu} accessibilityLabel="Опции" />
-            : undefined
-        }
-      />
-
-      {/* Stats — three cells: catches / followers / following */}
-      <View style={styles.statsCard}>
-        <View style={styles.statCell}>
-          <Text style={styles.statNum}>{catches.length}</Text>
-          <Text style={styles.statLbl}>Улови</Text>
-        </View>
-        <View style={styles.statDivider} />
-        <View style={styles.statCell}>
-          <Text style={styles.statNum}>{followerCount}</Text>
-          <Text style={styles.statLbl}>Последователи</Text>
-        </View>
-        <View style={styles.statDivider} />
-        <View style={styles.statCell}>
-          <Text style={styles.statNum}>{followingCount}</Text>
-          <Text style={styles.statLbl}>Следва</Text>
-        </View>
-      </View>
-
-      {/* Bonus stat — total kg, only when there are catches */}
-      {totalKg > 0 ? (
-        <Text style={[styles.hint, { marginTop: spacing.sm }]}>
-          <Text style={{ color: colors.primary, fontWeight: '700' }}>{totalKg.toFixed(1)} кг</Text>
-          <Text> общо споделени</Text>
-        </Text>
-      ) : null}
-
-      {/* Actions */}
-      {!user ? (
-        <Text style={[styles.hint, { marginTop: spacing.lg }]}>
+  // Action row that goes inside the FacebookProfileHero. Self-view shows
+  // nothing here (this is the public profile from another viewer's POV,
+  // but isSelf catches the "preview my own profile" case).
+  const actionRow = (() => {
+    if (!user) {
+      return (
+        <Text style={styles.hint}>
           Влез в акаунт, за да следваш или да пишеш на този рибар.
         </Text>
-      ) : isSelf ? (
+      );
+    }
+    if (isSelf) {
+      return (
         <Text style={styles.hint}>
           Така изглежда профилът ти за другите рибари.
         </Text>
-      ) : (
-        <View style={styles.actionsRow}>
-          <Pressable
-            style={[styles.followBtn, following ? styles.followBtnInactive : styles.followBtnActive]}
-            onPress={toggleFollow}
-            disabled={followBusy}
-          >
-            {followBusy ? (
-              <ActivityIndicator size="small" color={following ? colors.text : '#fff'} />
-            ) : (
-              <>
-                <Ionicons
-                  name={following ? 'checkmark-circle' : 'person-add-outline'}
-                  size={18}
-                  color={following ? colors.text : '#fff'}
-                />
-                <Text style={following ? styles.followBtnTextInactive : styles.followBtnText}>
-                  {following ? 'Следваш' : 'Следвай'}
-                </Text>
-              </>
-            )}
-          </Pressable>
-          <Pressable style={styles.msgBtn} onPress={openChat} accessibilityLabel="Съобщение">
-            <Ionicons name="chatbubble-outline" size={20} color={colors.primary} />
-          </Pressable>
-        </View>
-      )}
-
-      {/* Trophy shelf — top 3 biggest catches with podium ribbons */}
-      <TrophyShelf
-        catches={catches.map((c) => ({
-          id: c.id,
-          speciesName: c.speciesName,
-          weightKg: c.weightKg,
-          photoUri: c.photoUri,
-          date: c.date,
-        }))}
-        onPressCatch={(id) =>
-          (navigation as any).navigate('LogbookTab', { screen: 'CatchDetail', params: { id } })
-        }
-      />
-
-      {/* Catches grid header */}
-      <View style={styles.sectionHeader}>
-        <View style={styles.sectionAccent} />
-        <Text style={styles.sectionTitle}>Улови</Text>
-        {catches.length > 0 ? (
-          <View style={styles.sectionBadge}>
-            <Text style={styles.sectionBadgeText}>{catches.length}</Text>
-          </View>
-        ) : null}
+      );
+    }
+    return (
+      <View style={styles.actionsRow}>
+        <Pressable
+          style={[styles.primaryActionBtn, following ? styles.primaryFollowing : styles.primaryFollow]}
+          onPress={toggleFollow}
+          disabled={followBusy}
+          accessibilityRole="button"
+          accessibilityLabel={following ? 'Спри да следваш' : 'Последвай'}
+        >
+          {followBusy ? (
+            <ActivityIndicator size="small" color={following ? colors.text : '#fff'} />
+          ) : (
+            <>
+              <Ionicons
+                name={following ? 'checkmark-circle' : 'person-add-outline'}
+                size={16}
+                color={following ? colors.text : '#fff'}
+              />
+              <Text style={following ? styles.primaryFollowingText : styles.primaryFollowText}>
+                {following ? 'Следваш' : 'Последвай'}
+              </Text>
+            </>
+          )}
+        </Pressable>
+        <Pressable
+          style={styles.msgBtn}
+          onPress={openChat}
+          accessibilityRole="button"
+          accessibilityLabel="Изпрати съобщение"
+        >
+          <Ionicons name="chatbubble-outline" size={16} color={colors.text} />
+          <Text style={styles.msgBtnText}>Съобщение</Text>
+        </Pressable>
       </View>
+    );
+  })();
 
-      {catches.length === 0 ? (
-        <View style={styles.emptyFeed}>
-          <Ionicons name="fish-outline" size={40} color={colors.textMuted} />
-          <Text style={styles.emptyText}>Няма споделени улови все още.</Text>
-        </View>
-      ) : (
-        // 3-col grid with trophy badge on the best catch. No more duplicated highlight.
-        <View style={styles.gridWrap}>
-          {catches.map((item) => (
-            <Pressable
-              key={item.id}
-              onPress={() => (navigation as any).navigate('LogbookTab', { screen: 'CatchDetail', params: { id: item.id } })}
-              style={styles.gridCell}
-            >
-              {item.photoUri ? (
-                <Image
-                  source={{ uri: item.photoUri }}
-                  style={styles.gridImg}
-                  contentFit="cover"
-                  cachePolicy="memory-disk"
-                />
-              ) : (
-                <Text style={{ fontSize: 32 }}>🐟</Text>
-              )}
-              {item.id === bestCatchId ? (
-                <View style={styles.gridTrophy}>
-                  <Ionicons name="trophy" size={12} color="#FFD700" />
-                </View>
-              ) : null}
-            </Pressable>
-          ))}
-        </View>
-      )}
+  const metaItems: Array<string | undefined> = [
+    city,
+    `${followerCount} ${followerCount === 1 ? 'последовател' : 'последователи'}`,
+    `${catches.length} ${catches.length === 1 ? 'улов' : 'улова'}`,
+  ];
+
+  // Empty-state for the Posts tab (when no catches). The actual FeedPost
+  // timeline is virtualized — it flows into the outer FlatList's `data` so
+  // each row mounts only when scrolled into range. This is what keeps a
+  // profile with 80+ catches scrollable without stalling on mount.
+  const renderPostsEmpty = () => (
+    <View style={styles.emptyFeed}>
+      <Ionicons name="fish-outline" size={40} color={colors.textMuted} />
+      <Text style={styles.emptyText}>Няма споделени улови все още.</Text>
     </View>
   );
+
+  const renderPhotosTab = () => {
+    return (
+      <View>
+        <TrophyShelf
+          catches={catches.map((c) => ({
+            id: c.id,
+            speciesName: c.speciesName,
+            weightKg: c.weightKg,
+            photoUri: c.photoUri,
+            date: c.date,
+          }))}
+          onPressCatch={(id) =>
+            (navigation as any).navigate('LogbookTab', { screen: 'CatchDetail', params: { id } })
+          }
+        />
+        {catches.length === 0 ? (
+          <View style={styles.emptyFeed}>
+            <Ionicons name="images-outline" size={40} color={colors.textMuted} />
+            <Text style={styles.emptyText}>Все още няма качени снимки.</Text>
+          </View>
+        ) : (
+          <>
+            <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>Всички снимки</Text>
+            <View style={styles.gridWrap}>
+              {catches.filter((c) => c.photoUri).map((item) => (
+                <CatchGridCell
+                  key={item.id}
+                  item={item}
+                  isBest={item.id === bestCatchId}
+                  styles={styles}
+                  colors={colors}
+                  onPress={() => (navigation as any).navigate('LogbookTab', { screen: 'CatchDetail', params: { id: item.id } })}
+                />
+              ))}
+            </View>
+          </>
+        )}
+      </View>
+    );
+  };
+
+  const renderInfoTab = () => {
+    const formattedTotalKg = totalKg > 0
+      ? (Number.isInteger(totalKg) ? totalKg.toString() : totalKg.toFixed(1))
+      : '0';
+    return (
+      <View>
+        {/* Stats card */}
+        <View style={styles.statsRow}>
+          <View style={styles.statCell}>
+            <Text style={styles.statNum}>{catches.length}</Text>
+            <Text style={styles.statLbl}>Улови</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statCell}>
+            <Text style={styles.statNum}>{speciesCount}</Text>
+            <Text style={styles.statLbl}>Вида</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statCell}>
+            <Text style={styles.statNum}>{formattedTotalKg}</Text>
+            <Text style={styles.statLbl}>кг</Text>
+          </View>
+        </View>
+
+        <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>За {summaryName}</Text>
+        <View style={styles.infoCard}>
+          {bio ? (
+            <>
+              <View style={styles.infoRow}>
+                <View style={styles.infoIcon}>
+                  <Ionicons name="information-circle-outline" size={18} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.infoLabel}>Биография</Text>
+                  <Text style={styles.infoValue}>{bio}</Text>
+                </View>
+              </View>
+              <View style={styles.infoDivider} />
+            </>
+          ) : null}
+
+          {city ? (
+            <>
+              <View style={styles.infoRow}>
+                <View style={styles.infoIcon}>
+                  <Ionicons name="location-outline" size={18} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.infoLabel}>Град</Text>
+                  <Text style={styles.infoValue}>{city}</Text>
+                </View>
+              </View>
+              <View style={styles.infoDivider} />
+            </>
+          ) : null}
+
+          <View style={styles.infoRow}>
+            <View style={styles.infoIcon}>
+              <Ionicons name="people-outline" size={18} color={colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.infoLabel}>Последователи / Следва</Text>
+              <Text style={styles.infoValue}>
+                {followerCount} последователи · {followingCount} следва
+              </Text>
+            </View>
+          </View>
+
+          {bestCatch?.speciesName && typeof bestCatch.weightKg === 'number' && bestCatch.weightKg > 0 ? (
+            <>
+              <View style={styles.infoDivider} />
+              <View style={styles.infoRow}>
+                <View style={styles.infoIcon}>
+                  <Ionicons name="trophy" size={18} color="#E8902E" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.infoLabel}>Личен рекорд</Text>
+                  <Text style={styles.infoValue}>
+                    {bestCatch.speciesName} · {Number.isInteger(bestCatch.weightKg) ? bestCatch.weightKg : bestCatch.weightKg.toFixed(1)} кг
+                  </Text>
+                </View>
+              </View>
+            </>
+          ) : null}
+        </View>
+      </View>
+    );
+  };
+
+  // Posts tab is handled via the FlatList's `data` (virtualized); other tabs
+  // render as a single static block in the header. The empty-posts case is
+  // also a single static block so the FlatList stays empty in that scenario.
+  const renderNonPostsTabContent = () => {
+    if (activeTab === 'posts') return catches.length === 0 ? renderPostsEmpty() : null;
+    if (activeTab === 'photos') return renderPhotosTab();
+    if (activeTab === 'info') return renderInfoTab();
+    return null; // friends tab hidden on public profile
+  };
+
+  const ListHeader = (
+    <View>
+      <FacebookProfileHero
+        name={summaryName}
+        city={city}
+        bio={bio}
+        coverUrl={bestCatch?.photoUri}
+        avatarUrl={photoUrl}
+        initials={initials}
+        metaItems={metaItems}
+        topLeft={<FacebookHeroButton icon="chevron-back" onPress={() => navigation.goBack()} accessibilityLabel="Назад" />}
+        topRight={
+          user && !isSelf
+            ? <FacebookHeroButton icon="ellipsis-horizontal" onPress={handleBlockMenu} accessibilityLabel="Опции" />
+            : undefined
+        }
+        actions={actionRow}
+      />
+
+      {/* Mutual-follow badge — small social-proof line that surfaces overlap
+          between viewer and target. Hidden on own profile, hidden when there
+          are no mutuals to avoid an empty row. */}
+      {mutualFollowers.length > 0 && !isSelf ? (
+        <Pressable
+          onPress={() => navigation.navigate('Friends')}
+          style={({ pressed }) => ({
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+            paddingHorizontal: spacing.lg,
+            paddingVertical: spacing.sm,
+            backgroundColor: pressed ? colors.surfaceAlt : 'transparent',
+          })}
+          accessibilityRole="button"
+          accessibilityLabel="Виж общи последователи"
+        >
+          <Ionicons name="people" size={14} color={colors.textMuted} />
+          <Text
+            style={{ ...typography.caption, color: colors.textMuted, flex: 1, fontSize: 12 }}
+            numberOfLines={2}
+          >
+            Следва се с{' '}
+            {(() => {
+              const named = mutualFollowers.filter((m) => m.displayName).slice(0, 3);
+              const nameStr = named.map((m) => m.displayName).join(', ');
+              const rest = mutualFollowers.length - named.length;
+              if (nameStr && rest > 0) return `${nameStr} и още ${rest}`;
+              if (nameStr) return nameStr;
+              return `${mutualFollowers.length} от хората, които следваш`;
+            })()}
+          </Text>
+        </Pressable>
+      ) : null}
+
+      <ProfileTabs
+        active={activeTab}
+        onChange={setActiveTab}
+        // Hide "friends" on public profile — we don't surface other users' friends.
+        visibility={{ friends: false }}
+      />
+
+      <View style={styles.tabBody}>{renderNonPostsTabContent()}</View>
+    </View>
+  );
+
+  // Posts tab streams into FlatList data so virtualization works; every other
+  // tab is empty data + static header. Without this, a profile with 80+
+  // catches mounted every FeedPost (with its likes/reactions/comments subs)
+  // on first render.
+  const postsData = activeTab === 'posts' ? catches : [];
 
   return (
     <Screen padded={false} safeAreaEdges={['left', 'right']}>
       <FlatList
-        data={[]}
-        extraData={{ photoUrl, summaryName, city, bio, following, followerCount, followingCount }}
-        keyExtractor={() => 'x'}
+        data={postsData}
+        extraData={{ photoUrl, summaryName, city, bio, following, followerCount, followingCount, activeTab }}
+        keyExtractor={(item) => item.id}
         ListHeaderComponent={ListHeader}
         contentContainerStyle={{ paddingBottom: spacing.xxl + insets.bottom }}
         refreshControl={
           <FishingRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
-        renderItem={null}
+        renderItem={({ item }) => (
+          <FeedPost
+            item={item}
+            myUid={user?.uid}
+            myDisplayName={user?.displayName ?? user?.email ?? 'Аз'}
+            socialEnabled={Boolean(configured && user)}
+            onPressAuthor={(authorUid, name) => {
+              if (authorUid === uid) return;
+              navigation.navigate('UserPublicProfile', { uid: authorUid, displayName: name });
+            }}
+            onPressCatch={(c) =>
+              (navigation as any).navigate('LogbookTab', { screen: 'CatchDetail', params: { id: c.id } })
+            }
+          />
+        )}
+        // Virtualization knobs — keep rendered windows tight so a 100-catch
+        // profile only mounts a handful of FeedPost trees at a time.
+        windowSize={5}
+        initialNumToRender={4}
+        maxToRenderPerBatch={4}
+        removeClippedSubviews
       />
     </Screen>
   );

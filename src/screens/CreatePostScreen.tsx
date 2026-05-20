@@ -147,12 +147,26 @@ export default function CreatePostScreen() {
     }
     setPosting(true);
     try {
-      // Resolve which @handles actually correspond to known users by scanning
-      // the current text against `resolvedMentions`.
-      const handlesInText = [...text.matchAll(/(?:^|[^\p{L}\p{N}_])@([\p{L}\p{N}_.\-]{2,40})/gu)].map((m) => m[1]);
-      const mentionUids = handlesInText
-        .map((h) => resolvedMentions[h])
-        .filter((uid): uid is string => !!uid);
+      // Resolve which @handles correspond to known users. Iterating
+      // resolvedMentions (instead of re-extracting via a strict
+      // [\p{L}\p{N}_.\-] regex) means names containing characters outside
+      // that set — parentheses, !, ?, emoji-adjacent text, etc. — still
+      // resolve as long as the user inserted them from the autocomplete.
+      const escapeRegex = (s: string) => s.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
+      const mentionUids = Object.entries(resolvedMentions)
+        .filter(([cleanName]) => {
+          if (!cleanName) return false;
+          // @cleanName must NOT be immediately preceded by a word char (so
+          // it's a real mention boundary) and must NOT be followed by a
+          // letter/digit/underscore (so "@John" in text doesn't match
+          // resolvedMentions["John"] when the user actually typed "@Johnny").
+          const re = new RegExp(
+            `(?:^|[^\\p{L}\\p{N}_])@${escapeRegex(cleanName)}(?![\\p{L}\\p{N}_])`,
+            'u',
+          );
+          return re.test(text);
+        })
+        .map(([, uid]) => uid);
 
       // Resolve the user's avatar URL. user.photoURL (Firebase Auth) is often
       // empty when the user uploaded their photo through Profile, since that

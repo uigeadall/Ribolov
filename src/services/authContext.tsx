@@ -27,6 +27,7 @@ import { registerForPushNotifications } from './pushNotifications';
 import { restoreAchievementsFromCloud } from './achievements';
 import { resetSocialCaches } from './social';
 import { resetRateLimits } from './socialRateLimit';
+import { pushUserProfilePublic, mirrorAuthDisplayNameIfMissing } from './userProfile';
 
 export type AuthContextValue = {
   user: User | null;
@@ -99,6 +100,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           registerForPushNotifications(u.uid).catch(() => undefined);
           restoreAchievementsFromCloud(u.uid).catch(() => undefined);
           updateUserPresence(u.uid, true).catch(() => undefined);
+          // Backfill the Firestore users/{uid}.displayName mirror for legacy
+          // accounts that signed up via Google/Apple/Facebook before this
+          // mirror was wired into signUp. Without it those users don't appear
+          // in @-mention autocomplete (the search orders by displayName, which
+          // requires the field to exist). Only writes when the field is
+          // currently missing so we never overwrite a user-edited name.
+          mirrorAuthDisplayNameIfMissing(u.uid, u.displayName).catch(() => undefined);
         } else {
           await AsyncStorage.removeItem(LAST_UID_KEY).catch(() => undefined);
         }
@@ -120,7 +128,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!fb) throw new Error('Firebase не е конфигуриран.');
     const cred = await createUserWithEmailAndPassword(fb.auth, email.trim(), password);
     const name = displayName?.trim();
-    if (name) await updateProfile(cred.user, { displayName: name });
+    if (name) {
+      await updateProfile(cred.user, { displayName: name });
+      // Mirror the displayName into the Firestore users/{uid} doc so that
+      // getUserPublicSummary returns a real name (rather than empty) the
+      // first time anyone views this user's public profile. Without this,
+      // new email-signup users showed up as "Рибар" in the public preview
+      // until they manually saved the edit-profile form.
+      await pushUserProfilePublic(cred.user.uid, { displayName: name }).catch(() => {});
+    }
   }, []);
 
   const signInWithGoogleIdToken = useCallback(async (idToken: string) => {

@@ -34,6 +34,7 @@ import { useAvatarUrl } from '../hooks/useAvatarUrl';
 import { useFeedPostSocial } from '../hooks/useFeedPostSocial';
 import { ImageViewer } from './ImageViewer';
 import { SharePickerModal, buildCatchSharedRef } from './SharePickerModal';
+import { CommentLikeButton } from './CommentLikeButton';
 import * as Haptics from 'expo-haptics';
 
 function feedStyles(colors: AppColors) {
@@ -810,7 +811,20 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                             </View>
                             <Text style={styles.commentText}>{c.text}</Text>
                           </View>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingLeft: spacing.sm, paddingTop: 2 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingLeft: spacing.sm, paddingTop: 2 }}>
+                            {/* Skip the like button on optimistic placeholders
+                                (id starts with "temp-") — the comment doc
+                                doesn't exist yet, so a like write would 404. */}
+                            {myUid && !c.id.startsWith('temp-') && (
+                              <CommentLikeButton
+                                kind="catch"
+                                parentId={item.id}
+                                commentId={c.id}
+                                myUid={myUid}
+                                myDisplayName={myDisplayName}
+                                initialCount={c.likeCount ?? 0}
+                              />
+                            )}
                             {myUid && (
                               <Pressable onPress={() => social.setReplyingTo({ id: c.id, name: c.authorName })} hitSlop={8}>
                                 <Text style={{ color: colors.primary, fontSize: 11 }}>Отговори</Text>

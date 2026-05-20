@@ -21,6 +21,7 @@ import {
 import type { FeedComment } from '../services/socialTypes';
 import { useAvatarUrl } from '../hooks/useAvatarUrl';
 import { useAuth } from '../services/authContext';
+import { CommentLikeButton } from './CommentLikeButton';
 
 type Props = {
   post: Post;
@@ -62,6 +63,7 @@ function PostCardInner({
   const [comments, setComments] = useState<FeedComment[]>([]);
   const [commentDraft, setCommentDraft] = useState('');
   const [sendingComment, setSendingComment] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<{ id: string; name: string } | null>(null);
   const commentsSubscribedRef = useRef(false);
 
   const isMine = Boolean(myUid && post.ownerUid === myUid);
@@ -98,17 +100,19 @@ function PostCardInner({
     if (!myUid || sendingComment) return;
     const text = commentDraft.trim();
     if (!text) return;
+    const reply = replyingTo;
     setSendingComment(true);
     try {
-      await addPostComment(post.id, myUid, myDisplayName, text);
+      await addPostComment(post.id, myUid, myDisplayName, text, reply ?? undefined);
       setCommentDraft('');
+      setReplyingTo(null);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e: unknown) {
       Alert.alert('Грешка', e instanceof Error ? e.message : 'Неуспешно изпращане.');
     } finally {
       setSendingComment(false);
     }
-  }, [myUid, myDisplayName, commentDraft, sendingComment, post.id]);
+  }, [myUid, myDisplayName, commentDraft, sendingComment, post.id, replyingTo]);
 
   const onDeleteComment = useCallback((commentId: string) => {
     Alert.alert('Изтрий коментара', undefined, [
@@ -439,16 +443,50 @@ function PostCardInner({
             <View style={{ gap: 10 }}>
               {comments.map((c) => {
                 const canDelete = myUid && (c.authorUid === myUid || post.ownerUid === myUid);
+                const isReply = !!c.replyToId;
                 return (
-                  <View key={c.id} style={styles.commentRow}>
+                  <View key={c.id} style={[styles.commentRow, isReply && { marginLeft: spacing.xl }]}>
+                    {/* Tiny avatar — restores parity with FeedPost catches. */}
+                    <View style={{
+                      width: 22, height: 22, borderRadius: 11,
+                      backgroundColor: colors.primarySurface,
+                      borderWidth: 1, borderColor: colors.border,
+                      alignItems: 'center', justifyContent: 'center',
+                      marginTop: 1, flexShrink: 0,
+                    }}>
+                      <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 9 }}>
+                        {c.authorName.slice(0, 1).toUpperCase()}
+                      </Text>
+                    </View>
                     <View style={{ flex: 1 }}>
+                      {isReply ? (
+                        <Text style={{ ...typography.caption, color: colors.textMuted, marginBottom: 2, fontSize: 11 }}>
+                          ↩ отговор на {c.replyToName}
+                        </Text>
+                      ) : null}
                       <Pressable onPress={() => onPressAuthor(c.authorUid, c.authorName)}>
                         <Text style={styles.commentAuthor}>{c.authorName}</Text>
                       </Pressable>
                       <Text style={styles.commentText}>{c.text}</Text>
+                      {/* Inline action row — like / reply */}
+                      {myUid ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: 4 }}>
+                          <CommentLikeButton
+                            kind="post"
+                            parentId={post.id}
+                            commentId={c.id}
+                            myUid={myUid}
+                            myDisplayName={myDisplayName}
+                            initialCount={c.likeCount ?? 0}
+                          />
+                          <Pressable onPress={() => setReplyingTo({ id: c.id, name: c.authorName })} hitSlop={8}>
+                            <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '600' }}>Отговори</Text>
+                          </Pressable>
+                        </View>
+                      ) : null}
                     </View>
                     {canDelete ? (
-                      <Pressable onPress={() => onDeleteComment(c.id)} hitSlop={8}>
+                      <Pressable onPress={() => onDeleteComment(c.id)} hitSlop={8} style={{ paddingTop: 2 }}>
                         <Ionicons name="trash-outline" size={14} color={colors.textMuted} />
                       </Pressable>
                     ) : null}
@@ -459,33 +497,44 @@ function PostCardInner({
           )}
 
           {myUid ? (
-            <View style={styles.commentComposer}>
-              <TextInput
-                style={styles.commentInput}
-                placeholder="Напиши коментар…"
-                placeholderTextColor={colors.textMuted}
-                value={commentDraft}
-                onChangeText={setCommentDraft}
-                maxLength={2000}
-                multiline
-                editable={!sendingComment}
-              />
-              <Pressable
-                onPress={onSendComment}
-                disabled={sendingComment || !commentDraft.trim()}
-                hitSlop={8}
-              >
-                {sendingComment ? (
-                  <ActivityIndicator size="small" color={colors.primary} />
-                ) : (
-                  <Ionicons
-                    name="send"
-                    size={20}
-                    color={commentDraft.trim() ? colors.primary : colors.textMuted}
-                  />
-                )}
-              </Pressable>
-            </View>
+            <>
+              {replyingTo ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.primarySurface, borderRadius: radius.sm, paddingHorizontal: spacing.sm, paddingVertical: 4, marginTop: spacing.sm, gap: spacing.sm }}>
+                  <Ionicons name="return-down-forward-outline" size={14} color={colors.primary} />
+                  <Text style={{ ...typography.caption, color: colors.primary, flex: 1 }}>Отговор на {replyingTo.name}</Text>
+                  <Pressable onPress={() => setReplyingTo(null)} hitSlop={8}>
+                    <Ionicons name="close-circle" size={16} color={colors.textMuted} />
+                  </Pressable>
+                </View>
+              ) : null}
+              <View style={styles.commentComposer}>
+                <TextInput
+                  style={styles.commentInput}
+                  placeholder={replyingTo ? `Отговор на ${replyingTo.name}…` : 'Напиши коментар…'}
+                  placeholderTextColor={colors.textMuted}
+                  value={commentDraft}
+                  onChangeText={setCommentDraft}
+                  maxLength={2000}
+                  multiline
+                  editable={!sendingComment}
+                />
+                <Pressable
+                  onPress={onSendComment}
+                  disabled={sendingComment || !commentDraft.trim()}
+                  hitSlop={8}
+                >
+                  {sendingComment ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <Ionicons
+                      name="send"
+                      size={20}
+                      color={commentDraft.trim() ? colors.primary : colors.textMuted}
+                    />
+                  )}
+                </Pressable>
+              </View>
+            </>
           ) : null}
         </View>
       ) : null}

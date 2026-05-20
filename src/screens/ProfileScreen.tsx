@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Pressable,
   ScrollView,
+  FlatList,
   Alert,
   TextInput,
   ActivityIndicator,
@@ -28,8 +29,10 @@ import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { MenuRow } from '../components/MenuRow';
 import { BadgeIcon } from '../components/BadgeIcon';
-import { TrophyHero, TrophyHeroButton } from '../components/TrophyHero';
+import { FacebookProfileHero, FacebookHeroButton } from '../components/FacebookProfileHero';
+import { ProfileTabs, type ProfileTabKey } from '../components/ProfileTabs';
 import { TrophyShelf } from '../components/TrophyShelf';
+import { FeedPost } from '../components/FeedPost';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { accentPresets, type AccentTheme } from '../theme/palette';
@@ -210,6 +213,8 @@ export default function ProfileScreen() {
   const [pubExpanded, setPubExpanded] = useState(false);
   const [accentPickerExpanded, setAccentPickerExpanded] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Active tab in the new Facebook-style profile layout.
+  const [activeTab, setActiveTab] = useState<ProfileTabKey>('posts');
   const [remotePhotoUrl, setRemotePhotoUrl] = useState<string | undefined>();
   const [pickedAvatarUri, setPickedAvatarUri] = useState<string | undefined>();
   // Resized base64 data URL — small enough for Firestore, used for save + persistent display
@@ -250,10 +255,11 @@ export default function ProfileScreen() {
         // Keep cache in sync with latest Firestore value
         AsyncStorage.setItem(cacheKey, photo).catch(() => {});
       }
-      const dn =
-        s?.displayName?.trim() && s.displayName !== 'Рибар'
-          ? s.displayName.trim()
-          : user.displayName?.trim() || '';
+      // getUserPublicSummary now returns empty string when missing, so this
+      // simplifies to "use Firestore value if present, else fall back to
+      // Auth user.displayName". The old "&& !== 'Рибар'" guard was a workaround
+      // for a placeholder that no longer leaks from the service layer.
+      const dn = s?.displayName?.trim() || user.displayName?.trim() || '';
       setDisplayName(dn);
       setCity(s?.city ?? '');
       setBio(s?.bio ?? '');
@@ -301,21 +307,64 @@ export default function ProfileScreen() {
       aspect: [1, 1],
       quality: 1,
     });
-    if (!res.canceled && res.assets[0]) {
-      const picked = res.assets[0];
-      // Pre-check before ImageManipulator loads the full file into memory —
-      // a huge source image can OOM-crash on low-end Android devices even
-      // though the resized output ends up small.
-      if (!checkImageSize(picked)) return;
-      const manipulated = await ImageManipulator.manipulateAsync(
-        picked.uri,
-        [{ resize: { width: 80, height: 80 } }],
-        { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG, base64: true },
-      );
-      setPickedAvatarUri(manipulated.uri);
-      setPickedAvatarDataUrl(
-        manipulated.base64 ? `data:image/jpeg;base64,${manipulated.base64}` : null
-      );
+    if (res.canceled || !res.assets[0]) return;
+    const picked = res.assets[0];
+    // Pre-check before ImageManipulator loads the full file into memory —
+    // a huge source image can OOM-crash on low-end Android devices even
+    // though the resized output ends up small.
+    if (!checkImageSize(picked)) return;
+    const manipulated = await ImageManipulator.manipulateAsync(
+      picked.uri,
+      [{ resize: { width: 80, height: 80 } }],
+      { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+    );
+    // Optimistic UI — show the new avatar immediately while we upload it.
+    const localUri = manipulated.uri;
+    const dataUrl = manipulated.base64 ? `data:image/jpeg;base64,${manipulated.base64}` : null;
+    setPickedAvatarUri(localUri);
+    setPickedAvatarDataUrl(dataUrl);
+
+    // Snapshot previous remote URL so we can roll back if persistence fails.
+    const previousRemote = remotePhotoUrl;
+    let usedStorageUpload = false;
+    try {
+      // Persist independently of the displayName/city/bio form. The user
+      // explicitly asked: a new photo should save itself, the text fields
+      // still require an explicit save (those involve trims/validation
+      // worth confirming).
+      let photoUrl: string;
+      if (dataUrl) {
+        photoUrl = dataUrl;
+      } else {
+        photoUrl = await uploadProfileAvatar(user.uid, localUri);
+        usedStorageUpload = true;
+      }
+      await pushUserProfilePublic(user.uid, { photoUrl });
+
+      // Mirror everywhere the rest of the app reads the avatar from.
+      setRemotePhotoUrl(photoUrl);
+      setPickedAvatarUri(undefined);
+      setPickedAvatarDataUrl(null);
+      AsyncStorage.setItem(`@ribolov/profilePhoto/${user.uid}`, photoUrl).catch(() => {});
+
+      const fb = ensureFirebase();
+      if (!photoUrl.startsWith('data:') && fb?.auth.currentUser) {
+        await updateProfile(fb.auth.currentUser, { photoURL: photoUrl }).catch(() => {});
+      }
+      refreshOwnerPhotoOnPublicCatches(user.uid, photoUrl).catch(() => {});
+
+      Toast.show({ type: 'success', text1: 'Снимката е запазена', visibilityTime: 1800 });
+    } catch (e) {
+      // Roll back the optimistic state so the old avatar comes back.
+      setPickedAvatarUri(undefined);
+      setPickedAvatarDataUrl(null);
+      setRemotePhotoUrl(previousRemote);
+      if (usedStorageUpload) {
+        // Best-effort cleanup if Storage upload succeeded but Firestore
+        // write failed. Mirrors the original savePublicProfile behavior.
+        deleteProfileAvatar(user.uid).catch(() => {});
+      }
+      handleError(e);
     }
   };
 
@@ -323,42 +372,18 @@ export default function ProfileScreen() {
     if (!user?.uid || !configured || profileSaving) return;
     setProfileSaving(true);
     try {
-      const patch: { displayName: string; city: string; bio: string; photoUrl?: string } = {
+      // Text-only save. The avatar persists itself inside `pickProfileAvatar`
+      // immediately after the user picks, so we don't need to handle it here.
+      // We deliberately omit `photoUrl` from the patch — omitting (rather
+      // than passing the current remote URL) means Firestore leaves the field
+      // untouched, which is the right behavior whether the avatar was just
+      // updated, never set, or unchanged.
+      const patch = {
         displayName: displayName.trim(),
         city: city.trim(),
         bio: bio.trim(),
       };
-      let usedStorageUpload = false;
-      if (pickedAvatarUri) {
-        if (pickedAvatarDataUrl) {
-          patch.photoUrl = pickedAvatarDataUrl;
-        } else {
-          patch.photoUrl = await uploadProfileAvatar(user.uid, pickedAvatarUri);
-          usedStorageUpload = true;
-        }
-        setRemotePhotoUrl(patch.photoUrl);
-        setPickedAvatarUri(undefined);
-        setPickedAvatarDataUrl(null);
-        AsyncStorage.setItem(`@ribolov/profilePhoto/${user.uid}`, patch.photoUrl).catch(() => {});
-      } else if (remotePhotoUrl?.trim()) {
-        patch.photoUrl = remotePhotoUrl.trim();
-      }
-      try {
-        await pushUserProfilePublic(user.uid, patch);
-      } catch (writeErr) {
-        if (usedStorageUpload) {
-          deleteProfileAvatar(user.uid).catch(() => {});
-        }
-        throw writeErr;
-      }
-      const urlForAuth = patch.photoUrl?.trim();
-      const fb = ensureFirebase();
-      if (urlForAuth && !urlForAuth.startsWith('data:') && fb?.auth.currentUser) {
-        await updateProfile(fb.auth.currentUser, { photoURL: urlForAuth });
-      }
-      if (urlForAuth) {
-        refreshOwnerPhotoOnPublicCatches(user.uid, urlForAuth).catch(() => {});
-      }
+      await pushUserProfilePublic(user.uid, patch);
       Toast.show({ type: 'success', text1: 'Готово', text2: 'Профилът е запазен.', visibilityTime: 2500 });
     } catch (e: unknown) {
       handleError(e);
@@ -1151,115 +1176,301 @@ export default function ProfileScreen() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
-  return (
-    <Screen scroll={false} padded={false}>
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="interactive"
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={async () => { setRefreshing(true); await loadRemoteProfile().catch(() => {}); setRefreshing(false); }}
-            tintColor={colors.primary}
+  // Header content (everything that used to be in the ScrollView): the
+  // guest hero, the loading state, and the entire logged-in profile body
+  // EXCEPT the posts-tab list — that flows into FlatList data instead.
+  const renderProfileHeader = () => (
+    <>
+  {/* ════════════════════════════════════════
+      GUEST STATE — hero gradient screen
+  ════════════════════════════════════════ */}
+  {!user ? (
+    <View style={styles.guestHero}>
+      <LinearGradient
+        colors={heroGrad}
+        start={{ x: 0.3, y: 0 }}
+        end={{ x: 0.7, y: 1 }}
+        style={styles.guestHeroBg}
+        pointerEvents="none"
+      />
+      <View style={[styles.guestHeroInner, { paddingTop: insets.top + 48 }]}>
+        <View style={styles.guestIconOuter}>
+          <Ionicons name="fish-outline" size={44} color="rgba(255,255,255,0.9)" />
+        </View>
+        <Text style={styles.guestTitle}>Твоят риболовен профил</Text>
+        <Text style={styles.guestSub}>
+          Влез за синхронизация, лента и видимо име и снимка в профила.
+        </Text>
+        <Pressable
+          style={({ pressed }) => [styles.guestBtn, pressed && { opacity: 0.85 }]}
+          onPress={() => navigation.navigate('Auth')}
+          accessibilityRole="button"
+          accessibilityLabel="Вход / Регистрация"
+        >
+          <LinearGradient
+            colors={['#F5A020', '#E05E00']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFillObject}
+          />
+          <View style={styles.guestBtnInner}>
+            <Ionicons name="log-in-outline" size={20} color="#fff" />
+            <Text style={styles.guestBtnText}>Вход / Регистрация</Text>
+          </View>
+        </Pressable>
+      </View>
+    </View>
+
+  ) : profileLoading ? (
+    /* ── Loading state ── */
+    <View style={{ flex: 1, minHeight: 400, alignItems: 'center', justifyContent: 'center' }}>
+      <ActivityIndicator color={colors.primary} size="large" />
+    </View>
+
+  ) : (
+    <>
+      {/* ════════════════════════════════════════
+          FACEBOOK-STYLE HERO — wide cover (best-catch photo or dawn-water
+          gradient), avatar overlapping bottom-left, name + meta left-aligned
+          below, action buttons row inside the hero.
+      ════════════════════════════════════════ */}
+      <FacebookProfileHero
+        name={displayName.trim() || user.displayName || 'Рибар'}
+        city={city.trim() || undefined}
+        bio={bio.trim() || undefined}
+        coverUrl={bestCatch?.photoUri}
+        avatarUrl={avatarUri ?? undefined}
+        initials={initialLetter}
+        metaItems={[
+          city.trim() || undefined,
+          `${catchStatsCount} ${catchStatsCount === 1 ? 'улов' : 'улова'}`,
+          `${catchStatsKg} кг`,
+        ]}
+        onPickAvatar={configured ? pickProfileAvatar : undefined}
+        topLeft={
+          <FacebookHeroButton
+            icon="menu-outline"
+            onPress={() => { void Haptics.selectionAsync(); setSettingsOpen(true); }}
+            accessibilityLabel="Меню"
           />
         }
-      >
-
-        {/* ════════════════════════════════════════
-            GUEST STATE — hero gradient screen
-        ════════════════════════════════════════ */}
-        {!user ? (
-          <View style={styles.guestHero}>
-            <LinearGradient
-              colors={heroGrad}
-              start={{ x: 0.3, y: 0 }}
-              end={{ x: 0.7, y: 1 }}
-              style={styles.guestHeroBg}
-              pointerEvents="none"
+        topRight={
+          <View style={{ flexDirection: 'row', gap: spacing.xs }}>
+            <FacebookHeroButton
+              icon="notifications-outline"
+              onPress={() => navigation.navigate('Notifications')}
+              accessibilityLabel="Известия"
+              badge={unreadNotifs}
             />
-            <View style={[styles.guestHeroInner, { paddingTop: insets.top + 48 }]}>
-              <View style={styles.guestIconOuter}>
-                <Ionicons name="fish-outline" size={44} color="rgba(255,255,255,0.9)" />
-              </View>
-              <Text style={styles.guestTitle}>Твоят риболовен профил</Text>
-              <Text style={styles.guestSub}>
-                Влез за синхронизация, лента и видимо име и снимка в профила.
-              </Text>
+            <FacebookHeroButton
+              icon={mode === 'dark' ? 'sunny-outline' : 'moon-outline'}
+              onPress={() => { void Haptics.selectionAsync(); toggleMode(); }}
+              accessibilityLabel={mode === 'dark' ? 'Светла тема' : 'Тъмна тема'}
+            />
+          </View>
+        }
+        actions={
+          configured ? (
+            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
               <Pressable
-                style={({ pressed }) => [styles.guestBtn, pressed && { opacity: 0.85 }]}
-                onPress={() => navigation.navigate('Auth')}
+                onPress={() => { void Haptics.selectionAsync(); setPubExpanded(true); }}
+                style={({ pressed }) => ({
+                  flex: 1,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  height: 40,
+                  borderRadius: 8,
+                  backgroundColor: pressed ? colors.primaryDark : colors.primary,
+                })}
                 accessibilityRole="button"
-                accessibilityLabel="Вход / Регистрация"
+                accessibilityLabel="Редактирай профил"
               >
-                <LinearGradient
-                  colors={['#F5A020', '#E05E00']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={StyleSheet.absoluteFillObject}
-                />
-                <View style={styles.guestBtnInner}>
-                  <Ionicons name="log-in-outline" size={20} color="#fff" />
-                  <Text style={styles.guestBtnText}>Вход / Регистрация</Text>
-                </View>
+                <Ionicons name="create" size={16} color="#fff" />
+                <Text style={{ ...typography.bodyBold, color: '#fff', fontSize: 14 }}>
+                  Редактирай
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={openPublicPreview}
+                style={({ pressed }) => ({
+                  flex: 1,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  height: 40,
+                  borderRadius: 8,
+                  backgroundColor: pressed ? colors.border : colors.surfaceAlt,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                })}
+                accessibilityRole="button"
+                accessibilityLabel="Виж публичен изглед"
+              >
+                <Ionicons name="eye-outline" size={16} color={colors.text} />
+                <Text style={{ ...typography.bodyBold, color: colors.text, fontSize: 14 }}>
+                  Виж публично
+                </Text>
               </Pressable>
             </View>
-          </View>
+          ) : null
+        }
+      />
 
-        ) : profileLoading ? (
-          /* ── Loading state ── */
-          <View style={{ flex: 1, minHeight: 400, alignItems: 'center', justifyContent: 'center' }}>
-            <ActivityIndicator color={colors.primary} size="large" />
+      {/* ── Completion nudge — sits above the tabs as a one-time onboarding cue. ── */}
+      {completionPct < 100 ? (
+        <View style={styles.nudgeCard}>
+          <View style={styles.nudgeRow}>
+            <Ionicons name="rocket-outline" size={16} color={colors.primary} />
+            <Text style={styles.nudgeText}>
+              {completionHint ? completionHint : `Профил ${completionPct}% завършен`}
+            </Text>
+            <Text style={styles.nudgePct}>{completionPct}%</Text>
           </View>
+          <View style={styles.nudgeBarBg}>
+            <View style={[styles.nudgeBarFill, { width: `${completionPct}%` as `${number}%` }]} />
+          </View>
+        </View>
+      ) : null}
 
-        ) : (
-          <>
-            {/* ════════════════════════════════════════
-                TROPHY HERO — the angler's biggest catch fills the entire
-                top-of-screen as a dramatic backdrop. Identity sits in a glass
-                card overlapping the bottom. Falls back to a dawn-water gradient
-                when there's no catch yet.
-            ════════════════════════════════════════ */}
-            <TrophyHero
-              name={displayName.trim() || user.displayName || 'Рибар'}
-              city={city.trim() || undefined}
-              bio={bio.trim() || undefined}
-              avatarUrl={avatarUri ?? undefined}
-              initials={initialLetter}
-              bestCatch={bestCatch ? {
-                photoUri: bestCatch.photoUri,
-                speciesName: bestCatch.speciesName,
-                weightKg: bestCatch.weightKg,
-                date: bestCatch.date,
-              } : undefined}
-              onPickAvatar={configured ? pickProfileAvatar : undefined}
-              topLeft={
-                <TrophyHeroButton
-                  icon="menu-outline"
-                  onPress={() => { void Haptics.selectionAsync(); setSettingsOpen(true); }}
-                  accessibilityLabel="Меню"
-                />
-              }
-              topRight={
-                <View style={{ flexDirection: 'row', gap: spacing.xs }}>
-                  <TrophyHeroButton
-                    icon="notifications-outline"
-                    onPress={() => navigation.navigate('Notifications')}
-                    accessibilityLabel="Известия"
-                    badge={unreadNotifs}
-                  />
-                  <TrophyHeroButton
-                    icon={mode === 'dark' ? 'sunny-outline' : 'moon-outline'}
-                    onPress={() => { void Haptics.selectionAsync(); toggleMode(); }}
-                    accessibilityLabel={mode === 'dark' ? 'Светла тема' : 'Тъмна тема'}
-                  />
-                </View>
+      {/* ── Edit panel — collapsible, shown when user taps "Редактирай" ── */}
+      {pubExpanded && configured ? (
+        <View style={styles.panel}>
+          <View style={styles.panelTitleRow}>
+            <Ionicons name="person-circle-outline" size={20} color={colors.primary} />
+            <Text style={styles.panelTitle}>Редактирай профил</Text>
+            <Pressable onPress={() => setPubExpanded(false)} hitSlop={8}>
+              <Ionicons name="close" size={20} color={colors.textMuted} />
+            </Pressable>
+          </View>
+          <Text style={styles.fieldLabel}>Име</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Как да те виждат другите"
+            placeholderTextColor={colors.textMuted}
+            value={displayName}
+            onChangeText={setDisplayName}
+          />
+          <Text style={styles.fieldLabel}>Град или регион</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Напр. Балчик"
+            placeholderTextColor={colors.textMuted}
+            value={city}
+            onChangeText={setCity}
+          />
+          <Text style={styles.fieldLabel}>За теб</Text>
+          <TextInput
+            style={[styles.input, { minHeight: 72, textAlignVertical: 'top', paddingTop: spacing.sm + 4 }]}
+            placeholder="Кратко представяне…"
+            placeholderTextColor={colors.textMuted}
+            value={bio}
+            onChangeText={setBio}
+            multiline
+          />
+          <Button
+            title="Запази промените"
+            onPress={savePublicProfile}
+            loading={profileSaving}
+            style={{ marginTop: spacing.md }}
+          />
+        </View>
+      ) : null}
+
+      {/* ── Cloud warning banner ── */}
+      {!configured ? (
+        <View style={styles.warnBanner}>
+          <Ionicons name="cloud-offline-outline" size={18} color={colors.accent} />
+          <Text style={styles.warnText}>
+            Облакът не е активен — настрой Firebase, за да редактираш снимка и онлайн профил.
+          </Text>
+        </View>
+      ) : null}
+
+      {/* ── Tabs — sticky-style segmented control ── */}
+      <ProfileTabs active={activeTab} onChange={setActiveTab} />
+
+      {/* ════════════════════════════════════════
+          TAB CONTENT
+      ════════════════════════════════════════ */}
+      <View style={[styles.wave, { backgroundColor: waveColor, marginTop: 0, paddingTop: spacing.lg }]}>
+
+        {/* ─────────── POSTS TAB ───────────
+            When there are posts they flow into the outer FlatList's
+            `data` so each FeedPost only mounts when scrolled into view
+            — critical for users with 50+ public catches. Only the
+            empty-state branch stays in the header. */}
+        {activeTab === 'posts' && publicPosts.length === 0 ? (
+          <View style={{ paddingHorizontal: spacing.xl, paddingVertical: spacing.xl, alignItems: 'center', gap: spacing.sm }}>
+            <Ionicons name="grid-outline" size={40} color={colors.textMuted} />
+            <Text style={{ ...typography.body, color: colors.textMuted, textAlign: 'center' }}>
+              Все още няма публични улови.
+            </Text>
+            <Pressable
+              onPress={() => (navigation as any).navigate('LogbookTab', { screen: 'AddCatch' })}
+              style={{ marginTop: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: 10, borderRadius: radius.pill, backgroundColor: colors.primary }}
+            >
+              <Text style={{ ...typography.bodyBold, color: '#fff', fontSize: 13 }}>Запиши улов</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        {/* ─────────── PHOTOS TAB — trophy shelf + photo grid ─────────── */}
+        {activeTab === 'photos' ? (
+          <View>
+            <TrophyShelf
+              catches={catches.map((c) => ({
+                id: c.id,
+                speciesName: c.speciesName,
+                weightKg: c.weightKg,
+                photoUri: c.photoUri,
+                date: c.date,
+              }))}
+              onPressCatch={(id) =>
+                (navigation as any).navigate('LogbookTab', { screen: 'CatchDetail', params: { id } })
               }
             />
+            {catches.filter((c) => c.photoUri).length === 0 ? (
+              <View style={{ paddingHorizontal: spacing.xl, paddingVertical: spacing.xl, alignItems: 'center', gap: spacing.sm }}>
+                <Ionicons name="images-outline" size={40} color={colors.textMuted} />
+                <Text style={{ ...typography.body, color: colors.textMuted, textAlign: 'center' }}>
+                  Все още няма качени снимки.
+                </Text>
+              </View>
+            ) : (
+              <View style={[styles.sectionWrap, { marginTop: spacing.lg }]}>
+                <View style={styles.sectionRow}>
+                  <View style={styles.sectionLeft}>
+                    <View style={styles.sectionAccent} />
+                    <Text style={styles.sectionLabel}>Всички снимки</Text>
+                  </View>
+                </View>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2, marginHorizontal: spacing.xl }}>
+                  {catches.filter((c) => c.photoUri).map((c) => {
+                    const size = (screenWidth - spacing.xl * 2 - 4) / 3;
+                    return (
+                      <Pressable
+                        key={c.id}
+                        onPress={() => (navigation as any).navigate('LogbookTab', { screen: 'CatchDetail', params: { id: c.id } })}
+                        style={{ width: size, height: size, backgroundColor: colors.surfaceAlt, borderRadius: 4, overflow: 'hidden' }}
+                      >
+                        <Image source={{ uri: c.photoUri! }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+          </View>
+        ) : null}
 
-            {/* ── Stats card — three cells, clean borders, lives below the hero ── */}
-            <View style={styles.statsCard}>
+        {/* ─────────── INFO TAB — bio, city, stats, upcoming trip, clubs ─────────── */}
+        {activeTab === 'info' ? (
+          <View>
+            {/* Stats card */}
+            <View style={[styles.statsCard, { marginTop: 0 }]}>
               <View style={styles.statCell}>
                 <Text style={styles.statNum}>{catchStatsCount}</Text>
                 <Text style={styles.statLbl}>улова</Text>
@@ -1276,280 +1487,253 @@ export default function ProfileScreen() {
               </View>
             </View>
 
-            {/* ── Action buttons — outline pill style now that the hero is calmer ── */}
-            {configured ? (
-              <View style={styles.actionsRow}>
-                <Pressable
-                  style={({ pressed }) => [styles.actionBtn, pressed && { opacity: 0.75 }]}
-                  onPress={() => { void Haptics.selectionAsync(); setPubExpanded(true); }}
-                  accessibilityRole="button"
-                  accessibilityLabel="Редактирай профил"
-                >
-                  <Ionicons name="create-outline" size={16} color={colors.primary} />
-                  <Text style={styles.actionBtnText}>Редактирай профил</Text>
-                </Pressable>
-                <Pressable
-                  style={({ pressed }) => [styles.actionBtn, pressed && { opacity: 0.75 }]}
-                  onPress={openPublicPreview}
-                  accessibilityRole="button"
-                  accessibilityLabel="Публичен изглед"
-                >
-                  <Ionicons name="eye-outline" size={16} color={colors.primary} />
-                  <Text style={styles.actionBtnText}>Публичен изглед</Text>
-                </Pressable>
-              </View>
-            ) : null}
-
-            {/* ── Completion nudge — calmer card style ── */}
-            {completionPct < 100 ? (
-              <View style={styles.nudgeCard}>
-                <View style={styles.nudgeRow}>
-                  <Ionicons name="rocket-outline" size={16} color={colors.primary} />
-                  <Text style={styles.nudgeText}>
-                    {completionHint ? completionHint : `Профил ${completionPct}% завършен`}
-                  </Text>
-                  <Text style={styles.nudgePct}>{completionPct}%</Text>
+            {/* Upcoming trip card (only when there's a trip). Reuses
+                the same dark gradient + icon-wrap styles from before. */}
+            {nextTrip ? (
+              <Pressable
+                style={({ pressed }) => [styles.tripCard, pressed && { opacity: 0.8 }]}
+                onPress={() => navigation.navigate('Trips')}
+                accessibilityRole="button"
+                accessibilityLabel="Следващ излет"
+              >
+                <LinearGradient
+                  colors={['#0A1E38', '#0D2240']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.tripGradBg}
+                />
+                <View style={styles.tripIconWrap}>
+                  <Ionicons name="calendar-outline" size={22} color="#fff" />
                 </View>
-                <View style={styles.nudgeBarBg}>
-                  <View style={[styles.nudgeBarFill, { width: `${completionPct}%` as `${number}%` }]} />
-                </View>
-              </View>
-            ) : null}
-
-            {/* ── Trophy shelf — top 3 biggest catches with podium ribbons. ── */}
-            <TrophyShelf
-              catches={catches.map((c) => ({
-                id: c.id,
-                speciesName: c.speciesName,
-                weightKg: c.weightKg,
-                photoUri: c.photoUri,
-                date: c.date,
-              }))}
-              onPressCatch={(id) =>
-                (navigation as any).navigate('LogbookTab', { screen: 'CatchDetail', params: { id } })
-              }
-            />
-
-            {/* ════════════════════════════════════════
-                WAVE CONTENT PANEL
-            ════════════════════════════════════════ */}
-            <View style={[styles.wave, { backgroundColor: waveColor }]}>
-
-              {/* ── Public profile edit panel ── */}
-              {pubExpanded && configured ? (
-                <View style={styles.panel}>
-                  <View style={styles.panelTitleRow}>
-                    <Ionicons name="person-circle-outline" size={20} color={colors.primary} />
-                    <Text style={styles.panelTitle}>Редактирай профил</Text>
-                    <Pressable onPress={() => setPubExpanded(false)} hitSlop={8}>
-                      <Ionicons name="close" size={20} color={colors.textMuted} />
-                    </Pressable>
-                  </View>
-
-                  <Text style={styles.fieldLabel}>Име</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Как да те виждат другите"
-                    placeholderTextColor={colors.textMuted}
-                    value={displayName}
-                    onChangeText={setDisplayName}
-                  />
-                  <Text style={styles.fieldLabel}>Град или регион</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Напр. Балчик"
-                    placeholderTextColor={colors.textMuted}
-                    value={city}
-                    onChangeText={setCity}
-                  />
-                  <Text style={styles.fieldLabel}>За теб</Text>
-                  <TextInput
-                    style={[styles.input, { minHeight: 72, textAlignVertical: 'top', paddingTop: spacing.sm + 4 }]}
-                    placeholder="Кратко представяне…"
-                    placeholderTextColor={colors.textMuted}
-                    value={bio}
-                    onChangeText={setBio}
-                    multiline
-                  />
-                  <Button
-                    title="Запази промените"
-                    onPress={savePublicProfile}
-                    loading={profileSaving}
-                    style={{ marginTop: spacing.md }}
-                  />
-                </View>
-              ) : null}
-
-              {/* ── Cloud warning banner ── */}
-              {!configured ? (
-                <View style={styles.warnBanner}>
-                  <Ionicons name="cloud-offline-outline" size={18} color={colors.accent} />
-                  <Text style={styles.warnText}>
-                    Облакът не е активен — настрой Firebase, за да редактираш снимка и онлайн профил.
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.tripLabel}>СЛЕДВАЩ ИЗЛЕТ</Text>
+                  <Text style={styles.tripTitle} numberOfLines={1}>{nextTrip.title}</Text>
+                  <Text style={styles.tripDate}>
+                    {new Date(nextTrip.dateIso).toLocaleDateString('bg-BG', { day: 'numeric', month: 'long', year: 'numeric' })}
                   </Text>
                 </View>
-              ) : null}
+                <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.5)" />
+              </Pressable>
+            ) : null}
 
-              {/* ── Upcoming trip card ── */}
-              {nextTrip ? (
-                <Pressable
-                  style={({ pressed }) => [styles.tripCard, pressed && { opacity: 0.8 }]}
-                  onPress={() => navigation.navigate('Trips')}
-                  accessibilityRole="button"
-                  accessibilityLabel="Следващ излет"
-                >
-                  <LinearGradient
-                    colors={['#0A1E38', '#0D2240']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.tripGradBg}
-                  />
-                  <View style={styles.tripIconWrap}>
-                    <Ionicons name="calendar-outline" size={22} color="#fff" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.tripLabel}>СЛЕДВАЩ ИЗЛЕТ</Text>
-                    <Text style={styles.tripTitle} numberOfLines={1}>{nextTrip.title}</Text>
-                    <Text style={styles.tripDate}>
-                      {new Date(nextTrip.dateIso).toLocaleDateString('bg-BG', { day: 'numeric', month: 'long', year: 'numeric' })}
-                    </Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.5)" />
-                </Pressable>
-              ) : null}
-
-              {/* ── Friends section ── */}
-              <View style={styles.sectionWrap}>
-                <View style={styles.sectionRow}>
-                  <View style={styles.sectionLeft}>
-                    <View style={styles.sectionAccent} />
-                    <Text style={styles.sectionLabel}>Приятели</Text>
-                  </View>
-                  <Pressable onPress={() => navigation.navigate('Friends')} hitSlop={8}>
-                    <Text style={styles.sectionLink}>Виж всички</Text>
-                  </Pressable>
+            {/* Clubs section */}
+            <View style={[styles.sectionWrap, { marginBottom: spacing.xl, marginTop: spacing.lg }]}>
+              <View style={styles.sectionRow}>
+                <View style={styles.sectionLeft}>
+                  <View style={styles.sectionAccent} />
+                  <Text style={styles.sectionLabel}>Клубове</Text>
                 </View>
+                <Pressable onPress={() => navigation.navigate('Groups')} hitSlop={8}>
+                  <Text style={styles.sectionLink}>Виж всички</Text>
+                </Pressable>
+              </View>
 
-                {friends.length > 0 ? (
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.friendScroll}
-                  >
-                    {friends.map((f) => (
-                      <Pressable
-                        key={f.uid}
-                        style={({ pressed }) => [styles.friendItem, pressed && { opacity: 0.7 }]}
-                        onPress={() => navigation.navigate('UserPublicProfile', { uid: f.uid, displayName: f.displayName })}
-                      >
-                        <View style={styles.friendAvatar}>
-                          {f.photoUrl ? (
-                            <Image
-                              source={{ uri: f.photoUrl }}
-                              style={{ width: '100%', height: '100%', borderRadius: 30 }}
-                              contentFit="cover"
-                            />
-                          ) : (
-                            <Text style={styles.friendAvatarText}>
-                              {(f.displayName || '?').slice(0, 1).toUpperCase()}
-                            </Text>
-                          )}
-                        </View>
-                        <Text style={styles.friendName} numberOfLines={1}>{f.displayName}</Text>
-                      </Pressable>
-                    ))}
-                  </ScrollView>
-                ) : (
+              {myGroups.length > 0 ? (
+                myGroups.map((g) => (
                   <Pressable
-                    onPress={() => navigation.navigate('Friends')}
-                    style={[styles.emptySection, { flexDirection: 'row', alignItems: 'center', gap: spacing.sm }]}
+                    key={g.id}
+                    style={({ pressed }) => [styles.clubCard, pressed && { opacity: 0.75 }]}
+                    onPress={() => navigation.navigate('GroupDetail', { groupId: g.id, groupName: g.name })}
                   >
-                    <Ionicons name="people-outline" size={20} color={colors.primary} />
-                    <Text style={[styles.emptySectionText, { flex: 1 }]}>Все още няма приятели — намери рибари</Text>
+                    <View style={styles.clubIconWrap}>
+                      <Ionicons name="people-outline" size={20} color={colors.primary} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.clubName} numberOfLines={1}>{g.name}</Text>
+                      <Text style={styles.clubMeta}>{CATEGORY_LABELS[g.category]} · {g.memberCount} члена</Text>
+                    </View>
                     <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
                   </Pressable>
-                )}
-              </View>
-
-              {/* ── Public posts grid ── */}
-              {publicPosts.length > 0 ? (
-                <View style={[styles.sectionWrap, { marginBottom: spacing.md }]}>
-                  <View style={styles.sectionRow}>
-                    <View style={styles.sectionLeft}>
-                      <View style={styles.sectionAccent} />
-                      <Text style={styles.sectionLabel}>Публични улови</Text>
-                    </View>
-                    <Pressable onPress={() => (navigation as any).navigate('FeedTab', { screen: 'FeedList' })} hitSlop={8}>
-                      <Text style={styles.sectionLink}>Към лентата</Text>
-                    </Pressable>
-                  </View>
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2, marginHorizontal: spacing.xl }}>
-                    {publicPosts.map((post) => {
-                      const size = (screenWidth - spacing.xl * 2 - 4) / 3;
-                      return (
-                        <Pressable
-                          key={post.id}
-                          onPress={() => (navigation as any).navigate('LogbookTab', { screen: 'CatchDetail', params: { id: post.id } })}
-                          style={{ width: size, height: size, backgroundColor: colors.surfaceAlt, borderRadius: 4, overflow: 'hidden' }}
-                        >
-                          {post.photoUri ? (
-                            <Image source={{ uri: post.photoUri }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
-                          ) : (
-                            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                              <Ionicons name="fish-outline" size={20} color={colors.textMuted} />
-                              <Text style={{ fontSize: 10, color: colors.textMuted, fontFamily: 'Nunito_600SemiBold' }} numberOfLines={1}>
-                                {post.speciesName ?? ''}
-                              </Text>
-                            </View>
-                          )}
-                        </Pressable>
-                      );
-                    })}
-                  </View>
+                ))
+              ) : (
+                <View style={styles.emptySection}>
+                  <Text style={styles.emptySectionText}>Все още не членуваш в клуб — намери такъв в секция Клубове!</Text>
                 </View>
-              ) : null}
-
-              {/* ── Clubs section ── */}
-              <View style={[styles.sectionWrap, { marginBottom: spacing.xl }]}>
-                <View style={styles.sectionRow}>
-                  <View style={styles.sectionLeft}>
-                    <View style={styles.sectionAccent} />
-                    <Text style={styles.sectionLabel}>Клубове</Text>
-                  </View>
-                  <Pressable onPress={() => navigation.navigate('Groups')} hitSlop={8}>
-                    <Text style={styles.sectionLink}>Виж всички</Text>
-                  </Pressable>
-                </View>
-
-                {myGroups.length > 0 ? (
-                  myGroups.map((g) => (
-                    <Pressable
-                      key={g.id}
-                      style={({ pressed }) => [styles.clubCard, pressed && { opacity: 0.75 }]}
-                      onPress={() => navigation.navigate('GroupDetail', { groupId: g.id, groupName: g.name })}
-                    >
-                      <View style={styles.clubIconWrap}>
-                        <Ionicons name="people-outline" size={20} color={colors.primary} />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.clubName} numberOfLines={1}>{g.name}</Text>
-                        <Text style={styles.clubMeta}>{CATEGORY_LABELS[g.category]} · {g.memberCount} члена</Text>
-                      </View>
-                      <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-                    </Pressable>
-                  ))
-                ) : (
-                  <View style={styles.emptySection}>
-                    <Text style={styles.emptySectionText}>Все още не членуваш в клуб — намери такъв в секция Клубове!</Text>
-                  </View>
-                )}
-              </View>
-
+              )}
             </View>
-            {/* end wave */}
-          </>
+          </View>
+        ) : null}
+
+        {/* ─────────── FRIENDS TAB — Facebook 2-col grid ─────────── */}
+        {activeTab === 'friends' ? (
+          <View style={styles.sectionWrap}>
+            <View style={styles.sectionRow}>
+              <View style={styles.sectionLeft}>
+                <View style={styles.sectionAccent} />
+                <Text style={styles.sectionLabel}>
+                  Приятели{friends.length > 0 ? ` · ${friends.length}` : ''}
+                </Text>
+              </View>
+              <Pressable onPress={() => navigation.navigate('Friends')} hitSlop={8}>
+                <Text style={styles.sectionLink}>Виж всички</Text>
+              </Pressable>
+            </View>
+
+            {friends.length > 0 ? (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  flexWrap: 'wrap',
+                  paddingHorizontal: spacing.xl,
+                  gap: spacing.md,
+                }}
+              >
+                {friends.map((f) => {
+                  // Two columns with a single gap of size spacing.md between them.
+                  const cellWidth = (screenWidth - spacing.xl * 2 - spacing.md) / 2;
+                  return (
+                    <Pressable
+                      key={f.uid}
+                      onPress={() =>
+                        navigation.navigate('UserPublicProfile', {
+                          uid: f.uid,
+                          displayName: f.displayName,
+                        })
+                      }
+                      style={({ pressed }) => ({
+                        width: cellWidth,
+                        backgroundColor: colors.card,
+                        borderRadius: radius.md,
+                        borderWidth: 1,
+                        borderColor: colors.border,
+                        overflow: 'hidden',
+                        opacity: pressed ? 0.85 : 1,
+                      })}
+                      accessibilityRole="button"
+                      accessibilityLabel={f.displayName}
+                    >
+                      <View
+                        style={{
+                          width: '100%',
+                          aspectRatio: 1,
+                          backgroundColor: colors.surfaceAlt,
+                        }}
+                      >
+                        {f.photoUrl ? (
+                          <Image
+                            source={{ uri: f.photoUrl }}
+                            style={{ width: '100%', height: '100%' }}
+                            contentFit="cover"
+                          />
+                        ) : (
+                          <View
+                            style={{
+                              flex: 1,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              backgroundColor: colors.primaryDark,
+                            }}
+                          >
+                            <Text
+                              style={{
+                                color: '#fff',
+                                fontSize: 44,
+                                fontFamily: 'Nunito_800ExtraBold',
+                              }}
+                            >
+                              {(f.displayName || '?').slice(0, 1).toUpperCase()}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                      <View style={{ paddingHorizontal: spacing.sm, paddingVertical: spacing.sm }}>
+                        <Text
+                          style={{
+                            ...typography.bodyBold,
+                            color: colors.text,
+                            fontSize: 14,
+                          }}
+                          numberOfLines={1}
+                        >
+                          {f.displayName}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : (
+              <Pressable
+                onPress={() => navigation.navigate('Friends')}
+                style={({ pressed }) => ({
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: spacing.sm,
+                  marginHorizontal: spacing.xl,
+                  paddingHorizontal: spacing.md,
+                  paddingVertical: spacing.md,
+                  borderRadius: radius.md,
+                  backgroundColor: pressed ? colors.surfaceAlt : colors.primarySurface,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                })}
+                accessibilityRole="button"
+                accessibilityLabel="Намери приятели"
+              >
+                <Ionicons name="people-outline" size={20} color={colors.primary} />
+                <Text style={[styles.emptySectionText, { flex: 1, color: colors.text }]}>
+                  Все още няма приятели — намери рибари
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color={colors.primary} />
+              </Pressable>
+            )}
+          </View>
+        ) : null}
+
+      </View>
+      {/* end wave */}
+    </>
+  )}
+    </>
+  );
+
+
+  // Posts-tab catches stream into FlatList data so each FeedPost mounts only
+  // when scrolled into range. Other tabs use an empty data array; their
+  // content is rendered as a static block inside the ListHeader. This is the
+  // fix for the profile-screen stall when a user has 50+ public catches.
+  const postsData = user && !profileLoading && activeTab === 'posts' ? publicPosts : [];
+
+  return (
+    <Screen scroll={false} padded={false}>
+      <FlatList
+        data={postsData}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={async () => { setRefreshing(true); await loadRemoteProfile().catch(() => {}); setRefreshing(false); }}
+            tintColor={colors.primary}
+          />
+        }
+        // Virtualization knobs — render a small window around the viewport
+        // and recycle off-screen rows.
+        windowSize={5}
+        initialNumToRender={4}
+        maxToRenderPerBatch={4}
+        removeClippedSubviews
+        renderItem={({ item }) => (
+          <FeedPost
+            item={item}
+            myUid={user?.uid}
+            myDisplayName={user?.displayName ?? user?.email ?? 'Аз'}
+            socialEnabled={Boolean(configured && user)}
+            onPressAuthor={(authorUid, name) => {
+              if (authorUid === user?.uid) return;
+              (navigation as any).navigate('UserPublicProfile', { uid: authorUid, displayName: name });
+            }}
+            onPressCatch={(c) =>
+              (navigation as any).navigate('LogbookTab', { screen: 'CatchDetail', params: { id: c.id } })
+            }
+          />
         )}
-      </ScrollView>
+        ListHeaderComponent={renderProfileHeader()}
+      />
+
 
       {/* ════════════════════════════════════════
           SETTINGS DRAWER (Modal bottom sheet) — UNCHANGED

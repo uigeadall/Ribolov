@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import {
@@ -179,6 +179,24 @@ export default function CatchDetailScreen() {
     socialEnabled,
     isVisible: true,
   });
+
+  // Comment composer focus support — used by the notifications screen so
+  // tapping a "X коментира" notif lands directly in the reply composer with
+  // @X already typed. We use a ref to focus the TextInput once the social
+  // hook is ready and the route param tells us who to reply to.
+  const composerRef = useRef<TextInput | null>(null);
+  const focusComment = route.params?.focusComment;
+  useEffect(() => {
+    if (!focusComment || !socialEnabled) return;
+    const sanitized = focusComment.authorName.replace(/\s+/g, '_');
+    social.setDraft(`@${sanitized} `);
+    // Wait a frame so the input is mounted before we try to focus.
+    const t = setTimeout(() => composerRef.current?.focus(), 250);
+    return () => clearTimeout(t);
+    // We intentionally only react to the param + readiness — re-running on
+    // every social object change would clobber user edits to the draft.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusComment?.authorName, socialEnabled]);
 
   const safeGoBack = () => {
     if (navigation.canGoBack()) navigation.goBack();
@@ -471,6 +489,7 @@ export default function CatchDetailScreen() {
               {/* Composer */}
               <View style={styles.composer}>
                 <TextInput
+                  ref={composerRef}
                   style={styles.input}
                   placeholder="Коментар…"
                   placeholderTextColor={colors.textMuted}

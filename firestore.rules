@@ -49,6 +49,16 @@ service cloud.firestore {
         allow read, write: if isSelf(userId);
       }
 
+      /** Хаштагове, които потребителят следва — лични, никой друг не ги вижда. */
+      match /followedHashtags/{tag} {
+        allow read, write: if isSelf(userId);
+      }
+
+      /** Заглушени разговори — лични, четат се само от собственика. */
+      match /mutedConversations/{convId} {
+        allow read, write: if isSelf(userId);
+      }
+
       /** Блокирани потребители — само собственикът чете/пише. */
       match /blockedUsers/{targetUid} {
         allow read, write: if isSelf(userId);
@@ -102,7 +112,7 @@ service cloud.firestore {
     /** Публичен feed: четене за логнати; запис само собственикът на улова. */
     match /publicCatches/{catchId} {
       allow read: if signedIn();
-      allow create, update: if signedIn()
+      allow create: if signedIn()
         && request.resource.data.ownerUid == request.auth.uid
         && (!('photoTitle' in request.resource.data)
           || (request.resource.data.photoTitle is string
@@ -119,6 +129,34 @@ service cloud.firestore {
         && (!('extraPhotoUris' in request.resource.data)
           || (request.resource.data.extraPhotoUris is list
             && request.resource.data.extraPhotoUris.size() <= 5));
+      // Update splits two paths so non-owners can still bump likeCount when
+      // they react. The previous combined rule required ownerUid match for
+      // ALL updates, which broke `toggleCatchReaction` for friends (rejected
+      // with "Missing or insufficient permissions" the moment they tapped like).
+      // Mirrors the pattern used for /posts and /groups.
+      allow update: if signedIn() && (
+        // Owner can change anything they could create.
+        (resource.data.ownerUid == request.auth.uid
+          && request.resource.data.ownerUid == request.auth.uid
+          && (!('photoTitle' in request.resource.data)
+            || (request.resource.data.photoTitle is string
+              && request.resource.data.photoTitle.size() <= 120))
+          && (!('speciesName' in request.resource.data)
+            || (request.resource.data.speciesName is string
+              && request.resource.data.speciesName.size() <= 120))
+          && (!('notes' in request.resource.data)
+            || (request.resource.data.notes is string
+              && request.resource.data.notes.size() <= 2000))
+          && (!('bait' in request.resource.data)
+            || (request.resource.data.bait is string
+              && request.resource.data.bait.size() <= 300))
+          && (!('extraPhotoUris' in request.resource.data)
+            || (request.resource.data.extraPhotoUris is list
+              && request.resource.data.extraPhotoUris.size() <= 5)))
+        ||
+        // Any signed-in user can only touch likeCount (react/un-react).
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
+      );
       allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
 
       match /likes/{uid} {
@@ -137,16 +175,27 @@ service cloud.firestore {
           && request.resource.data.text.size() > 0
           && request.resource.data.text.size() <= 2000
           && request.resource.data.createdAt == request.time;
-        allow update: if signedIn()
-          && resource.data.authorUid == request.auth.uid
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])
-          && request.resource.data.text is string
-          && request.resource.data.text.size() > 0
-          && request.resource.data.text.size() <= 2000;
+        // Two update paths: the author can edit text/editedAt; any signed-in
+        // user can bump likeCount via a comment-like toggle. Splitting the
+        // rule lets non-authors react without needing edit permissions.
+        allow update: if signedIn() && (
+          (resource.data.authorUid == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])
+            && request.resource.data.text is string
+            && request.resource.data.text.size() > 0
+            && request.resource.data.text.size() <= 2000)
+          ||
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
+        );
         allow delete: if signedIn() && (
           resource.data.authorUid == request.auth.uid
           || get(/databases/$(database)/documents/publicCatches/$(catchId)).data.ownerUid == request.auth.uid
         );
+
+        match /likes/{uid} {
+          allow read: if signedIn();
+          allow write: if isSelf(uid);
+        }
       }
     }
 
@@ -199,16 +248,26 @@ service cloud.firestore {
           && request.resource.data.text.size() > 0
           && request.resource.data.text.size() <= 2000
           && request.resource.data.createdAt == request.time;
-        allow update: if signedIn()
-          && resource.data.authorUid == request.auth.uid
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])
-          && request.resource.data.text is string
-          && request.resource.data.text.size() > 0
-          && request.resource.data.text.size() <= 2000;
+        // Mirrors the publicCatches/comments rule — author can edit text,
+        // anyone can bump likeCount.
+        allow update: if signedIn() && (
+          (resource.data.authorUid == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])
+            && request.resource.data.text is string
+            && request.resource.data.text.size() > 0
+            && request.resource.data.text.size() <= 2000)
+          ||
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
+        );
         allow delete: if signedIn() && (
           resource.data.authorUid == request.auth.uid
           || get(/databases/$(database)/documents/posts/$(postId)).data.ownerUid == request.auth.uid
         );
+
+        match /likes/{uid} {
+          allow read: if signedIn();
+          allow write: if isSelf(uid);
+        }
       }
     }
 

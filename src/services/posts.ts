@@ -21,7 +21,7 @@ import {
 import { ref, deleteObject } from 'firebase/storage';
 import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
-import { uploadLocalPhotoToStorage } from './catchSync';
+import { uploadLocalPhotoToStorage, waitForResizedUrl } from './catchSync';
 import { extractHashtags } from '../utils/textTokens';
 import { allowComment } from './socialRateLimit';
 import { notifyInteraction, sendMentionNotifications } from './socialNotifications';
@@ -76,7 +76,13 @@ export async function createPost(input: CreatePostInput): Promise<string> {
     const extMatch = input.localPhotoUri.split('?')[0].match(/\.(jpg|jpeg|png|webp)$/i);
     const ext = extMatch ? extMatch[1].toLowerCase() : 'jpg';
     photoStoragePath = `publicCatchPhotos/${input.ownerUid}/posts/${id}_${Date.now()}.${ext}`;
-    photoUri = await uploadLocalPhotoToStorage(fb, input.localPhotoUri, photoStoragePath);
+    const rawUrl = await uploadLocalPhotoToStorage(fb, input.localPhotoUri, photoStoragePath);
+    // The "Resize Images" extension deletes the original after writing the
+    // `_1200x1200.webp` variant, so the raw upload URL 404s within seconds.
+    // Wait for the variant and use its tokenized download URL instead — same
+    // approach as catches in ensureCatchPhotoUploadedForCloud.
+    const resizedUrl = await waitForResizedUrl(fb.storage, photoStoragePath, '_1200x1200');
+    photoUri = resizedUrl ?? rawUrl;
   } else if (input.localPhotoUri && isRemote(input.localPhotoUri)) {
     photoUri = input.localPhotoUri;
   }
@@ -216,6 +222,7 @@ export function subscribePostComments(postId: string, onNext: (comments: FeedCom
           editedAt?: unknown;
           replyToId?: string;
           replyToName?: string;
+          likeCount?: number;
         };
         return {
           id: d.id,
@@ -226,9 +233,65 @@ export function subscribePostComments(postId: string, onNext: (comments: FeedCom
           editedAt: data.editedAt,
           replyToId: data.replyToId,
           replyToName: data.replyToName,
+          likeCount: typeof data.likeCount === 'number' ? data.likeCount : 0,
         };
       }),
     );
+  });
+}
+
+/** Subscribes to whether the current user has liked a specific post comment. */
+export function subscribePostCommentLike(
+  postId: string,
+  commentId: string,
+  myUid: string,
+  cb: (liked: boolean) => void,
+): () => void {
+  const fb = requireFirebase();
+  return onSnapshot(
+    doc(fb.db, POSTS_COLLECTION, postId, 'comments', commentId, 'likes', myUid),
+    (snap) => cb(snap.exists()),
+  );
+}
+
+/** One-shot fetch: has the current user liked this post comment? Used by
+    `CommentLikeButton` instead of subscribing per comment. */
+export async function fetchPostCommentLike(
+  postId: string,
+  commentId: string,
+  myUid: string,
+): Promise<boolean> {
+  const fb = requireFirebase();
+  const snap = await getDoc(
+    doc(fb.db, POSTS_COLLECTION, postId, 'comments', commentId, 'likes', myUid),
+  );
+  return snap.exists();
+}
+
+/** Toggles a like on a post comment. Maintains the comment's `likeCount` via
+    transaction. Returns the new liked state. */
+export async function togglePostCommentLike(
+  postId: string,
+  commentId: string,
+  myUid: string,
+  myDisplayName: string,
+): Promise<boolean> {
+  const fb = requireFirebase();
+  const likeRef = doc(fb.db, POSTS_COLLECTION, postId, 'comments', commentId, 'likes', myUid);
+  const commentRef = doc(fb.db, POSTS_COLLECTION, postId, 'comments', commentId);
+  return runTransaction(fb.db, async (txn) => {
+    const snap = await txn.get(likeRef);
+    if (snap.exists()) {
+      txn.delete(likeRef);
+      txn.update(commentRef, { likeCount: increment(-1) });
+      return false;
+    }
+    txn.set(likeRef, stripUndefinedForFirestore({
+      createdAt: serverTimestamp(),
+      displayName: (myDisplayName || 'Рибар').slice(0, 120),
+    }));
+    txn.update(commentRef, { likeCount: increment(1) });
+    return true;
   });
 }
 

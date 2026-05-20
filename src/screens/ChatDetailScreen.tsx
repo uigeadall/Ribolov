@@ -17,6 +17,7 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Swipeable } from 'react-native-gesture-handler';
 import { useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 import { Ionicons } from '@expo/vector-icons';
@@ -45,6 +46,10 @@ import {
   makeMessageClientId,
   markMessagesReadFromList,
   MESSAGE_EDIT_WINDOW_MS,
+  fetchMyUnreadInConversation,
+  subscribeMutedConversations,
+  muteConversation,
+  unmuteConversation,
 } from '../services/messaging';
 import { enqueueMessage } from '../services/messageSyncQueue';
 import { ensureFirebase } from '../services/firebase';
@@ -120,7 +125,10 @@ type MessageItem = DirectMessage & {
   groupFirst: boolean;
   groupLast: boolean;
 };
-type ChatItem = MessageItem | { _sep: true; label: string; id: string };
+type ChatItem =
+  | MessageItem
+  | { _sep: true; label: string; id: string }
+  | { _unreadDivider: true; id: string; count: number };
 
 const GROUP_GAP_MS = 3 * 60 * 1000;
 
@@ -183,7 +191,23 @@ export default function ChatDetailScreen() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [scrolledUp, setScrolledUp] = useState(false);
+  // One-shot flag: have we already scrolled the unread divider into view?
+  // Without this, every content-size change (every new message) would try to
+  // jump back to the divider — annoying once you're past it.
+  const dividerScrolledRef = useRef(false);
+  // Snapshot of how many unread messages there were when the screen was
+  // opened. Captured ONCE on mount before `markConversationRead` runs so we
+  // can render an "N нови съобщения" divider above the boundary. Set to null
+  // after the first effect so re-renders don't reset it.
+  const [initialUnreadCount, setInitialUnreadCount] = useState<number | null>(null);
+  // Per-conv mute state for the header sheet.
+  const [convMuted, setConvMuted] = useState(false);
+  // Header info sheet visibility.
+  const [infoOpen, setInfoOpen] = useState(false);
   const flatRef = useRef<FlatList<ChatItem>>(null);
+  // Per-row Swipeable refs so we can close the swipe after the user has
+  // committed to replying. Keyed by message id; cleared on unmount.
+  const swipeRefs = useRef<Map<string, Swipeable | null>>(new Map());
   const isAtBottomRef = useRef(true);
   const typingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingStartedRef = useRef(false);
@@ -226,6 +250,17 @@ export default function ChatDetailScreen() {
     const filtered = q
       ? msgs.filter((m) => (m.text ?? '').toLowerCase().includes(q))
       : msgs;
+    // Find the boundary message id for the "N нови" divider — the oldest of
+    // the last `initialUnreadCount` non-mine messages. We compute it once up
+    // front so insertion in the loop is just an id compare. Skip when there's
+    // no unread snapshot, when search is active, or when our own uid is the
+    // only sender in view (nothing to mark).
+    let unreadAnchorId: string | null = null;
+    if (initialUnreadCount && initialUnreadCount > 0 && !q && user) {
+      const notMine = filtered.filter((m) => m.senderUid !== user.uid);
+      const anchor = notMine[Math.max(0, notMine.length - initialUnreadCount)];
+      if (anchor) unreadAnchorId = anchor.id;
+    }
     let prevKey = '';
     let prevSender = '';
     let prevMs = 0;
@@ -237,10 +272,24 @@ export default function ChatDetailScreen() {
         // Day boundary always breaks the group and finalizes the previous run.
         if (lastBubbleIdx >= 0) {
           const prev = result[lastBubbleIdx];
-          if (prev && !('_sep' in prev)) prev.groupLast = true;
+          if (prev && !('_sep' in prev) && !('_unreadDivider' in prev)) prev.groupLast = true;
         }
         result.push({ _sep: true, label: msgDayLabel(msg.createdAt), id: `sep-${key}` });
         prevKey = key;
+        prevSender = '';
+      }
+      // Insert the new-messages divider before the anchor message. This also
+      // breaks the previous group (so the divider sits in its own row).
+      if (unreadAnchorId && msg.id === unreadAnchorId) {
+        if (lastBubbleIdx >= 0) {
+          const prev = result[lastBubbleIdx];
+          if (prev && !('_sep' in prev) && !('_unreadDivider' in prev)) prev.groupLast = true;
+        }
+        result.push({
+          _unreadDivider: true,
+          id: `unread-${unreadAnchorId}`,
+          count: initialUnreadCount ?? 0,
+        });
         prevSender = '';
       }
       const sameSender = msg.senderUid === prevSender;
@@ -249,7 +298,7 @@ export default function ChatDetailScreen() {
       // If this bubble continues the previous group, the previous one is not the last anymore.
       if (continues && lastBubbleIdx >= 0) {
         const prev = result[lastBubbleIdx];
-        if (prev && !('_sep' in prev)) prev.groupLast = false;
+        if (prev && !('_sep' in prev) && !('_unreadDivider' in prev)) prev.groupLast = false;
       }
       const bubble: MessageItem = {
         ...msg,
@@ -262,10 +311,16 @@ export default function ChatDetailScreen() {
       prevMs = ms;
     });
     return result;
-  }, [msgs, searchTerm]);
+  }, [msgs, searchTerm, initialUnreadCount, user]);
 
   useEffect(() => {
     if (!configured || !user) return;
+    // Read the per-user unread count BEFORE clearing it so we know how many
+    // messages to flag with the "N нови" divider. Best-effort — if the read
+    // fails we just skip the divider (it's a nicety, not load-bearing).
+    fetchMyUnreadInConversation(convId, user.uid).then((count) => {
+      if (count > 0) setInitialUnreadCount(count);
+    }).catch(() => {});
     markConversationRead(convId, user.uid).catch(() => {});
     const unsubMsgs = subscribeConversationMessages(convId, (next) => {
       setTailMsgs(next);
@@ -448,45 +503,12 @@ export default function ChatDetailScreen() {
 
   const handleLongPressMessage = useCallback((msg: DirectMessage) => {
     if (!user) return;
-    const mine = msg.senderUid === user.uid;
-    const createdMs = toMillis(msg.createdAt);
-    const withinEditWindow = createdMs > 0 && Date.now() - createdMs < MESSAGE_EDIT_WINDOW_MS;
-    const canEdit = mine && withinEditWindow && !msg.deletedAt && !msg.mediaUrl;
-    const canDelete = mine && withinEditWindow && !msg.deletedAt;
-
-    const buttons: { text: string; style?: 'cancel' | 'destructive' | 'default'; onPress?: () => void }[] = [];
-    buttons.push({ text: 'Реакция', onPress: () => setReactionTarget(msg) });
-    if (!msg.deletedAt) {
-      buttons.push({ text: 'Отговори', onPress: () => { setReplyingTo(msg); setEditingMsg(null); } });
-    }
-    if (msg.text && !msg.deletedAt) {
-      buttons.push({ text: 'Копирай', onPress: () => { Clipboard.setString(msg.text); } });
-    }
-    if (canEdit) {
-      buttons.push({ text: 'Редактирай', onPress: () => { setEditingMsg(msg); setText(msg.text); } });
-    }
-    if (canDelete) {
-      buttons.push({
-        text: 'Изтрий',
-        style: 'destructive',
-        onPress: () => {
-          Alert.alert('Изтриване', 'Това съобщение ще бъде премахнато за всички.', [
-            { text: 'Отказ', style: 'cancel' },
-            {
-              text: 'Изтрий',
-              style: 'destructive',
-              onPress: async () => {
-                try { await deleteMessage(convId, msg.id, user.uid); }
-                catch (e) { handleError(e); }
-              },
-            },
-          ]);
-        },
-      });
-    }
-    buttons.push({ text: 'Отказ', style: 'cancel' });
-    Alert.alert('Съобщение', undefined, buttons);
-  }, [user, convId]);
+    // Direct open the unified popover — reactions + actions in one modal,
+    // iMessage-style. Replaces the previous two-step flow that went through
+    // an Alert before opening the reaction modal.
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setReactionTarget(msg);
+  }, [user]);
 
   const handleReact = useCallback(async (msg: DirectMessage, code: ReactionCode | null) => {
     if (!user) return;
@@ -532,13 +554,26 @@ export default function ChatDetailScreen() {
     }
   }, [user, otherUid, otherName, blockedByMe, navigation]);
 
-  const openHeaderMenu = useCallback(() => {
-    Alert.alert('Опции', undefined, [
-      { text: searchOpen ? 'Затвори търсене' : 'Търси в чата', onPress: () => { setSearchOpen((v) => !v); setSearchTerm(''); } },
-      { text: blockedByMe ? 'Разблокирай' : 'Блокирай', style: blockedByMe ? 'default' : 'destructive', onPress: handleBlockToggle },
-      { text: 'Отказ', style: 'cancel' },
-    ]);
-  }, [searchOpen, blockedByMe, handleBlockToggle]);
+  // Subscribe to mute state so the toggle row reflects truth and the visual
+  // bell-off can decorate the header if we want it later.
+  useEffect(() => {
+    if (!user) return;
+    return subscribeMutedConversations(user.uid, (set) => setConvMuted(set.has(convId)));
+  }, [user, convId]);
+
+  const onToggleConvMute = useCallback(async () => {
+    if (!user) return;
+    const next = !convMuted;
+    setConvMuted(next);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      if (next) await muteConversation(user.uid, convId);
+      else await unmuteConversation(user.uid, convId);
+    } catch {
+      setConvMuted(!next);
+      Alert.alert('Грешка', 'Неуспешно действие.');
+    }
+  }, [user, convId, convMuted]);
 
   const styles = useMemo(() => StyleSheet.create({
     // Base bubble shapes — grouping styles below override specific corners + tail.
@@ -731,6 +766,7 @@ export default function ChatDetailScreen() {
     reactionModalBackdrop: {
       flex: 1, backgroundColor: 'rgba(0,0,0,0.4)',
       alignItems: 'center', justifyContent: 'center',
+      padding: spacing.lg,
     },
     reactionModalCard: {
       flexDirection: 'row',
@@ -744,6 +780,46 @@ export default function ChatDetailScreen() {
     },
     reactionModalBtn: {
       width: 44, height: 44, borderRadius: 22,
+      alignItems: 'center', justifyContent: 'center',
+    },
+    // Action sheet below the emoji row. Vertical list of icon+label buttons,
+    // separated by hairline borders. Mirrors the existing Alert affordances
+    // but as a single, unified popover.
+    actionsCard: {
+      marginTop: spacing.sm,
+      width: '100%',
+      maxWidth: 320,
+      backgroundColor: colors.card,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      borderColor: colors.border,
+      overflow: 'hidden',
+    },
+    actionRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.md,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    actionRowDestructive: {
+      borderBottomWidth: 0,
+    },
+    actionLabel: { ...typography.body, color: colors.text, fontSize: 15, flex: 1 },
+    actionLabelDestructive: { color: colors.danger },
+    // Swipe-right-to-reply chrome — the icon revealed on swipe.
+    swipeReplyIndicator: {
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: spacing.md,
+      width: 56,
+    },
+    swipeReplyDot: {
+      width: 36, height: 36, borderRadius: 18,
+      backgroundColor: colors.primarySurface,
+      borderWidth: 1, borderColor: colors.border,
       alignItems: 'center', justifyContent: 'center',
     },
   }), [colors]);
@@ -775,9 +851,11 @@ export default function ChatDetailScreen() {
             </Pressable>
 
             <Pressable
-              onPress={() => navigation.navigate('UserPublicProfile', { uid: otherUid, displayName: otherName })}
+              onPress={() => setInfoOpen(true)}
               style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 10 }}
               hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel="Информация за разговора"
             >
               <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
                 {avatarUrl ? (
@@ -816,7 +894,7 @@ export default function ChatDetailScreen() {
             </Pressable>
 
             <Pressable
-              onPress={openHeaderMenu}
+              onPress={() => setInfoOpen(true)}
               hitSlop={8}
               accessibilityRole="button"
               accessibilityLabel="Опции"
@@ -881,7 +959,28 @@ export default function ChatDetailScreen() {
               </Text>
             </View>
           }
-          onContentSizeChange={() => { if (isAtBottomRef.current) flatRef.current?.scrollToEnd({ animated: false }); }}
+          onContentSizeChange={() => {
+            // First-paint: jump to the unread divider if we have one. After
+            // that, follow the user (scroll-to-end if they're at the bottom).
+            if (!dividerScrolledRef.current && initialUnreadCount && initialUnreadCount > 0) {
+              const dividerIdx = chatItems.findIndex((it) => '_unreadDivider' in it);
+              if (dividerIdx >= 0) {
+                dividerScrolledRef.current = true;
+                try {
+                  flatRef.current?.scrollToIndex({ index: dividerIdx, animated: false, viewPosition: 0.15 });
+                } catch { /* invalid index briefly during settle */ }
+                return;
+              }
+            }
+            if (isAtBottomRef.current) flatRef.current?.scrollToEnd({ animated: false });
+          }}
+          // scrollToIndex can throw INVALID_INDEX if the row isn't measured
+          // yet; this fallback lets RN estimate and finish the scroll.
+          onScrollToIndexFailed={(info) => {
+            setTimeout(() => {
+              flatRef.current?.scrollToIndex({ index: info.index, animated: false, viewPosition: 0.15 });
+            }, 80);
+          }}
           onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
             const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
             const atBottom = contentOffset.y + layoutMeasurement.height >= contentSize.height - 80;
@@ -930,6 +1029,22 @@ export default function ChatDetailScreen() {
                 </View>
               );
             }
+            if ('_unreadDivider' in item) {
+              // Full-width thin line with a centered "N нови съобщения" pill —
+              // disappears on next mount of this screen (the snapshot only
+              // captures the count at entry time).
+              return (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginVertical: spacing.md, paddingHorizontal: spacing.lg }}>
+                  <View style={{ flex: 1, height: 1, backgroundColor: '#E53935', opacity: 0.5 }} />
+                  <View style={{ backgroundColor: '#E53935', borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 4 }}>
+                    <Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>
+                      {item.count === 1 ? '1 ново съобщение' : `${item.count} нови съобщения`}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1, height: 1, backgroundColor: '#E53935', opacity: 0.5 }} />
+                </View>
+              );
+            }
             const mine = item.senderUid === user.uid;
             const isDeleted = !!item.deletedAt;
             const isEdited = !!item.editedAt;
@@ -944,16 +1059,44 @@ export default function ChatDetailScreen() {
             // between groups. Tail (asymmetric corner) only on the last bubble of a group.
             const isLast = item.groupLast;
             const isFirst = item.groupFirst;
+
+            // Swipe-right (revealed from the left) to reply. The whole bubble
+            // is wrapped so the gesture works regardless of whether you grab
+            // the text, a media thumb, or whitespace. We close the swipe on
+            // open so the reply ribbon below the composer is the only visible
+            // signal that the action took effect.
+            const renderLeftReplyAction = () => (
+              <View style={styles.swipeReplyIndicator}>
+                <View style={styles.swipeReplyDot}>
+                  <Ionicons name="return-up-back" size={18} color={colors.primary} />
+                </View>
+              </View>
+            );
+
             return (
-              <Pressable
-                onLongPress={isDeleted ? undefined : () => handleLongPressMessage(item)}
-                delayLongPress={350}
-                style={{
+              <Swipeable
+                ref={(r) => { swipeRefs.current.set(item.id, r); }}
+                friction={2}
+                leftThreshold={50}
+                renderLeftActions={isDeleted ? undefined : renderLeftReplyAction}
+                onSwipeableOpen={(dir) => {
+                  if (dir !== 'left' || isDeleted) return;
+                  setReplyingTo(item);
+                  setEditingMsg(null);
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  swipeRefs.current.get(item.id)?.close();
+                }}
+                overshootLeft={false}
+                containerStyle={{
                   alignSelf: mine ? 'flex-end' : 'flex-start',
                   maxWidth: '82%',
                   marginBottom: isLast ? 10 : 2,
                   marginTop: isFirst ? 4 : 0,
                 }}
+              >
+              <Pressable
+                onLongPress={isDeleted ? undefined : () => handleLongPressMessage(item)}
+                delayLongPress={350}
               >
                 <View style={[
                   isDeleted ? styles.bubbleDeleted : mine ? styles.bubbleMine : styles.bubbleOther,
@@ -1052,6 +1195,7 @@ export default function ChatDetailScreen() {
                   </View>
                 ) : null}
               </Pressable>
+              </Swipeable>
             );
           }}
         />
@@ -1166,7 +1310,9 @@ export default function ChatDetailScreen() {
 
         <ImageViewer uri={viewerUri} visible={viewerVisible} onClose={() => setViewerVisible(false)} />
 
-        {/* Reaction picker modal */}
+        {/* Unified long-press popover — reaction palette on top, action list
+            (Reply / Copy / Edit / Delete) below. Replaces both the previous
+            Alert and the separate reaction modal. */}
         <Modal
           visible={!!reactionTarget}
           transparent
@@ -1174,23 +1320,228 @@ export default function ChatDetailScreen() {
           onRequestClose={() => setReactionTarget(null)}
         >
           <Pressable style={styles.reactionModalBackdrop} onPress={() => setReactionTarget(null)}>
-            <View style={styles.reactionModalCard}>
-              {REACTION_ORDER.map((code) => {
-                const mineReaction = reactionTarget && user
-                  ? reactions[reactionTarget.id]?.[user.uid]
-                  : undefined;
-                const isMine = mineReaction === code;
+            <Pressable
+              onPress={(e) => e.stopPropagation?.()}
+              style={{ alignItems: 'center', width: '100%' }}
+            >
+              <View style={styles.reactionModalCard}>
+                {REACTION_ORDER.map((code) => {
+                  const mineReaction = reactionTarget && user
+                    ? reactions[reactionTarget.id]?.[user.uid]
+                    : undefined;
+                  const isMine = mineReaction === code;
+                  return (
+                    <Pressable
+                      key={code}
+                      onPress={() => reactionTarget && handleReact(reactionTarget, code)}
+                      style={[styles.reactionModalBtn, isMine ? { backgroundColor: colors.primarySurface } : null]}
+                    >
+                      <Text style={{ fontSize: 26 }}>{REACTION_EMOJI[code]}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              {/* Action list — derived from the same per-message flags the old
+                  Alert used. We close the popover before each action so screens
+                  pushed below (Edit banner activates, Delete confirm) aren't
+                  hidden behind the modal. */}
+              {reactionTarget ? (() => {
+                const msg = reactionTarget;
+                const mine = msg.senderUid === user.uid;
+                const createdMs = toMillis(msg.createdAt);
+                const withinEditWindow = createdMs > 0 && Date.now() - createdMs < MESSAGE_EDIT_WINDOW_MS;
+                const canEdit = mine && withinEditWindow && !msg.deletedAt && !msg.mediaUrl;
+                const canDelete = mine && withinEditWindow && !msg.deletedAt;
+                const canReply = !msg.deletedAt;
+                const canCopy = !!msg.text && !msg.deletedAt;
+                if (!canReply && !canCopy && !canEdit && !canDelete) return null;
                 return (
-                  <Pressable
-                    key={code}
-                    onPress={() => reactionTarget && handleReact(reactionTarget, code)}
-                    style={[styles.reactionModalBtn, isMine ? { backgroundColor: colors.primarySurface } : null]}
-                  >
-                    <Text style={{ fontSize: 26 }}>{REACTION_EMOJI[code]}</Text>
-                  </Pressable>
+                  <View style={styles.actionsCard}>
+                    {canReply ? (
+                      <Pressable
+                        style={styles.actionRow}
+                        onPress={() => {
+                          setReactionTarget(null);
+                          setReplyingTo(msg);
+                          setEditingMsg(null);
+                        }}
+                      >
+                        <Ionicons name="return-up-back" size={20} color={colors.text} />
+                        <Text style={styles.actionLabel}>Отговори</Text>
+                      </Pressable>
+                    ) : null}
+                    {canCopy ? (
+                      <Pressable
+                        style={styles.actionRow}
+                        onPress={() => {
+                          setReactionTarget(null);
+                          Clipboard.setString(msg.text);
+                        }}
+                      >
+                        <Ionicons name="copy-outline" size={20} color={colors.text} />
+                        <Text style={styles.actionLabel}>Копирай</Text>
+                      </Pressable>
+                    ) : null}
+                    {canEdit ? (
+                      <Pressable
+                        style={styles.actionRow}
+                        onPress={() => {
+                          setReactionTarget(null);
+                          setEditingMsg(msg);
+                          setText(msg.text);
+                        }}
+                      >
+                        <Ionicons name="pencil" size={20} color={colors.text} />
+                        <Text style={styles.actionLabel}>Редактирай</Text>
+                      </Pressable>
+                    ) : null}
+                    {canDelete ? (
+                      <Pressable
+                        style={[styles.actionRow, styles.actionRowDestructive]}
+                        onPress={() => {
+                          setReactionTarget(null);
+                          Alert.alert('Изтриване', 'Това съобщение ще бъде премахнато за всички.', [
+                            { text: 'Отказ', style: 'cancel' },
+                            {
+                              text: 'Изтрий',
+                              style: 'destructive',
+                              onPress: async () => {
+                                try { await deleteMessage(convId, msg.id, user.uid); }
+                                catch (e) { handleError(e); }
+                              },
+                            },
+                          ]);
+                        }}
+                      >
+                        <Ionicons name="trash-outline" size={20} color={colors.danger} />
+                        <Text style={[styles.actionLabel, styles.actionLabelDestructive]}>Изтрий</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
                 );
-              })}
-            </View>
+              })() : null}
+            </Pressable>
+          </Pressable>
+        </Modal>
+
+        {/* Conversation info sheet — opens from the header tap. Replaces the
+            old Alert.alert "Опции" with a structured bottom sheet that puts
+            profile / mute / search / block in the same place. */}
+        <Modal
+          visible={infoOpen}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setInfoOpen(false)}
+        >
+          <Pressable
+            style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}
+            onPress={() => setInfoOpen(false)}
+          >
+            <Pressable
+              onPress={() => { /* swallow taps inside the sheet */ }}
+              style={{
+                backgroundColor: colors.card,
+                borderTopLeftRadius: radius.xl,
+                borderTopRightRadius: radius.xl,
+                paddingTop: spacing.sm,
+                paddingBottom: Math.max(spacing.lg, insets.bottom + spacing.sm),
+              }}
+            >
+              {/* Drag handle */}
+              <View style={{ alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, marginBottom: spacing.md }} />
+
+              {/* Identity header — large avatar + name + online status */}
+              <View style={{ alignItems: 'center', paddingHorizontal: spacing.lg, paddingBottom: spacing.lg, gap: 6 }}>
+                <View style={{
+                  width: 88, height: 88, borderRadius: 44,
+                  backgroundColor: colors.primarySurface,
+                  alignItems: 'center', justifyContent: 'center',
+                  overflow: 'hidden',
+                  borderWidth: 2, borderColor: otherPresence.online ? '#2ECC71' : colors.border,
+                }}>
+                  {avatarUrl ? (
+                    <Image source={{ uri: avatarUrl }} style={{ width: 84, height: 84, borderRadius: 42 }} contentFit="cover" cachePolicy="memory-disk" />
+                  ) : (
+                    <Text style={{ color: colors.primary, fontWeight: '800', fontSize: 36 }}>{otherInitials}</Text>
+                  )}
+                </View>
+                <Text style={{ ...typography.h2, color: colors.text, marginTop: spacing.sm }} numberOfLines={1}>
+                  {otherName}
+                </Text>
+                <Text style={{ ...typography.caption, color: otherPresence.online ? '#2ECC71' : colors.textMuted, fontWeight: '600' }}>
+                  {otherPresence.online
+                    ? 'Онлайн'
+                    : otherPresence.lastSeen
+                      ? `Последно виждан ${formatMsgTime(otherPresence.lastSeen)}`
+                      : 'Офлайн'}
+                </Text>
+              </View>
+
+              {/* Action rows */}
+              <View style={{ paddingHorizontal: spacing.md, gap: 4 }}>
+                {[
+                  {
+                    icon: 'person-outline' as const,
+                    label: 'Виж профил',
+                    onPress: () => {
+                      setInfoOpen(false);
+                      navigation.navigate('UserPublicProfile', { uid: otherUid, displayName: otherName });
+                    },
+                  },
+                  {
+                    icon: convMuted ? 'notifications' as const : 'notifications-off-outline' as const,
+                    label: convMuted ? 'Включи известията' : 'Заглуши разговора',
+                    onPress: () => { onToggleConvMute(); },
+                  },
+                  {
+                    icon: searchOpen ? 'close-outline' as const : 'search-outline' as const,
+                    label: searchOpen ? 'Затвори търсене' : 'Търси в чата',
+                    onPress: () => {
+                      setInfoOpen(false);
+                      setSearchOpen((v) => !v);
+                      setSearchTerm('');
+                    },
+                  },
+                  {
+                    icon: blockedByMe ? 'lock-open-outline' as const : 'ban-outline' as const,
+                    label: blockedByMe ? 'Разблокирай' : 'Блокирай потребител',
+                    destructive: !blockedByMe,
+                    onPress: () => {
+                      setInfoOpen(false);
+                      handleBlockToggle();
+                    },
+                  },
+                ].map((row, i) => (
+                  <Pressable
+                    key={i}
+                    onPress={row.onPress}
+                    style={({ pressed }) => ({
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: spacing.md,
+                      paddingHorizontal: spacing.lg,
+                      paddingVertical: spacing.md,
+                      borderRadius: radius.md,
+                      backgroundColor: pressed ? colors.surfaceAlt : 'transparent',
+                    })}
+                  >
+                    <Ionicons
+                      name={row.icon}
+                      size={22}
+                      color={row.destructive ? colors.danger : colors.text}
+                    />
+                    <Text style={{
+                      ...typography.body,
+                      color: row.destructive ? colors.danger : colors.text,
+                      fontSize: 15,
+                    }}>
+                      {row.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </Pressable>
           </Pressable>
         </Modal>
       </Screen>

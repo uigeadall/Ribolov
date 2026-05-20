@@ -9,7 +9,7 @@ export type LogbookStackParamList = {
         duplicateCatchId?: string;
       }
     | undefined;
-  CatchDetail: { id: string };
+  CatchDetail: { id: string; focusComment?: { authorName: string } };
   PhotoGallery: undefined;
 };
 
@@ -26,7 +26,7 @@ export type SpeciesStackParamList = {
 
 export type ProfileStackParamList = {
   ProfileMain: undefined;
-  CatchDetail: { id: string };
+  CatchDetail: { id: string; focusComment?: { authorName: string } };
   Species: NavigatorScreenParams<SpeciesStackParamList>;
   PersonalBests: undefined;
   Groups: undefined;
@@ -58,7 +58,7 @@ export type ProfileStackParamList = {
 
 export type FeedStackParamList = {
   FeedList: undefined;
-  CatchDetail: { id: string };
+  CatchDetail: { id: string; focusComment?: { authorName: string } };
   Classics: undefined;
   SavedPosts: undefined;
   Notifications: undefined;
