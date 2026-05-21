@@ -213,19 +213,31 @@ export async function postToGroup(
   author: { uid: string; displayName: string }
 ): Promise<void> {
   const fb = requireFirebase();
-  await addDoc(collection(fb.db, 'groups', groupId, 'posts'), {
+  // Batch the post write + counter bump so they commit together. The old
+  // code wrote them as two separate calls — if the counter update failed
+  // after the post addDoc succeeded, the post existed but postCount was
+  // stale forever. createGroupPost rethrew on counter failure (visible);
+  // deleteGroupPost silently swallowed it via .catch (invisible drift).
+  // Same pattern as the memberCount writes elsewhere in this file (line
+  // 164 / 181) which were already batched correctly.
+  const batch = writeBatch(fb.db);
+  const postRef = doc(collection(fb.db, 'groups', groupId, 'posts'));
+  batch.set(postRef, {
     text: text.trim().slice(0, 2000),
     ownerUid: author.uid,
     ownerName: author.displayName,
     createdAt: serverTimestamp(),
   });
-  await updateDoc(doc(fb.db, 'groups', groupId), { postCount: increment(1) });
+  batch.update(doc(fb.db, 'groups', groupId), { postCount: increment(1) });
+  await batch.commit();
 }
 
 export async function deleteGroupPost(groupId: string, postId: string): Promise<void> {
   const fb = requireFirebase();
-  await deleteDoc(doc(fb.db, 'groups', groupId, 'posts', postId));
-  await updateDoc(doc(fb.db, 'groups', groupId), { postCount: increment(-1) }).catch(() => {});
+  const batch = writeBatch(fb.db);
+  batch.delete(doc(fb.db, 'groups', groupId, 'posts', postId));
+  batch.update(doc(fb.db, 'groups', groupId), { postCount: increment(-1) });
+  await batch.commit();
 }
 
 export async function getGroupPosts(groupId: string, maxCount = 40): Promise<GroupPost[]> {

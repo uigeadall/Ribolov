@@ -225,7 +225,7 @@ export async function ensureCatchPhotoUploadedForCloud(c: Catch, ownerUid: strin
         console.log('[catchSync] using resized variant', { resizedUrl: resizedUrl.slice(0, 120) });
       } else {
         // eslint-disable-next-line no-console
-        console.warn('[catchSync] resize variant not ready after 6s, falling back to original (may 404 if extension deletes originals)');
+        console.warn('[catchSync] resize variant not ready after 15s, falling back to original (may 404 if extension deletes originals)');
       }
       updated = { ...updated, photoUri: resizedUrl ?? url, photoStoragePath: path };
     }
