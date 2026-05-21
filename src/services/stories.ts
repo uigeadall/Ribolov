@@ -18,7 +18,7 @@ import { uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
 import { requireFirebase } from './firebase';
 import { getFirebaseWebConfig } from './firebaseConfig';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
-import { allowStoryPost } from './socialRateLimit';
+import { allowComment, allowStoryPost } from './socialRateLimit';
 
 const TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -57,12 +57,15 @@ export type StoryComment = {
   createdAt?: unknown;
 };
 
-/** Качва снимка или видео в Firebase Storage под stories/{uid}/. */
+/** Качва снимка или видео в Firebase Storage под stories/{uid}/.
+    Returns both the download URL and the storage path. The caller needs the
+    path so it can call `deleteStoryMedia` if the subsequent Firestore write
+    fails — otherwise the file is orphaned in Storage forever. */
 export async function uploadStoryMedia(
   localUri: string,
   uid: string,
   type: 'photo' | 'video'
-): Promise<string> {
+): Promise<{ url: string; storagePath: string }> {
   const fb = requireFirebase();
   const ext = type === 'video' ? 'mp4' : 'jpg';
   const contentType = type === 'video' ? 'video/mp4' : 'image/jpeg';
@@ -83,7 +86,16 @@ export async function uploadStoryMedia(
   if (result.status < 200 || result.status >= 300) {
     throw new Error(`Upload failed (${result.status}): ${result.body.slice(0, 200)}`);
   }
-  return getDownloadURL(ref(fb.storage, storagePath));
+  const url = await getDownloadURL(ref(fb.storage, storagePath));
+  return { url, storagePath };
+}
+
+/** Delete a previously-uploaded story media file from Storage. Used by the
+    composer to clean up after a failed addStory write. Best-effort —
+    swallows errors since orphan cleanup is non-critical. */
+export async function deleteStoryMedia(storagePath: string): Promise<void> {
+  const fb = requireFirebase();
+  await deleteObject(ref(fb.storage, storagePath)).catch(() => {});
 }
 
 export async function addStory(s: Omit<Story, 'id' | 'createdAt' | 'expiresAt'>): Promise<void> {
@@ -158,7 +170,16 @@ export function subscribeStories(onNext: (stories: Story[]) => void): () => void
         .filter((d) => (d.data().expiresAt as number) > fresh)
         .map(mapStoryDoc)
     );
-  }, () => onNext([]));
+  }, (err) => {
+    // Don't wipe the row on transient errors (network blip, App Check token
+    // refresh) — the previous handler called onNext([]) which made stories
+    // disappear from the UI and reappear on reconnect, a confusing flicker.
+    // The last-good state stays on screen until the next successful snapshot.
+    if (__DEV__) {
+      // eslint-disable-next-line no-console
+      console.warn('[stories] subscribe error', err);
+    }
+  });
 }
 
 export async function deleteStory(storyId: string): Promise<void> {
@@ -263,6 +284,12 @@ export async function addStoryComment(
   authorName: string,
   text: string
 ): Promise<void> {
+  // Same client-side throttle as catch + post comments so a stuck send
+  // button can't fire 30 writes in a second. Server still owns final
+  // authority via rules; this just keeps the UI honest.
+  if (!allowComment(authorUid)) {
+    throw new Error('Твърде много коментари за кратко време. Опитай по-късно.');
+  }
   const fb = requireFirebase();
   const trimmed = text.trim();
   if (!trimmed) return;
