@@ -31,27 +31,37 @@ export function EmptyState({ icon, emoji, title, subtitle, action }: Props) {
   const tilt = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.loop(
+    // Capture every loop so we can stop them on unmount. Without this, an
+    // EmptyState that shows/hides as data loads (e.g. swipe-to-refresh on
+    // an empty list) accumulates orphaned loops that keep running off-screen
+    // and burn CPU/battery.
+    const pulseLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(pulse, { toValue: 1.07, duration: 1100, useNativeDriver: true }),
         Animated.timing(pulse, { toValue: 1, duration: 1100, useNativeDriver: true }),
       ]),
-    ).start();
+    );
+    pulseLoop.start();
 
-    Animated.loop(
+    const floatLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(float, { toValue: 1, duration: 1600, useNativeDriver: true }),
         Animated.timing(float, { toValue: 0, duration: 1600, useNativeDriver: true }),
       ]),
-    ).start();
+    );
+    floatLoop.start();
 
+    // tiltLoop only runs when emoji mode is active. We allow null so the
+    // cleanup function can no-op cleanly without a branch.
+    let tiltLoop: Animated.CompositeAnimation | null = null;
     if (emoji) {
-      Animated.loop(
+      tiltLoop = Animated.loop(
         Animated.sequence([
           Animated.timing(tilt, { toValue: 1, duration: 1400, useNativeDriver: true }),
           Animated.timing(tilt, { toValue: -1, duration: 1400, useNativeDriver: true }),
         ]),
-      ).start();
+      );
+      tiltLoop.start();
     }
 
     const ripple = (anim: Animated.Value, delay: number) =>
@@ -62,8 +72,18 @@ export function EmptyState({ icon, emoji, title, subtitle, action }: Props) {
           Animated.timing(anim, { toValue: 0, duration: 0, useNativeDriver: true }),
         ]),
       );
-    ripple(ring1, 0).start();
-    ripple(ring2, 850).start();
+    const ring1Loop = ripple(ring1, 0);
+    const ring2Loop = ripple(ring2, 850);
+    ring1Loop.start();
+    ring2Loop.start();
+
+    return () => {
+      pulseLoop.stop();
+      floatLoop.stop();
+      tiltLoop?.stop();
+      ring1Loop.stop();
+      ring2Loop.stop();
+    };
   }, [pulse, ring1, ring2, float, tilt, emoji]);
 
   const ring1Scale = ring1.interpolate({ inputRange: [0, 1], outputRange: [1, 2.0] });

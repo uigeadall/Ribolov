@@ -79,6 +79,15 @@ function invalidatePhotoEntries(tournamentId: string) {
   photoEntriesCache.delete(tournamentId);
 }
 
+/** Nukes the entire photo-entries cache. Called on sign-out so user B
+    doesn't briefly see user A's cached tournament data (would be visible
+    until the 60s TTL expires otherwise). Exported as a named function
+    rather than reaching into the Map directly so the cache shape can
+    evolve without authContext having to know about it. */
+export function resetTournamentCaches(): void {
+  photoEntriesCache.clear();
+}
+
 export async function fetchTournamentPhotoEntries(
   tournamentId: string
 ): Promise<TournamentPhotoEntry[]> {

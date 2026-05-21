@@ -26,6 +26,7 @@ import { flushPendingMessages } from './messageSyncQueue';
 import { registerForPushNotifications } from './pushNotifications';
 import { restoreAchievementsFromCloud } from './achievements';
 import { resetSocialCaches } from './social';
+import { resetTournamentCaches } from './tournaments';
 import { resetRateLimits } from './socialRateLimit';
 import { pushUserProfilePublic, mirrorAuthDisplayNameIfMissing } from './userProfile';
 
@@ -175,8 +176,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await clearCatchSyncQueue().catch(() => undefined);
     await AsyncStorage.removeItem(LAST_UID_KEY).catch(() => undefined);
     // Drop in-memory caches so the next account on this device doesn't see
-    // the previous user's follow list, suggestions, or rate-limit state.
+    // the previous user's follow list, suggestions, rate-limit state, or
+    // cached tournament standings.
     resetSocialCaches();
+    resetTournamentCaches();
     resetRateLimits();
     if (fb) await firebaseSignOut(fb.auth);
     else setUser(null);

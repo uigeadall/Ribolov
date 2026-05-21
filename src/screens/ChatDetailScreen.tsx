@@ -153,14 +153,23 @@ function msgDayLabel(createdAt: unknown): string {
 function TypingDot({ delay, color }: { delay: number; color: string }) {
   const anim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    Animated.loop(
+    // Capture the loop so we can stop() it on unmount. Without this, every
+    // time the typing indicator appears/disappears (which can happen many
+    // times in a single conversation) a fresh loop is started and the
+    // previous ones keep ticking forever, accumulating CPU/battery cost.
+    const loop = Animated.loop(
       Animated.sequence([
         Animated.delay(delay),
         Animated.timing(anim, { toValue: -4, duration: 300, useNativeDriver: true }),
         Animated.timing(anim, { toValue: 0, duration: 300, useNativeDriver: true }),
         Animated.delay(600),
-      ])
-    ).start();
+      ]),
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+      anim.setValue(0);
+    };
   }, [anim, delay]);
   return <Animated.View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: color, transform: [{ translateY: anim }] }} />;
 }
@@ -446,6 +455,11 @@ export default function ChatDetailScreen() {
     if (!user) return;
     const clientId = makeMessageClientId();
     const replyRef = replyingTo ? buildReplyRef(replyingTo) : undefined;
+    // Capture the reply target BEFORE clearing state so the rollback below
+    // can restore the actual recipient. Without this capture, the catch
+    // block reads `replyingTo` after it's been cleared to null, and the
+    // rollback silently restores null — the user's reply context vanishes.
+    const capturedReplyingTo = replyingTo;
     setReplyingTo(null);
     setUploading(true);
     try {
@@ -473,7 +487,7 @@ export default function ChatDetailScreen() {
       const myName = user.displayName?.trim() || user.email?.trim() || 'Рибар';
       await sendConversationMessage(convId, user.uid, caption.trim(), otherUid, myName, url, 'photo', clientId, replyRef);
     } catch (e) {
-      if (replyRef) setReplyingTo(replyingTo);
+      if (replyRef) setReplyingTo(capturedReplyingTo);
       handleError(e);
     } finally {
       setUploading(false);
@@ -523,6 +537,10 @@ export default function ChatDetailScreen() {
 
     setText('');
     const replyRef = replyingTo ? buildReplyRef(replyingTo) : undefined;
+    // Capture before clearing — see comment on `uploadAndSendMedia` above.
+    // The fire-and-forget closure below reads this on a network failure to
+    // restore the reply context the user was composing against.
+    const capturedReplyingTo = replyingTo;
     setReplyingTo(null);
     const clientId = makeMessageClientId();
     const myName = user.displayName?.trim() || user.email?.trim() || 'Рибар';
@@ -564,7 +582,7 @@ export default function ChatDetailScreen() {
           // bubble + put the text back so the user can retry.
           setPendingMsgs((prev) => prev.filter((m) => m.id !== clientId));
           setText(trimmed);
-          if (replyRef) setReplyingTo(replyingTo);
+          if (replyRef) setReplyingTo(capturedReplyingTo);
           handleError(e);
         }
       }
