@@ -256,6 +256,20 @@ export default function UserPublicProfileScreen() {
 
   const isSelf = user?.uid === uid;
 
+  // Earliest catch date — "Риболов от Year". Derived from the already-loaded
+  // catches array so no extra fetch. Falls back to null when the profile has
+  // no public catches (we hide the year cell in that case).
+  const fishingSinceYear = useMemo(() => {
+    if (catches.length === 0) return null;
+    let earliest = Infinity;
+    for (const c of catches) {
+      const t = Date.parse(c.date);
+      if (!isNaN(t) && t < earliest) earliest = t;
+    }
+    if (earliest === Infinity) return null;
+    return new Date(earliest).getFullYear();
+  }, [catches]);
+
   const bestCatch = useMemo(() => {
     let best: FeedItem | null = null;
     for (const c of catches) {
@@ -728,6 +742,54 @@ export default function UserPublicProfileScreen() {
             })()}
           </Text>
         </Pressable>
+      ) : null}
+
+      {/* At-a-glance stats strip — catches / species / biggest / fishing-since.
+          Sits above the fishing-style card so the bare numbers hit first; the
+          style card answers "how do they fish" while this answers "how much".
+          Hidden when the user has zero catches (empty strip looks worse than
+          no strip). */}
+      {catches.length > 0 ? (
+        <View style={{
+          flexDirection: 'row',
+          marginHorizontal: spacing.lg,
+          marginTop: spacing.md,
+          paddingVertical: spacing.md,
+          borderRadius: radius.lg,
+          backgroundColor: colors.card,
+          borderWidth: 1,
+          borderColor: colors.border,
+        }}>
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <Text style={{ ...typography.h3, color: colors.text, fontSize: 18 }}>{catches.length}</Text>
+            <Text style={{ ...typography.caption, color: colors.textMuted, fontSize: 10, marginTop: 2, letterSpacing: 0.5 }}>УЛОВИ</Text>
+          </View>
+          <View style={{ width: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <Text style={{ ...typography.h3, color: colors.text, fontSize: 18 }}>{speciesCount}</Text>
+            <Text style={{ ...typography.caption, color: colors.textMuted, fontSize: 10, marginTop: 2, letterSpacing: 0.5 }}>ВИДОВЕ</Text>
+          </View>
+          {bestCatch && typeof bestCatch.weightKg === 'number' && bestCatch.weightKg > 0 ? (
+            <>
+              <View style={{ width: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
+              <View style={{ flex: 1, alignItems: 'center' }}>
+                <Text style={{ ...typography.h3, color: colors.text, fontSize: 18 }}>
+                  {Number.isInteger(bestCatch.weightKg) ? bestCatch.weightKg : bestCatch.weightKg.toFixed(1)}
+                </Text>
+                <Text style={{ ...typography.caption, color: colors.textMuted, fontSize: 10, marginTop: 2, letterSpacing: 0.5 }}>НАЙ-ГОЛЯМ КГ</Text>
+              </View>
+            </>
+          ) : null}
+          {fishingSinceYear ? (
+            <>
+              <View style={{ width: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
+              <View style={{ flex: 1, alignItems: 'center' }}>
+                <Text style={{ ...typography.h3, color: colors.text, fontSize: 18 }}>{fishingSinceYear}</Text>
+                <Text style={{ ...typography.caption, color: colors.textMuted, fontSize: 10, marginTop: 2, letterSpacing: 0.5 }}>ОТ ГОДИНА</Text>
+              </View>
+            </>
+          ) : null}
+        </View>
       ) : null}
 
       {/* Fishing-style summary card — top species / favorite water /

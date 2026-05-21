@@ -26,6 +26,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
+import { looksNonBulgarian, openTranslation } from '../utils/captionLanguage';
 import type { FeedItem } from '../services/catchSync';
 import { RichText } from './RichText';
 import { useTheme } from '../services/themeContext';
@@ -852,6 +853,16 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                   onPressHashtag={onPressHashtag}
                   onPressMention={onPressMention}
                 />
+              ) : null}
+              {/* "Виж превод" — only when notes look foreign-language. Opens
+                  the system translation flow (Google Translate app → Apple
+                  Translate → web fallback). See utils/captionLanguage.ts. */}
+              {item.notes && looksNonBulgarian(item.notes) ? (
+                <Pressable onPress={() => void openTranslation(item.notes!)} hitSlop={6} style={{ marginTop: 4 }}>
+                  <Text style={{ ...typography.caption, color: colors.primary, fontWeight: '600' }}>
+                    Виж превод
+                  </Text>
+                </Pressable>
               ) : null}
 
               {/* Location pill (inline, compact) */}

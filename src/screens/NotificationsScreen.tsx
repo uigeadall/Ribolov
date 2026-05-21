@@ -13,7 +13,7 @@ import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
-import { subscribeMyNotifications, markNotificationRead, markAllNotificationsRead, type SocialNotification } from '../services/socialFeed';
+import { subscribeMyNotifications, markNotificationRead, markAllNotificationsRead, clearReadNotifications, type SocialNotification } from '../services/socialFeed';
 import { followUser, isFollowingUser } from '../services/social';
 import { useFirestoreSubscription } from '../hooks/useFirestoreSubscription';
 import { useAvatarUrl } from '../hooks/useAvatarUrl';
@@ -574,6 +574,43 @@ export default function NotificationsScreen() {
     });
   }, [user?.uid, unreadCount, setData]);
 
+  // "Clear read" — delete every notification the user has already read.
+  // Confirms first since this is destructive (and unrecoverable). The button
+  // is only shown when there are read notifications to delete; combined with
+  // the unread state above, that means the header can show 0/1/2 actions.
+  const onClearRead = useCallback(() => {
+    if (!user?.uid) return;
+    const readCount = (data ?? []).filter((n) => n.read).length;
+    if (readCount === 0) return;
+    Alert.alert(
+      'Изтрий прочетените?',
+      `Ще премахнем ${readCount} ${readCount === 1 ? 'прочетено известие' : 'прочетени известия'}.`,
+      [
+        { text: 'Отказ', style: 'cancel' },
+        {
+          text: 'Изтрий',
+          style: 'destructive',
+          onPress: () => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            // Optimistic drop from local state.
+            let previous: SocialNotification[] = [];
+            setData((prev) => {
+              if (!prev) return prev;
+              previous = prev;
+              return prev.filter((n) => !n.read);
+            });
+            clearReadNotifications(user.uid).catch(() => {
+              setData(() => previous);
+              Toast.show({ type: 'error', text1: 'Грешка', text2: 'Неуспешно изтриване.', visibilityTime: 2500 });
+            });
+          },
+        },
+      ],
+    );
+  }, [user?.uid, data, setData]);
+
+  const readCount = useMemo(() => (data ?? []).filter((n) => n.read).length, [data]);
+
   const onDismiss = useCallback((ids: string[]) => {
     if (!user?.uid || ids.length === 0) return;
     const idSet = new Set(ids);
@@ -642,14 +679,20 @@ export default function NotificationsScreen() {
           <Ionicons name="chevron-back" size={24} color="#fff" />
         </Pressable>
         <Text style={S.heroTitle}>Известия</Text>
-        {unreadCount > 0 ? (
-          <Pressable onPress={onMarkAll} style={S.markAllBtn} hitSlop={8}>
-            <Ionicons name="checkmark-done-outline" size={18} color="#fff" />
-            <Text style={S.markAllText}>Прочетени</Text>
-          </Pressable>
-        ) : (
-          <View style={{ width: 40 }} />
-        )}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          {unreadCount > 0 ? (
+            <Pressable onPress={onMarkAll} style={S.markAllBtn} hitSlop={8} accessibilityLabel="Маркирай всички като прочетени">
+              <Ionicons name="checkmark-done-outline" size={18} color="#fff" />
+              <Text style={S.markAllText}>Прочетени</Text>
+            </Pressable>
+          ) : null}
+          {readCount > 0 ? (
+            <Pressable onPress={onClearRead} hitSlop={8} accessibilityLabel="Изтрий прочетените">
+              <Ionicons name="trash-outline" size={18} color="#fff" />
+            </Pressable>
+          ) : null}
+          {unreadCount === 0 && readCount === 0 ? <View style={{ width: 40 }} /> : null}
+        </View>
       </View>
     </View>
   );

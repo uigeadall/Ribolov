@@ -125,6 +125,24 @@ export async function markNotificationRead(myUid: string, notifId: string): Prom
   await updateDoc(doc(fb.db, 'users', myUid, 'notifications', notifId), stripUndefinedForFirestore({ read: true }));
 }
 
+/** Delete every read notification for the current user. Pages through in
+    batches of 100 — mirrors the `markAllNotificationsRead` shape. Unread
+    notifs are left alone so the user never loses one they haven't seen. */
+export async function clearReadNotifications(myUid: string): Promise<void> {
+  const fb = requireFirebase();
+  let hasMore = true;
+  while (hasMore) {
+    const snap = await getDocs(
+      query(collection(fb.db, 'users', myUid, 'notifications'), where('read', '==', true), limit(100)),
+    );
+    if (snap.empty) break;
+    const batch = writeBatch(fb.db);
+    snap.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+    hasMore = snap.docs.length === 100;
+  }
+}
+
 export async function sendFollowNotification(
   followedUid: string,
   followerUid: string,

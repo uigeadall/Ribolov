@@ -12,8 +12,10 @@ import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 import type { Post } from '../types';
 import { RichText } from './RichText';
+import { looksNonBulgarian, openTranslation } from '../utils/captionLanguage';
 import { ImageViewer } from './ImageViewer';
 import { SharePickerModal, buildPostSharedRef } from './SharePickerModal';
+import { LikersSheet, useLikersSheet } from './LikersSheet';
 import {
   subscribePostComments,
   addPostComment,
@@ -23,6 +25,7 @@ import {
   subscribeMyReactionOnPost,
   togglePostReaction,
   fetchPostReactionSummary,
+  fetchPostLikers,
 } from '../services/socialReactions';
 import { REACTIONS, type ReactionType, type ReactionSummaryItem } from '../services/socialTypes';
 import type { FeedComment } from '../services/socialTypes';
@@ -75,6 +78,10 @@ function PostCardInner({
   const [viewerOpen, setViewerOpen] = useState(false);
   const [textExpanded, setTextExpanded] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
+  // Likers sheet — opens when the user taps the reaction-summary row.
+  // The fetch is one-shot per open (no live subscription); good enough for a
+  // detail surface that's only visible while the sheet is up.
+  const likersSheet = useLikersSheet(() => fetchPostLikers(post.id));
   const [comments, setComments] = useState<FeedComment[]>([]);
   const [commentDraft, setCommentDraft] = useState('');
   const [sendingComment, setSendingComment] = useState(false);
@@ -391,6 +398,12 @@ function PostCardInner({
                 </Text>
               </Pressable>
             ) : null}
+            {/* "Виж превод" — only when post text looks foreign-language. */}
+            {looksNonBulgarian(post.text) ? (
+              <Pressable onPress={() => void openTranslation(post.text)} hitSlop={6} style={{ marginTop: 4 }}>
+                <Text style={styles.expandToggle}>Виж превод</Text>
+              </Pressable>
+            ) : null}
           </View>
         );
       })() : null}
@@ -557,17 +570,30 @@ function PostCardInner({
         </Pressable>
       </View>
 
-      {/* Reaction summary — top 3 emoji + count, taps to open likers (future) */}
+      {/* Reaction summary — top 3 emoji + count, taps to open the likers sheet. */}
       {likeCount > 0 && reactionSummary.length > 0 ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: spacing.lg, marginTop: -4, marginBottom: spacing.xs }}>
+        <Pressable
+          onPress={() => void likersSheet.openSheet()}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: spacing.lg, marginTop: -4, marginBottom: spacing.xs }}
+          hitSlop={6}
+        >
           {reactionSummary.slice(0, 3).map((r) => (
             <Text key={r.type} style={{ fontSize: 13 }}>{r.emoji}</Text>
           ))}
           <Text style={{ ...typography.caption, color: colors.textMuted, marginLeft: 2 }}>
             {likeCount} {likeCount === 1 ? 'харесване' : 'харесвания'}
           </Text>
-        </View>
+        </Pressable>
       ) : null}
+
+      <LikersSheet
+        visible={likersSheet.open}
+        onClose={() => likersSheet.setOpen(false)}
+        likeCount={likeCount}
+        likers={likersSheet.likers}
+        loading={likersSheet.loading}
+        onPressUser={onPressAuthor}
+      />
 
       {/* Lazy-mounted DM share sheet — only renders when opened, like FeedPost. */}
       {shareToFriendOpen && (
