@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, Switch, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
+import Toast from 'react-native-toast-message';
 import { Screen } from '../components/Screen';
 import { useAuth } from '../services/authContext';
 import { useTheme } from '../services/themeContext';
@@ -53,11 +54,27 @@ export default function NotificationPreferencesScreen() {
     if (!user) return;
     const firestore = ensureFirebase()?.db;
     if (!firestore) return;
+    // Capture previous state so a failed write can be rolled back. The old
+    // code swallowed errors and left the UI lying — toggle visually OFF
+    // while the server still held ON. Next mount would silently revert
+    // because the read-back from Firestore was the source of truth.
+    const previous = prefs;
     const next = { ...prefs, [key]: !prefs[key] };
     setPrefs(next);
     setSaving(true);
-    await setDoc(doc(firestore, 'users', user.uid, 'settings', 'notifications'), next).catch(() => {});
-    setSaving(false);
+    try {
+      await setDoc(doc(firestore, 'users', user.uid, 'settings', 'notifications'), next);
+    } catch {
+      setPrefs(previous);
+      Toast.show({
+        type: 'error',
+        text1: 'Грешка',
+        text2: 'Не успяхме да запазим настройката. Опитай отново.',
+        visibilityTime: 2500,
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const cardBg = mode === 'dark' ? '#0E1E35' : '#FFFFFF';

@@ -586,6 +586,14 @@ export async function muteConversation(myUid: string, convId: string): Promise<v
     stripUndefinedForFirestore({ convId, mutedAt: serverTimestamp() }),
     { merge: true },
   );
+  // Drop any orphan message notification doc for this conv. Without this,
+  // muting a conv that has an unread message_{convId} notification leaves
+  // the bell badge inflated until the user opens the chat or the 30-day
+  // cleanup function deletes it (which only runs on `read:true` docs).
+  // The contract of "mute" is that the conv goes quiet — letting the
+  // badge linger violates that. Best-effort: failure to delete a stale
+  // row isn't worse than the current behavior.
+  await deleteDoc(doc(fb.db, 'users', myUid, 'notifications', `message_${convId}`)).catch(() => {});
 }
 
 export async function unmuteConversation(myUid: string, convId: string): Promise<void> {
