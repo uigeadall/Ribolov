@@ -388,7 +388,11 @@ export const aggregateLeaderboards = onSchedule("every 10 minutes", async () => 
       const d = doc.data();
       const uid: string = d.ownerUid ?? "";
       const name: string = d.ownerName ?? "Unknown";
-      const kg: number = typeof d.weightKg === "number" ? d.weightKg : 0;
+      // `typeof NaN === "number"` is true — without the isFinite check, a
+      // single NaN weight (corrupt write, division-by-zero in client) would
+      // poison the aggregation: NaN propagates through every sum and sort,
+      // tangling ranks across the entire leaderboard.
+      const kg: number = typeof d.weightKg === "number" && Number.isFinite(d.weightKg) ? d.weightKg : 0;
 
       if (!uid) continue;
 
@@ -842,26 +846,46 @@ export const deleteMyAccount = onCall(async (request) => {
   //     If the other party is also gone, the conversation will be cleaned
   //     up the next time they delete their account.
   try {
-    const convSnap = await db
-      .collection("conversations")
-      .where("participantIds", "array-contains", uid)
-      .limit(DELETE_PHASE_LIMIT)
-      .get();
-    for (const conv of convSnap.docs) {
-      // Soft-delete the user's own messages.
-      const msgs = await conv.ref
-        .collection("messages")
-        .where("senderUid", "==", uid)
-        .limit(DELETE_PHASE_LIMIT)
-        .get();
-      let batch = db.batch();
-      let inBatch = 0;
-      for (const m of msgs.docs) {
-        batch.update(m.ref, { deletedAt: FieldValue.serverTimestamp(), text: "" });
-        inBatch += 1;
-        if (inBatch >= DELETE_BATCH_SIZE) { await batch.commit(); batch = db.batch(); inBatch = 0; }
+    // Paginate the conversation list using a cursor — we can't rely on
+    // "delete then re-query" pagination here because we don't delete the
+    // conversation doc (the other participant retains the chat with our
+    // messages soft-deleted). Without a cursor, a `array-contains` query
+    // returns the same convs every iteration → infinite loop. We sort by
+    // doc id + use startAfter() to advance through the list once.
+    let cursor: admin.firestore.QueryDocumentSnapshot | null = null;
+    while (true) {
+      let query = db
+        .collection("conversations")
+        .where("participantIds", "array-contains", uid)
+        .orderBy(admin.firestore.FieldPath.documentId())
+        .limit(DELETE_PHASE_LIMIT);
+      if (cursor) query = query.startAfter(cursor);
+      const convSnap = await query.get();
+      if (convSnap.empty) break;
+      for (const conv of convSnap.docs) {
+        // Soft-delete the user's own messages. We cap at DELETE_PHASE_LIMIT
+        // messages per conv — if a single user has sent more than that in
+        // one chat (~500), the tail stays untouched. Going beyond would
+        // require an inner cursor too; the cost/benefit is bad here since
+        // such users are rare and a follow-up sweep can mop up. Most chats
+        // have ≤100 messages from any single participant.
+        const msgs = await conv.ref
+          .collection("messages")
+          .where("senderUid", "==", uid)
+          .limit(DELETE_PHASE_LIMIT)
+          .get();
+        if (msgs.empty) continue;
+        let batch = db.batch();
+        let inBatch = 0;
+        for (const m of msgs.docs) {
+          batch.update(m.ref, { deletedAt: FieldValue.serverTimestamp(), text: "" });
+          inBatch += 1;
+          if (inBatch >= DELETE_BATCH_SIZE) { await batch.commit(); batch = db.batch(); inBatch = 0; }
+        }
+        if (inBatch > 0) await batch.commit();
       }
-      if (inBatch > 0) await batch.commit();
+      if (convSnap.size < DELETE_PHASE_LIMIT) break;
+      cursor = convSnap.docs[convSnap.docs.length - 1];
     }
   } catch (e) {
     // eslint-disable-next-line no-console

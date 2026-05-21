@@ -180,8 +180,16 @@ service cloud.firestore {
             || (request.resource.data.extraPhotoUris is list
               && request.resource.data.extraPhotoUris.size() <= 5)))
         ||
-        // Any signed-in user can only touch likeCount (react/un-react).
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
+        // Any signed-in user can step likeCount by exactly ±1 (one reaction
+        // toggle = one count change). Without the ±1 bound, the previous
+        // hasOnly check let any signed-in user write `likeCount: -100000` or
+        // `likeCount: 999999` directly, corrupting popularity rankings and
+        // leaderboards. The /likes/{uid} subcollection still stores the
+        // actual reactions; this rule just lets the counter mirror it.
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
+          && request.resource.data.likeCount is number
+          && request.resource.data.likeCount >= resource.data.likeCount - 1
+          && request.resource.data.likeCount <= resource.data.likeCount + 1)
       );
       allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
 
@@ -211,7 +219,11 @@ service cloud.firestore {
             && request.resource.data.text.size() > 0
             && request.resource.data.text.size() <= 2000)
           ||
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
+          // ±1 delta only — same anti-corruption fix as the parent catch.
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
+            && request.resource.data.likeCount is number
+            && request.resource.data.likeCount >= resource.data.likeCount - 1
+            && request.resource.data.likeCount <= resource.data.likeCount + 1)
         );
         allow delete: if signedIn() && (
           resource.data.authorUid == request.auth.uid
@@ -258,9 +270,20 @@ service cloud.firestore {
         // Owner can change anything they could create.
         resource.data.ownerUid == request.auth.uid
         ||
-        // Any signed-in user can bump likeCount / commentCount (likes, comments).
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['likeCount', 'commentCount'])
+        // Counter bumps — ±1 delta only. Without the bound, any signed-in
+        // user could write `likeCount: 999999` / `commentCount: 0` directly,
+        // corrupting feed ranking + leaderboards. The /likes/{uid} subcol
+        // stores the actual reaction; this rule just keeps the counter in
+        // step. Same shape as publicCatches.
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
+          && request.resource.data.likeCount is number
+          && request.resource.data.likeCount >= resource.data.likeCount - 1
+          && request.resource.data.likeCount <= resource.data.likeCount + 1)
+        ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['commentCount'])
+          && request.resource.data.commentCount is number
+          && request.resource.data.commentCount >= resource.data.commentCount - 1
+          && request.resource.data.commentCount <= resource.data.commentCount + 1)
       );
       allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
 
@@ -285,7 +308,7 @@ service cloud.firestore {
           && request.resource.data.text.size() <= 2000
           && request.resource.data.createdAt == request.time;
         // Mirrors the publicCatches/comments rule — author can edit text,
-        // anyone can bump likeCount.
+        // anyone can bump likeCount by ±1.
         allow update: if signedIn() && (
           (resource.data.authorUid == request.auth.uid
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])
@@ -293,7 +316,11 @@ service cloud.firestore {
             && request.resource.data.text.size() > 0
             && request.resource.data.text.size() <= 2000)
           ||
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
+          // ±1 delta only — see parent post update rule comment.
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
+            && request.resource.data.likeCount is number
+            && request.resource.data.likeCount >= resource.data.likeCount - 1
+            && request.resource.data.likeCount <= resource.data.likeCount + 1)
         );
         allow delete: if signedIn() && (
           resource.data.authorUid == request.auth.uid
@@ -380,6 +407,45 @@ service cloud.firestore {
           resource.data.ownerUid == request.auth.uid
           || get(/databases/$(database)/documents/tournaments/$(tid)).data.hostUid == request.auth.uid
         );
+      }
+
+      // Photo entries — keyed by ownerUid so each user gets one submission per
+      // tournament. The /entries collection above is older / unused by the
+      // current client (which calls submitCatchToTournament writing here).
+      // Without this rule block, tournament submissions silently fail; the
+      // app's leaderboard + rank-pin features stop working in production.
+      match /photoEntries/{ownerUid} {
+        allow read: if signedIn();
+        // Owner can create/update their own entry. ownerUid in the payload
+        // must match the doc id AND the writer.
+        allow create, update: if isSelf(ownerUid)
+          && request.resource.data.ownerUid == request.auth.uid
+          && (!('photoUri' in request.resource.data)
+            || (request.resource.data.photoUri is string
+              && request.resource.data.photoUri.size() <= 2000
+              && isHttpsUrl(request.resource.data.photoUri)))
+          // Anyone bumping likeCount via reaction subcollection updates: see
+          // the parent /tournaments update rule pattern — but here a
+          // non-owner toggleTournamentEntryLike call needs to touch
+          // `likeCount` on this entry, so split create/update from the
+          // counter-only bump path. The like toggle code path is allowed
+          // through the second branch below.
+          ;
+        allow update: if signedIn()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
+          && request.resource.data.likeCount is number
+          && request.resource.data.likeCount >= resource.data.likeCount - 1
+          && request.resource.data.likeCount <= resource.data.likeCount + 1;
+        allow delete: if signedIn() && (
+          isSelf(ownerUid)
+          || get(/databases/$(database)/documents/tournaments/$(tid)).data.hostUid == request.auth.uid
+        );
+
+        // Per-user like on a tournament entry. The doc id IS the liker's uid.
+        match /likes/{likerUid} {
+          allow read: if signedIn();
+          allow write: if isSelf(likerUid);
+        }
       }
     }
 
