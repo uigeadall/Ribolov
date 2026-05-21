@@ -23,6 +23,7 @@ import type { TripPlan } from '../types';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 import { useAppNavigation } from '../navigation/useAppNavigation';
+import { toLocalDateIso } from '../utils/formatCatchDate';
 
 const S = StyleSheet.create({
   hero: { paddingBottom: 44 },
@@ -52,8 +53,19 @@ export default function TripsScreen() {
   const load = useCallback(() => {
     Promise.all([tripsStore.list(), catchesStore.list()]).then(([list, catches]) => {
       setItems([...list].sort((a, b) => b.dateIso.localeCompare(a.dateIso)));
+      // Filter the count by IDs that actually correspond to a current trip
+      // — when a trip is deleted, catches keep their `tripId` field (we don't
+      // null-it-out on delete), so without this filter the count Map would
+      // contain phantom entries for deleted trips. Trip rows render counts
+      // by id lookup, so the phantom values never show, BUT if a deleted
+      // trip id is ever reused we'd start with a stale base count.
+      const tripIds = new Set(list.map((t) => t.id));
       const m = new Map<string, number>();
-      catches.forEach((c) => { if (c.tripId) m.set(c.tripId, (m.get(c.tripId) ?? 0) + 1); });
+      catches.forEach((c) => {
+        if (c.tripId && tripIds.has(c.tripId)) {
+          m.set(c.tripId, (m.get(c.tripId) ?? 0) + 1);
+        }
+      });
       setCatchCountByTrip(m);
     });
   }, []);
@@ -82,7 +94,10 @@ export default function TripsScreen() {
       await tripsStore.save({
         id: newId(),
         title: title.trim(),
-        dateIso: date.toISOString().slice(0, 10),
+        // Use the device's local date — toISOString() returns UTC, so a
+        // Bulgarian user creating a trip at 00:30 local time would store
+        // yesterday's date here while the picker showed today.
+        dateIso: toLocalDateIso(date),
         notes: notes.trim() || undefined,
       });
       setTitle('');

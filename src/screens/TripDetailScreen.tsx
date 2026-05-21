@@ -12,6 +12,7 @@ import type { TripPlan, Catch } from '../types';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 import { useAppNavigation } from '../navigation/useAppNavigation';
+import { toLocalDateIso } from '../utils/formatCatchDate';
 
 type R = RouteProp<ProfileStackParamList, 'TripDetail'>;
 
@@ -78,7 +79,9 @@ export default function TripDetailScreen() {
       const updated: TripPlan = {
         ...trip,
         title: editTitle.trim(),
-        dateIso: editDate.toISOString().slice(0, 10),
+        // Local-date — see comment in TripsScreen save handler. toISOString()
+        // gives UTC; mismatch with the DateTimePicker's local-time display.
+        dateIso: toLocalDateIso(editDate),
         notes: editNotes.trim() || undefined,
       };
       await tripsStore.save(updated);

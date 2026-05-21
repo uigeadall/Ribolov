@@ -19,6 +19,7 @@ import { RIVERS } from '../data/rivers';
 import { spotsStore, catchesStore, getCatchCountByName } from '../storage/storage';
 import type { Spot } from '../types';
 import { useAppNavigation } from '../navigation/useAppNavigation';
+import { toLocalDateIso } from '../utils/formatCatchDate';
 
 type LocKind = 'dam' | 'river' | 'spot';
 type LocationOption = { kind: LocKind; id: string; name: string; lat: number; lng: number; catchCount?: number; isFavorite?: boolean };
@@ -54,7 +55,10 @@ export default function TripPlannerScreen() {
     for (let i = 0; i < 7; i++) {
       const d = new Date();
       d.setDate(d.getDate() + i);
-      const iso = d.toISOString().slice(0, 10);
+      // Local-date ISO — toISOString() gives UTC date, which for Bulgarian
+      // users (UTC+2/+3) drifts a day off at late-night local times. The
+      // forecast pick + labels are both local, so the stored key must be too.
+      const iso = toLocalDateIso(d);
       const label = i === 0 ? 'Днес' : i === 1 ? 'Утре'
         : d.toLocaleDateString('bg-BG', { weekday: 'short' });
       const shortLabel = d.toLocaleDateString('bg-BG', { day: 'numeric', month: 'short' });
