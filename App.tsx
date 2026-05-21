@@ -4,7 +4,7 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import { useFonts, Nunito_400Regular, Nunito_500Medium, Nunito_600SemiBold, Nunito_700Bold, Nunito_800ExtraBold } from '@expo-google-fonts/nunito';
 import { StatusBar } from 'expo-status-bar';
 import Toast from 'react-native-toast-message';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage, { migrateFromAsyncStorageIfNeeded } from './src/storage/kv';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ThemeProvider } from './src/services/themeContext';
@@ -31,7 +31,14 @@ export default function App() {
     initObservability();
     const fb = ensureFirebase();
     if (fb) void initFirebaseAppCheckBridge(fb.app);
-    AsyncStorage.getItem(ONBOARDING_KEY).then((v) => setOnboardingDone(v === '1'));
+    // One-shot AsyncStorage → MMKV migration. Runs before any other storage
+    // read so subsequent calls hit the new backend. The migration sets its own
+    // sentinel; subsequent launches return immediately.
+    (async () => {
+      await migrateFromAsyncStorageIfNeeded();
+      const v = await AsyncStorage.getItem(ONBOARDING_KEY);
+      setOnboardingDone(v === '1');
+    })();
     const t = setTimeout(() => setMinTimeElapsed(true), MIN_SPLASH_MS);
     if (!__DEV__) {
       Updates.checkForUpdateAsync()

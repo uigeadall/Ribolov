@@ -7,7 +7,7 @@
  * До тогава се използват кешираните/приблизителни стойности.
  */
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from '../storage/kv';
 
 export type DamLevel = {
   damId: string;

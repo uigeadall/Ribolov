@@ -1,3 +1,9 @@
+// Firebase auth persistence wants the full AsyncStorageStatic interface
+// (mergeItem, multiSet, multiMerge, flushGetRequests). Our MMKV shim only
+// covers the subset we use elsewhere — auth keeps the real module here.
+// Auth tokens are written rarely (login / refresh) so the perf delta vs MMKV
+// is invisible; what matters is matching the persistence contract Firebase
+// expects so token round-trips work.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { initializeAuth, getAuth, Auth, getReactNativePersistence } from 'firebase/auth';

@@ -309,6 +309,24 @@ export function subscribeUserPresence(
   };
 }
 
+/**
+ * Server-side cascade — invokes the `deleteMyAccount` Cloud Function. This is
+ * the preferred delete path because it has admin-SDK access and can clean
+ * data the client can't (other users' subcollections holding our backrefs,
+ * conversation soft-deletes, group memberships, etc.). The client-side
+ * fallback below stays as a safety net for callers that hit it before the
+ * functions deploy lands.
+ */
+export async function deleteMyAccountCloudCascade(): Promise<void> {
+  const fb = requireFirebase();
+  // Dynamic import to keep the firebase/functions bundle out of the cold-start
+  // path for users who never delete their account.
+  const { getFunctions, httpsCallable } = await import('firebase/functions');
+  const fns = getFunctions(fb.app);
+  const fn = httpsCallable(fns, 'deleteMyAccount');
+  await fn({});
+}
+
 export async function deleteAllUserCloudData(uid: string): Promise<void> {
   const fb = requireFirebase();
   await deleteAllUserDamFeedPosts(uid);

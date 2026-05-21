@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from '../storage/kv';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../services/themeContext';
 import { spacing, typography, radius } from '../theme/typography';

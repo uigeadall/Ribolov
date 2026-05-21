@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from '../storage/kv';
 
 /** Exponential backoff in ms, capped at maxDelayMs. */
 export function calcBackoffMs(

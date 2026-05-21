@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from '../storage/kv';
 import { View, Text, StyleSheet, FlatList, Pressable, Platform, Animated, ActionSheetIOS, Alert } from 'react-native';
 
 // FlatList wrapped with createAnimatedComponent — required so that the FlatList

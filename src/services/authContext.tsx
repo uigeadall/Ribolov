@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from '../storage/kv';
 import type { User } from 'firebase/auth';
 import {
   onAuthStateChanged,
@@ -19,7 +19,7 @@ import {
 } from 'firebase/auth';
 import { ensureFirebase } from './firebase';
 import { isFirebaseConfigured } from './firebaseConfig';
-import { deleteAllUserCloudData, updateUserPresence } from './cloudSync';
+import { deleteAllUserCloudData, deleteMyAccountCloudCascade, updateUserPresence } from './cloudSync';
 import { wipeAllLocalAppData } from '../storage/storage';
 import { clearCatchSyncQueue, flushPendingCatchSync } from './catchSyncQueue';
 import { flushPendingMessages } from './messageSyncQueue';
@@ -204,7 +204,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     await reauthenticateWithCredential(u, authCred);
     const uid = u.uid;
-    await deleteAllUserCloudData(uid);
+    // Prefer the Cloud Function cascade — it has admin-SDK reach and cleans
+    // far more (other users' backrefs, conversations, groups, tournaments).
+    // Fall back to the client-side scrub if the function deploy hasn't landed
+    // or the call fails for a network reason — better partial cleanup than
+    // none.
+    try {
+      await deleteMyAccountCloudCascade();
+    } catch {
+      await deleteAllUserCloudData(uid).catch(() => undefined);
+    }
     await wipeAllLocalAppData();
     await clearCatchSyncQueue().catch(() => undefined);
     await deleteUser(u);

@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from '../storage/kv';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { ACHIEVEMENT_DEFS } from '../data/achievements';
 import type { Achievement } from '../types';

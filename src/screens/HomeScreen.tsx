@@ -22,7 +22,7 @@ import { useAuth } from '../services/authContext';
 import { WeatherIcon } from '../components/WeatherIcon';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from '../storage/kv';
 import { fetchWeather, fetchForecast, windDirectionLabel, type WeatherSnapshot, type ForecastDay } from '../services/weather';
 import { catchesStore } from '../storage/storage';
 import { fetchRankedClassicPhotos, periodStartIso, type RankedClassicPhoto } from '../services/classicsContest';

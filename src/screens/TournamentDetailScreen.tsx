@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Text, StyleSheet, View, Pressable, FlatList, Modal, ActivityIndicator, Alert,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from '../storage/kv';
 import { doc, getDoc } from 'firebase/firestore';
 import { RouteProp, useRoute } from '@react-navigation/native';
 import { Image } from 'expo-image';

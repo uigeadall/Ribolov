@@ -7,7 +7,7 @@ import React, {
   useState,
   ReactNode,
 } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from '../storage/kv';
 import { AppColors, darkColors, lightColors, AccentTheme, accentPresets } from '../theme/palette';
 
 const STORAGE_KEY = '@ribolov/theme-mode';

@@ -16,7 +16,7 @@ import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
 import { useAppNavigation } from '../navigation/useAppNavigation';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from '../storage/kv';
 import { createPost, getUserPublicSummary } from '../services/cloudSync';
 import { searchUsersByName, type SearchUserResult } from '../services/userProfile';
 import { handleError } from '../utils/handleError';

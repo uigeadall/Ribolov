@@ -24,7 +24,7 @@ import {
 import { useNotificationNavigation } from '../hooks/useNotificationNavigation';
 import { useUnreadNotifCount } from '../hooks/useUnreadNotifCount';
 import { useAuth } from '../services/authContext';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from '../storage/kv';
 import * as Location from 'expo-location';
 import { catchesStore } from '../storage/storage';
 

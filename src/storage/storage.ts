@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from './kv';
 import * as Crypto from 'expo-crypto';
 import { Catch, Spot, GearItem, TripPlan } from '../types';
 import { resetRateLimits } from '../services/socialRateLimit';

@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from '../storage/kv';
 import { catchesStore } from '../storage/storage';
 import { ensureCatchPhotoUploadedForCloud, pushCatch } from './cloudSync';
 import { addBreadcrumb, captureException } from './observability';

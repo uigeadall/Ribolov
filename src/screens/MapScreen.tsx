@@ -32,7 +32,7 @@ import { USE_REACT_NATIVE_MAPS } from '../config/mapEngine';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from '../storage/kv';
 import { spotsStore, catchesStore, getCatchCountByName, newId } from '../storage/storage';
 import { Spot } from '../types';
 import type { CatchMapMarker, LiveFishingMarker, HeatmapCell } from '../components/LeafletMap';
