@@ -188,6 +188,16 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
     return [item.photoUri, ...(item.extraPhotoUris ?? [])];
   }, [item.photoUri, item.extraPhotoUris]);
 
+  // Clamp the index when the photo set shrinks. Without this, a user who
+  // scrolled to page 3 of a 4-photo carousel would see "4/2" in the
+  // counter chip + out-of-range dots after the post is edited down to
+  // 2 photos (or extraPhotoUris updates on a snapshot refresh).
+  useEffect(() => {
+    if (currentPhotoIdx >= carouselPhotos.length && carouselPhotos.length > 0) {
+      setCurrentPhotoIdx(carouselPhotos.length - 1);
+    }
+  }, [carouselPhotos.length, currentPhotoIdx]);
+
   const ownerName = item.ownerName || 'Рибар';
   const initials = ownerName.slice(0, 1).toUpperCase();
   const isMine = Boolean(myUid && item.ownerUid === myUid);

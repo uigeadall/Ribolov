@@ -1,8 +1,8 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import AsyncStorage from '../storage/kv';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { requireFirebase } from './firebase';
+import { deleteDoc, doc, getDoc, setDoc } from 'firebase/firestore';
+import { requireFirebase, ensureFirebase } from './firebase';
 import type { ForecastDay } from './weather';
 
 const EAS_PROJECT_ID = '7e57275b-fc18-4ae3-bfa3-e519e37dae65';
@@ -47,6 +47,21 @@ export async function registerForPushNotifications(uid: string): Promise<void> {
   } catch {
     // Best-effort — never crash the app over a push token
   }
+}
+
+/** Delete the push token for `uid`. Called on sign-out so this device's
+    Expo token isn't left mapped to the user who's leaving. Without this,
+    a second user signing in on the same device gets their own token
+    written under their own uid — but the FIRST user's
+    `users/{oldUid}/private/pushToken` still points at the same physical
+    token, meaning any push fan-out to oldUid would buzz the device that
+    now belongs to a different account. Best-effort: a failure here can't
+    block sign-out from completing. */
+export async function clearPushToken(uid: string): Promise<void> {
+  if (!uid) return;
+  const fb = ensureFirebase();
+  if (!fb) return;
+  await deleteDoc(doc(fb.db, 'users', uid, 'private', 'pushToken')).catch(() => {});
 }
 
 export async function getUserPushToken(uid: string): Promise<string | null> {

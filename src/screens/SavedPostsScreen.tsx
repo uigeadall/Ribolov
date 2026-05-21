@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -76,6 +76,26 @@ export default function SavedPostsScreen() {
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+
+  // Drop selectedIds that no longer appear in the visible list. The
+  // savedIds subscription can fire while the user is in select mode
+  // (e.g., they unsaved one of the selected posts via its own bookmark
+  // button, or a multi-device sync removed an item). Without this
+  // filter, the bulk-delete action would send stale ids that no longer
+  // exist in /savedCatches, and the per-row tap-to-toggle would
+  // operate on the wrong row because the visible list shifted.
+  useEffect(() => {
+    const visible = new Set(itemList.map((i) => i.id));
+    setSelectedIds((prev) => {
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (visible.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [itemList]);
 
   const toggleSelected = useCallback((id: string) => {
     setSelectedIds((prev) => {

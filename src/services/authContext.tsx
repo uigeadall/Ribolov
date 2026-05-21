@@ -23,7 +23,7 @@ import { deleteAllUserCloudData, deleteMyAccountCloudCascade, updateUserPresence
 import { wipeAllLocalAppData } from '../storage/storage';
 import { clearCatchSyncQueue, flushPendingCatchSync } from './catchSyncQueue';
 import { flushPendingMessages } from './messageSyncQueue';
-import { registerForPushNotifications } from './pushNotifications';
+import { clearPushToken, registerForPushNotifications } from './pushNotifications';
 import { restoreAchievementsFromCloud } from './achievements';
 import { resetSocialCaches } from './social';
 import { resetTournamentCaches } from './tournaments';
@@ -171,7 +171,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(async () => {
     const fb = ensureFirebase();
     const u = fb?.auth.currentUser;
-    if (u) await updateUserPresence(u.uid, false).catch(() => undefined);
+    if (u) {
+      await updateUserPresence(u.uid, false).catch(() => undefined);
+      // Clear this user's push-token doc BEFORE auth signOut. Otherwise the
+      // device token stays mapped to the previous account and a follow-up
+      // sign-in (different user, same device) would have BOTH accounts
+      // pointing at the same Expo token. Push notifications to the old
+      // account would buzz the new account's device.
+      await clearPushToken(u.uid).catch(() => undefined);
+    }
     await wipeAllLocalAppData().catch(() => undefined);
     await clearCatchSyncQueue().catch(() => undefined);
     await AsyncStorage.removeItem(LAST_UID_KEY).catch(() => undefined);
