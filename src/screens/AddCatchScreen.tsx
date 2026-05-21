@@ -12,6 +12,8 @@ import {
   ActivityIndicator,
   Linking,
   Platform,
+  Modal,
+  FlatList,
 } from 'react-native';
 import { useRoute, RouteProp } from '@react-navigation/native';
 import { useAppNavigation } from '../navigation/useAppNavigation';
@@ -28,9 +30,9 @@ import { TripPickerModal } from '../components/TripPickerModal';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
-import { catchesStore, tripsStore, newId, recentBaitsStore, recentSpeciesStore } from '../storage/storage';
+import { catchesStore, tripsStore, gearStore, newId, recentBaitsStore, recentSpeciesStore } from '../storage/storage';
 import { speciesList } from '../data/species';
-import { Achievement, Catch, TripPlan } from '../types';
+import { Achievement, Catch, GearItem, TripPlan } from '../types';
 import { useAuth } from '../services/authContext';
 import { doc, getDoc } from 'firebase/firestore';
 import { pushCatch, ensureCatchPhotoUploadedForCloud, deleteStoragePath } from '../services/cloudSync';
@@ -165,27 +167,7 @@ export default function AddCatchScreen() {
   });
 
   const [lastCatch, setLastCatch] = useState<Catch | null>(null);
-  useEffect(() => {
-    catchesStore.list().then((list) => {
-      if (list.length > 0) {
-        const sorted = [...list].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
-        setLastCatch(sorted[0]);
-      }
-    });
-  }, []);
-
   const [suggestedSpecies, setSuggestedSpecies] = useState<string | null>(null);
-  useEffect(() => {
-    // Only suggest if form isn't being edited (fresh open)
-    catchesStore.list().then((list) => {
-      if (list.length === 0) return;
-      // Find catches within ~5km of current location or just most frequent species
-      const freq: Record<string, number> = {};
-      list.forEach((c) => { if (c.speciesName) freq[c.speciesName] = (freq[c.speciesName] ?? 0) + 1; });
-      const top = Object.entries(freq).sort((a, b) => b[1] - a[1])[0];
-      if (top && top[1] >= 2) setSuggestedSpecies(top[0]);
-    }).catch(() => {});
-  }, []);
 
   const [recentBaits, setRecentBaits] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
@@ -196,6 +178,12 @@ export default function AddCatchScreen() {
   const [trips, setTrips] = useState<TripPlan[]>([]);
   const [tripPickerOpen, setTripPickerOpen] = useState(false);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
+  // Gear picker — loaded once on mount. Tapping the backpack icon next to the
+  // bait field opens a sheet of the user's saved tackle (gearStore). Selecting
+  // an item populates the bait input with the gear name. Lets users reuse
+  // logged tackle instead of retyping bait names each catch.
+  const [gearList, setGearList] = useState<GearItem[]>([]);
+  const [gearPickerOpen, setGearPickerOpen] = useState(false);
   // Collapsible "more details" — expanded by default for new catches, collapsed
   // when editing (assumption: editor knows the catch and wants summary first).
   const [detailsOpen, setDetailsOpen] = useState(!editCatchId);
@@ -216,6 +204,7 @@ export default function AddCatchScreen() {
   useEffect(() => {
     tripsStore.list().then(setTrips);
     recentBaitsStore.get().then(setRecentBaits);
+    gearStore.list().then(setGearList).catch(() => setGearList([]));
   }, []);
 
   useEffect(() => {
@@ -241,48 +230,81 @@ export default function AddCatchScreen() {
     return unsub;
   }, [navigation, editCatchId, saving]);
 
+  // Single mount-time read of all catches. Replaces four separate effects that
+  // each called catchesStore.list() — for fresh open, edit, duplicate, last-catch
+  // preview, and species suggestion. The cache makes repeat reads cheap, but
+  // having one source of truth per render is clearer and shaves AsyncStorage IO.
   useEffect(() => {
-    if (!editCatchId) return;
     let alive = true;
     catchesStore.list().then((list) => {
-      const c = list.find((x) => x.id === editCatchId);
       if (!alive) return;
-      if (!c) {
-        Alert.alert('Грешка', 'Записът не е намерен.', [
-          { text: 'OK', onPress: () => navigation.goBack() },
-        ]);
-        return;
+
+      if (list.length > 0) {
+        const sorted = [...list].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+        setLastCatch(sorted[0]);
+
+        // Suggested species — most-frequent species name, gated at ≥2 catches.
+        // Only meaningful for fresh-open (not edit/duplicate flows).
+        if (!editCatchId && !duplicateCatchId) {
+          const freq: Record<string, number> = {};
+          list.forEach((c) => { if (c.speciesName) freq[c.speciesName] = (freq[c.speciesName] ?? 0) + 1; });
+          const top = Object.entries(freq).sort((a, b) => b[1] - a[1])[0];
+          if (top && top[1] >= 2) setSuggestedSpecies(top[0]);
+        }
       }
-      setInitialCatch(c);
-      dispatch({
-        type: 'LOAD_CATCH',
-        payload: {
-          speciesId: speciesList.some((s) => s.id === c.speciesId) ? c.speciesId : speciesList[0].id,
-          weight: c.weightKg != null ? String(c.weightKg) : '',
-          length: c.lengthCm != null ? String(c.lengthCm) : '',
-          bait: c.bait ?? '',
-          notes: c.notes ?? '',
-          photoTitle: c.photoTitle ?? '',
-          released: !!c.released,
-          enterLeaderboard: c.enterLeaderboard ?? true,
-          photoUri: c.photoUri,
-          extraPhotoUris: c.extraPhotoUris ?? [],
-          cameraVerifiedPhoto: isRemoteImageUri(c.photoUri) || c.photoTakenWithAppCamera === true,
-          locationCoords: c.location
-            ? { lat: c.location.latitude, lon: c.location.longitude }
-            : null,
-          locationName: c.location?.name ?? '',
-          tripId: c.tripId,
-          date: c.date ?? new Date().toISOString(),
-        },
-      });
-      if (c.conditions) conditionsRef.current = c.conditions;
-      setEditLoaded(true);
-    });
+
+      if (editCatchId) {
+        const c = list.find((x) => x.id === editCatchId);
+        if (!c) {
+          Alert.alert('Грешка', 'Записът не е намерен.', [
+            { text: 'OK', onPress: () => navigation.goBack() },
+          ]);
+          return;
+        }
+        setInitialCatch(c);
+        dispatch({
+          type: 'LOAD_CATCH',
+          payload: {
+            speciesId: speciesList.some((s) => s.id === c.speciesId) ? c.speciesId : speciesList[0].id,
+            weight: c.weightKg != null ? String(c.weightKg) : '',
+            length: c.lengthCm != null ? String(c.lengthCm) : '',
+            bait: c.bait ?? '',
+            notes: c.notes ?? '',
+            photoTitle: c.photoTitle ?? '',
+            released: !!c.released,
+            enterLeaderboard: c.enterLeaderboard ?? true,
+            photoUri: c.photoUri,
+            extraPhotoUris: c.extraPhotoUris ?? [],
+            cameraVerifiedPhoto: isRemoteImageUri(c.photoUri) || c.photoTakenWithAppCamera === true,
+            locationCoords: c.location
+              ? { lat: c.location.latitude, lon: c.location.longitude }
+              : null,
+            locationName: c.location?.name ?? '',
+            tripId: c.tripId,
+            date: c.date ?? new Date().toISOString(),
+          },
+        });
+        if (c.conditions) conditionsRef.current = c.conditions;
+        setEditLoaded(true);
+      } else if (duplicateCatchId) {
+        const c = list.find((x) => x.id === duplicateCatchId);
+        if (c) {
+          dispatch({
+            type: 'LOAD_CATCH',
+            payload: {
+              speciesId: speciesList.some((s) => s.id === c.speciesId) ? c.speciesId : speciesList[0].id,
+              bait: c.bait ?? '',
+              locationCoords: c.location ? { lat: c.location.latitude, lon: c.location.longitude } : null,
+              locationName: c.location?.name ?? '',
+            },
+          });
+        }
+      }
+    }).catch(() => {});
     return () => {
       alive = false;
     };
-  }, [editCatchId, navigation]);
+  }, [editCatchId, duplicateCatchId, navigation]);
 
   useEffect(() => {
     if (!form.locationCoords) return;
@@ -304,23 +326,6 @@ export default function AddCatchScreen() {
       cancelled = true;
     };
   }, [form.locationCoords]);
-
-  useEffect(() => {
-    if (!duplicateCatchId) return;
-    catchesStore.list().then((list) => {
-      const c = list.find((x) => x.id === duplicateCatchId);
-      if (!c) return;
-      dispatch({
-        type: 'LOAD_CATCH',
-        payload: {
-          speciesId: speciesList.some((s) => s.id === c.speciesId) ? c.speciesId : speciesList[0].id,
-          bait: c.bait ?? '',
-          locationCoords: c.location ? { lat: c.location.latitude, lon: c.location.longitude } : null,
-          locationName: c.location?.name ?? '',
-        },
-      });
-    });
-  }, [duplicateCatchId]);
 
   useEffect(() => {
     if (!editCatchId || !configured || !user) return;
@@ -892,14 +897,29 @@ export default function AddCatchScreen() {
                     <Ionicons name="leaf-outline" size={18} color={colors.primary} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <TextInput
-                      value={form.bait}
-                      onChangeText={(v) => dispatch({ type: 'SET_BAIT', payload: v })}
-                      placeholder="Стръв / примамка..."
-                      returnKeyType="next"
-                      style={styles.detailInput}
-                      placeholderTextColor={colors.textMuted}
-                    />
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <TextInput
+                        value={form.bait}
+                        onChangeText={(v) => dispatch({ type: 'SET_BAIT', payload: v })}
+                        placeholder="Стръв / примамка..."
+                        returnKeyType="next"
+                        style={styles.detailInput}
+                        placeholderTextColor={colors.textMuted}
+                      />
+                      {gearList.length > 0 ? (
+                        <Pressable
+                          onPress={() => setGearPickerOpen(true)}
+                          hitSlop={8}
+                          style={styles.detailButton}
+                          accessibilityLabel="Избери от твоето оборудване"
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            <Ionicons name="briefcase-outline" size={14} color={colors.primary} />
+                            <Text style={styles.detailButtonText}>Оборудване</Text>
+                          </View>
+                        </Pressable>
+                      ) : null}
+                    </View>
                     {recentBaits.length > 0 && (
                       <ScrollView
                         horizontal
@@ -1084,6 +1104,52 @@ export default function AddCatchScreen() {
         onSelect={(id) => dispatch({ type: 'SET_SPECIES', payload: id })}
         onClose={() => setPickerOpen(false)}
       />
+
+      <Modal
+        visible={gearPickerOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setGearPickerOpen(false)}
+      >
+        <View style={styles.gearSheetBackdrop}>
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setGearPickerOpen(false)} />
+          <View style={[styles.gearSheet, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={[styles.gearSheetHandle, { backgroundColor: colors.border }]} />
+            <Text style={[styles.gearSheetTitle, { color: colors.text }]}>Избери от оборудването</Text>
+            <FlatList
+              data={gearList}
+              keyExtractor={(g) => g.id}
+              keyboardShouldPersistTaps="handled"
+              ItemSeparatorComponent={() => (
+                <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginHorizontal: 18 }} />
+              )}
+              style={{ maxHeight: 380 }}
+              renderItem={({ item }) => (
+                <Pressable
+                  onPress={() => {
+                    dispatch({ type: 'SET_BAIT', payload: item.name });
+                    setGearPickerOpen(false);
+                  }}
+                  style={styles.gearRow}
+                >
+                  <View style={[styles.gearRowIcon, { backgroundColor: colors.primarySurface }]}>
+                    <Ionicons name="briefcase-outline" size={18} color={colors.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.gearRowName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
+                    {item.notes ? (
+                      <Text style={[styles.gearRowNotes, { color: colors.textMuted }]} numberOfLines={1}>{item.notes}</Text>
+                    ) : null}
+                  </View>
+                  {form.bait === item.name ? (
+                    <Ionicons name="checkmark" size={20} color={colors.primary} />
+                  ) : null}
+                </Pressable>
+              )}
+            />
+          </View>
+        </View>
+      </Modal>
 
     </Screen>
   );
@@ -1609,6 +1675,57 @@ function createAddCatchStyles(colors: AppColors) {
     },
     baitPillTextActive: {
       color: '#fff',
+    },
+
+    // ── Gear picker sheet ──
+    gearSheetBackdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      justifyContent: 'flex-end',
+    },
+    gearSheet: {
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      paddingBottom: 24,
+      borderTopWidth: 1,
+    },
+    gearSheetHandle: {
+      width: 40,
+      height: 4,
+      borderRadius: 2,
+      alignSelf: 'center',
+      marginTop: 10,
+      marginBottom: 8,
+    },
+    gearSheetTitle: {
+      fontSize: 16,
+      fontFamily: 'Nunito_700Bold',
+      paddingHorizontal: 18,
+      paddingTop: 6,
+      paddingBottom: 12,
+    },
+    gearRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingHorizontal: 18,
+      paddingVertical: 14,
+    },
+    gearRowIcon: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    gearRowName: {
+      fontSize: 15,
+      fontFamily: 'Nunito_700Bold',
+    },
+    gearRowNotes: {
+      fontSize: 12,
+      fontFamily: 'Nunito_400Regular',
+      marginTop: 2,
     },
 
     // ── Switch rows ──

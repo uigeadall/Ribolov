@@ -173,6 +173,11 @@ export default function ChatDetailScreen() {
   const { convId, otherName, otherUid } = route.params;
   const [olderMsgs, setOlderMsgs] = useState<DirectMessage[]>([]);
   const [tailMsgs, setTailMsgs] = useState<DirectMessage[]>([]);
+  // Optimistic-send buffer: text messages get inserted here BEFORE the
+  // Firestore write completes so the user sees their bubble immediately.
+  // Cleared when the subscription's `tailMsgs` snapshot includes a message
+  // with the same id (the clientId we used as the doc id).
+  const [pendingMsgs, setPendingMsgs] = useState<DirectMessage[]>([]);
   // Default false — we flip to true once the subscription's tail looks full (100 messages),
   // which is our signal that there's plausibly more older history worth fetching.
   const [hasMoreOlder, setHasMoreOlder] = useState(false);
@@ -243,11 +248,13 @@ export default function ChatDetailScreen() {
   // Subscription may overlap with older — dedupe by id, prefer the subscription's copy
   // (fresher readAt/editedAt/deletedAt).
   const msgs = useMemo<DirectMessage[]>(() => {
-    if (olderMsgs.length === 0) return tailMsgs;
     const tailIds = new Set(tailMsgs.map((m) => m.id));
+    // Pending messages whose ids haven't yet appeared in the server tail.
+    const stillPending = pendingMsgs.filter((p) => !tailIds.has(p.id));
+    if (olderMsgs.length === 0) return [...tailMsgs, ...stillPending];
     const olderOnly = olderMsgs.filter((m) => !tailIds.has(m.id));
-    return [...olderOnly, ...tailMsgs];
-  }, [olderMsgs, tailMsgs]);
+    return [...olderOnly, ...tailMsgs, ...stillPending];
+  }, [olderMsgs, tailMsgs, pendingMsgs]);
 
   const chatItems = useMemo<ChatItem[]>(() => {
     const result: ChatItem[] = [];
@@ -332,6 +339,10 @@ export default function ChatDetailScreen() {
     })();
     const unsubMsgs = subscribeConversationMessages(convId, (next) => {
       setTailMsgs(next);
+      // Drop any optimistic pendings that the server now has — match by id
+      // since the clientId is the doc id.
+      const confirmedIds = new Set(next.map((m) => m.id));
+      setPendingMsgs((prev) => prev.filter((p) => !confirmedIds.has(p.id)));
       // A full 100-message tail signals there may be older history — enable the load-earlier
       // button. We only flip this on the first full snapshot; pagination owns the flag after.
       if (next.length >= 100) setHasMoreOlder((prev) => prev || true);
@@ -489,15 +500,15 @@ export default function ChatDetailScreen() {
       return;
     }
     if (!text.trim()) return;
-    setSending(true);
-    // Subtle confirmation that the send was registered, even before the network
-    // round-trip completes. Light feedback so back-to-back messages don't buzz.
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const trimmed = text.trim();
     clearTypingStatus();
 
     // Editing path — update text on existing message instead of sending a new one.
+    // Editing still needs the round-trip-blocking UX because we have to display
+    // the new text; can't optimistically guess server-side edited-at.
     if (editingMsg) {
+      setSending(true);
       try {
         await editMessage(convId, editingMsg.id, user.uid, trimmed);
         setEditingMsg(null);
@@ -514,23 +525,50 @@ export default function ChatDetailScreen() {
     const replyRef = replyingTo ? buildReplyRef(replyingTo) : undefined;
     setReplyingTo(null);
     const clientId = makeMessageClientId();
-    try {
-      const myName = user.displayName ?? user.email ?? 'Рибар';
-      await sendConversationMessage(convId, user.uid, trimmed, otherUid, myName, undefined, undefined, clientId, replyRef);
-    } catch (e) {
-      const code = typeof e === 'object' && e !== null && 'code' in e ? String((e as { code: unknown }).code) : '';
-      if (code === 'unavailable' || code === 'failed-precondition') {
-        const myName = user.displayName ?? user.email ?? 'Рибар';
-        await enqueueMessage(convId, user.uid, trimmed, otherUid, myName, undefined, undefined, clientId, replyRef).catch(() => {});
-        notifyInfo('Офлайн', 'Съобщението ще бъде изпратено, когато се свържеш с интернет.');
-      } else {
-        setText(trimmed);
-        if (replyRef) setReplyingTo(replyingTo);
-        handleError(e);
+    const myName = user.displayName?.trim() || user.email?.trim() || 'Рибар';
+
+    // Optimistic insert: drop a placeholder bubble into the local list right
+    // now, keyed by `clientId` (which is also the eventual Firestore doc id).
+    // When the snapshot subscription fires with the real message it'll match
+    // on id and React reconciles in place. Without this, the user has to wait
+    // for the Firestore round-trip to see their message — and on slow networks
+    // or with App Check token resolution that round-trip can take 5–30s while
+    // appearing to "hang". The spinner used to gate the button on that await;
+    // now the button frees immediately and the message looks sent.
+    const optimisticMsg: DirectMessage = {
+      id: clientId,
+      senderUid: user.uid,
+      text: trimmed,
+      createdAt: { toMillis: () => Date.now() } as DirectMessage['createdAt'],
+      replyTo: replyRef,
+    };
+    setPendingMsgs((prev) => {
+      if (prev.some((m) => m.id === clientId)) return prev;
+      return [...prev, optimisticMsg];
+    });
+
+    // Fire-and-forget the actual write. We deliberately don't await — the
+    // optimistic message is already visible, the input is already empty, and
+    // the subscription will replace the placeholder once the write lands. On
+    // failure we remove the optimistic bubble + restore the draft.
+    (async () => {
+      try {
+        await sendConversationMessage(convId, user.uid, trimmed, otherUid, myName, undefined, undefined, clientId, replyRef);
+      } catch (e) {
+        const code = typeof e === 'object' && e !== null && 'code' in e ? String((e as { code: unknown }).code) : '';
+        if (code === 'unavailable' || code === 'failed-precondition') {
+          await enqueueMessage(convId, user.uid, trimmed, otherUid, myName, undefined, undefined, clientId, replyRef).catch(() => {});
+          notifyInfo('Офлайн', 'Съобщението ще бъде изпратено, когато се свържеш с интернет.');
+        } else {
+          // Genuine failure (rules, App Check, etc.) — yank the optimistic
+          // bubble + put the text back so the user can retry.
+          setPendingMsgs((prev) => prev.filter((m) => m.id !== clientId));
+          setText(trimmed);
+          if (replyRef) setReplyingTo(replyingTo);
+          handleError(e);
+        }
       }
-    } finally {
-      setSending(false);
-    }
+    })();
   }, [convId, text, user, otherUid, clearTypingStatus, editingMsg, blockedByMe, replyingTo, pendingMedia, uploadAndSendMedia]);
 
   const handleLongPressMessage = useCallback((msg: DirectMessage) => {

@@ -10,7 +10,7 @@ import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 import { useAuth } from '../services/authContext';
-import { fetchMyTournaments, fetchPublicTournaments } from '../services/tournaments';
+import { fetchMyTournaments, fetchMyTournamentRank, fetchPublicTournaments, type MyTournamentRank } from '../services/tournaments';
 import type { Tournament } from '../types';
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -136,15 +136,27 @@ function TournamentRow({
   styles,
   colors,
   onPress,
+  rank,
 }: {
   t: Tournament;
   todayIso: string;
   styles: ReturnType<typeof createStyles>;
   colors: AppColors;
   onPress: () => void;
+  rank?: MyTournamentRank;
 }) {
   const s = statusOf(t, todayIso);
   const color = statusColor(s, colors);
+  // Rank pill only when (a) we know the user has at least submitted (rank !== null)
+  // AND (b) the leaderboard has competitors. For ended tournaments this is the
+  // final standing; for active ones it's a live-ish snapshot (refreshed on focus).
+  const showRank = rank && rank.rank != null && rank.total > 0;
+  // Gold/silver/bronze accent for top-3 — anything else is the primary color.
+  const rankColor =
+    showRank && rank!.rank === 1 ? '#E8B923' :
+    showRank && rank!.rank === 2 ? '#9AA0A6' :
+    showRank && rank!.rank === 3 ? '#CD7F32' :
+    colors.primary;
   return (
     <Pressable onPress={onPress} style={styles.row}>
       <View style={styles.iconCircle}>
@@ -157,9 +169,19 @@ function TournamentRow({
           {t.speciesName ? ` · ${t.speciesName}` : ''}
           {' · '}{CATEGORY_LABEL[t.category] ?? t.category}
         </Text>
-        <View style={[styles.pill, { backgroundColor: `${color}1F` }]}>
-          <View style={[styles.pillDot, { backgroundColor: color }]} />
-          <Text style={[styles.pillText, { color }]}>{statusLabel(s)}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <View style={[styles.pill, { backgroundColor: `${color}1F` }]}>
+            <View style={[styles.pillDot, { backgroundColor: color }]} />
+            <Text style={[styles.pillText, { color }]}>{statusLabel(s)}</Text>
+          </View>
+          {showRank ? (
+            <View style={[styles.pill, { backgroundColor: `${rankColor}1F` }]}>
+              <Ionicons name="podium-outline" size={11} color={rankColor} />
+              <Text style={[styles.pillText, { color: rankColor }]}>
+                #{rank!.rank} от {rank!.total}
+              </Text>
+            </View>
+          ) : null}
         </View>
       </View>
       <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
@@ -176,6 +198,10 @@ export default function TournamentsScreen() {
 
   const [mine, setMine] = useState<Tournament[]>([]);
   const [publicList, setPublicList] = useState<Tournament[]>([]);
+  // tournamentId → my rank within it. Populated in a follow-up pass after
+  // the tournament list itself loads, so the cards render immediately and
+  // rank pills "fade in" as each rank fetch resolves.
+  const [myRanks, setMyRanks] = useState<Record<string, MyTournamentRank>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -189,6 +215,21 @@ export default function TournamentsScreen() {
       // Filter out tournaments already in "mine" so they don't appear twice in Discover.
       const mineIds = new Set(m.map((t) => t.id));
       setPublicList(p.filter((t) => !mineIds.has(t.id)));
+      // Kick off per-tournament rank fetches in parallel. Each one reads the
+      // tournament's photoEntries collection. We update myRanks atomically once
+      // all settle to avoid N renders for N tournaments.
+      if (user && m.length > 0) {
+        const uid = user.uid;
+        Promise.all(
+          m.map((t) => fetchMyTournamentRank(t.id, uid).then((r) => [t.id, r] as const))
+        ).then((pairs) => {
+          const next: Record<string, MyTournamentRank> = {};
+          for (const [id, r] of pairs) next[id] = r;
+          setMyRanks(next);
+        }).catch(() => {});
+      } else {
+        setMyRanks({});
+      }
     } catch {
       // best-effort
     } finally {
@@ -254,6 +295,7 @@ export default function TournamentsScreen() {
                       styles={styles}
                       colors={colors}
                       onPress={() => openDetail(t.id)}
+                      rank={myRanks[t.id]}
                     />
                   ))
                 )}

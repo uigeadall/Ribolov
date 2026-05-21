@@ -86,6 +86,7 @@ type NotifPrefs = {
   messages: boolean;
   storyReactions: boolean;
   mentions: boolean;
+  tournamentReminders: boolean;
 };
 
 // Missing prefs default to true (opt-out, not opt-in) so existing users keep
@@ -100,6 +101,7 @@ async function getNotifPrefs(uid: string): Promise<NotifPrefs> {
     messages: d.messages !== false,
     storyReactions: d.storyReactions !== false,
     mentions: d.mentions !== false,
+    tournamentReminders: d.tournamentReminders !== false,
   };
 }
 
@@ -443,6 +445,103 @@ export const cleanupExpiredWaterReports = onSchedule("every 6 hours", async () =
 
 const NOTIFS_MAX_AGE_DAYS = 30;
 const NOTIFS_MAX_DOCS_PER_RUN = 4000;
+
+// ---------------------------------------------------------------------------
+// tournamentEndingSoonReminder — daily at 09:00 Europe/Sofia
+// ---------------------------------------------------------------------------
+// Sends an Expo push to every participant of every tournament whose endDate
+// is *tomorrow* (in YYYY-MM-DD form). Gives competitors a final-day heads-up
+// to submit a catch and check standings.
+//
+// Idempotency: after sending pushes for tournament T we write a marker doc
+// `tournaments/{T}/_meta/reminderSent24h` with a `sentAt` timestamp. If the
+// scheduler re-fires (or if the function is invoked twice in the same day
+// due to a deploy-time backfill), we read the marker first and skip. The
+// marker also lets a host see in the console whether a reminder fired.
+
+export const tournamentEndingSoonReminder = onSchedule(
+  { schedule: "every day 09:00", timeZone: "Europe/Sofia" },
+  async () => {
+    // ISO YYYY-MM-DD for tomorrow in the configured timezone. The scheduler
+    // already runs in Europe/Sofia, but Date() inside the function uses the
+    // container's UTC clock — so we compute against UTC and add 24h, which is
+    // close enough at any timezone offset (the 1-day boundary won't shift).
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const tomorrowIso = tomorrow.toISOString().slice(0, 10);
+
+    const tournamentsSnap = await db
+      .collection("tournaments")
+      .where("endDate", "==", tomorrowIso)
+      .get();
+
+    if (tournamentsSnap.empty) {
+      // eslint-disable-next-line no-console
+      console.log(`[tournamentEndingSoonReminder] no tournaments ending on ${tomorrowIso}`);
+      return;
+    }
+
+    let totalSent = 0;
+    for (const tDoc of tournamentsSnap.docs) {
+      const t = tDoc.data() as { name?: string; speciesName?: string };
+      const tournamentId = tDoc.id;
+      const tournamentName = (t.name ?? "Турнир").slice(0, 80);
+
+      // Idempotency guard — if we already sent for this tournament, skip.
+      // The marker also doubles as an audit trail.
+      const markerRef = db.doc(`tournaments/${tournamentId}/_meta/reminderSent24h`);
+      const markerSnap = await markerRef.get();
+      if (markerSnap.exists) {
+        // eslint-disable-next-line no-console
+        console.log(`[tournamentEndingSoonReminder] ${tournamentId} already reminded — skip`);
+        continue;
+      }
+
+      const participantsSnap = await db
+        .collection(`tournaments/${tournamentId}/participants`)
+        .get();
+      if (participantsSnap.empty) {
+        // Still write the marker so we don't keep re-checking the empty list.
+        await markerRef.set({ sentAt: FieldValue.serverTimestamp(), recipients: 0 });
+        continue;
+      }
+
+      let sent = 0;
+      for (const pDoc of participantsSnap.docs) {
+        const uid = pDoc.id;
+        try {
+          const prefs = await getNotifPrefs(uid);
+          if (!prefs.tournamentReminders) continue;
+          const tokenSnap = await db.doc(`users/${uid}/private/pushToken`).get();
+          const token: string = tokenSnap.data()?.expoPushToken ?? "";
+          if (!token || !token.startsWith("ExponentPushToken[")) continue;
+
+          await sendExpoPush(
+            token,
+            `„${tournamentName}" завършва утре`,
+            t.speciesName
+              ? `Последен шанс да добавиш улов от ${t.speciesName} и да изкатериш класацията.`
+              : "Последен шанс да добавиш улов и да изкатериш класацията.",
+            { type: "tournamentEndingSoon", tournamentId },
+          );
+          sent += 1;
+        } catch (e) {
+          // One bad participant shouldn't kill the rest of the loop.
+          // eslint-disable-next-line no-console
+          console.warn(`[tournamentEndingSoonReminder] ${tournamentId}/${uid} failed`, e);
+        }
+      }
+
+      await markerRef.set({
+        sentAt: FieldValue.serverTimestamp(),
+        recipients: sent,
+      });
+      totalSent += sent;
+    }
+
+    // eslint-disable-next-line no-console
+    console.log(`[tournamentEndingSoonReminder] sent ${totalSent} pushes across ${tournamentsSnap.size} tournaments`);
+  },
+);
 
 export const cleanupOldNotifications = onSchedule("every day 04:00", async () => {
   const cutoff = admin.firestore.Timestamp.fromMillis(

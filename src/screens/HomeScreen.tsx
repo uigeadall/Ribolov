@@ -435,6 +435,10 @@ export default function HomeScreen() {
   const [unreadMsgs, setUnreadMsgs]     = useState(0);
   const [unreadNotifs, setUnreadNotifs] = useState(0);
   const [recentCatches, setRecentCatches] = useState<Catch[]>([]);
+  // Catches from the same month/day in prior years — powers the
+  // "В този ден" memory section. Empty until the user has at least one
+  // year of history on this calendar day.
+  const [thisDayCatches, setThisDayCatches] = useState<Catch[]>([]);
   const [userCoord, setUserCoord] = useState<{ latitude: number; longitude: number } | null>(null);
   const [followingCount, setFollowingCount] = useState(0);
   const [catchCount, setCatchCount] = useState(0);
@@ -455,6 +459,21 @@ export default function HomeScreen() {
     );
 
     setRecentCatches([...list].sort((a, b) => Date.parse(b.date) - Date.parse(a.date)).slice(0, 6));
+
+    // "В този ден" — catches on this same calendar day in prior years.
+    // Match by month+day, exclude the current year so today's catches
+    // (already in Recent) don't double-up. Sort most-recent-year first.
+    const today = new Date();
+    const todayMonth = today.getMonth();
+    const todayDate = today.getDate();
+    const currentYear = today.getFullYear();
+    const sameDay = list.filter((c) => {
+      const t = Date.parse(c.date);
+      if (isNaN(t)) return false;
+      const d = new Date(t);
+      return d.getMonth() === todayMonth && d.getDate() === todayDate && d.getFullYear() !== currentYear;
+    }).sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+    setThisDayCatches(sameDay.slice(0, 8));
 
     fetchRankedClassicPhotos(periodStartIso('week'), { maxCandidates: 20, resultLimit: 1 })
       .then((r) => setTopClassic(r[0] ?? null))
@@ -1006,6 +1025,64 @@ export default function HomeScreen() {
               );
             })}
           </View>
+        )}
+
+        {/* ── В този ден (this day in history) ── */}
+        {thisDayCatches.length > 0 && (
+          <>
+            <View style={S.sectionRow}>
+              <View style={S.sectionLeft}>
+                <View style={[S.sectionAccent, { backgroundColor: '#E8902E' }]} />
+                <Text style={[S.sectionLabel, { color: mutedColor }]}>В този ден</Text>
+              </View>
+            </View>
+            <ScrollView
+              horizontal showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: spacing.xl, gap: spacing.sm, paddingBottom: spacing.xl }}
+            >
+              {thisDayCatches.map((c) => {
+                const yearsAgo = new Date().getFullYear() - new Date(c.date).getFullYear();
+                const ageLabel = yearsAgo === 1 ? 'преди 1 година' : `преди ${yearsAgo} години`;
+                return (
+                  <Pressable
+                    key={c.id}
+                    style={[S.catchCard, { backgroundColor: c.photoUri ? 'transparent' : (mode === 'dark' ? '#0E1E35' : colors.primarySurface) }]}
+                    onPress={() => navigation.navigate('LogbookTab', { screen: 'CatchDetail', params: { id: c.id } })}
+                  >
+                    {c.photoUri ? (
+                      <>
+                        <Image source={{ uri: c.photoUri }} contentFit="cover" style={StyleSheet.absoluteFillObject} />
+                        <LinearGradient
+                          colors={['rgba(0,0,0,0.55)', 'transparent', 'rgba(0,0,0,0.78)']}
+                          start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+                          style={StyleSheet.absoluteFillObject}
+                        />
+                        <View style={{ position: 'absolute', top: 8, left: 8, backgroundColor: 'rgba(232,144,46,0.95)', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8 }}>
+                          <Text style={{ color: '#fff', fontSize: 9, fontFamily: 'Nunito_700Bold', letterSpacing: 0.3 }} numberOfLines={1}>{ageLabel}</Text>
+                        </View>
+                        <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 10 }}>
+                          <Text style={{ color: '#fff', fontSize: 11, fontFamily: 'Nunito_700Bold' }} numberOfLines={1}>{c.speciesName}</Text>
+                          {c.weightKg != null ? (
+                            <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 10 }}>{c.weightKg} кг</Text>
+                          ) : null}
+                        </View>
+                      </>
+                    ) : (
+                      <View style={S.catchEmpty}>
+                        <View style={{ position: 'absolute', top: 8, left: 8, backgroundColor: '#E8902E', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8 }}>
+                          <Text style={{ color: '#fff', fontSize: 9, fontFamily: 'Nunito_700Bold', letterSpacing: 0.3 }} numberOfLines={1}>{ageLabel}</Text>
+                        </View>
+                        <Text style={{ fontSize: 28 }}>🐟</Text>
+                        <Text style={{ fontSize: 10, color: textColor, fontFamily: 'Nunito_600SemiBold', textAlign: 'center', marginTop: 4 }} numberOfLines={2}>
+                          {c.speciesName}
+                        </Text>
+                      </View>
+                    )}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </>
         )}
 
         {/* ── Following catches — fresh activity from anglers you follow ── */}

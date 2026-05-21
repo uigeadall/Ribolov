@@ -56,6 +56,25 @@ export async function clearCatchSyncQueue(): Promise<void> {
   await AsyncStorage.removeItem(QUEUE_KEY);
 }
 
+/** Manual retry path for a specific catch. Used when the user taps the
+    cloud-upload indicator on a Logbook card after an upload has been
+    abandoned (MAX_ATTEMPTS exhausted) or while it's still waiting on
+    backoff. Re-enqueues with attempts=0 and immediately triggers a flush
+    so the user sees movement rather than waiting for the next ambient
+    flush window. */
+export async function forceRetryCatchSync(
+  catchId: string,
+  sharePublic: boolean,
+  ctx: { user: { uid: string; displayName: string | null; email: string | null } },
+): Promise<void> {
+  const q = await readQ();
+  const rest = q.filter((e) => e.catchId !== catchId);
+  rest.push({ catchId, sharePublic, attempts: 0 });
+  await writeQ(rest);
+  addBreadcrumb('sync', 'catch_force_retry', { catchId });
+  await flushPendingCatchSync(ctx);
+}
+
 /** Изпраща чакащите улови към Firebase с експоненциален backoff. */
 export async function flushPendingCatchSync(ctx: {
   user: { uid: string; displayName: string | null; email: string | null };

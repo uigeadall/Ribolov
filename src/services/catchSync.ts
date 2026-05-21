@@ -468,6 +468,90 @@ export async function fetchPublicCatchesByOwner(ownerUid: string, maxItems = 40)
   return snap.docs.map((d) => d.data() as CloudCatch);
 }
 
+// ─── Privacy-aware species heatmap ────────────────────────────────────────────
+// The map renders cells, never raw points. Two privacy invariants:
+//   1. Coordinates are bucketed to ~5km cells (0.05° lat/lon), so the displayed
+//      centroid is never a real catch location — it's a cell center.
+//   2. A cell only emits if it contains at least 3 *distinct* owner uids.
+//      A single angler logging 10 catches at one spot would never show up;
+//      neither would two anglers' personal-spot reveal. Both conditions can be
+//      tuned via HEATMAP_CELL_DEG and HEATMAP_MIN_DISTINCT_OWNERS.
+//
+// We aggregate client-side from publicCatches. A server-side Cloud Function
+// would be stronger (raw points never leave the backend) — that's left as a
+// follow-up. For now the guarantee is: this function NEVER returns a raw
+// CloudCatch, only HeatmapCell aggregates.
+const HEATMAP_CELL_DEG = 0.05;
+const HEATMAP_MIN_DISTINCT_OWNERS = 3;
+
+export type HeatmapCell = {
+  /** Cell-center coordinate (HEATMAP_CELL_DEG grid). Not a real catch location. */
+  latitude: number;
+  longitude: number;
+  /** Number of distinct anglers contributing to this cell. ≥ HEATMAP_MIN_DISTINCT_OWNERS. */
+  ownerCount: number;
+  /** Total catches in this cell. Useful for intensity. */
+  catchCount: number;
+};
+
+export async function fetchSpeciesHeatmap(
+  minDateIso: string,
+  speciesName?: string,
+  maxCount = 2500,
+): Promise<HeatmapCell[]> {
+  const fb = requireFirebase();
+  const constraints = [
+    where('date', '>=', minDateIso),
+    orderBy('date', 'desc'),
+    limit(maxCount),
+  ];
+  const snap = await getDocs(query(collection(fb.db, 'publicCatches'), ...constraints));
+
+  // Bucket each catch into a cell. Track distinct owner uids per cell to
+  // enforce the k-anonymity threshold below.
+  type Bucket = { lat: number; lng: number; owners: Set<string>; catches: number };
+  const buckets = new Map<string, Bucket>();
+
+  for (const d of snap.docs) {
+    const c = d.data() as CloudCatch;
+    if (!c.location?.latitude || !c.location?.longitude || !c.ownerUid) continue;
+    if (speciesName && c.speciesName !== speciesName) continue;
+
+    // Snap to grid. Math.floor on a signed-deg axis is fine — same sign on both ends.
+    const row = Math.floor(c.location.latitude / HEATMAP_CELL_DEG);
+    const col = Math.floor(c.location.longitude / HEATMAP_CELL_DEG);
+    const key = `${row}:${col}`;
+    let b = buckets.get(key);
+    if (!b) {
+      // Cell center (grid-snapped) — NOT the catch's real coords.
+      b = {
+        lat: (row + 0.5) * HEATMAP_CELL_DEG,
+        lng: (col + 0.5) * HEATMAP_CELL_DEG,
+        owners: new Set(),
+        catches: 0,
+      };
+      buckets.set(key, b);
+    }
+    b.owners.add(c.ownerUid);
+    b.catches += 1;
+  }
+
+  // Emit only cells that meet the distinct-owner threshold. This is the
+  // privacy guarantee: a single angler's spots can never leak through this
+  // path no matter how many catches they have there.
+  const cells: HeatmapCell[] = [];
+  for (const b of buckets.values()) {
+    if (b.owners.size < HEATMAP_MIN_DISTINCT_OWNERS) continue;
+    cells.push({
+      latitude: b.lat,
+      longitude: b.lng,
+      ownerCount: b.owners.size,
+      catchCount: b.catches,
+    });
+  }
+  return cells;
+}
+
 export async function refreshOwnerPhotoOnPublicCatches(uid: string, photoUrl: string): Promise<void> {
   _ownerPhotoCache.set(uid, { url: photoUrl, at: Date.now() });
   const fb = requireFirebase();

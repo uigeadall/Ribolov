@@ -187,7 +187,7 @@ const WaterMarker = React.memo(function WaterMarker({
 
 export const NativeMapView = forwardRef<LeafletMapHandle, LeafletMapProps>(
   function NativeMapView(props, ref) {
-    const { spots, dams, rivers, catchMarkers, liveFishingMarkers, pendingCoord, userCoord, routeLine, mapType, onLongPress, onMarkerPress, onDamPress, onRiverPress, onLivePinPress, onMapMove } = props;
+    const { spots, dams, rivers, catchMarkers, heatmapCells, liveFishingMarkers, pendingCoord, userCoord, routeLine, mapType, onLongPress, onMarkerPress, onDamPress, onRiverPress, onLivePinPress, onMapMove } = props;
 
     const mapRef = useRef<MapView>(null);
 
@@ -310,6 +310,22 @@ export const NativeMapView = forwardRef<LeafletMapHandle, LeafletMapProps>(
             onPress={() => onRiverPress(r.id)}
           />
         ))}
+
+        {(heatmapCells ?? []).map((h, i) => {
+          // Color ramp by distinct-angler count: yellow → orange → red.
+          // The threshold floor of 3 is enforced server-side in fetchSpeciesHeatmap.
+          const color = h.ownerCount >= 10 ? '#C92A2A' : h.ownerCount >= 6 ? '#E85D04' : '#F7B731';
+          return (
+            <Circle
+              key={`heat-${i}-${h.latitude.toFixed(3)}-${h.longitude.toFixed(3)}`}
+              center={{ latitude: h.latitude, longitude: h.longitude }}
+              radius={2200}
+              strokeWidth={1.2}
+              strokeColor={color}
+              fillColor={color + '52'}
+            />
+          );
+        })}
 
         {catchClusters.map((cluster) =>
           cluster.count === 1 ? (

@@ -16,12 +16,12 @@ import { radius, spacing, typography } from '../theme/typography';
 import { fetchForecast, type ForecastDay } from '../services/weather';
 import { DAMS } from '../data/dams';
 import { RIVERS } from '../data/rivers';
-import { spotsStore } from '../storage/storage';
+import { spotsStore, catchesStore, getCatchCountByName } from '../storage/storage';
 import type { Spot } from '../types';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 
 type LocKind = 'dam' | 'river' | 'spot';
-type LocationOption = { kind: LocKind; id: string; name: string; lat: number; lng: number };
+type LocationOption = { kind: LocKind; id: string; name: string; lat: number; lng: number; catchCount?: number; isFavorite?: boolean };
 
 function makeVerdictText(rating: number) {
   if (rating >= 4) return { text: 'Отличен ден за риболов!', icon: 'checkmark-circle' as const, positive: true };
@@ -33,13 +33,21 @@ export default function TripPlannerScreen() {
   const { colors } = useTheme();
   const navigation = useAppNavigation();
   const [spots, setSpots] = useState<Spot[]>([]);
+  // Map of spot.name → number of catches logged there. Lets users see
+  // "you've fished here N times" before committing to a trip plan.
+  const [catchCountByName, setCatchCountByName] = useState<Map<string, number>>(new Map());
   const [locTab, setLocTab] = useState<LocKind>('dam');
   const [selectedLoc, setSelectedLoc] = useState<LocationOption | null>(null);
   const [selectedDateIso, setSelectedDateIso] = useState('');
   const [forecast, setForecast] = useState<ForecastDay | null>(null);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => { spotsStore.list().then(setSpots); }, []);
+  useEffect(() => {
+    spotsStore.list().then(setSpots);
+    catchesStore.list()
+      .then((catches) => setCatchCountByName(getCatchCountByName(catches)))
+      .catch(() => {});
+  }, []);
 
   const dateOptions = useMemo(() => {
     const result: { dateIso: string; label: string; shortLabel: string }[] = [];
@@ -62,8 +70,24 @@ export default function TripPlannerScreen() {
   const locationOptions: LocationOption[] = useMemo(() => {
     if (locTab === 'dam') return DAMS.map((d) => ({ kind: 'dam', id: d.id, name: d.name, lat: d.latitude, lng: d.longitude }));
     if (locTab === 'river') return RIVERS.map((r) => ({ kind: 'river', id: r.id, name: r.name, lat: r.latitude, lng: r.longitude }));
-    return spots.map((s) => ({ kind: 'spot', id: s.id, name: s.name, lat: s.latitude, lng: s.longitude }));
-  }, [locTab, spots]);
+    // Spots: sort favorites first, then by catch count desc — the most
+    // fished bookmarks bubble to the top of the picker.
+    const decorated = spots.map((s) => ({
+      kind: 'spot' as const,
+      id: s.id,
+      name: s.name,
+      lat: s.latitude,
+      lng: s.longitude,
+      catchCount: catchCountByName.get(s.name) ?? 0,
+      isFavorite: !!s.isFavorite,
+    }));
+    decorated.sort((a, b) => {
+      const favDiff = (b.isFavorite ? 1 : 0) - (a.isFavorite ? 1 : 0);
+      if (favDiff !== 0) return favDiff;
+      return (b.catchCount ?? 0) - (a.catchCount ?? 0);
+    });
+    return decorated;
+  }, [locTab, spots, catchCountByName]);
 
   const loadForecast = useCallback(async (loc: LocationOption, dateIso: string) => {
     setLoading(true);
@@ -211,7 +235,17 @@ export default function TripPlannerScreen() {
               return (
                 <Pressable key={loc.id} onPress={() => selectLocation(loc)} style={[styles.locRow, active && styles.locRowActive]}>
                   <Ionicons name={locIcon(loc.kind)} size={15} color={active ? colors.primary : colors.textMuted} />
-                  <Text style={[styles.locName, active && styles.locNameActive]} numberOfLines={1}>{loc.name}</Text>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                      {loc.isFavorite ? <Ionicons name="star" size={12} color="#E8B923" /> : null}
+                      <Text style={[styles.locName, active && styles.locNameActive]} numberOfLines={1}>{loc.name}</Text>
+                    </View>
+                    {loc.kind === 'spot' && (loc.catchCount ?? 0) > 0 ? (
+                      <Text style={{ ...typography.small, color: colors.primary, marginTop: 1, fontWeight: '600' }}>
+                        🎣 {loc.catchCount} {loc.catchCount === 1 ? 'улов от тук' : 'улова от тук'}
+                      </Text>
+                    ) : null}
+                  </View>
                   {active ? <Ionicons name="checkmark" size={16} color={colors.primary} /> : null}
                 </Pressable>
               );

@@ -58,11 +58,29 @@ export async function submitCatchToTournament(
     stripUndefinedForFirestore({ ...entry, likeCount: 0, submittedAt: serverTimestamp() }),
     { merge: true }
   );
+  invalidatePhotoEntries(tournamentId);
+}
+
+// Short-lived in-memory cache of photo-entries per tournament. TournamentsScreen
+// fans out one fetch per joined tournament every time the tab gets focus — for
+// a user joined to 20+ tournaments that's 20 Firestore reads per re-focus. The
+// rank can shift between sessions but doesn't need second-by-second freshness.
+const PHOTO_ENTRIES_TTL_MS = 60_000;
+const photoEntriesCache = new Map<string, { entries: TournamentPhotoEntry[]; expiresAt: number }>();
+
+/** Drop the cached entries for a tournament so the next fetch goes to
+    Firestore. Called after mutations that change ranking (new submission,
+    like toggle) so the user sees fresh standings. */
+function invalidatePhotoEntries(tournamentId: string) {
+  photoEntriesCache.delete(tournamentId);
 }
 
 export async function fetchTournamentPhotoEntries(
   tournamentId: string
 ): Promise<TournamentPhotoEntry[]> {
+  const cached = photoEntriesCache.get(tournamentId);
+  if (cached && cached.expiresAt > Date.now()) return cached.entries;
+
   const fb = requireFirebase();
   try {
     const snap = await getDocs(
@@ -72,10 +90,15 @@ export async function fetchTournamentPhotoEntries(
         limit(50)
       )
     );
-    return snap.docs.map((d) => ({
+    const entries = snap.docs.map((d) => ({
       id: d.id,
       ...(d.data() as Omit<TournamentPhotoEntry, 'id'>),
     }));
+    photoEntriesCache.set(tournamentId, {
+      entries,
+      expiresAt: Date.now() + PHOTO_ENTRIES_TTL_MS,
+    });
+    return entries;
   } catch {
     return [];
   }
@@ -90,6 +113,9 @@ export async function toggleTournamentEntryLike(
   const likeRef = doc(fb.db, 'tournaments', tournamentId, 'photoEntries', entryId, 'likes', uid);
   const entryRef = doc(fb.db, 'tournaments', tournamentId, 'photoEntries', entryId);
   const likeSnap = await getDoc(likeRef);
+  // Like toggles reorder the ranking — invalidate so the next fetch reflects
+  // the new likeCount rather than a stale 60s-old snapshot.
+  invalidatePhotoEntries(tournamentId);
   if (likeSnap.exists()) {
     await deleteDoc(likeRef);
     updateDoc(entryRef, { likeCount: increment(-1) }).catch(() => {});
@@ -228,6 +254,39 @@ export async function fetchMyActiveTournaments(uid: string): Promise<Tournament[
   }
   results.sort((a, b) => (a.endDate ?? '').localeCompare(b.endDate ?? ''));
   return results;
+}
+
+/** A user's standing within a tournament. `rank` is null when the user
+    hasn't submitted a photo entry yet (they joined but didn't compete).
+    `total` is the number of competing entries — i.e. participants who
+    actually submitted. Ranking matches the photoEntries leaderboard,
+    which is ordered by `likeCount` desc. */
+export type MyTournamentRank = {
+  rank: number | null;
+  total: number;
+};
+
+/** Fetches the current user's standing in a tournament. Uses the same
+    `photoEntries` collection that the detail screen renders, so the rank
+    here matches what the user sees on the leaderboard. Best-effort — on
+    any Firestore error this returns `{ rank: null, total: 0 }` so the
+    caller can silently skip rendering the rank pill. */
+export async function fetchMyTournamentRank(
+  tournamentId: string,
+  uid: string
+): Promise<MyTournamentRank> {
+  if (!tournamentId || !uid) return { rank: null, total: 0 };
+  try {
+    const entries = await fetchTournamentPhotoEntries(tournamentId);
+    if (entries.length === 0) return { rank: null, total: 0 };
+    // photoEntries are keyed by ownerUid (one entry per user — see
+    // submitCatchToTournament). They're already sorted by likeCount desc
+    // by the underlying query, so index + 1 is the displayed rank.
+    const idx = entries.findIndex((e) => e.ownerUid === uid);
+    return { rank: idx >= 0 ? idx + 1 : null, total: entries.length };
+  } catch {
+    return { rank: null, total: 0 };
+  }
 }
 
 export async function getMyLikedEntries(

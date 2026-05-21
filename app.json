@@ -26,9 +26,11 @@
       "bundleIdentifier": "com.ribolov.app",
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Приложението използва локацията, за да маркира спот, прогноза за времето и улов.",
-        "NSCameraUsageDescription": "Достъп до камерата, за да снимаш улова си.",
-        "NSPhotoLibraryUsageDescription": "Достъп до галерията, за да прикачиш снимка към улова.",
+        "NSLocationWhenInUseUsageDescription": "Локацията се ползва, за да маркира мястото на твоите улови, да показва близки язовири и реки и да дава локална прогноза за времето.",
+        "NSCameraUsageDescription": "Камерата се ползва, за да заснемаш снимки на твоите улови за дневника, профила и публикациите ти.",
+        "NSPhotoLibraryUsageDescription": "Достъп до галерията, за да избираш снимки на улови, профилна снимка и снимки за съобщения и публикации.",
+        "NSPhotoLibraryAddUsageDescription": "Записва генерираните снимки на улови в галерията, когато ги споделяш.",
+        "NSUserTrackingUsageDescription": "Това разрешение позволява да виждаш по-релевантни препоръки и реклами. Може да го откажеш без последствия.",
         "ITSAppUsesNonExemptEncryption": false,
         "LSApplicationQueriesSchemes": [
           "maps",
@@ -118,7 +120,7 @@
       "googleIosClientId": "966535631632-1gdn9h1fvfal4uhf1u6b8lmjb2hu522g.apps.googleusercontent.com",
       "googleAndroidClientId": "",
       "facebookAppId": "",
-      "firebaseAppCheckEnabled": "false",
+      "firebaseAppCheckEnabled": "true",
       "firebaseAppCheckDebugToken": "",
       "sentryDsn": ""
     },

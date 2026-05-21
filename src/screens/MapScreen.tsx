@@ -33,9 +33,10 @@ import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { spotsStore, catchesStore, newId } from '../storage/storage';
+import { spotsStore, catchesStore, getCatchCountByName, newId } from '../storage/storage';
 import { Spot } from '../types';
-import type { CatchMapMarker, LiveFishingMarker } from '../components/LeafletMap';
+import type { CatchMapMarker, LiveFishingMarker, HeatmapCell } from '../components/LeafletMap';
+import { fetchSpeciesHeatmap } from '../services/catchSync';
 import {
   subscribeActiveLivePins,
   createLiveFishingPin,
@@ -170,6 +171,12 @@ export default function MapScreen() {
   const [layersOpen, setLayersOpen] = useState(false);
   const [catchCountByName, setCatchCountByName] = useState<Map<string, number>>(new Map());
   const [filterSpecies, setFilterSpecies] = useState<string | null>(null);
+  // Privacy-aware species heatmap. Server returns pre-aggregated cells (3+
+  // distinct anglers each, coords snapped to a coarse grid) — see
+  // fetchSpeciesHeatmap. We fetch on toggle-on or species-filter change.
+  const [heatmapCells, setHeatmapCells] = useState<HeatmapCell[]>([]);
+  const [showHeatmap, setShowHeatmap] = useState(false);
+  const [heatmapLoading, setHeatmapLoading] = useState(false);
 
   // Live "fishing here right now" pins
   const [livePins, setLivePins] = useState<LiveFishingPin[]>([]);
@@ -219,6 +226,26 @@ export default function MapScreen() {
     );
   }, [showCatchMarkers]);
 
+  // Heatmap data — fetched only when the layer is enabled, and refetched if
+  // the species filter changes (so the heatmap visibly narrows to the chosen
+  // species). Aggregation is done in the service; we never receive raw points.
+  useEffect(() => {
+    if (!showHeatmap) {
+      setHeatmapCells([]);
+      return;
+    }
+    let cancelled = false;
+    setHeatmapLoading(true);
+    // ~6 months of public catches — enough to populate cells; small enough
+    // to stay under the 2500-doc limit on the service side for most regions.
+    const since = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    fetchSpeciesHeatmap(since, filterSpecies ?? undefined)
+      .then((cells) => { if (!cancelled) setHeatmapCells(cells); })
+      .catch(() => { if (!cancelled) setHeatmapCells([]); })
+      .finally(() => { if (!cancelled) setHeatmapLoading(false); });
+    return () => { cancelled = true; };
+  }, [showHeatmap, filterSpecies]);
+
   const load = useCallback(async () => {
     const [loadedSpots, catches] = await Promise.all([spotsStore.list(), catchesStore.list()]);
     setSpots(loadedSpots);
@@ -232,12 +259,7 @@ export default function MapScreen() {
         weightKg: c.weightKg,
       }));
     setCatchMarkers(markers);
-    const countMap = new Map<string, number>();
-    catches.forEach((c) => {
-      if (c.location?.name)
-        countMap.set(c.location.name, (countMap.get(c.location.name) ?? 0) + 1);
-    });
-    setCatchCountByName(countMap);
+    setCatchCountByName(getCatchCountByName(catches));
   }, []);
 
   const catchSpeciesList = useMemo(() => {
@@ -814,6 +836,7 @@ export default function MapScreen() {
             dams={!showFavoritesOnly && showDams ? DAMS : []}
             rivers={!showFavoritesOnly && showRivers ? RIVERS : []}
             catchMarkers={showCatchMarkers ? filteredCatchMarkers : []}
+            heatmapCells={showHeatmap ? heatmapCells : []}
             pendingCoord={pendingCoord}
             userCoord={userCoord}
             routeLine={routeLine}
@@ -838,6 +861,7 @@ export default function MapScreen() {
             dams={!showFavoritesOnly && showDams ? DAMS : []}
             rivers={!showFavoritesOnly && showRivers ? RIVERS : []}
             catchMarkers={showCatchMarkers ? filteredCatchMarkers : []}
+            heatmapCells={showHeatmap ? heatmapCells : []}
             pendingCoord={pendingCoord}
             userCoord={userCoord}
             routeLine={routeLine}
@@ -868,7 +892,7 @@ export default function MapScreen() {
           </Pressable>
         ) : null}
 
-        {showCatchMarkers && catchSpeciesList.length > 1 ? (
+        {(showCatchMarkers || showHeatmap) && catchSpeciesList.length > 1 ? (
           <SpeciesFilterRow
             species={catchSpeciesList}
             selected={filterSpecies}
@@ -999,6 +1023,27 @@ export default function MapScreen() {
               </Text>
             </Pressable>
           ) : null}
+
+          <Pressable
+            onPress={() => setShowHeatmap((v) => !v)}
+            accessibilityLabel="Хийтмап на улови"
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: 5,
+              paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
+              backgroundColor: showHeatmap ? '#C92A2A' : (mode === 'dark' ? 'rgba(18,28,36,0.96)' : 'rgba(255,255,255,0.97)'),
+              shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
+              elevation: 4,
+            }}
+          >
+            {heatmapLoading ? (
+              <ActivityIndicator size="small" color={showHeatmap ? '#fff' : colors.primary} />
+            ) : (
+              <Ionicons name="flame-outline" size={13} color={showHeatmap ? '#fff' : colors.textMuted} />
+            )}
+            <Text style={{ fontSize: 12, fontFamily: 'Nunito_700Bold', color: showHeatmap ? '#fff' : colors.text }}>
+              Хийтмап
+            </Text>
+          </Pressable>
         </ScrollView>
       </View>
 

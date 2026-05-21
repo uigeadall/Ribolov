@@ -20,6 +20,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useAuth } from '../services/authContext';
 import { deleteCatchEverywhere } from '../services/cloudSync';
+import { forceRetryCatchSync } from '../services/catchSyncQueue';
+import Toast from 'react-native-toast-message';
 import { computePersonalBests, isPersonalBestCatch } from '../services/personalBests';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 import { Ionicons } from '@expo/vector-icons';
@@ -80,10 +82,11 @@ type CatchCardProps = {
   onPress: (item: Catch) => void;
   onDelete: (item: Catch) => void;
   onEdit: (item: Catch) => void;
+  onRetrySync: (item: Catch) => void;
 };
 
 const CatchCard = React.memo(function CatchCard({
-  item, colors, personalBests, user, onPress, onDelete, onEdit,
+  item, colors, personalBests, user, onPress, onDelete, onEdit, onRetrySync,
 }: CatchCardProps) {
   const isPB = isPersonalBestCatch(item, personalBests);
   const accent = speciesAccent(item.speciesName);
@@ -155,9 +158,32 @@ const CatchCard = React.memo(function CatchCard({
                 </View>
               )}
               {user && !item.syncedToCloud ? (
-                <View style={{ position: 'absolute', bottom: 8, right: 8 }}>
-                  <Ionicons name="cloud-upload-outline" size={14} color="rgba(255,255,255,0.8)" />
-                </View>
+                // Tap to force-retry the upload. Without this, an abandoned
+                // upload (queue gave up after MAX_ATTEMPTS) silently stays
+                // local with a file:// photoUri — the user has no way to
+                // recover the photo. The pill is small but tappable with a
+                // generous hit slop.
+                <Pressable
+                  onPress={(e) => { e.stopPropagation?.(); onRetrySync(item); }}
+                  hitSlop={10}
+                  style={{
+                    position: 'absolute',
+                    bottom: 6,
+                    right: 6,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 4,
+                    backgroundColor: 'rgba(0,0,0,0.55)',
+                    paddingHorizontal: 8,
+                    paddingVertical: 4,
+                    borderRadius: 12,
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Опитай отново качване"
+                >
+                  <Ionicons name="cloud-upload-outline" size={12} color="#fff" />
+                  <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>Опитай отново</Text>
+                </Pressable>
               ) : null}
             </View>
           ) : (
@@ -178,9 +204,15 @@ const CatchCard = React.memo(function CatchCard({
                 </View>
               )}
               {user && !item.syncedToCloud && !item.photoUri ? (
-                <View style={{ marginLeft: 6 }}>
+                <Pressable
+                  onPress={(e) => { e.stopPropagation?.(); onRetrySync(item); }}
+                  hitSlop={8}
+                  style={{ marginLeft: 6 }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Опитай отново синхронизация"
+                >
                   <Ionicons name="cloud-upload-outline" size={14} color={colors.textMuted} />
-                </View>
+                </Pressable>
               ) : null}
             </View>
 
@@ -284,10 +316,11 @@ type LogbookCalendarProps = {
   onOpenCatch: (item: Catch) => void;
   onDeleteCatch: (item: Catch) => void;
   onEditCatch: (item: Catch) => void;
+  onRetrySync: (item: Catch) => void;
   bottomPad: number;
 };
 
-function LogbookCalendar({ catches, colors, onDayPress, selectedDay, calMonth, setCalMonth, personalBests, user, onOpenCatch, onDeleteCatch, onEditCatch, bottomPad }: LogbookCalendarProps) {
+function LogbookCalendar({ catches, colors, onDayPress, selectedDay, calMonth, setCalMonth, personalBests, user, onOpenCatch, onDeleteCatch, onEditCatch, onRetrySync, bottomPad }: LogbookCalendarProps) {
   const daysInMonth = new Date(calMonth.year, calMonth.month + 1, 0).getDate();
   const firstDow = (new Date(calMonth.year, calMonth.month, 1).getDay() + 6) % 7;
 
@@ -372,7 +405,7 @@ function LogbookCalendar({ catches, colors, onDayPress, selectedDay, calMonth, s
           <Text style={{ ...typography.body, color: colors.textMuted, textAlign: 'center', marginTop: spacing.lg }}>Няма улови</Text>
         ) : (
           selectedDayCatches.map((calItem) => (
-            <CatchCard key={calItem.id} item={calItem} colors={colors} personalBests={personalBests} user={user} onPress={onOpenCatch} onDelete={onDeleteCatch} onEdit={onEditCatch} />
+            <CatchCard key={calItem.id} item={calItem} colors={colors} personalBests={personalBests} user={user} onPress={onOpenCatch} onDelete={onDeleteCatch} onEdit={onEditCatch} onRetrySync={onRetrySync} />
           ))
         )}
         <View style={{ height: bottomPad }} />
@@ -564,6 +597,26 @@ export default function LogbookScreen() {
     navigation.navigate('AddCatch', { editCatchId: catchItem.id });
   }, [navigation]);
 
+  // Tap-to-retry on the cloud-upload pill for unsynced catches. Re-enqueues
+  // with a fresh attempt count and flushes immediately so the user sees the
+  // pill disappear when the upload finally succeeds.
+  const handleRetrySync = useCallback(async (catchItem: Catch) => {
+    if (!user) return;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      await forceRetryCatchSync(catchItem.id, false, {
+        user: { uid: user.uid, displayName: user.displayName, email: user.email },
+      });
+      // Refresh the local catch list — the queue updated syncedToCloud on
+      // success, but our items state needs a re-read to mirror it.
+      const fresh = await catchesStore.list();
+      setItems(fresh.sort((a, b) => Date.parse(b.date) - Date.parse(a.date)));
+      Toast.show({ type: 'success', text1: 'Опитваме отново…', visibilityTime: 1500 });
+    } catch {
+      Toast.show({ type: 'error', text1: 'Грешка', text2: 'Опитай отново по-късно.', visibilityTime: 2000 });
+    }
+  }, [user]);
+
   const handleUndoDelete = useCallback(async () => {
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
     if (!pendingDelete) return;
@@ -577,9 +630,9 @@ export default function LogbookScreen() {
     gridView ? (
       <CatchGridItem item={item} colors={colors} personalBests={personalBests} onPress={(c) => navigation.navigate('CatchDetail', { id: c.id })} />
     ) : (
-      <CatchCard item={item} colors={colors} personalBests={personalBests} user={user} onPress={(c) => navigation.navigate('CatchDetail', { id: c.id })} onDelete={handleSwipeDelete} onEdit={handleSwipeEdit} />
+      <CatchCard item={item} colors={colors} personalBests={personalBests} user={user} onPress={(c) => navigation.navigate('CatchDetail', { id: c.id })} onDelete={handleSwipeDelete} onEdit={handleSwipeEdit} onRetrySync={handleRetrySync} />
     ),
-    [gridView, colors, personalBests, user, navigation, handleSwipeDelete, handleSwipeEdit]
+    [gridView, colors, personalBests, user, navigation, handleSwipeDelete, handleSwipeEdit, handleRetrySync]
   );
 
   const subtitle = items.length === 0
@@ -803,6 +856,7 @@ export default function LogbookScreen() {
             onOpenCatch={(c) => navigation.navigate('CatchDetail', { id: c.id })}
             onDeleteCatch={handleSwipeDelete}
             onEditCatch={handleSwipeEdit}
+            onRetrySync={handleRetrySync}
             bottomPad={bottomPad + 8}
           />
         ) : items.length === 0 ? (

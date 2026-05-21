@@ -56,8 +56,8 @@ export function ListRow({ icon, iconTint, title, subtitle, onPress }: Props) {
         <Ionicons name={icon} size={23} color={tint} />
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={styles.title}>{title}</Text>
-        {subtitle ? <Text style={styles.sub}>{subtitle}</Text> : null}
+        <Text style={styles.title} numberOfLines={1}>{title}</Text>
+        {subtitle ? <Text style={styles.sub} numberOfLines={2}>{subtitle}</Text> : null}
       </View>
       <Ionicons name="chevron-forward" size={22} color={colors.textMuted} />
     </Pressable>

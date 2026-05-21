@@ -30,12 +30,24 @@ export type LiveFishingMarker = {
   expiresAt: number;
 };
 
+/** Aggregated heatmap cell — see fetchSpeciesHeatmap. Centroid is grid-snapped,
+    never a real catch location. ownerCount is always ≥ 3 (k-anonymity floor). */
+export type HeatmapCell = {
+  latitude: number;
+  longitude: number;
+  ownerCount: number;
+  catchCount: number;
+};
+
 type Props = {
   spots: Spot[];
   dams: Dam[];
   rivers: River[];
   catchMarkers?: CatchMapMarker[];
   liveFishingMarkers?: LiveFishingMarker[];
+  /** Privacy-aware heatmap overlay. When set, renders translucent circles at
+      cell centers proportional to angler count. Empty/undefined = no overlay. */
+  heatmapCells?: HeatmapCell[];
   pendingCoord: { latitude: number; longitude: number } | null;
   userCoord: { latitude: number; longitude: number } | null;
   /** Полилиния по пътища (lng/lat точки от OSRM и др.), или null за скриване */
@@ -182,6 +194,27 @@ html,body,#map{margin:0;padding:0;height:100%;width:100%;}
       catchLayerMarkers.push(m);
     });
 
+    // Heatmap cells — privacy-aware circles centered on grid cells, color by
+    // angler count. Always cleared first so toggling off works.
+    if(window.__heatmapLayer){ map.removeLayer(window.__heatmapLayer); window.__heatmapLayer=null; }
+    if(payload.heatmap && payload.heatmap.length){
+      window.__heatmapLayer = L.layerGroup().addTo(map);
+      payload.heatmap.forEach(function(h){
+        var count = h.ownerCount;
+        var fill = count >= 10 ? '#C92A2A' : count >= 6 ? '#E85D04' : '#F7B731';
+        L.circle([h.latitude,h.longitude],{
+          radius: 2200,
+          color: fill,
+          fillColor: fill,
+          fillOpacity: 0.32,
+          weight: 1.2,
+          opacity: 0.65,
+        })
+          .addTo(window.__heatmapLayer)
+          .bindTooltip(count + ' рибари · ' + h.catchCount + ' улова', { direction:'top' });
+      });
+    }
+
     if(pendMarker){ map.removeLayer(pendMarker); pendMarker=null; }
     if(payload.pending){
       pendMarker = L.circleMarker([payload.pending.latitude,payload.pending.longitude],{radius:11,color:'#D64545',fillColor:'#FF908F',fillOpacity:0.95,weight:3}).addTo(map);
@@ -246,6 +279,7 @@ export const LeafletMap = forwardRef<LeafletMapHandle, Props>(function LeafletMa
     dams,
     rivers,
     catchMarkers,
+    heatmapCells,
     pendingCoord,
     userCoord,
     routeLine,
@@ -274,13 +308,14 @@ export const LeafletMap = forwardRef<LeafletMapHandle, Props>(function LeafletMa
         dams,
         rivers,
         catchMarkers: catchMarkers ?? [],
+        heatmap: heatmapCells ?? [],
         pending: pendingCoord,
         user: userCoord,
         route: routeLine ?? null,
         mapType,
         zoom: webZoom,
       }),
-    [spots, dams, rivers, catchMarkers, pendingCoord, userCoord, routeLine, mapType, webZoom]
+    [spots, dams, rivers, catchMarkers, heatmapCells, pendingCoord, userCoord, routeLine, mapType, webZoom]
   );
 
   const injectRefresh = useCallback(() => {

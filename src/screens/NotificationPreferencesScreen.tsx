@@ -16,17 +16,19 @@ type Prefs = {
   messages: boolean;
   storyReactions: boolean;
   mentions: boolean;
+  tournamentReminders: boolean;
 };
 
-const DEFAULT_PREFS: Prefs = { likes: true, comments: true, follows: true, messages: true, storyReactions: true, mentions: true };
+const DEFAULT_PREFS: Prefs = { likes: true, comments: true, follows: true, messages: true, storyReactions: true, mentions: true, tournamentReminders: true };
 
 const ROWS: { key: keyof Prefs; icon: string; label: string; sub: string }[] = [
-  { key: 'likes',          icon: 'heart-outline',          label: 'Харесвания',      sub: 'Когато някой хареса твой улов' },
-  { key: 'comments',       icon: 'chatbubble-outline',     label: 'Коментари',       sub: 'Нови коментари под твои публикации' },
-  { key: 'follows',        icon: 'person-add-outline',     label: 'Нови последователи', sub: 'Когато някой те последва' },
-  { key: 'messages',       icon: 'mail-outline',           label: 'Съобщения',       sub: 'Лични съобщения' },
-  { key: 'mentions',       icon: 'at-outline',             label: 'Споменавания',    sub: 'Когато някой те спомене в публикация' },
-  { key: 'storyReactions', icon: 'happy-outline',          label: 'Реакции на истории', sub: 'Реакции към твоите истории' },
+  { key: 'likes',               icon: 'heart-outline',          label: 'Харесвания',           sub: 'Когато някой хареса твой улов' },
+  { key: 'comments',            icon: 'chatbubble-outline',     label: 'Коментари',            sub: 'Нови коментари под твои публикации' },
+  { key: 'follows',             icon: 'person-add-outline',     label: 'Нови последователи',   sub: 'Когато някой те последва' },
+  { key: 'messages',            icon: 'mail-outline',           label: 'Съобщения',            sub: 'Лични съобщения' },
+  { key: 'mentions',            icon: 'at-outline',             label: 'Споменавания',         sub: 'Когато някой те спомене в публикация' },
+  { key: 'storyReactions',      icon: 'happy-outline',          label: 'Реакции на истории',   sub: 'Реакции към твоите истории' },
+  { key: 'tournamentReminders', icon: 'trophy-outline',         label: 'Напомняния за турнири', sub: 'Когато турнир, в който участваш, завършва утре' },
 ];
 
 export default function NotificationPreferencesScreen() {

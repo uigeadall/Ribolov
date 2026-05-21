@@ -145,6 +145,18 @@ export const tripsStore = {
   }),
 };
 
+/** Build a `Map<spotName, catchCount>` from a list of catches. Used to
+    surface "you've fished here N times" on spot rows in MapScreen and the
+    TripPlanner picker. Matches by exact `location.name` — catches without a
+    spot name don't contribute. */
+export function getCatchCountByName(catches: Catch[]): Map<string, number> {
+  const m = new Map<string, number>();
+  catches.forEach((c) => {
+    if (c.location?.name) m.set(c.location.name, (m.get(c.location.name) ?? 0) + 1);
+  });
+  return m;
+}
+
 export const newId = () => Crypto.randomUUID();
 
 const RECENT_BAITS_KEY = '@ribolov/recent-baits';

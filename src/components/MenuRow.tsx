@@ -86,8 +86,8 @@ export function MenuRow({ icon, title, subtitle, onPress, showDivider, dense, de
           <Ionicons name={icon} size={iconGlyph} color={iconColor} />
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={styles.title}>{title}</Text>
-          {subtitle ? <Text style={styles.sub}>{subtitle}</Text> : null}
+          <Text style={styles.title} numberOfLines={1}>{title}</Text>
+          {subtitle ? <Text style={styles.sub} numberOfLines={2}>{subtitle}</Text> : null}
         </View>
         {rightBadge ? (
           <View style={{ backgroundColor: '#E53935', borderRadius: 10, minWidth: 20, height: 20, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5, marginRight: 6 }}>
