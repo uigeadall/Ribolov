@@ -140,6 +140,20 @@ export default function MapScreen() {
   const [userCoord, setUserCoord] = useState<{ latitude: number; longitude: number } | null>(null);
   const [spots, setSpots] = useState<Spot[]>([]);
   const [pendingCoord, setPendingCoord] = useState<{ latitude: number; longitude: number } | null>(null);
+  // Synchronous double-tap guard for the NewSpotModal Save button. Same shape
+  // as the AddCatch and PostCard guards — React's batched state-setter means
+  // a plain `saving` bool is too slow to block a rapid second tap before the
+  // first invocation reaches `spotsStore.save`. Each saveSpot call generates
+  // a fresh newId() so without this guard two taps create TWO duplicate
+  // spots at the same coordinates.
+  const spotSavingRef = useRef(false);
+  // Generation counter for in-app route fetches. Each openInAppRouteToWater
+  // call bumps it + captures the local value; when the OSRM fetch resolves
+  // we compare against the current ref. A user who tapped "Маршрут" for
+  // dam A, then closed that sheet and tapped dam B before A's fetch
+  // returned, would otherwise see A's route painted (and B's sheet closed)
+  // out from under them.
+  const routeRequestIdRef = useRef(0);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [waterType, setWaterType] = useState<Spot['waterType']>('lake');
@@ -298,6 +312,14 @@ export default function MapScreen() {
       task.cancel();
     };
   }, [load]);
+
+  // Refresh spots + catch markers + catchCountByName whenever the Map tab
+  // refocuses. Without this, adding a catch via AddCatchScreen and returning
+  // to the map shows stale data until the screen fully remounts (kill-app or
+  // pop-from-stack). The catchesStore in-memory cache makes the re-read
+  // cheap, so running on every focus is fine. Pattern matches LogbookScreen
+  // and TournamentsScreen.
+  useFocusEffect(useCallback(() => { void load(); }, [load]));
 
   useEffect(() => {
     if (!focusDamId) return;
@@ -574,11 +596,14 @@ export default function MapScreen() {
   }, [selected]);
 
   const saveSpot = async () => {
+    if (spotSavingRef.current) return;
     if (!pendingCoord) return;
     if (!name.trim()) {
       Alert.alert('Име', 'Дай име на спота, за да го запазиш.');
       return;
     }
+    spotSavingRef.current = true;
+    try {
     const spot: Spot = {
       id: newId(),
       name: name.trim(),
@@ -595,6 +620,9 @@ export default function MapScreen() {
     setDescription('');
     setWaterType('lake');
     load();
+    } finally {
+      spotSavingRef.current = false;
+    }
   };
 
   const removeSelected = () => {
@@ -716,6 +744,12 @@ export default function MapScreen() {
 
   const openInAppRouteToWater = useCallback(async () => {
     if (!selectedWater) return;
+    // Capture the dam we're routing TO so we can verify the user is still on
+    // the same sheet when OSRM responds. Without this, a slow response can
+    // paint a stale route + close a sheet the user opened after switching
+    // dams.
+    const requestedWater = selectedWater;
+    const requestId = ++routeRequestIdRef.current;
     setRouteLoading(true);
     try {
       let origin = userCoord;
@@ -739,18 +773,30 @@ export default function MapScreen() {
         return;
       }
       const pts = await fetchDrivingRoutePoints(origin, {
-        latitude: selectedWater.item.latitude,
-        longitude: selectedWater.item.longitude,
+        latitude: requestedWater.item.latitude,
+        longitude: requestedWater.item.longitude,
       });
+      // Bail if the user has since fired a different route fetch OR closed
+      // the sheet for `requestedWater` (or moved to a different dam). Either
+      // condition means this response is stale.
+      if (requestId !== routeRequestIdRef.current) return;
       setRouteLine(pts);
-      setSelectedWater(null);
+      // Only auto-close the sheet if it's still showing the same dam we
+      // routed to — preserves UX when the user moved on.
+      setSelectedWater((curr) => (curr === requestedWater ? null : curr));
     } catch {
-      Alert.alert(
-        'Маршрут',
-        'Неуспешно изчисляване по пътища. Провери интернет или опитай навигация във външно приложение.'
-      );
+      // Don't show the error if a newer route request superseded this one;
+      // the newer one will handle its own outcome.
+      if (requestId === routeRequestIdRef.current) {
+        Alert.alert(
+          'Маршрут',
+          'Неуспешно изчисляване по пътища. Провери интернет или опитай навигация във външно приложение.'
+        );
+      }
     } finally {
-      setRouteLoading(false);
+      if (requestId === routeRequestIdRef.current) {
+        setRouteLoading(false);
+      }
     }
   }, [selectedWater, userCoord]);
 
