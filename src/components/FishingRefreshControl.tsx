@@ -1,10 +1,21 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { RefreshControl, RefreshControlProps, Animated, StyleSheet, Platform } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { useTheme } from '../services/themeContext';
 
 export function FishingRefreshControl(props: RefreshControlProps) {
   const { colors } = useTheme();
-  const { refreshing, ...rest } = props;
+  const { refreshing, onRefresh, ...rest } = props;
+
+  // Wrap the caller's onRefresh with a Light haptic. Centralized here so every
+  // screen using this component gets the tactile feedback for free — fixes the
+  // inconsistency where ChatsScreen and NotificationsScreen had it inline but
+  // FeedScreen / StatsScreen / LogbookScreen / SavedPostsScreen / GroupsScreen
+  // / ExploreScreen did not.
+  const handleRefresh = useCallback(() => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onRefresh?.();
+  }, [onRefresh]);
 
   const bobAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0)).current;
@@ -40,6 +51,7 @@ export function FishingRefreshControl(props: RefreshControlProps) {
       )}
       <RefreshControl
         refreshing={refreshing}
+        onRefresh={handleRefresh}
         tintColor={Platform.OS === 'ios' ? colors.primary : undefined}
         colors={Platform.OS === 'android' ? [colors.primary, colors.accent] : undefined}
         progressBackgroundColor={Platform.OS === 'android' ? colors.card : undefined}

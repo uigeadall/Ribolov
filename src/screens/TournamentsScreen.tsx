@@ -1,10 +1,11 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Text, View, StyleSheet, Pressable, ScrollView, RefreshControl, ActivityIndicator } from 'react-native';
+import { Text, View, StyleSheet, Pressable, ScrollView, RefreshControl } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { EmptyState } from '../components/EmptyState';
+import { ListSkeleton } from '../components/ListSkeleton';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
@@ -261,8 +262,9 @@ export default function TournamentsScreen() {
         </View>
 
         {loading ? (
-          <View style={{ paddingVertical: spacing.xl, alignItems: 'center' }}>
-            <ActivityIndicator color={colors.primary} />
+          // Row variant matches the TournamentRow layout (icon + 2 lines + pill).
+          <View style={{ paddingTop: spacing.md }}>
+            <ListSkeleton variant="row" count={4} />
           </View>
         ) : (
           <>
@@ -284,6 +286,10 @@ export default function TournamentsScreen() {
                       icon="trophy-outline"
                       title="Все още нямаш турнири"
                       subtitle="Създай нов турнир или се присъедини към активен по-долу."
+                      action={{
+                        label: 'Създай турнир',
+                        onPress: () => navigation.navigate('CreateTournament'),
+                      }}
                     />
                   </Card>
                 ) : (

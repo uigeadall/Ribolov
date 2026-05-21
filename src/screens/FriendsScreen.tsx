@@ -326,6 +326,11 @@ export default function FriendsScreen() {
                 icon="people-outline"
                 title="Още никого не следваш"
                 subtitle="Търси рибар по-горе или отвори профил от лентата."
+                action={{
+                  label: 'Виж лентата',
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  onPress: () => (navigation as any).navigate('FeedTab', { screen: 'FeedList' }),
+                }}
               />
             ) : (
               <FlatList

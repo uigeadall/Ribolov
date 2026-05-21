@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { useRoute, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
@@ -13,6 +13,7 @@ import { catchesStore, spotsStore } from '../storage/storage';
 import { checkBanPeriod } from '../services/notifications';
 import { fetchForecast, type ForecastDay } from '../services/weather';
 import { useAppNavigation } from '../navigation/useAppNavigation';
+import { Skeleton } from '../components/Skeleton';
 import type { SpeciesStackParamList } from '../navigation/types';
 import type { Catch, Spot } from '../types';
 import * as Location from 'expo-location';
@@ -154,10 +155,12 @@ export default function SpeciesTargetScreen() {
           ) : null}
         </View>
 
-        {/* Best forecast day */}
+        {/* Best forecast day — skeleton mimics the forecastCard shape so the
+            layout doesn't jump when content arrives. */}
         {loading ? (
-          <View style={{ alignItems: 'center', paddingVertical: spacing.xl }}>
-            <ActivityIndicator color={colors.primary} />
+          <View style={{ paddingVertical: spacing.md, gap: spacing.sm }}>
+            <Skeleton height={18} width="70%" />
+            <Skeleton height={64} borderRadius={radius.md} />
           </View>
         ) : bestDay ? (
           <>

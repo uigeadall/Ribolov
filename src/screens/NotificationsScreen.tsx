@@ -479,8 +479,8 @@ export default function NotificationsScreen() {
   // and resolve. Matches FeedScreen + ChatsScreen.
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(() => {
+    // Haptic is fired centrally by FishingRefreshControl now.
     setRefreshing(true);
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setTimeout(() => setRefreshing(false), 800);
   }, []);
 

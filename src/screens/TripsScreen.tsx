@@ -228,6 +228,10 @@ export default function TripsScreen() {
               icon="calendar-outline"
               title="Още няма записани излети"
               subtitle="Записвай къде, кога и какво си хванал — после намираш всичко на едно място."
+              action={{
+                label: 'Планирай излет',
+                onPress: () => navigation.navigate('TripPlanner'),
+              }}
             />
           }
           renderItem={({ item }) => {

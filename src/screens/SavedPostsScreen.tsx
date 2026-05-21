@@ -114,6 +114,11 @@ export default function SavedPostsScreen() {
           icon="bookmark-outline"
           title="Няма запазени"
           subtitle="В лентата натисни отметката на публикация, за да я запазиш тук."
+          action={{
+            label: 'Към лентата',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            onPress: () => (navigation as any).navigate('FeedTab', { screen: 'FeedList' }),
+          }}
         />
       ) : (
         <FlatList

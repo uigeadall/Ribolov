@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
@@ -13,6 +13,7 @@ import { computeAchievements, TOTAL_ACHIEVEMENTS } from '../services/achievement
 import { fetchPublicCatchesByOwner } from '../services/cloudSync';
 import type { Catch } from '../types';
 import { CATEGORY_LABELS, RARITY_COLORS } from '../data/achievements';
+import { ListSkeleton } from '../components/ListSkeleton';
 import { Achievement, AchievementCategory } from '../types';
 import { useAsync } from '../hooks/useAsync';
 import { useAppNavigation } from '../navigation/useAppNavigation';
@@ -190,8 +191,9 @@ export default function AchievementsScreen() {
       </View>
 
       {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.primary} />
+        // Tile variant matches the achievement card layout (block + caption).
+        <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.lg }}>
+          <ListSkeleton variant="tile" count={6} />
         </View>
       ) : (
         <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}>
