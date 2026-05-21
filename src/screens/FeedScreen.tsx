@@ -347,6 +347,23 @@ export default function FeedScreen() {
     load();
   }, [load]);
 
+  // Switching between "Всички" and "Следвани" must wipe ALL pagination state
+  // so the next load doesn't mix scope-A's posts with scope-B's catches, or
+  // page using scope-A's cursor while scope-B is active. The hero header
+  // and the sticky compact tabs both call this — keeping the cleanup in one
+  // place avoids drift between the two surfaces.
+  const switchScope = useCallback((next: FeedScope) => {
+    setScope((prev) => {
+      if (prev === next) return prev;
+      setItems([]);
+      setPosts([]);
+      setLastDoc(null);
+      setHasMore(false);
+      void Haptics.selectionAsync();
+      return next;
+    });
+  }, []);
+
   const onPressAuthor = useCallback((authorUid: string, name: string) => {
     navigation.navigate('UserPublicProfile', { uid: authorUid, displayName: name });
   }, [navigation]);
@@ -715,14 +732,14 @@ export default function FeedScreen() {
       {/* Scope tabs */}
       <View style={{ flexDirection: 'row', marginTop: spacing.md, backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', overflow: 'hidden' }}>
         <Pressable
-          onPress={() => { if (scope !== 'all') { setItems([]); setScope('all'); void Haptics.selectionAsync(); } }}
+          onPress={() => switchScope('all')}
           style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, backgroundColor: scope === 'all' ? 'rgba(255,255,255,0.2)' : 'transparent', borderRadius: 12 }}
         >
           <Ionicons name="grid-outline" size={18} color="#fff" />
           <Text style={{ fontSize: 13, fontWeight: '700', color: '#fff' }}>Всички</Text>
         </Pressable>
         <Pressable
-          onPress={() => { if (scope !== 'following') { setItems([]); setScope('following'); void Haptics.selectionAsync(); } }}
+          onPress={() => switchScope('following')}
           style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, backgroundColor: scope === 'following' ? 'rgba(255,255,255,0.2)' : 'transparent', borderRadius: 12 }}
         >
           <Ionicons name="people-outline" size={18} color="#fff" />
@@ -920,13 +937,7 @@ export default function FeedScreen() {
               padding: 3,
             }}>
               <Pressable
-                onPress={() => {
-                  if (scope !== 'all') {
-                    setItems([]);
-                    setScope('all');
-                    void Haptics.selectionAsync();
-                  }
-                }}
+                onPress={() => switchScope('all')}
                 style={{
                   flex: 1,
                   flexDirection: 'row',
@@ -942,13 +953,7 @@ export default function FeedScreen() {
                 <Text style={{ fontSize: 13, fontWeight: '700', color: scope === 'all' ? '#fff' : colors.textMuted }}>Всички</Text>
               </Pressable>
               <Pressable
-                onPress={() => {
-                  if (scope !== 'following') {
-                    setItems([]);
-                    setScope('following');
-                    void Haptics.selectionAsync();
-                  }
-                }}
+                onPress={() => switchScope('following')}
                 style={{
                   flex: 1,
                   flexDirection: 'row',
