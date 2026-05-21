@@ -464,16 +464,21 @@ export const cleanupExpiredStories = onSchedule("every 1 hours", async () => {
 // ---------------------------------------------------------------------------
 // cleanupExpiredLivePins — runs every 30 minutes
 // ---------------------------------------------------------------------------
-// Live "fishing here right now" pins have a 4h TTL. Without cleanup, expired
-// pins accumulate in /liveFishingPins forever (clients filter them out but the
-// docs stay). Same shape as cleanupExpiredStories.
+// Live "fishing here right now" pins have a 4h TTL. We delete by server
+// `createdAt` age, not the client-stamped `expiresAt` field. Same fix as
+// cleanupExpiredStories — `expiresAt = Date.now() + 4h` in liveFishingPins.ts
+// uses the device's wall-clock, which can be hours off on a misset phone.
+// A skewed clock would either leave pins lingering long past their intent
+// or evict them too early. The server-stamped createdAt + Cloud-Function
+// Date.now() comparison side-steps the device entirely.
+const LIVE_PIN_TTL_MS = 4 * 60 * 60 * 1000;
 
 export const cleanupExpiredLivePins = onSchedule("every 30 minutes", async () => {
-  const now = Date.now();
+  const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - LIVE_PIN_TTL_MS);
 
   const snapshot = await db
     .collection("liveFishingPins")
-    .where("expiresAt", "<", now)
+    .where("createdAt", "<", cutoff)
     .limit(500)
     .get();
 
