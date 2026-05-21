@@ -268,30 +268,65 @@ export async function fetchPostCommentLike(
   return snap.exists();
 }
 
-/** Toggles a like on a post comment. Maintains the comment's `likeCount` via
-    transaction. Returns the new liked state. */
+/** @deprecated Heart-only path. Use `togglePostCommentReaction` for multi-emoji. */
 export async function togglePostCommentLike(
   postId: string,
   commentId: string,
   myUid: string,
   myDisplayName: string,
 ): Promise<boolean> {
+  const r = await togglePostCommentReaction(postId, commentId, myUid, myDisplayName, 'heart');
+  return r !== null;
+}
+
+/** Read the current user's reaction on a post comment (null = none). */
+export async function fetchMyPostCommentReaction(
+  postId: string,
+  commentId: string,
+  myUid: string,
+): Promise<import('./socialTypes').ReactionType | null> {
+  const fb = requireFirebase();
+  const snap = await getDoc(
+    doc(fb.db, POSTS_COLLECTION, postId, 'comments', commentId, 'likes', myUid),
+  );
+  if (!snap.exists()) return null;
+  const r = snap.data()?.reaction as import('./socialTypes').ReactionType | undefined;
+  return r ?? 'heart';
+}
+
+/** Toggle or change a reaction on a post comment. Mirror of the catch-comment
+    reaction path. Count only moves on reacted ↔ none transitions; switching
+    from one emoji to another is count-neutral. */
+export async function togglePostCommentReaction(
+  postId: string,
+  commentId: string,
+  myUid: string,
+  myDisplayName: string,
+  reaction: import('./socialTypes').ReactionType,
+): Promise<import('./socialTypes').ReactionType | null> {
   const fb = requireFirebase();
   const likeRef = doc(fb.db, POSTS_COLLECTION, postId, 'comments', commentId, 'likes', myUid);
   const commentRef = doc(fb.db, POSTS_COLLECTION, postId, 'comments', commentId);
   return runTransaction(fb.db, async (txn) => {
     const snap = await txn.get(likeRef);
-    if (snap.exists()) {
+    const existing = snap.exists()
+      ? ((snap.data()?.reaction as import('./socialTypes').ReactionType | undefined) ?? 'heart')
+      : null;
+
+    if (existing === reaction) {
       txn.delete(likeRef);
       txn.update(commentRef, { likeCount: increment(-1) });
-      return false;
+      return null;
     }
     txn.set(likeRef, stripUndefinedForFirestore({
       createdAt: serverTimestamp(),
       displayName: (myDisplayName || 'Рибар').slice(0, 120),
+      reaction,
     }));
-    txn.update(commentRef, { likeCount: increment(1) });
-    return true;
+    if (existing === null) {
+      txn.update(commentRef, { likeCount: increment(1) });
+    }
+    return reaction;
   });
 }
 

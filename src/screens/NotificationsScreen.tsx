@@ -154,11 +154,25 @@ function NotifRow({ item, myUid, onOpen, onDismiss, styles, colors }: NotifRowPr
   const isGrouped = (item.groupCount ?? 0) > 0;
   const groupCount = item.groupCount ?? 0;
 
-  // Build the display line text for grouped vs individual notifications
+  // Build the display line text for grouped vs individual notifications.
+  // Single source of truth — keep new grouped types here as they're added in
+  // `groupNotifications`. The "и N други" suffix only renders when there's
+  // more than one actor; the count itself never appears as "и 0 други".
   let displayLine: string;
   if (isGrouped && (item.type === 'like' || item.type === 'storyLike')) {
     const target = item.type === 'like' ? 'твой улов' : 'твоята история';
     displayLine = `${item.actorName} и ${groupCount} ${groupCount === 1 ? 'друг' : 'други'} реагираха на ${target}`;
+  } else if (isGrouped && (item.type === 'comment' || item.type === 'storyComment')) {
+    // Post-comments and catch-comments share the same wording — the deep-link
+    // path on tap picks the right destination (FeedTab vs CatchDetail).
+    const target = item.type === 'comment'
+      ? (item.postId ? 'твоята публикация' : 'твой улов')
+      : 'твоята история';
+    displayLine = `${item.actorName} и ${groupCount} ${groupCount === 1 ? 'друг' : 'други'} коментираха ${target}`;
+  } else if (isGrouped && item.type === 'mention') {
+    // Mentions are grouped per-target — multiple people mentioning you in the
+    // same post is rare but possible (e.g. quote-share chains).
+    displayLine = `${item.actorName} и ${groupCount} ${groupCount === 1 ? 'друг' : 'други'} те споменаха`;
   } else if (isGrouped && item.type === 'follow') {
     displayLine = `${groupCount + 1} риболовеца те последваха`;
   } else {
@@ -320,23 +334,51 @@ function groupNotifications(items: SocialNotification[]): GroupedNotification[] 
     follows.forEach((n) => consumed.add(n.id));
   }
 
-  // ── Like / storyLike grouping by catchId / storyId ────────────────────────
-  // Build a map: key → list of like-type notifications with the same target
-  const likeGroups = new Map<string, SocialNotification[]>();
+  // ── Per-target grouping ────────────────────────────────────────────────────
+  // Groups any reaction-style notif (likes + comments + mentions + their
+  // story counterparts) on the same target. Key shape:
+  //   "<type>:<target-id>"
+  // The `type` prefix prevents a comment and a like on the same catch from
+  // collapsing into one "5 people reacted/commented" mush — they get separate
+  // rows that each say what action happened.
+  const groupable = new Map<string, SocialNotification[]>();
   for (const n of sorted) {
-    if (n.type !== 'like' && n.type !== 'storyLike') continue;
-    const key = n.catchId || n.storyId || n.id; // catchId can be '' for non-catch notifs
-    if (!likeGroups.has(key)) likeGroups.set(key, []);
-    likeGroups.get(key)!.push(n);
+    if (
+      n.type !== 'like' &&
+      n.type !== 'storyLike' &&
+      n.type !== 'comment' &&
+      n.type !== 'storyComment' &&
+      n.type !== 'mention'
+    ) continue;
+    // postId takes precedence — post notifications carry postId AND catchId
+    // (the latter is the legacy slot) and we always want to bucket by the
+    // canonical target.
+    const targetId = n.postId || n.catchId || n.storyId || n.id;
+    const key = `${n.type}:${targetId}`;
+    if (!groupable.has(key)) groupable.set(key, []);
+    groupable.get(key)!.push(n);
   }
 
-  for (const [, group] of likeGroups) {
-    if (group.length < 2) continue; // single like — handled below as a plain row
-    const [representative, ...rest] = group;
+  for (const [, group] of groupable) {
+    if (group.length < 2) continue; // single notif — handled below as a plain row
+    // Multiple notifications can come from the same actor (e.g. two comments
+    // on the same post). Dedupe actors so the "и N други" count reflects
+    // distinct people, not raw event count.
+    const seenActors = new Set<string>();
+    const distinctActors: SocialNotification[] = [];
+    for (const n of group) {
+      if (seenActors.has(n.actorUid)) continue;
+      seenActors.add(n.actorUid);
+      distinctActors.push(n);
+    }
+    if (distinctActors.length < 2) continue;
+    const [representative, ...rest] = distinctActors;
     const grouped: GroupedNotification = {
       ...representative,
       groupCount: rest.length,
       groupActors: rest.map((n) => n.actorName),
+      // Always mark every underlying notif id read on tap — not just the
+      // distinct-actor ones.
       groupIds: group.map((n) => n.id),
     };
     result.push(grouped);

@@ -17,7 +17,10 @@ import {
   PanResponder,
   ActionSheetIOS,
   Alert,
+  ScrollView,
   useWindowDimensions,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -176,6 +179,13 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
   const [imageRetryNonce, setImageRetryNonce] = useState(0);
   useEffect(() => { setImageError(null); }, [item.photoUri, imageRetryNonce]);
   const photoLooksLocal = item.photoUri ? item.photoUri.startsWith('file://') : false;
+  // Carousel page index. Page 0 is the primary photoUri (with double-tap-to-like
+  // behavior); pages 1..N are extraPhotoUris (tap-to-zoom only).
+  const [currentPhotoIdx, setCurrentPhotoIdx] = useState(0);
+  const carouselPhotos = useMemo<string[]>(() => {
+    if (!item.photoUri) return [];
+    return [item.photoUri, ...(item.extraPhotoUris ?? [])];
+  }, [item.photoUri, item.extraPhotoUris]);
 
   const ownerName = item.ownerName || 'Рибар';
   const initials = ownerName.slice(0, 1).toUpperCase();
@@ -393,7 +403,126 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
         </View>
 
         {/* ── Photo area ── */}
-        {item.photoUri ? (
+        {/* Multi-photo carousel: wraps the existing primary-photo block as page
+            0 so its double-tap-to-like + bookmark + error-fallback behavior is
+            preserved unchanged. Pages 1..N are `extraPhotoUris` and tap to open
+            the full-screen viewer. When there are no extras, scrollEnabled=false
+            and the dots row hides — visually identical to the single-photo case. */}
+        {item.photoUri && carouselPhotos.length > 1 ? (
+          <View>
+            <ScrollView
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              scrollEventThrottle={160}
+              onMomentumScrollEnd={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
+                const idx = Math.round(e.nativeEvent.contentOffset.x / screenWidth);
+                if (idx !== currentPhotoIdx) setCurrentPhotoIdx(idx);
+              }}
+            >
+              {/* Page 0 — primary photo with double-tap-to-like overlay. */}
+              <View style={{ width: screenWidth }}>
+                <Pressable onPress={handlePhotoPress}>
+                  <View style={{ width: '100%', height: photoHeight, backgroundColor: colors.surfaceAlt }}>
+                    <Image
+                      source={{ uri: (() => {
+                        const sized = getImageVariant(item.photoUri, ImageSize.feed) ?? item.photoUri;
+                        return imageRetryNonce > 0 ? `${sized}#r=${imageRetryNonce}` : sized;
+                      })() }}
+                      style={StyleSheet.absoluteFillObject}
+                      contentFit="cover"
+                      cachePolicy="memory-disk"
+                      onError={(e) => setImageError(e?.error ?? 'unknown')}
+                    />
+                    {/* Double-tap heart + bookmark — kept on the primary page only. */}
+                    <Animated.Text
+                      style={{
+                        position: 'absolute', alignSelf: 'center', top: '30%',
+                        fontSize: 90, pointerEvents: 'none',
+                        opacity: heartOpacity,
+                        transform: [{ scale: heartScale }, { translateY: heartY }],
+                      }}
+                    >
+                      ❤️
+                    </Animated.Text>
+                    <Animated.Text
+                      style={{
+                        position: 'absolute', alignSelf: 'center', top: '30%',
+                        fontSize: 90, pointerEvents: 'none',
+                        opacity: bookmarkOpacity,
+                      }}
+                    >
+                      🔖
+                    </Animated.Text>
+                  </View>
+                </Pressable>
+              </View>
+              {/* Pages 1..N — extra photos, tap to zoom. No double-tap; viewer
+                  handles the fullscreen swipe/zoom itself. */}
+              {(item.extraPhotoUris ?? []).map((uri, i) => (
+                <Pressable
+                  key={`extra-${i}`}
+                  onPress={() => setViewerUri(uri)}
+                  style={{ width: screenWidth }}
+                >
+                  <View style={{ width: '100%', height: photoHeight, backgroundColor: colors.surfaceAlt }}>
+                    <Image
+                      source={{ uri: getImageVariant(uri, ImageSize.feed) ?? uri }}
+                      style={StyleSheet.absoluteFillObject}
+                      contentFit="cover"
+                      cachePolicy="memory-disk"
+                    />
+                  </View>
+                </Pressable>
+              ))}
+            </ScrollView>
+            {/* Dots indicator — only when there's more than one page. */}
+            <View
+              style={{
+                position: 'absolute',
+                bottom: 10,
+                left: 0,
+                right: 0,
+                flexDirection: 'row',
+                justifyContent: 'center',
+                gap: 5,
+              }}
+              pointerEvents="none"
+            >
+              {carouselPhotos.map((_, i) => {
+                const active = i === currentPhotoIdx;
+                return (
+                  <View
+                    key={i}
+                    style={{
+                      width: active ? 16 : 6,
+                      height: 6,
+                      borderRadius: 3,
+                      backgroundColor: active ? '#fff' : 'rgba(255,255,255,0.55)',
+                    }}
+                  />
+                );
+              })}
+            </View>
+            {/* Page counter chip (top-right) — quick at-a-glance "2/4". */}
+            <View
+              pointerEvents="none"
+              style={{
+                position: 'absolute',
+                top: 10,
+                right: 10,
+                backgroundColor: 'rgba(0,0,0,0.55)',
+                paddingHorizontal: 8,
+                paddingVertical: 3,
+                borderRadius: 10,
+              }}
+            >
+              <Text style={{ color: '#fff', fontSize: 11, fontFamily: 'Nunito_700Bold' }}>
+                {currentPhotoIdx + 1}/{carouselPhotos.length}
+              </Text>
+            </View>
+          </View>
+        ) : item.photoUri ? (
           <Pressable onPress={handlePhotoPress}>
             <View style={{ width: '100%', height: photoHeight, backgroundColor: colors.surfaceAlt }}>
               {imageError || photoLooksLocal ? (

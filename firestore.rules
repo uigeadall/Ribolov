@@ -202,7 +202,11 @@ service cloud.firestore {
 
         match /likes/{uid} {
           allow read: if signedIn();
-          allow write: if isSelf(uid);
+          // Match the enum validation on top-level catch/post likes — comment
+          // reactions are the same shape and must not allow arbitrary values.
+          allow write: if isSelf(uid)
+            && (!('reaction' in request.resource.data)
+              || request.resource.data.reaction in ['heart','fire','trophy','fish','wow']);
         }
       }
     }
@@ -279,7 +283,10 @@ service cloud.firestore {
 
         match /likes/{uid} {
           allow read: if signedIn();
-          allow write: if isSelf(uid);
+          // Validate the reaction enum like the parent post-likes rule.
+          allow write: if isSelf(uid)
+            && (!('reaction' in request.resource.data)
+              || request.resource.data.reaction in ['heart','fire','trophy','fish','wow']);
         }
       }
     }

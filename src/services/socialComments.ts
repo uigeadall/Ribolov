@@ -95,31 +95,67 @@ export async function fetchCatchCommentLike(
   return snap.exists();
 }
 
-/** Toggles a like on a catch comment. Increments/decrements the comment doc's
-    `likeCount` in the same transaction so the counter stays in sync without a
-    re-read. Returns the new liked state. */
+/** @deprecated Heart-only path. Use `toggleCatchCommentReaction` for multi-emoji. */
 export async function toggleCatchCommentLike(
   catchId: string,
   commentId: string,
   myUid: string,
   myDisplayName: string,
 ): Promise<boolean> {
+  const r = await toggleCatchCommentReaction(catchId, commentId, myUid, myDisplayName, 'heart');
+  return r !== null;
+}
+
+/** Read the current user's reaction on a catch comment (null = none).
+    One-shot — mirror of `fetchCatchCommentLike` but returns the reaction type. */
+export async function fetchMyCatchCommentReaction(
+  catchId: string,
+  commentId: string,
+  myUid: string,
+): Promise<import('./socialTypes').ReactionType | null> {
+  const fb = requireFirebase();
+  const snap = await getDoc(
+    doc(fb.db, 'publicCatches', catchId, 'comments', commentId, 'likes', myUid),
+  );
+  if (!snap.exists()) return null;
+  const r = snap.data()?.reaction as import('./socialTypes').ReactionType | undefined;
+  return r ?? 'heart';
+}
+
+/** Toggle or change a reaction on a catch comment. Returns the active reaction
+    or null when removed. Increments/decrements `likeCount` only when going
+    from no-reaction → reacted or vice versa — changing reaction (e.g. heart
+    → fire) keeps the count steady. */
+export async function toggleCatchCommentReaction(
+  catchId: string,
+  commentId: string,
+  myUid: string,
+  myDisplayName: string,
+  reaction: import('./socialTypes').ReactionType,
+): Promise<import('./socialTypes').ReactionType | null> {
   const fb = requireFirebase();
   const likeRef = doc(fb.db, 'publicCatches', catchId, 'comments', commentId, 'likes', myUid);
   const commentRef = doc(fb.db, 'publicCatches', catchId, 'comments', commentId);
   return runTransaction(fb.db, async (txn) => {
     const snap = await txn.get(likeRef);
-    if (snap.exists()) {
+    const existing = snap.exists()
+      ? ((snap.data()?.reaction as import('./socialTypes').ReactionType | undefined) ?? 'heart')
+      : null;
+
+    if (existing === reaction) {
       txn.delete(likeRef);
       txn.update(commentRef, { likeCount: increment(-1) });
-      return false;
+      return null;
     }
     txn.set(likeRef, stripUndefinedForFirestore({
       createdAt: serverTimestamp(),
       displayName: (myDisplayName || 'Рибар').slice(0, 120),
+      reaction,
     }));
-    txn.update(commentRef, { likeCount: increment(1) });
-    return true;
+    if (existing === null) {
+      txn.update(commentRef, { likeCount: increment(1) });
+    }
+    return reaction;
   });
 }
 
