@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Toast from 'react-native-toast-message';
 import {
   View,
@@ -209,6 +209,14 @@ export default function ProfileScreen() {
   const [bio, setBio] = useState('');
   const [delPassword, setDelPassword] = useState('');
   const [profileSaving, setProfileSaving] = useState(false);
+  // Synchronous busy guards for handlers whose `disabled` UI state lags one
+  // render. Pattern repeated across the app — PostCard reactions, AddCatch
+  // save, NewSpotModal save, story handlePost. Without these, two rapid
+  // taps both see the state flag as `false` and both invoke the async
+  // pipeline.
+  const profileSavingRef = useRef(false);
+  const avatarSavingRef = useRef(false);
+  const deletingAccountRef = useRef(false);
   const [refreshing, setRefreshing] = useState(false);
   const [profileLoading, setProfileLoading] = useState(false);
   const [pubExpanded, setPubExpanded] = useState(false);
@@ -297,6 +305,7 @@ export default function ProfileScreen() {
 
   const pickProfileAvatar = async () => {
     if (!configured || !user) return;
+    if (avatarSavingRef.current) return;
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       Toast.show({ type: 'info', text1: 'Достъп до снимките', text2: 'Разреши достъп в настройките на устройството.', visibilityTime: 3000 });
@@ -328,6 +337,7 @@ export default function ProfileScreen() {
     // Snapshot previous remote URL so we can roll back if persistence fails.
     const previousRemote = remotePhotoUrl;
     let usedStorageUpload = false;
+    avatarSavingRef.current = true;
     try {
       // Persist independently of the displayName/city/bio form. The user
       // explicitly asked: a new photo should save itself, the text fields
@@ -374,11 +384,26 @@ export default function ProfileScreen() {
         deleteProfileAvatar(user.uid).catch(() => {});
       }
       handleError(e);
+    } finally {
+      avatarSavingRef.current = false;
     }
   };
 
   const savePublicProfile = async () => {
-    if (!user?.uid || !configured || profileSaving) return;
+    if (!user?.uid || !configured) return;
+    // Synchronous guard — `profileSaving` state lags so two rapid taps both
+    // see it as false. Without this, both taps fire the Firestore write +
+    // both show the success toast.
+    if (profileSavingRef.current) return;
+    // Empty displayName would write `""` to Firestore. The rest of the app
+    // falls back to user.email or "Рибар" in that case, but the profile
+    // looks broken (the public-profile header shows no name) and mention
+    // autocomplete returns the user with an empty label.
+    if (!displayName.trim()) {
+      Alert.alert('Име', 'Въведи име за профила.');
+      return;
+    }
+    profileSavingRef.current = true;
     setProfileSaving(true);
     try {
       // Text-only save. The avatar persists itself inside `pickProfileAvatar`
@@ -397,6 +422,7 @@ export default function ProfileScreen() {
     } catch (e: unknown) {
       handleError(e);
     } finally {
+      profileSavingRef.current = false;
       setProfileSaving(false);
     }
   };
@@ -408,17 +434,28 @@ export default function ProfileScreen() {
   };
 
   const confirmAndDelete = useCallback((cred: DeleteAccountCredential) => {
+    if (deletingAccountRef.current) return;
     Alert.alert('Изтриване на акаунт', 'Това изтрива облачни данни и локалния дневник. Необратимо.', [
       { text: 'Отказ', style: 'cancel' },
       {
         text: 'Изтрий завинаги',
         style: 'destructive',
         onPress: async () => {
+          // The Alert button can be tapped twice on a hot device (debouncing
+          // is platform-defined and not guaranteed). Without this ref, two
+          // taps fire two parallel deleteAccount calls — both attempt
+          // reauth + cascade + auth.deleteUser, and the second hits
+          // auth/user-not-found after the first wins, surfacing as a
+          // confusing error toast right after the cascade succeeds.
+          if (deletingAccountRef.current) return;
+          deletingAccountRef.current = true;
           try {
             await deleteAccount(cred);
             closeDeleteModal();
           } catch (e: unknown) {
             handleError(e);
+          } finally {
+            deletingAccountRef.current = false;
           }
         },
       },

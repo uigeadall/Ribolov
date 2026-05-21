@@ -201,5 +201,11 @@ export async function wipeAllLocalAppData(): Promise<void> {
     'ribolov:notifications:tripScheduleMap',
     'ribolov:catch-sync-queue',
     'ribolov:message-sync-queue',
+    // UI dismissal flags are per-device, not per-user. Without this entry,
+    // User A's "dismiss onboarding checklist" tap on their device causes
+    // User B (who later signs in on the same device) to never see the
+    // checklist either — even though B is brand new. Add any future
+    // dismissal flags here so they reset on account switch.
+    '@ribolov/onboardingChecklistDismissed',
   ]);
 }
