@@ -50,17 +50,27 @@ function periodMinIso(period: Period): string {
   return d.toISOString();
 }
 
+// Caps for outbound Expo push payload fields. Expo's API itself accepts
+// fairly long strings but the iOS/Android notification UI truncates at much
+// smaller sizes, and excessively long payloads can be rejected outright.
+// Capping here also limits the blast radius of a malformed source doc
+// (e.g. a 2000-char comment preview slipping through into a title slot).
+const PUSH_TITLE_MAX = 100;
+const PUSH_BODY_MAX = 200;
+
 async function sendExpoPush(
   token: string,
   title: string,
   body: string,
   data: Record<string, unknown>
 ): Promise<void> {
+  const safeTitle = String(title ?? "").slice(0, PUSH_TITLE_MAX);
+  const safeBody = String(body ?? "").slice(0, PUSH_BODY_MAX);
   const message = {
     to: token,
     sound: "default",
-    title,
-    body,
+    title: safeTitle,
+    body: safeBody,
     data,
   };
 
@@ -496,9 +506,18 @@ export const tournamentEndingSoonReminder = onSchedule(
         continue;
       }
 
+      // Hard cap — a tournament shouldn't realistically have more than a few
+      // hundred participants. If something writes 1M docs to the subcollection
+      // we don't want this loop to send a million pushes; cap and warn.
+      const PARTICIPANT_LIMIT = 1000;
       const participantsSnap = await db
         .collection(`tournaments/${tournamentId}/participants`)
+        .limit(PARTICIPANT_LIMIT)
         .get();
+      if (participantsSnap.size >= PARTICIPANT_LIMIT) {
+        // eslint-disable-next-line no-console
+        console.warn(`[tournamentEndingSoonReminder] ${tournamentId} hit participant cap of ${PARTICIPANT_LIMIT}`);
+      }
       if (participantsSnap.empty) {
         // Still write the marker so we don't keep re-checking the empty list.
         await markerRef.set({ sentAt: FieldValue.serverTimestamp(), recipients: 0 });

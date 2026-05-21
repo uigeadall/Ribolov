@@ -16,6 +16,7 @@ import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
 import { getBlockedUids } from './blockUser';
 import { getUserPublicSummary } from './userProfile';
+import { allowFollowAction } from './socialRateLimit';
 
 const FOLLOWING_TTL_MS = 10 * 60 * 1000;
 const followingCache = new Map<string, { data: { uid: string; displayName: string }[]; at: number }>();
@@ -50,6 +51,9 @@ export async function isFollowingUser(myUid: string, targetUid: string): Promise
 }
 
 export async function followUser(myUid: string, targetUid: string, targetName?: string) {
+  if (!allowFollowAction(myUid)) {
+    throw new Error('Твърде много действия за кратко време. Опитай по-късно.');
+  }
   const fb = requireFirebase();
   const batch = writeBatch(fb.db);
   batch.set(
@@ -66,6 +70,9 @@ export async function followUser(myUid: string, targetUid: string, targetName?: 
 }
 
 export async function unfollowUser(myUid: string, targetUid: string) {
+  if (!allowFollowAction(myUid)) {
+    throw new Error('Твърде много действия за кратко време. Опитай по-късно.');
+  }
   const fb = requireFirebase();
   const batch = writeBatch(fb.db);
   batch.delete(doc(fb.db, 'users', myUid, 'following', targetUid));

@@ -10,6 +10,16 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == uid;
     }
 
+    /** URL-scheme guard for media fields on public docs. We want to block
+        javascript:, data:, file:, content://, etc. — anything that, when
+        rendered as an <Image> source, could either execute or leak local
+        device paths. Allowing https:// only also prevents accidental http
+        mixed-content warnings. Empty strings pass (callers should pair this
+        with a separate "field is string" check). */
+    function isHttpsUrl(v) {
+      return v is string && (v.size() == 0 || v.matches('https://.*'));
+    }
+
     /** Профил и лични подколекции — само собственикът пише. */
     match /users/{userId} {
       allow read: if signedIn();
@@ -134,6 +144,14 @@ service cloud.firestore {
         && (!('bait' in request.resource.data)
           || (request.resource.data.bait is string
             && request.resource.data.bait.size() <= 300))
+        && (!('photoUri' in request.resource.data)
+          || (request.resource.data.photoUri is string
+            && request.resource.data.photoUri.size() <= 2000
+            && isHttpsUrl(request.resource.data.photoUri)))
+        && (!('ownerPhotoUrl' in request.resource.data)
+          || (request.resource.data.ownerPhotoUrl is string
+            && request.resource.data.ownerPhotoUrl.size() <= 1000
+            && isHttpsUrl(request.resource.data.ownerPhotoUrl)))
         && (!('extraPhotoUris' in request.resource.data)
           || (request.resource.data.extraPhotoUris is list
             && request.resource.data.extraPhotoUris.size() <= 5));
@@ -228,7 +246,8 @@ service cloud.firestore {
             && request.resource.data.mentionUids.size() <= 20))
         && (!('photoUri' in request.resource.data)
           || (request.resource.data.photoUri is string
-            && request.resource.data.photoUri.size() <= 1000))
+            && request.resource.data.photoUri.size() <= 1000
+            && isHttpsUrl(request.resource.data.photoUri)))
         && (!('reshareOf' in request.resource.data)
           || (request.resource.data.reshareOf is map
             && request.resource.data.reshareOf.kind in ['catch', 'post']
@@ -313,7 +332,8 @@ service cloud.firestore {
             && request.resource.data.waterName.size() <= 120))
         && (!('ownerPhotoUrl' in request.resource.data)
           || (request.resource.data.ownerPhotoUrl is string
-            && request.resource.data.ownerPhotoUrl.size() <= 1000));
+            && request.resource.data.ownerPhotoUrl.size() <= 1000
+            && isHttpsUrl(request.resource.data.ownerPhotoUrl)));
       allow update: if false;
       allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
     }
@@ -371,6 +391,7 @@ service cloud.firestore {
         && request.resource.data.damId == damId
         && request.resource.data.photoUrl is string
         && request.resource.data.photoUrl.size() <= 1000
+        && isHttpsUrl(request.resource.data.photoUrl)
         && request.resource.data.storagePath is string
         && request.resource.data.storagePath.size() <= 500;
       allow update: if false;
@@ -384,7 +405,7 @@ service cloud.firestore {
         && request.resource.data.uid == request.auth.uid
         && (!('text' in request.resource.data) || (request.resource.data.text is string && request.resource.data.text.size() <= 280))
         && (!('mediaType' in request.resource.data) || request.resource.data.mediaType in ['photo', 'video'])
-        && (!('mediaUrl' in request.resource.data) || request.resource.data.mediaUrl is string);
+        && (!('mediaUrl' in request.resource.data) || (request.resource.data.mediaUrl is string && isHttpsUrl(request.resource.data.mediaUrl)));
       allow delete: if signedIn() && resource.data.uid == request.auth.uid;
       allow update: if false;
 
@@ -562,7 +583,8 @@ service cloud.firestore {
             ||
             // Photo / video message (text may be empty)
             (request.resource.data.mediaUrl is string
-              && request.resource.data.mediaUrl.size() > 0)
+              && request.resource.data.mediaUrl.size() > 0
+              && isHttpsUrl(request.resource.data.mediaUrl))
             ||
             // Shared catch / post / spot card (text may be empty)
             (request.resource.data.sharedRef is map
@@ -593,15 +615,18 @@ service cloud.firestore {
                   && request.resource.data.sharedRef.subtitle.size() <= 200))
               && (!('photoUrl' in request.resource.data.sharedRef)
                 || (request.resource.data.sharedRef.photoUrl is string
-                  && request.resource.data.sharedRef.photoUrl.size() <= 2000))))
-          // Per-conversation per-sender rate limit: 250ms cooldown when the previous
+                  && request.resource.data.sharedRef.photoUrl.size() <= 2000
+                  && isHttpsUrl(request.resource.data.sharedRef.photoUrl)))))
+          // Per-conversation per-sender rate limit: 1000ms cooldown when the previous
           // message in this conversation was sent by the same user. Stops accidental
           // floods and casual abuse without hindering normal alternating chat.
+          // (Raised from 250ms — that window allowed ~4 msg/sec via batching,
+          // which is a comfortable flood floor for a determined caller.)
           && (
             !('lastSenderUid' in get(/databases/$(database)/documents/conversations/$(convId)).data)
             || get(/databases/$(database)/documents/conversations/$(convId)).data.lastSenderUid != request.auth.uid
             || !('lastMessageAt' in get(/databases/$(database)/documents/conversations/$(convId)).data)
-            || request.time.toMillis() - get(/databases/$(database)/documents/conversations/$(convId)).data.lastMessageAt.toMillis() > 250
+            || request.time.toMillis() - get(/databases/$(database)/documents/conversations/$(convId)).data.lastMessageAt.toMillis() > 1000
           );
         allow update: if signedIn()
           && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participantIds

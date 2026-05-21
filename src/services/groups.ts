@@ -18,6 +18,7 @@ import {
 } from 'firebase/firestore';
 import { requireFirebase } from './firebase';
 import { newId } from '../storage/storage';
+import { allowGroupCreate } from './socialRateLimit';
 
 export type GroupCategory = 'club' | 'water' | 'species' | 'general';
 
@@ -61,6 +62,9 @@ export async function createGroup(
   g: Pick<Group, 'name' | 'description' | 'category'>,
   creator: { uid: string; displayName: string }
 ): Promise<string> {
+  if (!allowGroupCreate(creator.uid)) {
+    throw new Error('Твърде много клубове за кратко време. Опитай по-късно.');
+  }
   const fb = requireFirebase();
   const id = newId();
   const batch = writeBatch(fb.db);

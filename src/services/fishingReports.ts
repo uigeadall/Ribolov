@@ -10,6 +10,7 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { requireFirebase } from './firebase';
+import { allowWaterReport } from './socialRateLimit';
 
 export type WaterCondition = 'crystal' | 'clear' | 'murky' | 'muddy';
 
@@ -38,6 +39,9 @@ const TTL_MS = 24 * 60 * 60 * 1000;
 export async function addWaterReport(
   r: Omit<WaterReport, 'id' | 'createdAt'>
 ): Promise<void> {
+  if (!allowWaterReport(r.reporterUid)) {
+    throw new Error('Твърде много отчети за кратко време. Опитай по-късно.');
+  }
   const fb = requireFirebase();
   // No client-computed expiresAt — that field used Date.now() which could be hours/years
   // off depending on device clock. TTL is enforced by the cleanupExpiredWaterReports

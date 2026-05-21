@@ -13,8 +13,12 @@ import {
 } from 'firebase/firestore';
 import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
+import { allowSaveToggle } from './socialRateLimit';
 
 export async function toggleSaveCatch(myUid: string, catchId: string): Promise<boolean> {
+  if (!allowSaveToggle(myUid)) {
+    throw new Error('Твърде често — опитай отново след секунда.');
+  }
   const fb = requireFirebase();
   const refDoc = doc(fb.db, 'users', myUid, 'savedCatches', catchId);
   const snap = await getDoc(refDoc);

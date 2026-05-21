@@ -23,7 +23,7 @@ import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
 import { uploadLocalPhotoToStorage, waitForResizedUrl } from './catchSync';
 import { extractHashtags } from '../utils/textTokens';
-import { allowComment } from './socialRateLimit';
+import { allowComment, allowPostCreate } from './socialRateLimit';
 import { notifyInteraction, sendMentionNotifications } from './socialNotifications';
 import type { FeedComment } from './socialTypes';
 import type { Post, ResharedRef } from '../types';
@@ -63,6 +63,9 @@ function newPostId(): string {
  * Hashtags are extracted from the text and stored lowercase for filtering.
  */
 export async function createPost(input: CreatePostInput): Promise<string> {
+  if (!allowPostCreate(input.ownerUid)) {
+    throw new Error('Твърде много публикации за кратко време. Опитай по-късно.');
+  }
   const fb = requireFirebase();
   const id = newPostId();
   const text = (input.text || '').trim();

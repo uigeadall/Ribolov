@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore';
 import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
+import { allowLivePin } from './socialRateLimit';
 
 /**
  * Live "I'm fishing here right now" pin. Auto-expires after `expiresAt` (unix ms).
@@ -46,6 +47,9 @@ export async function createLiveFishingPin(input: {
   /** Override the default 4-hour TTL. */
   ttlMs?: number;
 }): Promise<string> {
+  if (!allowLivePin(input.ownerUid)) {
+    throw new Error('Твърде много пинове за кратко време. Опитай по-късно.');
+  }
   const fb = requireFirebase();
   const now = Date.now();
   const expiresAt = now + (input.ttlMs ?? DEFAULT_TTL_MS);

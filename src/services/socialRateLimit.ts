@@ -37,6 +37,8 @@ let _evictionTimer: ReturnType<typeof setInterval> | null = setInterval(() => {
 export function resetRateLimits(): void {
   timestamps.clear();
   lastLikeAtByUid.clear();
+  // Defensive — defined below but cleared here so logout always wipes state.
+  if (typeof lastOpAtByKey !== 'undefined') lastOpAtByKey.clear();
 }
 
 const lastLikeAtByUid = new Map<string, number>();
@@ -51,4 +53,100 @@ export function allowLikeToggle(uid: string): boolean {
 
 export function allowComment(uid: string): boolean {
   return allowBurst(`comment:${uid}`, 30, 60_000);
+}
+
+// ─── Write-operation throttles ────────────────────────────────────────────────
+// Client-side defense-in-depth against scripted spam. Server-side enforcement
+// still happens via Firestore rules + (where present) Cloud Functions, but a
+// determined attacker bypassing the app entirely needs the Firestore API; the
+// client-side limiters protect against accidental loops and bot tooling that
+// drives the actual UI. Tuned conservatively — real users don't hit these in
+// normal flows, but they cap pathological cases.
+
+/** Per-user limiter shared by `createPost`, `createDamFeedPost`, and similar
+    full-content publish ops. 5/min + 800ms minimum spacing is far above any
+    real user's posting rate but stops bursts. */
+export function allowPostCreate(uid: string): boolean {
+  if (!enforceMinSpacing(`postCreate:${uid}`, 800)) return false;
+  return allowBurst(`postCreate:${uid}`, 5, 60_000);
+}
+
+/** Following someone is cheap server-side but the resulting fan-out (write
+    to two subcollections + a notification) is not. Cap to 20/min. */
+export function allowFollowAction(uid: string): boolean {
+  return allowBurst(`follow:${uid}`, 20, 60_000);
+}
+
+/** Stories are ephemeral but each one triggers media upload + push fan-out
+    to followers. 8/hour matches "you wouldn't post more than ~one every 7
+    minutes if you were being normal". */
+export function allowStoryPost(uid: string): boolean {
+  return allowBurst(`story:${uid}`, 8, 3_600_000);
+}
+
+/** Tournament photo entry — once per tournament is the legitimate use; cap
+    to 5/min to allow re-submission after an error without inviting a flood. */
+export function allowTournamentEntry(uid: string): boolean {
+  return allowBurst(`tournamentEntry:${uid}`, 5, 60_000);
+}
+
+/** Group / event / poll creation. These pollute discovery surfaces if abused.
+    3/hour catches realistic creators (host clubs make events occasionally,
+    not every minute). */
+export function allowGroupCreate(uid: string): boolean {
+  return allowBurst(`groupCreate:${uid}`, 3, 3_600_000);
+}
+
+export function allowEventCreate(uid: string): boolean {
+  return allowBurst(`eventCreate:${uid}`, 5, 3_600_000);
+}
+
+export function allowPollCreate(uid: string): boolean {
+  return allowBurst(`pollCreate:${uid}`, 5, 3_600_000);
+}
+
+/** Live "fishing here right now" pins expire after 4h. A user shouldn't be
+    creating new ones constantly; 4/hour is generous. */
+export function allowLivePin(uid: string): boolean {
+  return allowBurst(`livePin:${uid}`, 4, 3_600_000);
+}
+
+/** Water condition reports. 6/hour is plenty for a real angler logging
+    conditions through their day. */
+export function allowWaterReport(uid: string): boolean {
+  return allowBurst(`waterReport:${uid}`, 6, 3_600_000);
+}
+
+/** DM send. Server enforces a per-conversation cooldown via rules; this
+    is a per-user global cap that catches multi-conversation flood. */
+export function allowMessageSend(uid: string): boolean {
+  return allowBurst(`message:${uid}`, 60, 60_000);
+}
+
+/** Saving / unsaving a post — cheap, but spammable into write-amplification
+    on the saves subcollection. */
+export function allowSaveToggle(uid: string): boolean {
+  if (!enforceMinSpacing(`save:${uid}`, 220)) return false;
+  return allowBurst(`save:${uid}`, 90, 60_000);
+}
+
+/** Search calls — UI already debounces but server-side hits can spike if
+    a script drives the input directly. */
+export function allowSearch(uid: string): boolean {
+  if (!enforceMinSpacing(`search:${uid}`, 200)) return false;
+  return allowBurst(`search:${uid}`, 60, 60_000);
+}
+
+// ─── Per-key minimum-spacing helper ───────────────────────────────────────────
+// Used by op-specific limiters that need both a "no two faster than X ms"
+// guard AND a burst cap. Shape parallels lastLikeAtByUid above but keyed by
+// the limiter's own bucket name so a single Map covers all ops.
+const lastOpAtByKey = new Map<string, number>();
+
+function enforceMinSpacing(key: string, minMs: number): boolean {
+  const now = Date.now();
+  const last = lastOpAtByKey.get(key) ?? 0;
+  if (now - last < minMs) return false;
+  lastOpAtByKey.set(key, now);
+  return true;
 }

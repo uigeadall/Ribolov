@@ -22,6 +22,7 @@ import { uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
 import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
 import { deleteAllUserDamFeedPosts } from './damFeed';
+import { allowSearch } from './socialRateLimit';
 
 export type UserPublicSummary = {
   displayName: string;
@@ -52,6 +53,12 @@ export async function searchUsersByName(
   const fb = requireFirebase();
   const trimmed = q.trim();
   if (trimmed.length < 2) return [];
+  // Throttle scripted callers — UI debounces typing, but a determined caller
+  // can still drive `searchUsersByName` faster than is reasonable. Key the
+  // bucket by excludeUid (the caller's own uid) so multi-user devices each
+  // get their own quota. Falls back to a shared bucket when no uid passed.
+  const throttleKey = opts?.excludeUid || 'anon';
+  if (!allowSearch(throttleKey)) return [];
   const perVariantLimit = opts?.maxResults ?? 20;
 
   // Build the case variants we'll search. toLocaleUpperCase/LowerCase with

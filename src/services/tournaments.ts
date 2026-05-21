@@ -16,6 +16,7 @@ import {
 } from 'firebase/firestore';
 import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
+import { allowLikeToggle, allowTournamentEntry } from './socialRateLimit';
 import type { Tournament } from '../types';
 
 export async function createTournament(t: Tournament) {
@@ -52,6 +53,9 @@ export async function submitCatchToTournament(
   tournamentId: string,
   entry: Omit<TournamentPhotoEntry, 'id' | 'likeCount' | 'submittedAt'>
 ): Promise<void> {
+  if (!allowTournamentEntry(entry.ownerUid)) {
+    throw new Error('Твърде много заявки за кратко време. Опитай по-късно.');
+  }
   const fb = requireFirebase();
   await setDoc(
     doc(fb.db, 'tournaments', tournamentId, 'photoEntries', entry.ownerUid),
@@ -109,6 +113,9 @@ export async function toggleTournamentEntryLike(
   entryId: string,
   uid: string
 ): Promise<boolean> {
+  if (!allowLikeToggle(uid)) {
+    throw new Error('Твърде често — опитай отново след секунда.');
+  }
   const fb = requireFirebase();
   const likeRef = doc(fb.db, 'tournaments', tournamentId, 'photoEntries', entryId, 'likes', uid);
   const entryRef = doc(fb.db, 'tournaments', tournamentId, 'photoEntries', entryId);

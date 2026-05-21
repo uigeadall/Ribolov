@@ -6,6 +6,32 @@ import type { Spot } from '../types';
 import type { Dam } from '../data/dams';
 import type { River } from '../data/rivers';
 
+/**
+ * JSON.stringify but safe to embed inside a JavaScript source string (which is
+ * what `WebView.injectJavaScript` accepts). Three escapes:
+ *
+ *   - `<` → `<`     defangs `</script>` and `<!--` injection
+ *   - U+2028 / U+2029    valid JSON but invalid in JS source (would break the literal)
+ *
+ * The bare `JSON.stringify` is safe enough for "embed in HTML <script>", but the
+ * WebView path interpolates the result directly into a JS source body — any
+ * unescaped control character that JS treats as line terminator can break out.
+ * User-supplied strings (spot names, catch species, etc.) flow through this,
+ * so the hardening matters even though most data is hardcoded.
+ */
+function safeStringifyForInjection(value: unknown): string {
+  // Built from string literals to avoid embedding raw U+2028/U+2029 in
+  // this source file — those characters are valid in JS strings but
+  // would break a JS regex literal containing them, making this file
+  // unparseable by Babel/TypeScript.
+  const LS = String.fromCharCode(0x2028);
+  const PS = String.fromCharCode(0x2029);
+  return JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .split(LS).join('\\u2028')
+    .split(PS).join('\\u2029');
+}
+
 export type LeafletMapType = 'standard' | 'satellite' | 'hybrid';
 
 export type LeafletMapHandle = {
@@ -303,7 +329,7 @@ export const LeafletMap = forwardRef<LeafletMapHandle, Props>(function LeafletMa
 
   const payloadJson = useMemo(
     () =>
-      JSON.stringify({
+      safeStringifyForInjection({
         spots,
         dams,
         rivers,
@@ -336,8 +362,14 @@ export const LeafletMap = forwardRef<LeafletMapHandle, Props>(function LeafletMa
 
   useImperativeHandle(ref, () => ({
     flyTo: (lat: number, lng: number, zoom = 13) => {
+      // Coerce to numbers before string interpolation — a non-number value
+      // (somehow) would otherwise inject arbitrary JS via the template literal.
+      const safeLat = Number(lat);
+      const safeLng = Number(lng);
+      const safeZoom = Number(zoom);
+      if (!Number.isFinite(safeLat) || !Number.isFinite(safeLng) || !Number.isFinite(safeZoom)) return;
       webRef.current?.injectJavaScript(`
-        window.__flyTo && window.__flyTo(${lat},${lng},${zoom});
+        window.__flyTo && window.__flyTo(${safeLat},${safeLng},${safeZoom});
         true;
       `);
     },

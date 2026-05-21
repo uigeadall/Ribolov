@@ -22,6 +22,7 @@ import {
 import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
 import { addBreadcrumb } from './observability';
+import { allowMessageSend } from './socialRateLimit';
 import type { DirectMessage, ConversationPreview, MessageReplyRef, SharedRef } from '../types';
 
 /** Window during which the sender can still edit or delete their own message. */
@@ -281,6 +282,9 @@ export async function sendConversationMessage(
   replyTo?: MessageReplyRef,
   sharedRef?: SharedRef,
 ): Promise<void> {
+  if (!allowMessageSend(senderUid)) {
+    throw new Error('Твърде много съобщения за кратко време. Опитай по-късно.');
+  }
   const fb = requireFirebase();
   const trimmed = text.trim();
   if (!trimmed && !mediaUrl && !sharedRef) return;

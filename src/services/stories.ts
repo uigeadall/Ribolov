@@ -18,6 +18,7 @@ import { uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
 import { requireFirebase } from './firebase';
 import { getFirebaseWebConfig } from './firebaseConfig';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
+import { allowStoryPost } from './socialRateLimit';
 
 const TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -86,6 +87,9 @@ export async function uploadStoryMedia(
 }
 
 export async function addStory(s: Omit<Story, 'id' | 'createdAt' | 'expiresAt'>): Promise<void> {
+  if (!allowStoryPost(s.uid)) {
+    throw new Error('Твърде много истории за кратко време. Опитай по-късно.');
+  }
   const fb = requireFirebase();
   await addDoc(
     collection(fb.db, 'stories'),
