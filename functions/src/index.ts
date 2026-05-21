@@ -234,14 +234,10 @@ export const onNewMessage = onDocumentCreated(
     // fire would re-increment unreadMessageCount and re-send push. Mark the message
     // doc atomically and bail on retry. Admin SDK bypasses rules; clients can't
     // observe or modify `_fnProcessed` thanks to message update rules.
-    const claimed = await db.runTransaction(async (tx) => {
-      const msgSnap = await tx.get(event.data!.ref);
-      if (!msgSnap.exists) return false;
-      if ((msgSnap.data() as Record<string, unknown>)?._fnProcessed) return false;
-      tx.update(event.data!.ref, { _fnProcessed: true });
-      return true;
-    });
-    if (!claimed) return;
+    // Cheap pre-check: if the message was already processed by a prior
+    // invocation, skip everything below. The atomic claim+bump transaction
+    // further down is the authoritative guard; this is just an early bail.
+    if ((msgData as Record<string, unknown>)?._fnProcessed) return;
 
     // SharedRef validation — done INSIDE onNewMessage (not in a separate
     // trigger) so an invalid shared catch/post/spot doesn't cause the
@@ -321,10 +317,10 @@ export const onNewMessage = onDocumentCreated(
       body = "📹 Видео";
     }
 
-    // Write a single in-app notification per conversation (deterministic id).
-    // New messages overwrite the doc so the latest preview rises to the top
-    // and the unread-bell badge reflects one entry per active conversation.
-    // Skipped entirely for muted convs.
+    // Write the in-app notification doc FIRST. It uses a deterministic id
+    // (`message_${convId}`) so a duplicate fire (parallel retry, etc.) just
+    // overwrites the same row — idempotent, no side effect to worry about.
+    // Skipped for muted convs.
     if (!isMuted) {
       await db.doc(`users/${recipientUid}/notifications/message_${convId}`).set({
         actorUid: senderUid,
@@ -337,15 +333,30 @@ export const onNewMessage = onDocumentCreated(
       });
     }
 
-    // Bump the recipient's per-user unread aggregate. The client can't do this
-    // itself because the users/{uid} rule requires isSelf(uid) — a cross-user
-    // write would reject and roll back the entire send batch. Admin SDK
-    // bypasses rules; merge:true handles the brand-new-user case. We bump
-    // even for muted convs so unmute + open still decrements correctly.
-    await db.doc(`users/${recipientUid}`).set(
-      { unreadMessageCount: FieldValue.increment(1) },
-      { merge: true },
-    );
+    // ATOMIC claim + unread bump. Previously these were two separate writes
+    // with the claim ahead of the bump — if the unread `set` failed AFTER
+    // the claim, the function returned with claim=true and unread missing,
+    // and there's no automatic retry on v2 background functions. The
+    // recipient would have a notification doc but no unread badge bump.
+    //
+    // Combining them in a transaction ensures: either both commit (correct)
+    // or neither commits and the function throws (CF logs the error; an
+    // operator can replay or a sweeper can resurface). The transaction also
+    // serves as the idempotency claim — a concurrent retry would see
+    // `_fnProcessed` set in the transaction read and skip.
+    const claimed = await db.runTransaction(async (tx) => {
+      const msgSnap = await tx.get(event.data!.ref);
+      if (!msgSnap.exists) return false;
+      if ((msgSnap.data() as Record<string, unknown>)?._fnProcessed) return false;
+      tx.update(event.data!.ref, { _fnProcessed: true });
+      tx.set(
+        db.doc(`users/${recipientUid}`),
+        { unreadMessageCount: FieldValue.increment(1) },
+        { merge: true },
+      );
+      return true;
+    });
+    if (!claimed) return;
 
     // Push is also gated on mute — the OS notification is the noisiest part
     // of "muted means muted".

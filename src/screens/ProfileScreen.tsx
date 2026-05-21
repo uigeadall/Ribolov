@@ -346,7 +346,15 @@ export default function ProfileScreen() {
       setRemotePhotoUrl(photoUrl);
       setPickedAvatarUri(undefined);
       setPickedAvatarDataUrl(null);
-      AsyncStorage.setItem(`@ribolov/profilePhoto/${user.uid}`, photoUrl).catch(() => {});
+      // Don't cache base64 data URLs — they can be several MB and bloating
+      // AsyncStorage with them slows EVERY storage read (especially on
+      // Android where AsyncStorage backs onto SharedPreferences). Only
+      // cache https:// URLs; the next render falls back to the in-memory
+      // state `remotePhotoUrl` until the next app launch hydrates from
+      // Firestore.
+      if (!photoUrl.startsWith('data:')) {
+        AsyncStorage.setItem(`@ribolov/profilePhoto/${user.uid}`, photoUrl).catch(() => {});
+      }
 
       const fb = ensureFirebase();
       if (!photoUrl.startsWith('data:') && fb?.auth.currentUser) {

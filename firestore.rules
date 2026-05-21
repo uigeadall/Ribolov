@@ -641,6 +641,13 @@ service cloud.firestore {
         allow create: if signedIn()
           && request.resource.data.senderUid == request.auth.uid
           && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participantIds
+          // Block clients from presetting `_fnProcessed`. Without this check,
+          // a malicious client could write `_fnProcessed: true` on create →
+          // onNewMessage's pre-check sees it as already processed and skips
+          // → recipient never gets unread bump or notification doc. The
+          // field is Cloud-Function-only and should never appear in a
+          // client-originated create.
+          && !('_fnProcessed' in request.resource.data)
           && (
             // Text message
             (request.resource.data.text is string

@@ -20,6 +20,7 @@ import {
   type CatchLiker,
 } from '../services/socialFeed';
 import { submitContentReport } from '../services/contentReports';
+import { getBlockedUids } from '../services/blockUser';
 import type { FeedItem } from '../services/catchSync';
 
 type Props = {
@@ -115,10 +116,43 @@ export function useFeedPostSocial({
     return subscribeMyReactionOnCatch(catchId, myUid, setMyReaction);
   }, [socialEnabled, myUid, catchId, isVisible]);
 
+  // Block-list for filtering comments. Loaded once per myUid change; the
+  // comment subscription below filters its incoming list against this set
+  // before exposing to the UI. Without this, blocked users' comments
+  // appear in the detail view (the feed-level filter doesn't reach down
+  // into per-catch comments).
+  const blockedUidsRef = useRef<Set<string>>(new Set());
+  const [blockedReady, setBlockedReady] = useState(false);
+  useEffect(() => {
+    if (!myUid) return;
+    let cancelled = false;
+    getBlockedUids(myUid).then((set) => {
+      if (cancelled) return;
+      blockedUidsRef.current = set;
+      // Bump a ready flag so the comment subscription effect re-runs once
+      // the block-list is loaded. Without this, a fast Firestore round-trip
+      // could deliver comments before we know who's blocked.
+      setBlockedReady(true);
+    }).catch(() => {
+      if (!cancelled) setBlockedReady(true);
+    });
+    return () => { cancelled = true; };
+  }, [myUid]);
+
   useEffect(() => {
     if (!socialEnabled || !catchId || !isVisible) return;
-    return subscribeCatchComments(catchId, setComments);
-  }, [socialEnabled, catchId, isVisible]);
+    // `blockedReady` in the deps so the subscription rebuilds with the
+    // filter active once we know who's blocked. If myUid is undefined
+    // (signed-out preview), pass through unfiltered.
+    return subscribeCatchComments(catchId, (incoming) => {
+      const blocked = blockedUidsRef.current;
+      if (!myUid || blocked.size === 0) {
+        setComments(incoming);
+        return;
+      }
+      setComments(incoming.filter((c) => !blocked.has(c.authorUid)));
+    });
+  }, [socialEnabled, catchId, isVisible, myUid, blockedReady]);
 
   useEffect(() => {
     if (!socialEnabled || !myUid || !catchId || !isVisible) return;
