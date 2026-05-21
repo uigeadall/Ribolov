@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TextInput, KeyboardAvoidingView, Platform, Alert, Pressable, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -32,6 +32,20 @@ export default function AuthScreen() {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
+  // Synchronous lock shared across all auth entry points (email submit +
+  // Google + Apple + Facebook + password reset). The `busy` state lags one
+  // render so two rapid taps both see `busy=false` and both fire the
+  // respective auth call. Without this ref, tapping Google then quickly
+  // tapping Apple (during the post-OS-prompt callback window) sends both
+  // credentials to Firebase; one wins, the second surfaces as a confusing
+  // error toast right after sign-in succeeds.
+  const submittingRef = useRef(false);
+  // Separate from submittingRef so a stuck reset-email path (slow Firebase
+  // response) doesn't block the user from trying to sign in. The Alert
+  // confirmation button can fire its onPress twice on a hot device — both
+  // would call resetPassword and the user sees a success toast followed by
+  // a rate-limit error.
+  const forgotInFlightRef = useRef(false);
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<{ name?: string; email?: string; password?: string }>({});
 
@@ -223,7 +237,9 @@ export default function AuthScreen() {
       Alert.alert('Firebase', 'Добави ключове в app.json extra или EXPO_PUBLIC_FIREBASE_*.');
       return;
     }
+    if (submittingRef.current) return;
     if (!validate()) return;
+    submittingRef.current = true;
     setBusy(true);
     try {
       const cleanEmail = email.trim();
@@ -234,6 +250,7 @@ export default function AuthScreen() {
     } catch (e: unknown) {
       handleError(e);
     } finally {
+      submittingRef.current = false;
       setBusy(false);
     }
   };
@@ -257,6 +274,8 @@ export default function AuthScreen() {
         {
           text: 'Изпрати',
           onPress: async () => {
+            if (forgotInFlightRef.current) return;
+            forgotInFlightRef.current = true;
             try {
               await resetPassword(target);
               Toast.show({
@@ -267,6 +286,8 @@ export default function AuthScreen() {
               });
             } catch (e: unknown) {
               handleError(e);
+            } finally {
+              forgotInFlightRef.current = false;
             }
           },
         },
@@ -321,19 +342,23 @@ export default function AuthScreen() {
               </View>
             ) : null}
 
-            {/* Segmented control — cleaner than two side-by-side buttons */}
+            {/* Segmented control — cleaner than two side-by-side buttons.
+                Disabled while a submit is in flight so the form layout
+                can't flip out from under an in-progress sign-in. */}
             <View style={styles.segmented}>
               <Pressable
-                style={[styles.segmentedItem, authMode === 'login' && styles.segmentedItemActive]}
+                style={[styles.segmentedItem, authMode === 'login' && styles.segmentedItemActive, busy && { opacity: 0.6 }]}
                 onPress={() => switchMode('login')}
+                disabled={busy}
               >
                 <Text style={[styles.segmentedText, authMode === 'login' && styles.segmentedTextActive]}>
                   Вход
                 </Text>
               </Pressable>
               <Pressable
-                style={[styles.segmentedItem, authMode === 'register' && styles.segmentedItemActive]}
+                style={[styles.segmentedItem, authMode === 'register' && styles.segmentedItemActive, busy && { opacity: 0.6 }]}
                 onPress={() => switchMode('register')}
+                disabled={busy}
               >
                 <Text style={[styles.segmentedText, authMode === 'register' && styles.segmentedTextActive]}>
                   Регистрация
@@ -387,6 +412,14 @@ export default function AuthScreen() {
                   placeholder="••••••••"
                   placeholderTextColor={colors.textMuted}
                   secureTextEntry={!showPassword}
+                  // Off, off, off — passwords are case-sensitive and Android
+                  // can auto-capitalize after punctuation, producing a
+                  // password the user didn't intend (and won't see when the
+                  // field is masked). Mirror the email field's autofill
+                  // hygiene.
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoComplete="password"
                   value={password}
                   onChangeText={(v) => { setPassword(v); if (errors.password) setErrors((p) => ({ ...p, password: undefined })); }}
                   style={styles.input}
@@ -448,6 +481,8 @@ export default function AuthScreen() {
               <GoogleSignInSection
                 disabled={busy || !configured}
                 onIdToken={async (idToken) => {
+                  if (submittingRef.current) return;
+                  submittingRef.current = true;
                   setBusy(true);
                   try {
                     await signInWithGoogleIdToken(idToken);
@@ -455,6 +490,7 @@ export default function AuthScreen() {
                   } catch (e: unknown) {
                     handleError(e);
                   } finally {
+                    submittingRef.current = false;
                     setBusy(false);
                   }
                 }}
@@ -463,6 +499,8 @@ export default function AuthScreen() {
               <AppleSignInSection
                 disabled={busy || !configured}
                 onAppleTokens={async (idToken, rawNonce) => {
+                  if (submittingRef.current) return;
+                  submittingRef.current = true;
                   setBusy(true);
                   try {
                     await signInWithApple(idToken, rawNonce);
@@ -470,6 +508,7 @@ export default function AuthScreen() {
                   } catch (e: unknown) {
                     handleError(e);
                   } finally {
+                    submittingRef.current = false;
                     setBusy(false);
                   }
                 }}
@@ -478,6 +517,8 @@ export default function AuthScreen() {
               <FacebookSignInSection
                 disabled={busy || !configured}
                 onAccessToken={async (accessToken) => {
+                  if (submittingRef.current) return;
+                  submittingRef.current = true;
                   setBusy(true);
                   try {
                     await signInWithFacebook(accessToken);
@@ -485,6 +526,7 @@ export default function AuthScreen() {
                   } catch (e: unknown) {
                     handleError(e);
                   } finally {
+                    submittingRef.current = false;
                     setBusy(false);
                   }
                 }}
