@@ -71,6 +71,12 @@ function PostCardInner({
   const [reactionSummary, setReactionSummary] = useState<ReactionSummaryItem[]>([]);
   const [likeCount, setLikeCount] = useState(post.likeCount ?? 0);
   const [likeBusy, setLikeBusy] = useState(false);
+  // Synchronous busy lock — `likeBusy` state updates async via React's batched
+  // setState, which means two rapid taps in the same render cycle both see
+  // `likeBusy === false` and both pass the guard. The ref is read + written
+  // synchronously inside `onPickReaction` so the second tap is rejected
+  // immediately. Keeping the state too so we can still tint the button.
+  const likeBusyRef = useRef(false);
   const [showPicker, setShowPicker] = useState(false);
   const [shareToFriendOpen, setShareToFriendOpen] = useState(false);
   const pickerAnim = useRef(new Animated.Value(0)).current;
@@ -136,7 +142,8 @@ function PostCardInner({
   }, [reactionScale]);
 
   const onPickReaction = useCallback(async (reaction: ReactionType) => {
-    if (!myUid || likeBusy) return;
+    if (!myUid || likeBusyRef.current) return;
+    likeBusyRef.current = true;
     setLikeBusy(true);
     // Optimistic: assume the picked reaction will replace whatever's there.
     // If the user is removing the same reaction, the toggle returns null.
@@ -153,9 +160,10 @@ function PostCardInner({
       setMyReaction(prev);
       setLikeCount((c) => Math.max(0, c + (prev === null ? -1 : same ? 1 : 0)));
     } finally {
+      likeBusyRef.current = false;
       setLikeBusy(false);
     }
-  }, [post.id, post.ownerUid, myUid, myDisplayName, myReaction, likeBusy, reloadReactionSummary]);
+  }, [post.id, post.ownerUid, myUid, myDisplayName, myReaction, reloadReactionSummary]);
 
   // Lazy-subscribe to comments only when the user expands them (saves listener cost).
   useEffect(() => {

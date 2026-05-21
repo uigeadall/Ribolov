@@ -214,7 +214,9 @@ export const onNewMessage = onDocumentCreated(
     const senderUid = msgData.senderUid as string | undefined;
     const text = msgData.text as string | undefined;
     const mediaType = msgData.mediaType as string | undefined;
-    const sharedRef = msgData.sharedRef as { kind?: string } | undefined;
+    const sharedRef = msgData.sharedRef as
+      | { kind?: string; id?: string; ownerUid?: string }
+      | undefined;
 
     // Read conversation to get participants
     const convSnap = await db.doc(`conversations/${convId}`).get();
@@ -240,6 +242,53 @@ export const onNewMessage = onDocumentCreated(
       return true;
     });
     if (!claimed) return;
+
+    // SharedRef validation — done INSIDE onNewMessage (not in a separate
+    // trigger) so an invalid shared catch/post/spot doesn't cause the
+    // unread counter to drift. If a separate trigger soft-deleted the
+    // message AFTER onNewMessage incremented unreadMessageCount, the
+    // recipient's badge would show 1 unread for a message they can't see.
+    // By inlining the check we either commit BOTH the count bump AND the
+    // notification, or neither.
+    if (sharedRef && sharedRef.kind && sharedRef.id) {
+      let valid = false;
+      try {
+        if (sharedRef.kind === "catch") {
+          const snap = await db.doc(`publicCatches/${sharedRef.id}`).get();
+          valid = snap.exists;
+        } else if (sharedRef.kind === "post") {
+          const snap = await db.doc(`posts/${sharedRef.id}`).get();
+          valid = snap.exists;
+        } else if (sharedRef.kind === "spot") {
+          // Spots are private; only the owner can share them. The sender
+          // must declare ownership AND the spot must exist under that uid.
+          if (sharedRef.ownerUid && sharedRef.ownerUid === senderUid) {
+            const snap = await db.doc(`users/${senderUid}/spots/${sharedRef.id}`).get();
+            valid = snap.exists;
+          }
+        }
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn(`[onNewMessage] sharedRef check failed`, e);
+      }
+      if (!valid) {
+        // Soft-delete: strip the sharedRef + clear text so the client renders
+        // a "deleted message" placeholder rather than a broken shared card.
+        // We do NOT bump unread or write a notification — bailing here means
+        // the recipient never sees a phantom unread.
+        try {
+          await event.data!.ref.update({
+            deletedAt: FieldValue.serverTimestamp(),
+            sharedRef: FieldValue.delete(),
+            text: "",
+          });
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.warn(`[onNewMessage] sharedRef soft-delete failed`, e);
+        }
+        return;
+      }
+    }
 
     // Honor "messages" preference for both in-app notification AND push.
     const prefs = await getNotifPrefs(recipientUid);
@@ -375,13 +424,20 @@ export const aggregateLeaderboards = onSchedule("every 10 minutes", async () => 
 // ---------------------------------------------------------------------------
 // cleanupExpiredStories — runs every 1 hour
 // ---------------------------------------------------------------------------
+// We delete by server-stamped `createdAt` age, NOT the client-stamped
+// `expiresAt` field on the doc. Reason: stories.ts addStory() computes
+// expiresAt = Date.now() + 24h from the device's wall-clock, which can be
+// wildly wrong on devices with skewed clocks or wrong timezones. If the
+// clock is 6 hours behind, the story stays in the feed 6 hours past its
+// intended expiry. Same fix pattern as cleanupExpiredWaterReports below.
+const STORY_TTL_MS = 24 * 60 * 60 * 1000;
 
 export const cleanupExpiredStories = onSchedule("every 1 hours", async () => {
-  const now = Date.now();
+  const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - STORY_TTL_MS);
 
   const snapshot = await db
     .collection("stories")
-    .where("expiresAt", "<", now)
+    .where("createdAt", "<", cutoff)
     .limit(200)
     .get();
 
@@ -691,12 +747,25 @@ export const deleteMyAccount = onCall(async (request) => {
   ];
   for (const [q, label] of ownedQueries) {
     try {
-      const snap = await q.limit(DELETE_PHASE_LIMIT).get();
-      if (snap.empty) continue;
-      // recursiveDelete handles subcollections (likes, comments, members, etc.)
-      await recursiveDelete(snap.docs.map((d) => d.ref));
-      // eslint-disable-next-line no-console
-      console.log(`[deleteMyAccount] ${label}: recursively deleted ${snap.size}`);
+      // Paginate: a user with >DELETE_PHASE_LIMIT owned docs (e.g. 600 hosted
+      // tournaments) would otherwise see only the first 500 deleted, leaving
+      // the rest orphaned. We keep fetching pages while .size hits the limit.
+      // recursiveDelete itself walks every subcollection per doc.
+      let pageTotal = 0;
+      let hasMore = true;
+      while (hasMore) {
+        const snap = await q.limit(DELETE_PHASE_LIMIT).get();
+        if (snap.empty) break;
+        await recursiveDelete(snap.docs.map((d) => d.ref));
+        pageTotal += snap.size;
+        // If we got a full page, there may be more — keep looping. The next
+        // query will skip the just-deleted docs because they no longer match.
+        hasMore = snap.size === DELETE_PHASE_LIMIT;
+      }
+      if (pageTotal > 0) {
+        // eslint-disable-next-line no-console
+        console.log(`[deleteMyAccount] ${label}: recursively deleted ${pageTotal}`);
+      }
     } catch (e) {
       // eslint-disable-next-line no-console
       console.warn(`[deleteMyAccount] ${label} phase failed`, e);
@@ -814,85 +883,9 @@ export const deleteMyAccount = onCall(async (request) => {
   return { ok: true };
 });
 
-// ---------------------------------------------------------------------------
-// validateSharedRefInMessage — fires after onNewMessage handles its own logic
-// ---------------------------------------------------------------------------
-// Why a separate function: onNewMessage is already doing a lot (idempotency,
-// participant lookup, unread counter, push). Adding sharedRef existence/
-// permission checks inline would extend its critical path. As a second
-// trigger this runs independently — even if it's slow or fails, the message
-// still gets delivered correctly to the recipient. The check only matters
-// for blocking malformed/abusive shared refs from being persistent in chat
-// history; a stale or impostor sharedRef gets soft-deleted shortly after
-// posting.
-//
-// Rules:
-// - kind === 'catch' or 'post': only need to verify the doc exists.
-//   Public docs are world-readable to signed-in users, so existence is the
-//   gate.
-// - kind === 'spot': spots live under users/{uid}/spots and are private.
-//   Verifying existence requires knowing the owner uid; we accept the
-//   sender's claim that they own it (sharedRef.ownerUid === senderUid).
-//   If ownership claim is missing, reject.
-//
-// Action on validation failure: soft-delete the message (`deletedAt`,
-// `sharedRef` removed). This avoids surprising the sender with a hard
-// failure and keeps the conversation log intact. The recipient sees a
-// "deleted message" placeholder rather than a broken card.
-
-export const validateSharedRefInMessage = onDocumentCreated(
-  "conversations/{convId}/messages/{msgId}",
-  async (event) => {
-    const data = event.data?.data() as Record<string, unknown> | undefined;
-    if (!data) return;
-    const sharedRef = data.sharedRef as
-      | { kind?: string; id?: string; ownerUid?: string }
-      | undefined;
-    if (!sharedRef || typeof sharedRef !== "object") return;
-
-    const senderUid = data.senderUid as string | undefined;
-    const kind = sharedRef.kind;
-    const id = sharedRef.id;
-    if (!senderUid || !kind || !id) return;
-
-    let ok = false;
-    try {
-      if (kind === "catch") {
-        const snap = await db.doc(`publicCatches/${id}`).get();
-        ok = snap.exists;
-      } else if (kind === "post") {
-        const snap = await db.doc(`posts/${id}`).get();
-        ok = snap.exists;
-      } else if (kind === "spot") {
-        // Spots are private. The sharer must claim ownership; we verify the
-        // claim matches the sender's uid AND the spot actually exists.
-        if (sharedRef.ownerUid && sharedRef.ownerUid === senderUid) {
-          const snap = await db.doc(`users/${senderUid}/spots/${id}`).get();
-          ok = snap.exists;
-        }
-      }
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.warn(`[validateSharedRefInMessage] check failed`, e);
-      ok = false;
-    }
-
-    if (ok) return;
-
-    // Invalid sharedRef — soft-delete. Strip the sharedRef field so the
-    // client's chat renderer falls back to "deleted message" instead of
-    // trying (and failing) to load the referenced target.
-    try {
-      await event.data!.ref.update({
-        deletedAt: FieldValue.serverTimestamp(),
-        sharedRef: FieldValue.delete(),
-        text: "",
-      });
-      // eslint-disable-next-line no-console
-      console.log(`[validateSharedRefInMessage] invalid ${kind} ref soft-deleted in ${event.params.convId}/${event.params.msgId}`);
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.warn(`[validateSharedRefInMessage] cleanup failed`, e);
-    }
-  },
-);
+// (Note: sharedRef validation moved inline into onNewMessage above. The
+// previous standalone `validateSharedRefInMessage` trigger raced with
+// onNewMessage's unread-counter bump — an invalid ref would soft-delete
+// the message AFTER the counter was already incremented, leaving the
+// recipient with a phantom unread. The inlined check makes both writes
+// happen together or neither.)
