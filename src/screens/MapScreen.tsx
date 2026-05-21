@@ -37,6 +37,7 @@ import { spotsStore, catchesStore, getCatchCountByName, newId } from '../storage
 import { Spot } from '../types';
 import type { CatchMapMarker, LiveFishingMarker, HeatmapCell } from '../components/LeafletMap';
 import { fetchSpeciesHeatmap } from '../services/catchSync';
+import { SharePickerModal, buildSpotSharedRef } from '../components/SharePickerModal';
 import {
   subscribeActiveLivePins,
   createLiveFishingPin,
@@ -177,6 +178,9 @@ export default function MapScreen() {
   const [heatmapCells, setHeatmapCells] = useState<HeatmapCell[]>([]);
   const [showHeatmap, setShowHeatmap] = useState(false);
   const [heatmapLoading, setHeatmapLoading] = useState(false);
+  // Spot DM-share — when set, SharePickerModal opens with this spot's SharedRef.
+  // Cleared when the picker closes (regardless of whether the user actually sent).
+  const [shareSpotRef, setShareSpotRef] = useState<Spot | null>(null);
 
   // Live "fishing here right now" pins
   const [livePins, setLivePins] = useState<LiveFishingPin[]>([]);
@@ -1127,7 +1131,18 @@ export default function MapScreen() {
         onRemove={removeSelected}
         onRecordCatch={recordCatchAt}
         onToggleFavorite={() => void handleToggleFavorite()}
+        onShareToFriend={() => { if (selected) setShareSpotRef(selected); }}
       />
+
+      {/* Lazy-mounted DM share sheet for spots — only renders when a spot is
+          actively being shared. Pattern matches FeedPost and PostCard. */}
+      {shareSpotRef && (
+        <SharePickerModal
+          visible
+          onClose={() => setShareSpotRef(null)}
+          sharedRef={buildSpotSharedRef(shareSpotRef)}
+        />
+      )}
 
       {/* Live "fishing here now" FAB — bottom-right above the spot scroll bar */}
       {user && configured ? (
@@ -2241,6 +2256,7 @@ type SpotSheetProps = {
   onRemove: () => void;
   onRecordCatch: (target: { latitude: number; longitude: number; name: string }) => void;
   onToggleFavorite: () => void;
+  onShareToFriend: () => void;
 };
 
 const SpotSheet = React.memo(function SpotSheet({
@@ -2255,6 +2271,7 @@ const SpotSheet = React.memo(function SpotSheet({
   onRemove,
   onRecordCatch,
   onToggleFavorite,
+  onShareToFriend,
 }: SpotSheetProps) {
   const styles = useMemo(() => createMapStyles(colors), [colors]);
   const sheetPanY = useRef(new Animated.Value(0)).current;
@@ -2408,6 +2425,12 @@ const SpotSheet = React.memo(function SpotSheet({
               })
             }
             style={{ marginTop: spacing.md }}
+          />
+          <Button
+            title="Сподели в чат"
+            variant="secondary"
+            onPress={onShareToFriend}
+            style={{ marginTop: spacing.sm }}
           />
           <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.md }}>
             <Button title="Затвори" variant="secondary" onPress={onClose} style={{ flex: 1 }} />

@@ -263,3 +263,52 @@ export function buildCatchSharedRef(c: {
     photoUrl: c.photoUri,
   };
 }
+
+/** Helper to build a SharedRef for a free-form feed post. The DM bubble uses
+    `title` for the post text preview (clamped to one line) and `subtitle` for
+    the author. ChatDetail's shared-card renderer falls back to a newspaper
+    icon when there's no photoUrl. */
+export function buildPostSharedRef(p: {
+  id: string;
+  ownerUid?: string;
+  ownerName?: string;
+  text?: string;
+  photoUri?: string;
+}): SharedRef {
+  // Trim + clamp to keep the in-chat preview tidy — long captions get cut by
+  // the receiver's `numberOfLines={1}` anyway, but trimming server-side
+  // means we don't ship a 2KB string into every conversation.
+  const title = p.text?.trim().slice(0, 140) || undefined;
+  return {
+    kind: 'post',
+    id: p.id,
+    ownerUid: p.ownerUid,
+    title,
+    subtitle: p.ownerName?.trim() || undefined,
+    photoUrl: p.photoUri,
+  };
+}
+
+/** Helper to build a SharedRef for a saved spot (map bookmark). No photo —
+    the chat-side renderer shows a 📍 icon for the spot kind. */
+export function buildSpotSharedRef(s: {
+  id: string;
+  name: string;
+  waterType?: string;
+  latitude?: number;
+  longitude?: number;
+}): SharedRef {
+  // Use water type as the subtitle when available — gives the receiver context
+  // without needing them to tap through to coordinates.
+  const subtitle = s.waterType
+    ? s.waterType
+    : (s.latitude != null && s.longitude != null)
+      ? `${s.latitude.toFixed(3)}, ${s.longitude.toFixed(3)}`
+      : undefined;
+  return {
+    kind: 'spot',
+    id: s.id,
+    title: s.name?.trim() || 'Място',
+    subtitle,
+  };
+}

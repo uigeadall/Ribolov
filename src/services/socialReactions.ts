@@ -157,3 +157,112 @@ export async function fetchCatchLikers(catchId: string): Promise<CatchLiker[]> {
     return [];
   }
 }
+
+// ─── Post reactions ───────────────────────────────────────────────────────────
+// Mirror of the catch reaction system for free-form posts (`posts/{postId}`).
+// Same data shape, same enum, same rate limit. Notifications use the `postId`
+// slot on the notification doc so NotificationsScreen can deep-link into the
+// feed instead of the (non-existent) catch detail. Catches and posts live in
+// separate collections, so a single `togglePostReaction` cannot accidentally
+// touch a catch and vice versa.
+
+/** Subscribe to the current user's reaction on a post (null = no reaction). */
+export function subscribeMyReactionOnPost(
+  postId: string,
+  myUid: string,
+  cb: (reaction: ReactionType | null) => void,
+): () => void {
+  const fb = requireFirebase();
+  return onSnapshot(doc(fb.db, 'posts', postId, 'likes', myUid), (snap) => {
+    if (!snap.exists()) { cb(null); return; }
+    const r = snap.data()?.reaction as ReactionType | undefined;
+    cb(r ?? 'heart');
+  });
+}
+
+/** Returns top reactions on a post with counts, sorted desc. */
+export async function fetchPostReactionSummary(postId: string): Promise<ReactionSummaryItem[]> {
+  const fb = requireFirebase();
+  try {
+    const snap = await getDocs(query(collection(fb.db, 'posts', postId, 'likes'), limit(50)));
+    const counts = new Map<ReactionType, number>();
+    snap.docs.forEach((d) => {
+      const r: ReactionType = (d.data().reaction as ReactionType) ?? 'heart';
+      counts.set(r, (counts.get(r) ?? 0) + 1);
+    });
+    return [...counts.entries()]
+      .map(([type, count]) => ({ type, emoji: REACTIONS[type].emoji, count }))
+      .sort((a, b) => b.count - a.count);
+  } catch {
+    return [];
+  }
+}
+
+/** Toggle or change a reaction on a post. Returns active reaction or null. */
+export async function togglePostReaction(
+  postId: string,
+  myUid: string,
+  postOwnerUid: string,
+  actorName: string,
+  reaction: ReactionType,
+): Promise<ReactionType | null> {
+  if (!allowLikeToggle(myUid)) {
+    throw new Error('Твърде често — опитай отново след секунда.');
+  }
+  const fb = requireFirebase();
+  const refLike = doc(fb.db, 'posts', postId, 'likes', myUid);
+  const postRef = doc(fb.db, 'posts', postId);
+
+  const { removed, isNew } = await runTransaction(fb.db, async (txn) => {
+    const snap = await txn.get(refLike);
+    const existing = snap.exists() ? (snap.data()?.reaction ?? 'heart') : null;
+
+    if (existing === reaction) {
+      txn.delete(refLike);
+      txn.update(postRef, { likeCount: increment(-1) });
+      return { removed: true, isNew: false };
+    }
+    txn.set(
+      refLike,
+      stripUndefinedForFirestore({
+        createdAt: serverTimestamp(),
+        displayName: actorName.slice(0, 120),
+        reaction,
+      }),
+    );
+    if (existing === null) {
+      txn.update(postRef, { likeCount: increment(1) });
+    }
+    return { removed: false, isNew: existing === null };
+  });
+
+  if (removed) return null;
+
+  if (isNew) {
+    notifyInteraction({
+      recipientUid: postOwnerUid,
+      actorUid: myUid,
+      actorName: (actorName || 'Рибар').slice(0, 120),
+      type: 'like',
+      postId,
+      reactionEmoji: REACTIONS[reaction].emoji,
+    }).catch(() => {});
+  }
+  return reaction;
+}
+
+export async function fetchPostLikers(postId: string): Promise<CatchLiker[]> {
+  const fb = requireFirebase();
+  try {
+    const snap = await getDocs(query(collection(fb.db, 'posts', postId, 'likes'), limit(80)));
+    return snap.docs.map((d) => {
+      const data = d.data() as { displayName?: string; reaction?: ReactionType };
+      const name = typeof data.displayName === 'string' && data.displayName.trim()
+        ? data.displayName.trim().slice(0, 120)
+        : 'Рибар';
+      return { uid: d.id, displayName: name, reaction: data.reaction };
+    });
+  } catch {
+    return [];
+  }
+}

@@ -243,7 +243,12 @@ service cloud.firestore {
 
       match /likes/{uid} {
         allow read: if signedIn();
-        allow write: if isSelf(uid);
+        // Validate the reaction enum the same way as /publicCatches likes so
+        // that the multi-reaction picker can't be abused to write arbitrary
+        // values. Missing-reaction (legacy heart-only) writes still pass.
+        allow write: if isSelf(uid)
+          && (!('reaction' in request.resource.data)
+            || request.resource.data.reaction in ['heart','fire','trophy','fish','wow']);
       }
 
       match /comments/{commentId} {

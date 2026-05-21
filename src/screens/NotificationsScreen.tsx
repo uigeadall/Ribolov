@@ -468,14 +468,16 @@ export default function NotificationsScreen() {
         setData((prev) => prev ? prev.map((item) => idSet.has(item.id) ? { ...item, read: true } : item) : prev);
         for (const id of idsToMark) markNotificationRead(user.uid, id).catch(() => {});
       }
-      if (n.type === 'mention' && n.catchId) {
-        // The mention pipeline reuses `catchId` to carry the post id. Land
-        // the user in the feed with the post anchored at the top — the
-        // FeedScreen reads `focusPostId` and scrolls there on first paint.
+      if (n.postId || (n.type === 'mention' && n.catchId)) {
+        // Two paths land here: (1) likes/comments on a free-form post (n.postId
+        // is set explicitly by notifyInteraction), and (2) legacy mentions that
+        // packed the post id into the catchId slot. Both deep-link to the feed
+        // with the post anchored at the top via focusPostId.
+        const targetPostId = n.postId ?? n.catchId!;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (navigation.navigate as any)('FeedTab', {
           screen: 'FeedList',
-          params: { focusPostId: n.catchId },
+          params: { focusPostId: targetPostId },
         });
       } else if (n.type === 'follow' || n.type === 'mention') {
         // Mention without a post id (legacy/edge) falls back to the actor's

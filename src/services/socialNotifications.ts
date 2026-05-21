@@ -22,28 +22,39 @@ export async function notifyInteraction(opts: {
   actorUid: string;
   actorName: string;
   type: 'like' | 'comment';
-  catchId: string;
+  /** Catch id when the target is a catch. Either catchId or postId must be set. */
+  catchId?: string;
+  /** Post id when the target is a free-form feed post. */
+  postId?: string;
   preview?: string;
   reactionEmoji?: string;
 }): Promise<void> {
   if (opts.recipientUid === opts.actorUid) return;
   if (!opts.recipientUid || !opts.actorUid) return;
+  // At least one target must be set — guards against a malformed call writing
+  // an orphan notification that has no deep-link target.
+  const targetId = opts.postId || opts.catchId;
+  if (!targetId) return;
   const fb = requireFirebase();
   const safeName = (opts.actorName || 'Рибар').trim().slice(0, 120) || 'Рибар';
+  // Write both slots when we have them. Older clients (and notifications-screen
+  // fallback) read `catchId`; the new post-aware path reads `postId` first.
   const payload = {
     actorUid: opts.actorUid,
     actorName: safeName,
     type: opts.type,
     catchId: opts.catchId ?? '',
+    ...(opts.postId ? { postId: opts.postId } : {}),
     preview: (opts.preview ?? '').slice(0, 200),
     ...(opts.reactionEmoji ? { reactionEmoji: opts.reactionEmoji } : {}),
     read: false,
     createdAt: serverTimestamp(),
   };
   if (opts.type === 'like') {
-    // Deterministic ID — prevents a second notification when the user unlikes then re-likes
+    // Deterministic ID — prevents a second notification when the user unlikes then re-likes.
+    // Keyed by the target id (post or catch) so a like on each kind doesn't collide.
     await setDoc(
-      doc(fb.db, 'users', opts.recipientUid, 'notifications', `like_${opts.actorUid}_${opts.catchId}`),
+      doc(fb.db, 'users', opts.recipientUid, 'notifications', `like_${opts.actorUid}_${targetId}`),
       payload
     );
   } else {
@@ -67,6 +78,7 @@ export function subscribeMyNotifications(myUid: string, onNext: (items: SocialNo
           actorName: string;
           type: 'like' | 'comment' | 'follow' | 'storyLike' | 'storyComment' | 'mention' | 'message';
           catchId?: string;
+          postId?: string;
           storyId?: string;
           convId?: string;
           preview?: string;
@@ -80,6 +92,7 @@ export function subscribeMyNotifications(myUid: string, onNext: (items: SocialNo
           actorName: data.actorName,
           type: data.type,
           catchId: data.catchId,
+          postId: data.postId,
           storyId: data.storyId,
           convId: data.convId,
           preview: data.preview,

@@ -28,6 +28,9 @@ export type SocialNotification = {
   actorName: string;
   type: 'like' | 'comment' | 'follow' | 'storyLike' | 'storyComment' | 'mention' | 'message';
   catchId?: string;
+  /** Set for likes/comments on free-form posts. NotificationsScreen deep-links
+      to the feed (focusPostId) when this is present, else to CatchDetail. */
+  postId?: string;
   storyId?: string;
   /** Present for 'message' notifications — the conversation this message belongs to. */
   convId?: string;

@@ -1,23 +1,30 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, Pressable, ActionSheetIOS, Alert, Platform,
-  TextInput, ActivityIndicator,
+  TextInput, ActivityIndicator, Animated,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 import type { Post } from '../types';
 import { RichText } from './RichText';
 import { ImageViewer } from './ImageViewer';
+import { SharePickerModal, buildPostSharedRef } from './SharePickerModal';
 import {
-  subscribePostLike,
-  togglePostLike,
   subscribePostComments,
   addPostComment,
   deletePostComment,
 } from '../services/posts';
+import {
+  subscribeMyReactionOnPost,
+  togglePostReaction,
+  fetchPostReactionSummary,
+} from '../services/socialReactions';
+import { REACTIONS, type ReactionType, type ReactionSummaryItem } from '../services/socialTypes';
 import type { FeedComment } from '../services/socialTypes';
 import { useAvatarUrl } from '../hooks/useAvatarUrl';
 import { useAuth } from '../services/authContext';
@@ -53,11 +60,18 @@ function PostCardInner({
   post, myUid, myDisplayName, myPhotoUrl, resolvedAvatarUrl,
   onPressAuthor, onPressHashtag, onPressMention, onDelete, onReshare,
 }: Props) {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const { configured } = useAuth();
-  const [liked, setLiked] = useState(false);
+  // Reaction state — replaces the old boolean `liked`. `myReaction === null`
+  // means the user hasn't reacted. The picker fans out the 5 emoji options.
+  const [myReaction, setMyReaction] = useState<ReactionType | null>(null);
+  const [reactionSummary, setReactionSummary] = useState<ReactionSummaryItem[]>([]);
   const [likeCount, setLikeCount] = useState(post.likeCount ?? 0);
   const [likeBusy, setLikeBusy] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
+  const [shareToFriendOpen, setShareToFriendOpen] = useState(false);
+  const pickerAnim = useRef(new Animated.Value(0)).current;
+  const reactionScale = useRef(new Animated.Value(1)).current;
   const [viewerOpen, setViewerOpen] = useState(false);
   const [textExpanded, setTextExpanded] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
@@ -82,12 +96,59 @@ function PostCardInner({
 
   useEffect(() => {
     if (!myUid) return;
-    return subscribePostLike(post.id, myUid, setLiked);
+    return subscribeMyReactionOnPost(post.id, myUid, setMyReaction);
   }, [post.id, myUid]);
 
   useEffect(() => {
     setLikeCount(post.likeCount ?? 0);
   }, [post.likeCount]);
+
+  // Reaction summary — fetched once on mount + after every successful toggle.
+  // Counts on this list can drift slightly from likeCount because the summary
+  // is sampled to 50 docs; for low-volume posts they match exactly.
+  const reloadReactionSummary = useCallback(() => {
+    fetchPostReactionSummary(post.id).then(setReactionSummary).catch(() => {});
+  }, [post.id]);
+  useEffect(() => { reloadReactionSummary(); }, [reloadReactionSummary]);
+
+  const openPicker = useCallback(() => {
+    setShowPicker(true);
+    Animated.spring(pickerAnim, { toValue: 1, useNativeDriver: true, bounciness: 6 }).start();
+  }, [pickerAnim]);
+
+  const closePicker = useCallback(() => {
+    Animated.timing(pickerAnim, { toValue: 0, duration: 160, useNativeDriver: true })
+      .start(({ finished }) => { if (finished) setShowPicker(false); });
+  }, [pickerAnim]);
+
+  const animateReaction = useCallback(() => {
+    Animated.sequence([
+      Animated.spring(reactionScale, { toValue: 1.25, useNativeDriver: true, bounciness: 14 }),
+      Animated.spring(reactionScale, { toValue: 1, useNativeDriver: true }),
+    ]).start();
+  }, [reactionScale]);
+
+  const onPickReaction = useCallback(async (reaction: ReactionType) => {
+    if (!myUid || likeBusy) return;
+    setLikeBusy(true);
+    // Optimistic: assume the picked reaction will replace whatever's there.
+    // If the user is removing the same reaction, the toggle returns null.
+    const prev = myReaction;
+    const same = prev === reaction;
+    setMyReaction(same ? null : reaction);
+    setLikeCount((c) => Math.max(0, c + (prev === null ? 1 : same ? -1 : 0)));
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      await togglePostReaction(post.id, myUid, post.ownerUid, myDisplayName, reaction);
+      reloadReactionSummary();
+    } catch {
+      // Roll back optimistic delta on rate-limit/rules failure.
+      setMyReaction(prev);
+      setLikeCount((c) => Math.max(0, c + (prev === null ? -1 : same ? 1 : 0)));
+    } finally {
+      setLikeBusy(false);
+    }
+  }, [post.id, post.ownerUid, myUid, myDisplayName, myReaction, likeBusy, reloadReactionSummary]);
 
   // Lazy-subscribe to comments only when the user expands them (saves listener cost).
   useEffect(() => {
@@ -128,24 +189,6 @@ function PostCardInner({
       },
     ]);
   }, [post.id]);
-
-  const onToggleLike = useCallback(async () => {
-    if (!myUid || likeBusy) return;
-    setLikeBusy(true);
-    // Optimistic
-    setLiked((v) => !v);
-    setLikeCount((c) => Math.max(0, c + (liked ? -1 : 1)));
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    try {
-      await togglePostLike(post.id, myUid, myDisplayName);
-    } catch {
-      // Rollback
-      setLiked((v) => !v);
-      setLikeCount((c) => Math.max(0, c + (liked ? 1 : -1)));
-    } finally {
-      setLikeBusy(false);
-    }
-  }, [post.id, myUid, myDisplayName, liked, likeBusy]);
 
   const openMenu = () => {
     if (!isMine || !onDelete) return;
@@ -400,16 +443,89 @@ function PostCardInner({
         </Pressable>
       ) : null}
 
+      {/* Reaction picker (glass pill) — mounts between content and actions */}
+      {showPicker && (
+        <Animated.View
+          style={{
+            borderRadius: radius.xl,
+            overflow: 'hidden',
+            marginHorizontal: 12,
+            marginTop: 8,
+            opacity: pickerAnim,
+            transform: [{ scale: pickerAnim.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] }) }],
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: mode === 'dark' ? 0.35 : 0.14,
+            shadowRadius: 14,
+            elevation: 6,
+          }}
+        >
+          <BlurView
+            intensity={mode === 'dark' ? 68 : 80}
+            tint={mode === 'dark' ? 'dark' : 'light'}
+            style={StyleSheet.absoluteFillObject}
+          />
+          <LinearGradient
+            colors={mode === 'dark'
+              ? ['rgba(255,255,255,0.10)', 'rgba(255,255,255,0.04)']
+              : ['rgba(255,255,255,0.72)', 'rgba(255,255,255,0.30)']}
+            start={{ x: 0, y: 0 }} end={{ x: 0.4, y: 1 }}
+            style={StyleSheet.absoluteFillObject}
+          />
+          <View style={[StyleSheet.absoluteFillObject, {
+            borderRadius: radius.xl, borderWidth: 1,
+            borderColor: mode === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.82)',
+          }]} />
+          <View style={{ flexDirection: 'row', justifyContent: 'space-around', paddingVertical: spacing.sm, paddingHorizontal: spacing.xs }}>
+            {(Object.entries(REACTIONS) as [ReactionType, { emoji: string; label: string }][]).map(([type, r]) => (
+              <Pressable
+                key={type}
+                onPress={() => { closePicker(); onPickReaction(type); }}
+                style={{
+                  alignItems: 'center', paddingHorizontal: spacing.sm, paddingVertical: 4,
+                  borderRadius: radius.md,
+                  backgroundColor: myReaction === type
+                    ? (mode === 'dark' ? 'rgba(255,255,255,0.18)' : colors.primarySurface)
+                    : 'transparent',
+                }}
+              >
+                <Text style={{ fontSize: 28 }}>{r.emoji}</Text>
+                <Text style={{ ...typography.caption, color: myReaction === type ? colors.primary : colors.textMuted, marginTop: 2, fontSize: 10 }}>{r.label}</Text>
+              </Pressable>
+            ))}
+            <Pressable onPress={closePicker} style={{ alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.sm }}>
+              <Ionicons name="close-circle" size={22} color={mode === 'dark' ? 'rgba(255,255,255,0.45)' : colors.textMuted} />
+            </Pressable>
+          </View>
+        </Animated.View>
+      )}
+
       {/* Actions */}
       <View style={styles.actions}>
-        <Pressable style={styles.actionBtn} onPress={onToggleLike} hitSlop={8} disabled={!myUid}>
-          <Ionicons
-            name={liked ? 'heart' : 'heart-outline'}
-            size={22}
-            color={liked ? '#E53935' : colors.text}
-          />
+        <Pressable
+          style={styles.actionBtn}
+          onPress={() => {
+            if (!myUid) return;
+            animateReaction();
+            // Quick-tap reuses last reaction (or removes it if same).
+            // Long-press opens the picker for a different reaction.
+            if (myReaction) onPickReaction(myReaction);
+            else openPicker();
+          }}
+          onLongPress={openPicker}
+          delayLongPress={300}
+          hitSlop={8}
+          disabled={!myUid || likeBusy}
+        >
+          <Animated.View style={{ transform: [{ scale: reactionScale }] }}>
+            {myReaction ? (
+              <Text style={{ fontSize: 22 }}>{REACTIONS[myReaction].emoji}</Text>
+            ) : (
+              <Ionicons name="heart-outline" size={22} color={colors.text} />
+            )}
+          </Animated.View>
           {likeCount > 0 ? (
-            <Text style={[styles.actionCount, liked && styles.actionCountActive]}>{likeCount}</Text>
+            <Text style={[styles.actionCount, myReaction && styles.actionCountActive]}>{likeCount}</Text>
           ) : null}
         </Pressable>
         <Pressable
@@ -431,7 +547,36 @@ function PostCardInner({
             <Ionicons name="repeat-outline" size={22} color={colors.text} />
           </Pressable>
         ) : null}
+        <Pressable
+          style={styles.actionBtn}
+          onPress={() => setShareToFriendOpen(true)}
+          hitSlop={8}
+          accessibilityLabel="Изпрати на приятел"
+        >
+          <Ionicons name="send-outline" size={20} color={colors.text} />
+        </Pressable>
       </View>
+
+      {/* Reaction summary — top 3 emoji + count, taps to open likers (future) */}
+      {likeCount > 0 && reactionSummary.length > 0 ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: spacing.lg, marginTop: -4, marginBottom: spacing.xs }}>
+          {reactionSummary.slice(0, 3).map((r) => (
+            <Text key={r.type} style={{ fontSize: 13 }}>{r.emoji}</Text>
+          ))}
+          <Text style={{ ...typography.caption, color: colors.textMuted, marginLeft: 2 }}>
+            {likeCount} {likeCount === 1 ? 'харесване' : 'харесвания'}
+          </Text>
+        </View>
+      ) : null}
+
+      {/* Lazy-mounted DM share sheet — only renders when opened, like FeedPost. */}
+      {shareToFriendOpen && (
+        <SharePickerModal
+          visible
+          onClose={() => setShareToFriendOpen(false)}
+          sharedRef={buildPostSharedRef(post)}
+        />
+      )}
 
       {/* Comments panel */}
       {commentsOpen ? (

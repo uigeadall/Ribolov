@@ -368,6 +368,7 @@ export async function deletePostComment(postId: string, commentId: string): Prom
 }
 
 /**
+ * @deprecated Use `subscribeMyReactionOnPost` from `socialReactions.ts`.
  * Subscribe to whether the current user has liked a post.
  */
 export function subscribePostLike(postId: string, myUid: string, cb: (liked: boolean) => void): () => void {
@@ -376,6 +377,8 @@ export function subscribePostLike(postId: string, myUid: string, cb: (liked: boo
 }
 
 /**
+ * @deprecated Use `togglePostReaction` from `socialReactions.ts` for multi-emoji
+ *   reactions. This heart-only path is kept for any straggling callers.
  * Toggles a heart-like on a post. Returns the new liked state.
  * Maintains the post's `likeCount` via transaction.
  */
