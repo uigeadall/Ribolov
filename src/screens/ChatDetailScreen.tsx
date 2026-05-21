@@ -489,6 +489,11 @@ export default function ChatDetailScreen() {
     } catch (e) {
       if (replyRef) setReplyingTo(capturedReplyingTo);
       handleError(e);
+      // Re-throw so callers (send()) can restore pendingMedia + caption.
+      // Without this, the upload-fail path swallows the error and send()'s
+      // try/catch never sees it — the user's photo and typed caption are
+      // lost with no recovery.
+      throw e;
     } finally {
       setUploading(false);
     }
@@ -501,16 +506,26 @@ export default function ChatDetailScreen() {
       return;
     }
     // Staged media path: upload the photo (text becomes its caption) and
-    // clear both the media slot and the input afterward. We do this first
+    // clear both the media slot and the input on success. We do this first
     // so a user with both pending media AND typed text gets one combined
-    // message rather than two separate ones.
+    // message rather than two separate ones. On failure (upload rejected,
+    // network gone), we restore pendingMedia + the caption so the user can
+    // retry rather than having their photo + text vanish silently.
     if (pendingMedia && !editingMsg) {
       const caption = text.trim();
-      const mediaUri = pendingMedia.uri;
+      const stagedMedia = pendingMedia;
       setPendingMedia(null);
       setText('');
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      await uploadAndSendMedia(mediaUri, caption);
+      try {
+        await uploadAndSendMedia(stagedMedia.uri, caption);
+      } catch {
+        // uploadAndSendMedia already calls handleError for the toast; we
+        // just need to put the user's draft back. Reply target restoration
+        // is handled inside uploadAndSendMedia.
+        setPendingMedia(stagedMedia);
+        setText(caption);
+      }
       return;
     }
     if (!text.trim()) return;
@@ -1370,7 +1385,17 @@ export default function ChatDetailScreen() {
             with an X to discard. The text input below doubles as the caption. */}
         {pendingMedia ? (
           <View style={styles.mediaPreviewRow}>
-            <Image source={{ uri: pendingMedia.uri }} style={styles.mediaPreviewThumb} contentFit="cover" />
+            <Image
+              source={{ uri: pendingMedia.uri }}
+              style={styles.mediaPreviewThumb}
+              contentFit="cover"
+              // Drop the staged media if the underlying file:// URI is no
+              // longer readable. Android can clean up the picker's temp file
+              // after the user navigates away + back, or after a background
+              // memory-pressure event. Without this, the row renders a broken
+              // thumb that sends as a corrupt upload on tap.
+              onError={() => setPendingMedia(null)}
+            />
             <View style={{ flex: 1 }}>
               <Text style={{ ...typography.caption, color: colors.text, fontWeight: '700' }}>
                 Готово за изпращане
@@ -1513,6 +1538,13 @@ export default function ChatDetailScreen() {
                         onPress={() => {
                           setReactionTarget(null);
                           setReplyingTo(msg);
+                          // Clear any in-flight edit BEFORE switching to reply.
+                          // Without these resets, an unsaved edit draft sits in
+                          // the input — the user thinks they're replying to msg
+                          // but accidentally sends their edit-A text as the
+                          // reply body (and the actual edit gets dropped
+                          // silently when send() routes to the reply branch).
+                          if (editingMsg) setText('');
                           setEditingMsg(null);
                         }}
                       >
