@@ -171,6 +171,14 @@ export default function AddCatchScreen() {
 
   const [recentBaits, setRecentBaits] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  // Synchronous double-tap guard. `saving` state updates via React's batched
+  // re-render, so two taps in the same JS tick both see `disabled={false}`
+  // and both fire `save()`. With the same catchIdRef both writes target the
+  // same doc (no duplicate catches) but the side effects (PB alert, achievement
+  // unlock modal, toast, recent-baits push, background sync) all fire twice.
+  // The ref is read + set synchronously inside save() so the second tap bails
+  // immediately.
+  const savingRef = useRef(false);
   const [unlockedNow, setUnlockedNow] = useState<Achievement[]>([]);
   const [editLoaded, setEditLoaded] = useState(!editCatchId);
   const [initialCatch, setInitialCatch] = useState<Catch | null>(null);
@@ -485,6 +493,7 @@ export default function AddCatchScreen() {
   };
 
   const save = async () => {
+    if (savingRef.current) return;
     if (!form.speciesId) return;
     const trimmedPhotoTitle = form.photoTitle.trim().slice(0, 120);
     const uri = form.photoUri?.trim();
@@ -496,6 +505,7 @@ export default function AddCatchScreen() {
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
     const id = catchIdRef.current;
     const photoTakenWithAppCamera = !uri
@@ -589,6 +599,7 @@ export default function AddCatchScreen() {
     } catch (e: unknown) {
       handleError(e);
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
