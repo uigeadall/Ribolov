@@ -284,6 +284,7 @@ export default function TournamentsScreen() {
                   <Card>
                     <EmptyState
                       icon="trophy-outline"
+                      emoji="🏆"
                       title="Все още нямаш турнири"
                       subtitle="Създай нов турнир или се присъедини към активен по-долу."
                       action={{

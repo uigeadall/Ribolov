@@ -9,6 +9,7 @@ import { FishingRefreshControl } from '../components/FishingRefreshControl';
 import { Card } from '../components/Card';
 import { EmptyState } from '../components/EmptyState';
 import { Skeleton } from '../components/Skeleton';
+import { FadeIn } from '../components/FadeIn';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
@@ -718,17 +719,20 @@ export default function NotificationsScreen() {
         {loading ? (
           <NotifSkeleton />
         ) : filteredItems.length === 0 ? (
-          <EmptyState
-            icon="notifications-off-outline"
-            title="Няма известия"
-            subtitle={notifTab === 'all'
-              ? "Когато някой хареса или коментира твой улов, или те последва, ще се появи тук."
-              : notifTab === 'likes'
-                ? "Нямаш харесвания все още."
-                : "Нямаш коментари все още."
-            }
-          />
+          <FadeIn>
+            <EmptyState
+              icon="notifications-off-outline"
+              title="Няма известия"
+              subtitle={notifTab === 'all'
+                ? "Когато някой хареса или коментира твой улов, или те последва, ще се появи тук."
+                : notifTab === 'likes'
+                  ? "Нямаш харесвания все още."
+                  : "Нямаш коментари все още."
+              }
+            />
+          </FadeIn>
         ) : (
+          <FadeIn>
           <SectionList
             sections={sections}
             keyExtractor={(n) => n.id}
@@ -753,6 +757,7 @@ export default function NotificationsScreen() {
               />
             )}
           />
+          </FadeIn>
         )}
       </View>
     </Screen>

@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { ListSkeleton } from '../components/ListSkeleton';
+import { FadeIn } from '../components/FadeIn';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
@@ -77,6 +78,7 @@ export default function ExploreScreen() {
       {loading && !refreshing ? (
         <ListSkeleton variant="grid" count={6} />
       ) : (
+        <FadeIn>
         <FlatList
           data={[]}
           keyExtractor={() => 'placeholder'}
@@ -137,6 +139,7 @@ export default function ExploreScreen() {
           }
           renderItem={() => null}
         />
+        </FadeIn>
       )}
     </Screen>
   );

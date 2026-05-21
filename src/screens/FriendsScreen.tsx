@@ -19,6 +19,7 @@ import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { EmptyState } from '../components/EmptyState';
+import { FadeIn } from '../components/FadeIn';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
@@ -322,23 +323,28 @@ export default function FriendsScreen() {
             {followsLoading ? (
               <FriendsSkeleton borderColor={colors.border} />
             ) : (followedRows ?? []).length === 0 ? (
-              <EmptyState
-                icon="people-outline"
-                title="Още никого не следваш"
-                subtitle="Търси рибар по-горе или отвори профил от лентата."
-                action={{
-                  label: 'Виж лентата',
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  onPress: () => (navigation as any).navigate('FeedTab', { screen: 'FeedList' }),
-                }}
-              />
+              <FadeIn>
+                <EmptyState
+                  icon="people-outline"
+                  emoji="🐟"
+                  title="Още никого не следваш"
+                  subtitle="Търси рибар по-горе или отвори профил от лентата."
+                  action={{
+                    label: 'Виж лентата',
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    onPress: () => (navigation as any).navigate('FeedTab', { screen: 'FeedList' }),
+                  }}
+                />
+              </FadeIn>
             ) : (
+              <FadeIn>
               <FlatList
                 data={followedRows ?? []}
                 keyExtractor={(r) => r.uid}
                 renderItem={({ item }) => renderUserRow(item.uid, item.displayName, item.photoUrl)}
                 keyboardShouldPersistTaps="handled"
               />
+              </FadeIn>
             )}
           </>
         )}

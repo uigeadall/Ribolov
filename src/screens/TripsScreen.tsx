@@ -226,6 +226,7 @@ export default function TripsScreen() {
           ListEmptyComponent={
             <EmptyState
               icon="calendar-outline"
+              emoji="🎣"
               title="Още няма записани излети"
               subtitle="Записвай къде, кога и какво си хванал — после намираш всичко на едно място."
               action={{

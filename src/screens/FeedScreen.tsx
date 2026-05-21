@@ -35,6 +35,7 @@ import { getBlockedUids } from '../services/blockUser';
 import { StoriesRow } from '../components/StoriesRow';
 import { FishingRefreshControl } from '../components/FishingRefreshControl';
 import { FeedSkeleton } from '../components/FeedSkeleton';
+import { FadeIn } from '../components/FadeIn';
 import { useAuth } from '../services/authContext';
 import { formatFirebaseError } from '../services/firebaseErrors';
 import { captureException } from '../services/observability';
@@ -778,6 +779,7 @@ export default function FeedScreen() {
           <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: spacing.lg }}>
             <EmptyState
               icon={scope === 'following' ? 'people-outline' : 'layers-outline'}
+              emoji={scope === 'following' ? '🐟' : '🎣'}
               title={scope === 'following' ? 'Няма публикации от следваните' : 'Тук още е тихо'}
               subtitle={
                 scope === 'following'
@@ -799,7 +801,7 @@ export default function FeedScreen() {
       );
     }
     return (
-      <View style={{ flex: 1 }}>
+      <FadeIn>
         <AnimatedFlatList
           ref={flatListRef}
           data={displayedItems}
@@ -1003,7 +1005,7 @@ export default function FeedScreen() {
             </Pressable>
           </View>
         ) : null}
-      </View>
+      </FadeIn>
     );
   })();
 

@@ -179,6 +179,7 @@ export default function SavedPostsScreen() {
       ) : itemList.length === 0 ? (
         <EmptyState
           icon="bookmark-outline"
+          emoji="🔖"
           title="Няма запазени"
           subtitle="В лентата натисни отметката на публикация, за да я запазиш тук."
           action={{

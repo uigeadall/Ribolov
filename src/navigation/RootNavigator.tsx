@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, StyleSheet, Text, View } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import {
   NavigationContainer,
   DefaultTheme,
@@ -236,6 +237,48 @@ function TabNavigator() {
       .catch(() => {});
   }, []);
   // Bubble tab bar: floats above safe area as a pill
+
+  // Animated icon that scales up + bounces on focus change. Lives inside the
+  // component so it captures the right Animated.Value lifecycle per tab.
+  // The spring runs whenever `focused` flips so a tab tap feels tactile —
+  // tap into a tab and the icon "pops" instead of jump-cutting. Color tween
+  // is driven by react-navigation's `color` prop (no extra animation).
+  function AnimatedTabIcon({
+    focused,
+    color,
+    icon,
+  }: {
+    focused: boolean;
+    color: string;
+    icon: keyof typeof Ionicons.glyphMap;
+  }) {
+    const scale = useRef(new Animated.Value(focused ? 1 : 0.92)).current;
+    const prevFocused = useRef(focused);
+    useEffect(() => {
+      // Spring animation gives the icon a tiny overshoot when activating —
+      // bouncier than a plain timing curve. On deactivation we just settle
+      // back to neutral with no overshoot.
+      Animated.spring(scale, {
+        toValue: focused ? 1.08 : 0.92,
+        useNativeDriver: true,
+        speed: 30,
+        bounciness: focused ? 14 : 0,
+      }).start();
+      // Light haptic on activation. Skipped on first mount (when
+      // prevFocused.current matches focused). Without this guard the user
+      // gets a buzz every app launch.
+      if (prevFocused.current !== focused && focused) {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+      prevFocused.current = focused;
+    }, [focused, scale]);
+    return (
+      <Animated.View style={{ transform: [{ scale }] }}>
+        <Ionicons name={icon} size={22} color={color} />
+      </Animated.View>
+    );
+  }
+
   const bubbleTabBarStyle = useMemo(
     () => ({
       marginHorizontal: 12,
@@ -317,14 +360,13 @@ function TabNavigator() {
           );
         },
         tabBarIcon: ({ color, focused }) => {
-          const iconSize = focused ? 22 : 22;
           let icon: keyof typeof Ionicons.glyphMap = 'home';
           if (route.name === 'HomeTab') icon = focused ? 'home' : 'home-outline';
           if (route.name === 'LogbookTab') icon = focused ? 'book' : 'book-outline';
           if (route.name === 'MapTab') icon = focused ? 'map' : 'map-outline';
           if (route.name === 'FeedTab') icon = focused ? 'newspaper' : 'newspaper-outline';
           if (route.name === 'ProfileTab') icon = focused ? 'person' : 'person-outline';
-          return <Ionicons name={icon} size={iconSize} color={color} />;
+          return <AnimatedTabIcon focused={focused} color={color} icon={icon} />;
         },
       })}
     >

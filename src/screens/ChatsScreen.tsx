@@ -8,6 +8,7 @@ import * as Haptics from 'expo-haptics';
 import { Screen } from '../components/Screen';
 import { EmptyState } from '../components/EmptyState';
 import { Skeleton } from '../components/Skeleton';
+import { FadeIn } from '../components/FadeIn';
 import { FishingRefreshControl } from '../components/FishingRefreshControl';
 import { getImageVariant, ImageSize } from '../utils/imageVariants';
 import { useTheme } from '../services/themeContext';
@@ -792,6 +793,7 @@ export default function ChatsScreen() {
         {loading ? (
           <ChatSkeleton colors={colors} />
         ) : (
+          <FadeIn>
           <FlatList
             data={items}
             keyExtractor={(item) => item.convId}
@@ -835,6 +837,7 @@ export default function ChatsScreen() {
               />
             )}
           />
+          </FadeIn>
         )}
 
         <Pressable
