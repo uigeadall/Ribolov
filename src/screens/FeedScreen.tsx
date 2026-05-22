@@ -803,16 +803,14 @@ export default function FeedScreen() {
                   ? 'Последвай риболовци, за да виждаш техните улови тук.'
                   : 'Сподели публично от Дневник → улов → „Сподели публично" — твоят пост ще се появи в лентата.'
               }
-            />
-            <View style={{ paddingHorizontal: spacing.xl, marginTop: spacing.md, gap: spacing.sm }}>
-              <Button
-                title={scope === 'following' ? 'Намери приятели' : 'Добави първи улов'}
-                onPress={() => {
+              action={{
+                label: scope === 'following' ? 'Намери приятели' : 'Добави първи улов',
+                onPress: () => {
                   if (scope === 'following') navigation.navigate('Friends');
                   else (navigation as any).navigate('LogbookTab', { screen: 'AddCatch', params: {} });
-                }}
-              />
-            </View>
+                },
+              }}
+            />
           </View>
         </View>
       );

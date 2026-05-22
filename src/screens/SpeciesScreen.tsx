@@ -14,7 +14,6 @@ import { Image } from 'expo-image';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { EmptyState } from '../components/EmptyState';
-import { Button } from '../components/Button';
 import { speciesList } from '../data/species';
 import { imageHeadersForUrl, speciesPhotos } from '../data/speciesPhotos';
 import { Species } from '../types';
@@ -264,8 +263,8 @@ export default function SpeciesScreen() {
               icon="search-outline"
               title="Няма съвпадения"
               subtitle="Опитай друга дума или провери правописа на латинското име."
+              action={{ label: 'Изчисти търсенето', onPress: () => setQ('') }}
             />
-            <Button title="Изчисти търсенето" variant="secondary" onPress={() => setQ('')} style={{ marginTop: spacing.lg }} />
           </View>
         ) : (
           <FlatList

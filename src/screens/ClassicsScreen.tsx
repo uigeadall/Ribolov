@@ -358,7 +358,7 @@ export default function ClassicsScreen() {
         <StatusBar barStyle="light-content" />
         <View style={s.emptyBanner}>
           <View style={s.emptyBannerTopRow}>
-            <Pressable onPress={() => navigation.goBack()} style={s.backBtn} hitSlop={8}>
+            <Pressable onPress={() => navigation.goBack()} style={s.backBtn} hitSlop={8} accessibilityRole="button" accessibilityLabel="Назад">
               <Ionicons name="chevron-back" size={20} color="#fff" />
             </Pressable>
           </View>
@@ -404,7 +404,7 @@ export default function ClassicsScreen() {
         <>
           <View style={[s.banner, { alignItems: 'center', gap: spacing.sm }]}>
             <View style={[s.bannerTopRow, { width: '100%' }]}>
-              <Pressable onPress={() => navigation.goBack()} style={s.backBtn} hitSlop={8}>
+              <Pressable onPress={() => navigation.goBack()} style={s.backBtn} hitSlop={8} accessibilityRole="button" accessibilityLabel="Назад">
                 <Ionicons name="chevron-back" size={20} color="#fff" />
               </Pressable>
             </View>
@@ -433,7 +433,7 @@ export default function ClassicsScreen() {
       ) : error ? (
         <>
           <View style={s.banner}>
-            <Pressable onPress={() => navigation.goBack()} style={s.backBtn} hitSlop={8}>
+            <Pressable onPress={() => navigation.goBack()} style={s.backBtn} hitSlop={8} accessibilityRole="button" accessibilityLabel="Назад">
               <Ionicons name="chevron-back" size={20} color="#fff" />
             </Pressable>
           </View>
@@ -446,7 +446,7 @@ export default function ClassicsScreen() {
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1 }}>
           <View style={[s.emptyBanner]}>
             <View style={s.emptyBannerTopRow}>
-              <Pressable onPress={() => navigation.goBack()} style={s.backBtn} hitSlop={8}>
+              <Pressable onPress={() => navigation.goBack()} style={s.backBtn} hitSlop={8} accessibilityRole="button" accessibilityLabel="Назад">
                 <Ionicons name="chevron-back" size={20} color="#fff" />
               </Pressable>
             </View>
@@ -473,7 +473,7 @@ export default function ClassicsScreen() {
               <View style={s.banner}>
                 {/* top row */}
                 <View style={s.bannerTopRow}>
-                  <Pressable onPress={() => navigation.goBack()} style={s.backBtn} hitSlop={8}>
+                  <Pressable onPress={() => navigation.goBack()} style={s.backBtn} hitSlop={8} accessibilityRole="button" accessibilityLabel="Назад">
                     <Ionicons name="chevron-back" size={20} color="#fff" />
                   </Pressable>
                   <View style={s.bannerTitleWrap}>
