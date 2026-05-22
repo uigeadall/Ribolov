@@ -154,6 +154,15 @@ export default function MapScreen() {
   // returned, would otherwise see A's route painted (and B's sheet closed)
   // out from under them.
   const routeRequestIdRef = useRef(0);
+  // Same synchronous-guard pattern as spotSavingRef. The button-level
+  // `disabled` props use React state (reportSaving, liveSaving,
+  // togglingFavorite) which lags one render — a sub-frame double tap
+  // slips through and fires two writes. The favorite-toggle case is
+  // especially nasty: two rapid taps toggle the bit twice, ending in
+  // the same state the user started in (silent failure of intent).
+  const reportSavingRef = useRef(false);
+  const liveSavingRef = useRef(false);
+  const favoriteTogglingRef = useRef(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [waterType, setWaterType] = useState<Spot['waterType']>('lake');
@@ -436,7 +445,8 @@ export default function MapScreen() {
   }, [user, myActivePin]);
 
   const confirmFishingSession = useCallback(async () => {
-    if (!user || liveSaving) return;
+    if (!user || liveSavingRef.current) return;
+    liveSavingRef.current = true;
     let lat = userCoord?.latitude;
     let lon = userCoord?.longitude;
     if (lat == null || lon == null) {
@@ -491,6 +501,7 @@ export default function MapScreen() {
     } catch (e) {
       handleError(e);
     } finally {
+      liveSavingRef.current = false;
       setLiveSaving(false);
     }
   }, [user, liveNote, liveSaving, userCoord]);
@@ -833,7 +844,8 @@ export default function MapScreen() {
   }, [selectedWater, navigation]);
 
   const handleSubmitReport = useCallback(async () => {
-    if (!selectedWater || !user) return;
+    if (!selectedWater || !user || reportSavingRef.current) return;
+    reportSavingRef.current = true;
     setReportSaving(true);
     try {
       await addWaterReport({
@@ -853,12 +865,14 @@ export default function MapScreen() {
     } catch (e) {
       handleError(e);
     } finally {
+      reportSavingRef.current = false;
       setReportSaving(false);
     }
   }, [selectedWater, user, reportActivity, reportCondition, reportNote]);
 
   const handleToggleFavorite = useCallback(async () => {
-    if (!selected || togglingFavorite) return;
+    if (!selected || favoriteTogglingRef.current) return;
+    favoriteTogglingRef.current = true;
     setTogglingFavorite(true);
     try {
       const updated = await spotsStore.toggleFavorite(selected.id);
@@ -871,6 +885,7 @@ export default function MapScreen() {
       setSelected(fresh);
       if (showFavoritesOnly && !fresh.isFavorite) setSelected(null);
     } finally {
+      favoriteTogglingRef.current = false;
       setTogglingFavorite(false);
     }
   }, [selected, togglingFavorite, showFavoritesOnly]);
