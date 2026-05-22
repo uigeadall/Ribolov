@@ -28,6 +28,7 @@ import { uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Screen } from '../components/Screen';
+import { ActionSheet } from '../components/ActionSheet';
 import { ImageViewer } from '../components/ImageViewer';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
@@ -1427,11 +1428,13 @@ export default function ChatDetailScreen() {
                 notifyInfo('Блокиран потребител', 'Разблокирай го, за да изпратиш медия.');
                 return;
               }
-              Alert.alert('Изпрати медия', undefined, [
-                { text: 'Камера', onPress: () => pickMedia('camera') },
-                { text: 'Галерия', onPress: () => pickMedia('gallery') },
-                { text: 'Отказ', style: 'cancel' },
-              ]);
+              ActionSheet.show({
+                title: 'Изпрати медия',
+                options: [
+                  { label: 'Камера', icon: 'camera-outline', onPress: () => pickMedia('camera') },
+                  { label: 'Галерия', icon: 'images-outline', onPress: () => pickMedia('gallery') },
+                ],
+              });
             }}
             hitSlop={8}
             style={[styles.attachBtn, { opacity: blockedByMe || editingMsg ? 0.4 : 1 }]}

@@ -15,6 +15,7 @@ import type { FeedStackParamList } from '../navigation/types';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
+import { ActionSheet } from '../components/ActionSheet';
 import { Card } from '../components/Card';
 import { EmptyState } from '../components/EmptyState';
 import { Button } from '../components/Button';
@@ -1040,27 +1041,21 @@ export default function FeedScreen() {
         <Pressable
           onPress={() => {
             void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            const onCatch = () => (navigation as any).navigate('LogbookTab', { screen: 'AddCatch', params: {} });
-            const onPost = () => navigation.navigate('CreatePost');
-            if (Platform.OS === 'ios') {
-              ActionSheetIOS.showActionSheetWithOptions(
+            ActionSheet.show({
+              title: 'Какво искаш да споделиш?',
+              options: [
                 {
-                  title: 'Какво искаш да споделиш?',
-                  options: ['Сподели улов', 'Напиши пост', 'Отказ'],
-                  cancelButtonIndex: 2,
+                  label: 'Сподели улов',
+                  icon: 'fish-outline',
+                  onPress: () => (navigation as any).navigate('LogbookTab', { screen: 'AddCatch', params: {} }),
                 },
-                (idx) => {
-                  if (idx === 0) onCatch();
-                  else if (idx === 1) onPost();
+                {
+                  label: 'Напиши пост',
+                  icon: 'create-outline',
+                  onPress: () => navigation.navigate('CreatePost'),
                 },
-              );
-            } else {
-              Alert.alert('Какво искаш да споделиш?', undefined, [
-                { text: 'Сподели улов', onPress: onCatch },
-                { text: 'Напиши пост', onPress: onPost },
-                { text: 'Отказ', style: 'cancel' },
-              ]);
-            }
+              ],
+            });
           }}
           style={{
             position: 'absolute',
