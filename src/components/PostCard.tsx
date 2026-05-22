@@ -79,6 +79,11 @@ function PostCardInner({
   // synchronously inside `onPickReaction` so the second tap is rejected
   // immediately. Keeping the state too so we can still tint the button.
   const likeBusyRef = useRef(false);
+  // Synchronous double-tap guard for the comment send button. The
+  // `sendingComment` state lags one render so two rapid taps both saw
+  // false and both fired `addPostComment`, posting the comment twice.
+  // Same shape as `likeBusyRef` just above.
+  const sendingCommentRef = useRef(false);
   const [showPicker, setShowPicker] = useState(false);
   const [shareToFriendOpen, setShareToFriendOpen] = useState(false);
   const pickerAnim = useRef(new Animated.Value(0)).current;
@@ -176,10 +181,11 @@ function PostCardInner({
   }, [commentsOpen, configured, post.id]);
 
   const onSendComment = useCallback(async () => {
-    if (!myUid || sendingComment) return;
+    if (!myUid || sendingCommentRef.current) return;
     const text = commentDraft.trim();
     if (!text) return;
     const reply = replyingTo;
+    sendingCommentRef.current = true;
     setSendingComment(true);
     try {
       await addPostComment(post.id, myUid, myDisplayName, text, reply ?? undefined);
@@ -189,9 +195,10 @@ function PostCardInner({
     } catch (e: unknown) {
       Toast.show({ type: 'error', text1: e instanceof Error ? e.message : 'Неуспешно изпращане', visibilityTime: 2400 });
     } finally {
+      sendingCommentRef.current = false;
       setSendingComment(false);
     }
-  }, [myUid, myDisplayName, commentDraft, sendingComment, post.id, replyingTo]);
+  }, [myUid, myDisplayName, commentDraft, post.id, replyingTo]);
 
   const onDeleteComment = useCallback((commentId: string) => {
     Alert.alert('Изтрий коментара', undefined, [
