@@ -704,7 +704,15 @@ export default function NotificationsScreen() {
         {HeroSection}
         <View style={S.wave}>
           {TabBar}
-          <EmptyState icon="notifications-outline" title="Налични след вход" subtitle="Влез с Firebase акаунт, за да виждаш известия от лентата." />
+          <EmptyState
+            icon="notifications-outline"
+            title="Налични след вход"
+            subtitle="Влез с акаунт, за да виждаш известия от лентата."
+            action={{
+              label: 'Влез',
+              onPress: () => (navigation as any).navigate('ProfileTab'),
+            }}
+          />
         </View>
       </Screen>
     );

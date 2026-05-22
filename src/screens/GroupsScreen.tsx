@@ -9,7 +9,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
-import { Button } from '../components/Button';
 import { EmptyState } from '../components/EmptyState';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
@@ -115,8 +114,14 @@ export default function GroupsScreen() {
         ListEmptyComponent={
           !loading ? (
             <View style={{ marginTop: spacing.xxl }}>
-              <EmptyState icon="people-outline" title="Няма клубове" subtitle={tab === 'mine' ? 'Присъедини се към клуб или създай нов с + горе.' : 'Все още няма клубове. Бъди първи!'} />
-              {tab === 'mine' && user ? <Button title="Създай клуб" onPress={() => navigation.navigate('CreateGroup')} style={{ marginTop: spacing.lg }} /> : null}
+              <EmptyState
+                icon="people-outline"
+                title="Няма клубове"
+                subtitle={tab === 'mine' ? 'Присъедини се към клуб или създай нов.' : 'Все още няма клубове. Бъди първи!'}
+                action={tab === 'mine' && user
+                  ? { label: 'Създай клуб', onPress: () => navigation.navigate('CreateGroup') }
+                  : undefined}
+              />
             </View>
           ) : null
         }
