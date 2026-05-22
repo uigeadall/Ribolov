@@ -72,6 +72,19 @@ export default function TripDetailScreen() {
     },
   }), [colors]);
 
+  const cancelEdit = () => {
+    // Reset edit fields back to the trip's saved values. Without this, a
+    // user who types changes, taps "Отказ", then re-opens the edit form
+    // sees their abandoned edits sitting in the inputs alongside the
+    // unchanged header title — confusing and easy to accidentally save.
+    if (trip) {
+      setEditTitle(trip.title);
+      setEditDate(new Date(trip.dateIso));
+      setEditNotes(trip.notes ?? '');
+    }
+    setEditing(false);
+  };
+
   const save = async () => {
     if (!trip || !editTitle.trim()) return;
     setSaving(true);
@@ -192,7 +205,7 @@ export default function TripDetailScreen() {
             />
             <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
               <Button title="Запази" onPress={save} loading={saving} style={{ flex: 1 }} />
-              <Button title="Отказ" variant="secondary" onPress={() => setEditing(false)} style={{ flex: 1 }} />
+              <Button title="Отказ" variant="secondary" onPress={cancelEdit} style={{ flex: 1 }} />
             </View>
           </Card>
         ) : (

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useReducer, useState } from 'react';
+import React, { useCallback, useMemo, useReducer, useRef, useState } from 'react';
 import Toast from 'react-native-toast-message';
 import { View, Text, FlatList, TextInput, StyleSheet, Pressable, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -49,6 +49,12 @@ export default function GearScreen() {
   const [items, setItems] = useState<GearItem[]>([]);
   const [form, dispatch] = useReducer(formReducer, initialForm);
   const { name, notes, editingId, editName, editNotes } = form;
+  const [saving, setSaving] = useState(false);
+  // Synchronous double-tap guard. `saving` state lags one render so two
+  // rapid taps both see `saving=false` and both invoke add(); newId() runs
+  // twice and we get two gear rows with the same name but different ids.
+  // Same pattern as MapScreen spot save fix.
+  const savingRef = useRef(false);
 
   const load = useCallback(() => {
     gearStore.list().then(setItems);
@@ -81,12 +87,20 @@ export default function GearScreen() {
   }), [colors]);
 
   const add = async () => {
+    if (savingRef.current) return;
     const n = name.trim();
     if (!n) return;
-    await gearStore.save({ id: newId(), name: n, notes: notes.trim() || undefined });
-    dispatch({ type: 'RESET_ADD' });
-    Toast.show({ type: 'success', text1: 'Предметът е добавен', visibilityTime: 2000 });
-    load();
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      await gearStore.save({ id: newId(), name: n, notes: notes.trim() || undefined });
+      dispatch({ type: 'RESET_ADD' });
+      Toast.show({ type: 'success', text1: 'Предметът е добавен', visibilityTime: 2000 });
+      load();
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
   };
 
   const startEdit = (item: GearItem) => {
@@ -94,11 +108,19 @@ export default function GearScreen() {
   };
 
   const saveEdit = async () => {
+    if (savingRef.current) return;
     if (!editingId || !editName.trim()) return;
-    await gearStore.save({ id: editingId, name: editName.trim(), notes: editNotes.trim() || undefined });
-    dispatch({ type: 'CANCEL_EDIT' });
-    Toast.show({ type: 'success', text1: 'Запазено', visibilityTime: 2000 });
-    load();
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      await gearStore.save({ id: editingId, name: editName.trim(), notes: editNotes.trim() || undefined });
+      dispatch({ type: 'CANCEL_EDIT' });
+      Toast.show({ type: 'success', text1: 'Запазено', visibilityTime: 2000 });
+      load();
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
   };
 
   const cancelEdit = () => dispatch({ type: 'CANCEL_EDIT' });
@@ -137,7 +159,7 @@ export default function GearScreen() {
           multiline
           textAlignVertical="top"
         />
-        <Button title="Добави" onPress={add} />
+        <Button title="Добави" onPress={add} loading={saving} />
       </View>
 
       <FlatList
@@ -166,8 +188,8 @@ export default function GearScreen() {
                   placeholderTextColor={colors.textMuted}
                 />
                 <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-                  <Button title="Запази" onPress={saveEdit} style={{ flex: 1 }} />
-                  <Button title="Отказ" variant="secondary" onPress={cancelEdit} style={{ flex: 1 }} />
+                  <Button title="Запази" onPress={saveEdit} loading={saving} style={{ flex: 1 }} />
+                  <Button title="Отказ" variant="secondary" onPress={cancelEdit} disabled={saving} style={{ flex: 1 }} />
                 </View>
               </View>
             ) : (
