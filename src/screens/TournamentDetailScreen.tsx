@@ -281,7 +281,7 @@ export default function TournamentDetailScreen() {
   if (!t) {
     return (
       <Screen>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={8} style={{ marginBottom: spacing.md }}>
+        <Pressable onPress={() => navigation.goBack()} hitSlop={8} accessibilityRole="button" accessibilityLabel="Назад" style={{ marginBottom: spacing.md }}>
           <Ionicons name="chevron-back" size={28} color={colors.primary} />
         </Pressable>
         <Text style={{ ...typography.body, color: colors.textMuted }}>Турнирът не е намерен.</Text>

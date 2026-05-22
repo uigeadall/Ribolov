@@ -3,7 +3,7 @@ import * as Updates from 'expo-updates';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { useFonts, Nunito_400Regular, Nunito_500Medium, Nunito_600SemiBold, Nunito_700Bold, Nunito_800ExtraBold } from '@expo-google-fonts/nunito';
 import { StatusBar } from 'expo-status-bar';
-import Toast from 'react-native-toast-message';
+import { SafeToast } from './src/components/SafeToast';
 import AsyncStorage, { migrateFromAsyncStorageIfNeeded } from './src/storage/kv';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -69,7 +69,7 @@ export default function App() {
             ) : (
               <OnboardingScreen onDone={handleOnboardingDone} />
             )}
-            <Toast />
+            <SafeToast />
           </AuthProvider>
         </ThemeProvider>
         <OfflineBar />
