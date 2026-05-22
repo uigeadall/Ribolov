@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import Toast from 'react-native-toast-message';
 import {
   View,
@@ -148,7 +148,7 @@ export default function AddCatchScreen() {
   const styles = useMemo(() => createAddCatchStyles(colors), [colors]);
   const { user, configured } = useAuth();
 
-  const [form, dispatch] = useReducer(formReducer, {
+  const [form, baseDispatch] = useReducer(formReducer, {
     speciesId: speciesList[0].id,
     weight: '',
     length: '',
@@ -216,11 +216,17 @@ export default function AddCatchScreen() {
     gearStore.list().then(setGearList).catch(() => setGearList([]));
   }, []);
 
-  useEffect(() => {
-    if (form.weight || form.length || form.bait || form.notes || form.photoUri) {
+  // Every user-driven dispatch trips the dirty flag — covers species
+  // changes, trip selection, share-to-feed toggles, location picks, date
+  // edits, extra photos, etc. that the previous per-field useEffect
+  // didn't track. LOAD_CATCH is deliberately excluded because it fires
+  // from the edit/duplicate prefill, not from user interaction.
+  const dispatch = useCallback((action: FormAction) => {
+    if (action.type !== 'LOAD_CATCH') {
       formDirtyRef.current = true;
     }
-  }, [form.weight, form.length, form.bait, form.notes, form.photoUri]);
+    baseDispatch(action);
+  }, []);
 
   useEffect(() => {
     if (editCatchId || saving) return;
