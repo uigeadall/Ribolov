@@ -136,7 +136,7 @@ export default function SpeciesTargetScreen() {
   return (
     <Screen padded={false}>
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}>
-        <Pressable onPress={() => navigation.goBack()} style={{ marginBottom: spacing.md }} hitSlop={8}>
+        <Pressable onPress={() => navigation.goBack()} style={{ marginBottom: spacing.md }} hitSlop={8} accessibilityRole="button" accessibilityLabel="Назад">
           <Ionicons name="chevron-back" size={26} color={colors.primary} />
         </Pressable>
 

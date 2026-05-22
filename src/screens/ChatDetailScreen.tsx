@@ -979,6 +979,8 @@ export default function ChatDetailScreen() {
             <Pressable
               onPress={() => navigation.goBack()}
               hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Назад"
               style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' }}
             >
               <Ionicons name="chevron-back" size={22} color="#fff" />

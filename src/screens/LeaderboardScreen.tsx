@@ -342,7 +342,7 @@ export default function LeaderboardScreen() {
   }, [q]);
 
   const HeaderBtn = () => (
-    <Pressable onPress={() => navigation.goBack()} hitSlop={8} accessibilityRole="button">
+    <Pressable onPress={() => navigation.goBack()} hitSlop={8} accessibilityRole="button" accessibilityLabel="Назад">
       <Ionicons name="chevron-back" size={28} color={colors.primary} />
     </Pressable>
   );

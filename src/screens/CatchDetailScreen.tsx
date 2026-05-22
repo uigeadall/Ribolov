@@ -312,6 +312,8 @@ export default function CatchDetailScreen() {
                 <Pressable
                   onPress={safeGoBack}
                   hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Назад"
                   style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}
                 >
                   <Ionicons name="chevron-back" size={22} color="#fff" />
@@ -325,7 +327,7 @@ export default function CatchDetailScreen() {
               end={{ x: 0, y: 1 }}
               style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.lg, paddingTop: spacing.xl, paddingBottom: spacing.lg }}
             >
-              <Pressable onPress={safeGoBack} hitSlop={8}>
+              <Pressable onPress={safeGoBack} hitSlop={8} accessibilityRole="button" accessibilityLabel="Назад">
                 <Ionicons name="chevron-back" size={28} color="#fff" />
               </Pressable>
               <Text style={{ ...typography.h2, color: '#fff', flex: 1 }} numberOfLines={1}>{item.speciesName}</Text>

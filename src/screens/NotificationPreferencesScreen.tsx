@@ -84,7 +84,7 @@ export default function NotificationPreferencesScreen() {
     <Screen scroll padded={false}>
       {/* Header */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: spacing.xl, paddingTop: spacing.md, paddingBottom: spacing.lg }}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
+        <Pressable onPress={() => navigation.goBack()} hitSlop={12} accessibilityRole="button" accessibilityLabel="Назад">
           <Ionicons name="chevron-back" size={26} color={colors.text} />
         </Pressable>
         <Text style={{ fontSize: 20, fontFamily: 'Nunito_800ExtraBold', color: colors.text, flex: 1 }}>Известия</Text>

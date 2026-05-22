@@ -1202,7 +1202,7 @@ function PhotoSection({
   return (
     <View style={styles.heroBox}>
       {/* Back button — absolute top-left */}
-      <Pressable onPress={onNavigationBack} hitSlop={10} style={styles.heroBack}>
+      <Pressable onPress={onNavigationBack} hitSlop={10} accessibilityRole="button" accessibilityLabel="Назад" style={styles.heroBack}>
         <Ionicons name="chevron-back" size={22} color="#fff" />
       </Pressable>
 
