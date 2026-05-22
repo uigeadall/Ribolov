@@ -30,6 +30,7 @@ import { TripPickerModal } from '../components/TripPickerModal';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
+import { Skeleton } from '../components/Skeleton';
 import { catchesStore, tripsStore, gearStore, newId, recentBaitsStore, recentSpeciesStore } from '../storage/storage';
 import { speciesList } from '../data/species';
 import { Achievement, Catch, GearItem, TripPlan } from '../types';
@@ -605,10 +606,19 @@ export default function AddCatchScreen() {
   };
 
   if (editCatchId && !editLoaded) {
+    // Skeleton mirrors the actual edit-form's structure (photo hero block,
+    // then a stack of input rows) so the eye sees the layout forming
+    // instead of an unspecific spinner. Read is local (AsyncStorage), so
+    // this typically flashes for <300ms — the skeleton keeps the flash
+    // from looking like a content jump.
     return (
-      <Screen>
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xl }}>
-          <ActivityIndicator size="large" color={colors.primary} />
+      <Screen padded={false}>
+        <View style={{ padding: spacing.lg, gap: spacing.md }}>
+          <Skeleton height={220} borderRadius={radius.lg} />
+          <Skeleton height={48} borderRadius={radius.md} />
+          <Skeleton height={48} borderRadius={radius.md} />
+          <Skeleton height={48} borderRadius={radius.md} />
+          <Skeleton height={120} borderRadius={radius.md} />
         </View>
       </Screen>
     );

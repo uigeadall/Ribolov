@@ -5,7 +5,6 @@ import {
   StyleSheet,
   FlatList,
   Pressable,
-  ActivityIndicator,
   Dimensions,
   ScrollView,
   Modal,
@@ -17,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
 import { Button } from '../components/Button';
+import { Skeleton } from '../components/Skeleton';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
@@ -411,9 +411,23 @@ export default function ClassicsScreen() {
             <Text style={{ fontSize: 38 }}>🏆</Text>
             <Text style={s.bannerTitle}>{period === 'week' ? 'Седмична класация' : 'Месечна класация'}</Text>
           </View>
-          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md }}>
-            <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={{ ...typography.body, color: colors.textMuted }}>Броим харесванията…</Text>
+          {/* Row-shaped skeletons match the ranked-row layout the user is
+              about to see, instead of a spinner that gives no preview of
+              the structure. Five rows is plenty — enough to fill the
+              visible area on every phone size without distracting the
+              eye with shimmer past the fold. */}
+          <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.lg, gap: spacing.md }}>
+            {[0, 1, 2, 3, 4].map((i) => (
+              <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <Skeleton width={28} height={28} borderRadius={8} />
+                <Skeleton width={50} height={50} borderRadius={25} />
+                <View style={{ flex: 1, gap: 6 }}>
+                  <Skeleton height={14} width="55%" />
+                  <Skeleton height={11} width="35%" />
+                </View>
+                <Skeleton width={48} height={18} borderRadius={9} />
+              </View>
+            ))}
           </View>
         </>
       ) : error ? (
