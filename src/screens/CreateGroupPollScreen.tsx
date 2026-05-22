@@ -152,7 +152,7 @@ export default function CreateGroupPollScreen() {
           </Pressable>
         </LinearGradient>
 
-        <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+        <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
           <View>
             <Text style={styles.label}>Въпрос</Text>
             <TextInput

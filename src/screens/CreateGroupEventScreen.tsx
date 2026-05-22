@@ -145,7 +145,7 @@ export default function CreateGroupEventScreen() {
           </Pressable>
         </LinearGradient>
 
-        <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+        <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
           <View>
             <Text style={styles.label}>Заглавие</Text>
             <TextInput

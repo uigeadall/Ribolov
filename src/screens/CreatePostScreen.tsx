@@ -352,7 +352,7 @@ export default function CreatePostScreen() {
           </Pressable>
         </LinearGradient>
 
-        <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+        <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
           <View style={styles.inputCard}>
             <TextInput
               ref={inputRef}

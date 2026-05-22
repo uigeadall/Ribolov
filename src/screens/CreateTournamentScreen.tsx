@@ -228,7 +228,7 @@ export default function CreateTournamentScreen() {
         <View style={{ width: 28 }} />
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }} {...keyboardAwareScrollProps}>
+      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }} keyboardDismissMode="on-drag" {...keyboardAwareScrollProps}>
         <Text style={styles.label}>Име</Text>
         <TextInput
           value={name}

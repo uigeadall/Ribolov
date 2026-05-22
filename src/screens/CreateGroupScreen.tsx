@@ -83,7 +83,7 @@ export default function CreateGroupScreen() {
         <Text style={styles.headerTitle}>Нов клуб</Text>
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
         <Text style={styles.label}>Название *</Text>
         <TextInput
           placeholder="напр. Шаранджии Пловдив"

@@ -150,13 +150,13 @@ export default function TripsScreen() {
           <Card>
             <Text style={{ ...typography.h3, color: colors.text }}>Нов излет</Text>
             <TextInput
-              style={[inputStyle, titleError ? { borderColor: '#E53935' } : {}]}
+              style={[inputStyle, titleError ? { borderColor: colors.danger } : {}]}
               placeholder="Заглавие (напр. Искър сутрин)"
               placeholderTextColor={colors.textMuted}
               value={title}
               onChangeText={(v) => { setTitle(v); if (titleError) setTitleError(''); }}
             />
-            {titleError ? <Text style={{ color: '#E53935', fontSize: 12, marginTop: 4 }}>{titleError}</Text> : null}
+            {titleError ? <Text style={{ color: colors.danger, fontSize: 12, marginTop: 4 }}>{titleError}</Text> : null}
 
             {/* Date picker trigger */}
             <Pressable
