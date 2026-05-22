@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Alert, Share } from 'react-native';
+import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
 import {
   subscribeMyReactionOnCatch,
@@ -265,7 +266,7 @@ export function useFeedPostSocial({
           await submitContentReport({ reporterUid: uid, targetType: 'catch', catchId, reason });
           Alert.alert('Благодарим', 'Сигналът е изпратен за преглед.');
         } catch {
-          Alert.alert('Грешка', 'Неуспешно изпращане.');
+          Toast.show({ type: 'error', text1: 'Неуспешно изпращане', visibilityTime: 2400 });
         }
       })();
     };
@@ -286,7 +287,7 @@ export function useFeedPostSocial({
       await editCatchComment(catchId, editingComment.id, trimmed);
       setEditingComment(null);
     } catch (e) {
-      Alert.alert('Грешка', e instanceof Error ? e.message : 'Неуспешно редактиране.');
+      Toast.show({ type: 'error', text1: e instanceof Error ? e.message : 'Неуспешно редактиране', visibilityTime: 2400 });
     } finally {
       setEditBusy(false);
     }
@@ -302,7 +303,7 @@ export function useFeedPostSocial({
           try {
             await deleteCatchComment(catchId, commentId);
           } catch (e) {
-            Alert.alert('Грешка', e instanceof Error ? e.message : 'Неуспешно изтриване.');
+            Toast.show({ type: 'error', text1: e instanceof Error ? e.message : 'Неуспешно изтриване', visibilityTime: 2400 });
           }
         },
       },

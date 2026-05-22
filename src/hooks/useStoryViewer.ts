@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Alert, Animated } from 'react-native';
+import Toast from 'react-native-toast-message';
 import {
   subscribeMyStoryReaction,
   toggleStoryReaction,
@@ -97,7 +98,7 @@ export function useStoryViewer(
       await addStoryComment(viewing.id, user.uid, user.displayName ?? 'Рибар', commentDraft);
       setCommentDraft('');
     } catch (e) {
-      Alert.alert('Грешка', e instanceof Error ? e.message : 'Неуспешно изпращане.');
+      Toast.show({ type: 'error', text1: e instanceof Error ? e.message : 'Неуспешно изпращане', visibilityTime: 2400 });
     } finally { setCommentBusy(false); }
   }, [viewing, user, commentDraft, commentBusy]);
 

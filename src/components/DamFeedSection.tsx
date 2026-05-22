@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
+import Toast from 'react-native-toast-message';
 import type { User } from 'firebase/auth';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../services/themeContext';
@@ -183,7 +184,7 @@ export function DamFeedSection({ damId, damName, user, firebaseConfigured }: Pro
                                 try {
                                   await deleteDamFeedPost(damId, item.id, item.storagePath);
                                 } catch (e: unknown) {
-                                  Alert.alert('Грешка', e instanceof Error ? e.message : 'Неуспешно изтриване');
+                                  Toast.show({ type: 'error', text1: e instanceof Error ? e.message : 'Неуспешно изтриване', visibilityTime: 2400 });
                                 }
                               },
                             },

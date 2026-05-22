@@ -46,6 +46,10 @@ export default function TournamentDetailScreen() {
   const [entries, setEntries] = useState<TournamentPhotoEntry[]>([]);
   const [myLikes, setMyLikes] = useState<Set<string>>(new Set());
   const [entriesLoading, setEntriesLoading] = useState(false);
+  // Separate from entriesLoading so pull-to-refresh shows the standard
+  // spinner instead of swapping the entire list for the skeleton on every
+  // refetch.
+  const [refreshing, setRefreshing] = useState(false);
   const [submitOpen, setSubmitOpen] = useState(false);
   const [myCatches, setMyCatches] = useState<Catch[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -59,8 +63,8 @@ export default function TournamentDetailScreen() {
     });
   }, [route.params.id]);
 
-  const loadEntries = useCallback(async () => {
-    setEntriesLoading(true);
+  const loadEntries = useCallback(async (silent = false) => {
+    if (!silent) setEntriesLoading(true);
     try {
       const list = await fetchTournamentPhotoEntries(route.params.id);
       setEntries(list);
@@ -69,9 +73,14 @@ export default function TournamentDetailScreen() {
         setMyLikes(liked);
       }
     } finally {
-      setEntriesLoading(false);
+      if (!silent) setEntriesLoading(false);
     }
   }, [route.params.id, user?.uid]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try { await loadEntries(true); } finally { setRefreshing(false); }
+  }, [loadEntries]);
 
   useEffect(() => { void loadEntries(); }, [loadEntries]);
 
@@ -287,6 +296,8 @@ export default function TournamentDetailScreen() {
         keyExtractor={(e) => e.id}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: spacing.xxl }}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
         ListHeaderComponent={
           <>
             <View style={styles.header}>
