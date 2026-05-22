@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, Pressable, ActionSheetIOS, Alert, Platform,
+  View, Text, StyleSheet, Pressable, Alert, Platform,
   TextInput, ActivityIndicator, Animated,
 } from 'react-native';
 import { Image } from 'expo-image';
@@ -10,6 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import Toast from 'react-native-toast-message';
 import { useTheme } from '../services/themeContext';
+import { ActionSheet } from './ActionSheet';
 import { radius, spacing, typography } from '../theme/typography';
 import type { Post } from '../types';
 import { RichText } from './RichText';
@@ -209,17 +210,16 @@ function PostCardInner({
   const openMenu = () => {
     if (!isMine || !onDelete) return;
     void Haptics.selectionAsync();
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        { options: ['Изтрий публикацията', 'Отказ'], cancelButtonIndex: 1, destructiveButtonIndex: 0 },
-        (idx) => { if (idx === 0) onDelete(post); },
-      );
-    } else {
-      Alert.alert('Опции', undefined, [
-        { text: 'Изтрий публикацията', style: 'destructive', onPress: () => onDelete(post) },
-        { text: 'Отказ', style: 'cancel' },
-      ]);
-    }
+    ActionSheet.show({
+      options: [
+        {
+          label: 'Изтрий публикацията',
+          icon: 'trash-outline',
+          destructive: true,
+          onPress: () => onDelete(post),
+        },
+      ],
+    });
   };
 
   const styles = useMemo(() => StyleSheet.create({

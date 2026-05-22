@@ -3,7 +3,7 @@ import Toast from 'react-native-toast-message';
 import {
   View, Text, StyleSheet, FlatList, Pressable,
   TextInput, Alert, KeyboardAvoidingView, Platform,
-  ActionSheetIOS, ActivityIndicator,
+  ActivityIndicator,
 } from 'react-native';
 import { FishingRefreshControl } from '../components/FishingRefreshControl';
 import { useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
+import { ActionSheet } from '../components/ActionSheet';
 import { Button } from '../components/Button';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
@@ -363,22 +364,21 @@ export default function GroupDetailScreen() {
       Alert.alert('Само за членове', 'Присъедини се към клуба, за да публикуваш.');
       return;
     }
-    const opts = ['Събитие', 'Анкета', 'Отказ'];
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        { options: opts, cancelButtonIndex: 2 },
-        (idx) => {
-          if (idx === 0) navigation.navigate('CreateGroupEvent', { groupId, groupName });
-          else if (idx === 1) navigation.navigate('CreateGroupPoll', { groupId, groupName });
+    ActionSheet.show({
+      title: 'Създай',
+      options: [
+        {
+          label: 'Събитие',
+          icon: 'calendar-outline',
+          onPress: () => navigation.navigate('CreateGroupEvent', { groupId, groupName }),
         },
-      );
-    } else {
-      Alert.alert('Създай', undefined, [
-        { text: 'Събитие', onPress: () => navigation.navigate('CreateGroupEvent', { groupId, groupName }) },
-        { text: 'Анкета', onPress: () => navigation.navigate('CreateGroupPoll', { groupId, groupName }) },
-        { text: 'Отказ', style: 'cancel' },
-      ]);
-    }
+        {
+          label: 'Анкета',
+          icon: 'bar-chart-outline',
+          onPress: () => navigation.navigate('CreateGroupPoll', { groupId, groupName }),
+        },
+      ],
+    });
   };
 
   const formatPostTime = (iso: string) => {

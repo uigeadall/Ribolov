@@ -15,8 +15,6 @@ import {
   ToastAndroid,
   Animated,
   PanResponder,
-  ActionSheetIOS,
-  Alert,
   ScrollView,
   useWindowDimensions,
   type NativeScrollEvent,
@@ -29,6 +27,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { looksNonBulgarian, openTranslation } from '../utils/captionLanguage';
 import type { FeedItem } from '../services/catchSync';
 import { RichText } from './RichText';
+import { ActionSheet, type ActionSheetOption } from './ActionSheet';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
@@ -308,42 +307,33 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
   const openMoreMenu = () => {
     void Haptics.selectionAsync();
     if (isMine) {
-      const options = [
-        ...(item.photoUri ? ['Изтрий снимката'] : []),
-        'Премахни от лентата',
-        'Отказ',
-      ];
-      const cancelIdx = options.length - 1;
-      const destructiveIdx = 0;
-      if (Platform.OS === 'ios') {
-        ActionSheetIOS.showActionSheetWithOptions(
-          { options, cancelButtonIndex: cancelIdx, destructiveButtonIndex: destructiveIdx },
-          (idx) => {
-            if (item.photoUri && idx === 0) { onDeletePhoto?.(item); return; }
-            if (idx === cancelIdx) return;
-            onRemovePost?.(item);
-          }
-        );
-      } else {
-        const buttons = [
-          ...(item.photoUri ? [{ text: 'Изтрий снимката', style: 'destructive' as const, onPress: () => onDeletePhoto?.(item) }] : []),
-          { text: 'Премахни от лентата', style: 'destructive' as const, onPress: () => onRemovePost?.(item) },
-          { text: 'Отказ', style: 'cancel' as const },
-        ];
-        Alert.alert('Опции', undefined, buttons);
+      const options: ActionSheetOption[] = [];
+      if (item.photoUri) {
+        options.push({
+          label: 'Изтрий снимката',
+          icon: 'image-outline',
+          destructive: true,
+          onPress: () => onDeletePhoto?.(item),
+        });
       }
+      options.push({
+        label: 'Премахни от лентата',
+        icon: 'eye-off-outline',
+        destructive: true,
+        onPress: () => onRemovePost?.(item),
+      });
+      ActionSheet.show({ options });
     } else {
-      if (Platform.OS === 'ios') {
-        ActionSheetIOS.showActionSheetWithOptions(
-          { options: ['Докладвай', 'Отказ'], cancelButtonIndex: 1, destructiveButtonIndex: 0 },
-          (idx) => { if (idx === 0) social.onReportCatch(); }
-        );
-      } else {
-        Alert.alert('Опции', undefined, [
-          { text: 'Докладвай', style: 'destructive', onPress: social.onReportCatch },
-          { text: 'Отказ', style: 'cancel' },
-        ]);
-      }
+      ActionSheet.show({
+        options: [
+          {
+            label: 'Докладвай',
+            icon: 'flag-outline',
+            destructive: true,
+            onPress: social.onReportCatch,
+          },
+        ],
+      });
     }
   };
 

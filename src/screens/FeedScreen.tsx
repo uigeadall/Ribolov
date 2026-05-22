@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '../storage/kv';
-import { View, Text, StyleSheet, FlatList, Pressable, Platform, Animated, ActionSheetIOS, Alert } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Pressable, Platform, Animated, Alert } from 'react-native';
 
 // FlatList wrapped with createAnimatedComponent — required so that the FlatList
 // can receive an Animated.event onScroll with useNativeDriver: true (plain
@@ -450,30 +450,24 @@ export default function FeedScreen() {
   }, [user, myPhotoUrl]);
 
   // Show the user the two reshare modes — instant share or compose with a
-  // comment. Uses the native iOS ActionSheet when available so it feels like
-  // the rest of the app's destructive prompts; Android falls back to Alert.
+  // comment. Themed bottom-sheet (ActionSheet) so the visual feel matches
+  // the rest of the compose/share flow.
   const promptReshareMode = useCallback((target: ResharedRef) => {
-    const onCompose = () => navigation.navigate('CreatePost', { reshare: target });
-    const onInstant = () => { void instantRepost(target); };
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
+    ActionSheet.show({
+      title: 'Сподели',
+      options: [
         {
-          title: 'Сподели',
-          options: ['Сподели във лентата', 'Сподели с коментар', 'Отказ'],
-          cancelButtonIndex: 2,
+          label: 'Сподели във лентата',
+          icon: 'arrow-redo-outline',
+          onPress: () => { void instantRepost(target); },
         },
-        (idx) => {
-          if (idx === 0) onInstant();
-          else if (idx === 1) onCompose();
+        {
+          label: 'Сподели с коментар',
+          icon: 'chatbox-ellipses-outline',
+          onPress: () => navigation.navigate('CreatePost', { reshare: target }),
         },
-      );
-    } else {
-      Alert.alert('Сподели', undefined, [
-        { text: 'Сподели във лентата', onPress: onInstant },
-        { text: 'Сподели с коментар', onPress: onCompose },
-        { text: 'Отказ', style: 'cancel' },
-      ]);
-    }
+      ],
+    });
   }, [navigation, instantRepost]);
 
   const onReshareCatch = useCallback((c: FeedItem) => {
@@ -672,25 +666,13 @@ export default function FeedScreen() {
   ).current;
 
   const openOverflow = useCallback(() => {
-    const options = ['Класации', 'Запазени', 'Открий', 'Отказ'];
-    const actions = [
-      () => navigation.navigate('Classics'),
-      () => navigation.navigate('SavedPosts'),
-      () => navigation.navigate('Explore'),
-    ];
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        { options, cancelButtonIndex: 3 },
-        (idx) => { if (idx < 3) actions[idx](); }
-      );
-    } else {
-      Alert.alert('Меню', undefined, [
-        { text: 'Класации', onPress: actions[0] },
-        { text: 'Запазени', onPress: actions[1] },
-        { text: 'Открий', onPress: actions[2] },
-        { text: 'Отказ', style: 'cancel' },
-      ]);
-    }
+    ActionSheet.show({
+      options: [
+        { label: 'Класации', icon: 'trophy-outline', onPress: () => navigation.navigate('Classics') },
+        { label: 'Запазени', icon: 'bookmark-outline', onPress: () => navigation.navigate('SavedPosts') },
+        { label: 'Открий', icon: 'compass-outline', onPress: () => navigation.navigate('Explore') },
+      ],
+    });
   }, [navigation]);
 
   const glassBtn = {

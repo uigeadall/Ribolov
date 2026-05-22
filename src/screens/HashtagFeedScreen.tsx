@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '../storage/kv';
-import { View, Text, StyleSheet, FlatList, Pressable, Alert, Platform, ActionSheetIOS } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Pressable, Alert } from 'react-native';
 import { useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { Screen } from '../components/Screen';
+import { ActionSheet } from '../components/ActionSheet';
 import { EmptyState } from '../components/EmptyState';
 import { ListSkeleton } from '../components/ListSkeleton';
 import { PostCard } from '../components/PostCard';
@@ -141,27 +142,21 @@ export default function HashtagFeedScreen() {
       photoUri: p.photoUri,
       date: p.date,
     };
-    const onCompose = () => (navigation as any).navigate('CreatePost', { reshare: target });
-    const onInstant = () => { void instantRepost(target); };
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
+    ActionSheet.show({
+      title: 'Сподели',
+      options: [
         {
-          title: 'Сподели',
-          options: ['Сподели във лентата', 'Сподели с коментар', 'Отказ'],
-          cancelButtonIndex: 2,
+          label: 'Сподели във лентата',
+          icon: 'arrow-redo-outline',
+          onPress: () => { void instantRepost(target); },
         },
-        (idx) => {
-          if (idx === 0) onInstant();
-          else if (idx === 1) onCompose();
+        {
+          label: 'Сподели с коментар',
+          icon: 'chatbox-ellipses-outline',
+          onPress: () => (navigation as any).navigate('CreatePost', { reshare: target }),
         },
-      );
-    } else {
-      Alert.alert('Сподели', undefined, [
-        { text: 'Сподели във лентата', onPress: onInstant },
-        { text: 'Сподели с коментар', onPress: onCompose },
-        { text: 'Отказ', style: 'cancel' },
-      ]);
-    }
+      ],
+    });
   }, [navigation, instantRepost]);
 
   const onDeletePost = useCallback((post: Post) => {
