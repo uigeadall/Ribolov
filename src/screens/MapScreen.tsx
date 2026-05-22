@@ -1310,9 +1310,14 @@ export default function MapScreen() {
 
       {/* Live pin detail */}
       <Modal visible={selectedLivePin != null} transparent animationType="fade" onRequestClose={() => setSelectedLivePin(null)}>
-        <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' }} onPress={() => setSelectedLivePin(null)}>
+        <Pressable
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' }}
+          onPress={() => setSelectedLivePin(null)}
+          accessibilityRole="button"
+          accessibilityLabel="Затвори"
+        >
           {selectedLivePin ? (
-            <Pressable onPress={() => {}}>
+            <Pressable onPress={() => {}} accessible={false}>
               <View style={{
                 backgroundColor: colors.card,
                 borderTopLeftRadius: 28, borderTopRightRadius: 28,
@@ -1349,6 +1354,8 @@ export default function MapScreen() {
                       setSelectedLivePin(null);
                       mapRef.current?.flyTo(pin.latitude, pin.longitude, 13);
                     }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Покажи на картата"
                     style={{ flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', backgroundColor: colors.surfaceAlt, flexDirection: 'row', justifyContent: 'center', gap: 6 }}
                   >
                     <Ionicons name="navigate-outline" size={16} color={colors.primary} />
@@ -1357,6 +1364,8 @@ export default function MapScreen() {
                   {user && selectedLivePin.ownerUid === user.uid ? (
                     <Pressable
                       onPress={endFishingSession}
+                      accessibilityRole="button"
+                      accessibilityLabel="Прекрати риболовната сесия"
                       style={{ flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', backgroundColor: colors.danger, flexDirection: 'row', justifyContent: 'center', gap: 6 }}
                     >
                       <Ionicons name="close-circle-outline" size={16} color="#fff" />
@@ -1380,6 +1389,8 @@ export default function MapScreen() {
                             handleError(e);
                           }
                         }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Изпрати съобщение на ${selectedLivePin.ownerName}`}
                         style={{ flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', backgroundColor: colors.primary, flexDirection: 'row', justifyContent: 'center', gap: 6 }}
                       >
                         <Ionicons name="chatbubble-outline" size={16} color="#fff" />
@@ -1391,6 +1402,8 @@ export default function MapScreen() {
                           setSelectedLivePin(null);
                           navigation.navigate('UserPublicProfile', { uid: pin.ownerUid, displayName: pin.ownerName });
                         }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Виж профила на ${selectedLivePin.ownerName}`}
                         style={{ width: 48, paddingVertical: 12, borderRadius: 12, alignItems: 'center', backgroundColor: colors.surfaceAlt, justifyContent: 'center' }}
                       >
                         <Ionicons name="person-outline" size={18} color={colors.primary} />
