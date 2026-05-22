@@ -799,6 +799,11 @@ export default function ChatsScreen() {
             data={items}
             keyExtractor={(item) => item.convId}
             removeClippedSubviews={Platform.OS === 'android'}
+            // Search bar lives in ListHeader. Dismiss on drag so users can
+            // get to lower rows without the keyboard covering them, matching
+            // SearchScreen / ChatDetail input behavior.
+            keyboardDismissMode="on-drag"
+            keyboardShouldPersistTaps="handled"
             contentContainerStyle={items.length === 0 ? { flexGrow: 1, paddingBottom: 100 } : { paddingBottom: 100 }}
             ListHeaderComponent={ListHeader}
             onEndReached={loadOlder}
