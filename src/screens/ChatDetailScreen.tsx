@@ -22,6 +22,7 @@ import { useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
 import { uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
 import { Image } from 'expo-image';
@@ -674,7 +675,7 @@ export default function ChatDetailScreen() {
       else await unmuteConversation(user.uid, convId);
     } catch {
       setConvMuted(!next);
-      Alert.alert('Грешка', 'Неуспешно действие.');
+      Toast.show({ type: 'error', text1: 'Неуспешно действие', visibilityTime: 2400 });
     }
   }, [user, convId, convMuted]);
 

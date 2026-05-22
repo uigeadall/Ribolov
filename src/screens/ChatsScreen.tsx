@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, Pressable, Platform, TextInput, ScrollView, Alert } from 'react-native';
+import Toast from 'react-native-toast-message';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -682,7 +683,7 @@ export default function ChatsScreen() {
       if (nextMuted) await muteConversation(user.uid, item.convId);
       else await unmuteConversation(user.uid, item.convId);
     } catch {
-      Alert.alert('Грешка', 'Не успяхме да обновим състоянието.');
+      Toast.show({ type: 'error', text1: 'Не успяхме да обновим състоянието', visibilityTime: 2400 });
     }
   }, [user, swipeRefs]);
 
@@ -697,7 +698,7 @@ export default function ChatsScreen() {
         await markConversationUnread(item.convId, user.uid);
       }
     } catch {
-      Alert.alert('Грешка', 'Не успяхме да обновим състоянието.');
+      Toast.show({ type: 'error', text1: 'Не успяхме да обновим състоянието', visibilityTime: 2400 });
     }
   }, [user, swipeRefs]);
 

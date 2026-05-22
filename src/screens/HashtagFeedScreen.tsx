@@ -174,7 +174,7 @@ export default function HashtagFeedScreen() {
             setItems((prev) => prev.filter((p) => p.id !== post.id));
             Toast.show({ type: 'success', text1: 'Изтрита', visibilityTime: 1800 });
           } catch {
-            Alert.alert('Грешка', 'Неуспешно изтриване. Опитай отново.');
+            Toast.show({ type: 'error', text1: 'Неуспешно изтриване. Опитай отново', visibilityTime: 2400 });
           }
         },
       },

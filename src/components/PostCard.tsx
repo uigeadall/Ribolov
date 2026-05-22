@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import Toast from 'react-native-toast-message';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 import type { Post } from '../types';
@@ -185,7 +186,7 @@ function PostCardInner({
       setReplyingTo(null);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e: unknown) {
-      Alert.alert('Грешка', e instanceof Error ? e.message : 'Неуспешно изпращане.');
+      Toast.show({ type: 'error', text1: e instanceof Error ? e.message : 'Неуспешно изпращане', visibilityTime: 2400 });
     } finally {
       setSendingComment(false);
     }
@@ -199,7 +200,7 @@ function PostCardInner({
         style: 'destructive',
         onPress: async () => {
           try { await deletePostComment(post.id, commentId); }
-          catch { Alert.alert('Грешка', 'Неуспешно изтриване.'); }
+          catch { Toast.show({ type: 'error', text1: 'Неуспешно изтриване', visibilityTime: 2400 }); }
         },
       },
     ]);
