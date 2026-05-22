@@ -81,8 +81,10 @@ export default function CatchDetailScreen() {
   const [currentExtraPhoto, setCurrentExtraPhoto] = useState(0);
   const cardRef = useRef<ViewShot>(null);
 
-  const reload = useCallback(async () => {
-    setLoading(true);
+  // `silent` flag lets focus-triggered refreshes skip the skeleton so the
+  // user doesn't see a flash when returning from the edit screen.
+  const reload = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const id = route.params.id;
       const list = await catchesStore.list();
@@ -118,11 +120,18 @@ export default function CatchDetailScreen() {
         setIsPublicFromCloud(false);
       }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [route.params.id, user?.uid]);
 
-  useFocusEffect(useCallback(() => { void reload(); }, [reload]));
+  // Skip the skeleton on focus once we already have data — otherwise every
+  // return from the edit/share/comments flow flashes the loading state.
+  const initialFocusRef = useRef(true);
+  useFocusEffect(useCallback(() => {
+    const silent = !initialFocusRef.current;
+    initialFocusRef.current = false;
+    void reload(silent);
+  }, [reload]));
 
   const styles = useMemo(() => StyleSheet.create({
     title: { ...typography.h2, color: colors.text },

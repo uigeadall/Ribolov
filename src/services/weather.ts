@@ -36,14 +36,19 @@ function calcMoonPhase(date: Date): { phase: number; name: string } {
   const phase = ((elapsed % lunarCycle) + lunarCycle) % lunarCycle;
   const n = phase / lunarCycle; // 0–1
 
+  // Use symmetric windows around each "instant" phase moment (new at 0/1,
+  // first quarter at 0.25, full at 0.5, last quarter at 0.75) so each named
+  // phase spans roughly the same number of days. The old buckets only matched
+  // First Quarter / Full Moon / Last Quarter on the waxing side, making them
+  // visible for ~1 day instead of 2.
   let name: string;
-  if (n < 0.033 || n >= 0.967) name = 'Нова луна 🌑';
-  else if (n < 0.25) name = 'Нарастваща 🌒';
-  else if (n < 0.283) name = 'Първа четвъртина 🌓';
-  else if (n < 0.5) name = 'Пълнееща 🌔';
-  else if (n < 0.533) name = 'Пълна луна 🌕';
-  else if (n < 0.75) name = 'Намаляваща 🌖';
-  else if (n < 0.783) name = 'Последна четвъртина 🌗';
+  if (n < 0.03 || n >= 0.97) name = 'Нова луна 🌑';
+  else if (n < 0.22) name = 'Нарастваща 🌒';
+  else if (n < 0.28) name = 'Първа четвъртина 🌓';
+  else if (n < 0.47) name = 'Пълнееща 🌔';
+  else if (n < 0.53) name = 'Пълна луна 🌕';
+  else if (n < 0.72) name = 'Намаляваща 🌖';
+  else if (n < 0.78) name = 'Последна четвъртина 🌗';
   else name = 'Намаляваща 🌘';
 
   return { phase: n, name };
@@ -72,8 +77,8 @@ function fishRating(p: {
   // Вятър — умерен е идеален
   if (p.windKmh >= 5 && p.windKmh <= 15) s += 0.3;
   else if (p.windKmh < 3) s -= 0.3;                  // Пълно безветрие — по-труден риболов
+  else if (p.windKmh > 50) s -= 1.2;                 // Storm — must come before >35 or it's unreachable
   else if (p.windKmh > 35) s -= 0.6;
-  else if (p.windKmh > 50) s -= 1.2;
   if (p.windGustKmh > 55) s -= 0.4;
 
   // Атмосферно налягане — 1013–1022 hPa е оптимално

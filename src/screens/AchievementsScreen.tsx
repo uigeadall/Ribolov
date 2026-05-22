@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -114,9 +114,13 @@ export default function AchievementsScreen() {
 
   const items: Achievement[] = data ?? [];
 
+  // Skip the first focus (useAsync auto-runs on mount). Subsequent focuses
+  // refresh silently so the badge grid stays visible.
+  const initialFocusRef = useRef(true);
   useFocusEffect(
     useCallback(() => {
-      reload();
+      if (initialFocusRef.current) { initialFocusRef.current = false; return; }
+      reload(true);
     }, [reload])
   );
 

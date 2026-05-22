@@ -36,6 +36,9 @@ export default function CreateGroupScreen() {
   const [form, dispatch] = useReducer(formReducer, { name: '', description: '', category: 'club' });
   const { name, description, category } = form;
   const [saving, setSaving] = useState(false);
+  // Synchronous guard so a double-tap on Създай can't fire createGroup twice
+  // before React commits setSaving(true) — would otherwise create two clubs.
+  const submittingRef = useRef(false);
   // Name input declares returnKeyType="next" — wire it to actually
   // advance focus so the keyboard label doesn't lie.
   const descriptionRef = useRef<TextInput>(null);
@@ -53,13 +56,14 @@ export default function CreateGroupScreen() {
   }), [colors]);
 
   const submit = async () => {
-    if (!user || !configured) return;
+    if (!user || !configured || submittingRef.current) return;
     if (!name.trim()) {
       // Validation hint, not a system error — Toast keeps the user's hand on
       // the keyboard instead of forcing a modal dismiss to fix one field.
       Toast.show({ type: 'error', text1: 'Въведи название на клуба', visibilityTime: 2000 });
       return;
     }
+    submittingRef.current = true;
     setSaving(true);
     try {
       const id = await createGroup(
@@ -70,6 +74,7 @@ export default function CreateGroupScreen() {
     } catch (e: unknown) {
       handleError(e);
     } finally {
+      submittingRef.current = false;
       setSaving(false);
     }
   };

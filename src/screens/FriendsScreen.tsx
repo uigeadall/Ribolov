@@ -175,6 +175,10 @@ export default function FriendsScreen() {
 
   // Debounce: only fire the Firestore search 250ms after the user stops typing.
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Synchronous per-uid guard so a double-tap on the same Follow row can't
+  // fire two followUser writes (and two follow-notifications). followBusy state
+  // also gates the UI but lags one render.
+  const followInflightRef = useRef<Set<string>>(new Set());
   useEffect(() => () => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
   }, []);
@@ -191,6 +195,7 @@ export default function FriendsScreen() {
 
   const toggleFollow = useCallback(async (uid: string, displayName: string) => {
     if (!user) return;
+    if (followInflightRef.current.has(uid)) return;
     if (followedUids.has(uid)) {
       Alert.alert('Спри да следваш', `Спри да следваш ${displayName}?`, [
         { text: 'Отказ', style: 'cancel' },
@@ -198,11 +203,14 @@ export default function FriendsScreen() {
           text: 'Спри',
           style: 'destructive',
           onPress: async () => {
+            if (followInflightRef.current.has(uid)) return;
+            followInflightRef.current.add(uid);
             setFollowBusy((prev) => new Set([...prev, uid]));
             try {
               await unfollowUser(user.uid, uid);
               await reloadFollows(true);
             } finally {
+              followInflightRef.current.delete(uid);
               setFollowBusy((prev) => { const s = new Set(prev); s.delete(uid); return s; });
             }
           },
@@ -210,12 +218,14 @@ export default function FriendsScreen() {
       ]);
       return;
     }
+    followInflightRef.current.add(uid);
     setFollowBusy((prev) => new Set([...prev, uid]));
     try {
       await followUser(user.uid, uid);
       await sendFollowNotification(uid, user.uid, user.displayName ?? 'Рибар');
       await reloadFollows(true);
     } finally {
+      followInflightRef.current.delete(uid);
       setFollowBusy((prev) => { const s = new Set(prev); s.delete(uid); return s; });
     }
   }, [user, followedUids, reloadFollows]);

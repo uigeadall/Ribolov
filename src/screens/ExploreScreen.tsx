@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, Pressable,
 } from 'react-native';
@@ -64,7 +64,14 @@ export default function ExploreScreen() {
   const trending = data?.trending ?? [];
   const topAnglers = data?.topAnglers ?? [];
 
-  useFocusEffect(useCallback(() => { reload(); }, [reload]));
+  // Skip the initial focus — useAsync's auto-run already fires on mount.
+  // On subsequent focuses do a silent reload so existing data stays visible
+  // instead of flashing the skeleton on every tab return.
+  const initialFocusRef = useRef(true);
+  useFocusEffect(useCallback(() => {
+    if (initialFocusRef.current) { initialFocusRef.current = false; return; }
+    reload(true);
+  }, [reload]));
 
   return (
     <Screen padded={false}>

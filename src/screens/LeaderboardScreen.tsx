@@ -192,25 +192,37 @@ function createStyles(colors: AppColors, mode: 'light' | 'dark') {
 type WaterModalTab = 'all' | 'dams' | 'rivers';
 
 function Podium({ rows, colors }: { rows: LeaderboardRow[]; colors: AppColors }) {
-  if (rows.length < 3) return null;
+  // Hooks must run unconditionally. Allocate the animation values for a
+  // 3-column podium up-front, then bail with `return null` *after* the hook
+  // calls if there aren't enough rows to display. Without this any future
+  // caller that mounts Podium with <3 rows would crash with a hooks-order
+  // violation (current callers happen to guard upstream).
+  const animVals = useRef([
+    new Animated.Value(0),
+    new Animated.Value(0),
+    new Animated.Value(0),
+  ]).current;
 
-  // Podium columns: [2nd, 1st, 3rd] — display order left→center→right
+  // Podium columns: [2nd, 1st, 3rd] — display order left→center→right.
+  // Defined after the hook so it can reference rows that may be undefined
+  // when rows.length < 3; rendering is short-circuited below.
+  const hasPodium = rows.length >= 3;
   const COLS: Array<{
     row: LeaderboardRow;
     medal: string;
     bgColor: string;
     fullHeight: number;
     position: string;
-  }> = [
-    { row: rows[1], medal: '🥈', bgColor: '#C0C0C0', fullHeight: 80, position: '2' },
-    { row: rows[0], medal: '🥇', bgColor: '#FFD700', fullHeight: 110, position: '1' },
-    { row: rows[2], medal: '🥉', bgColor: '#CD7F32', fullHeight: 60, position: '3' },
-  ];
-
-  // Staggered animation: 2nd first (0ms), then 1st (120ms), then 3rd (240ms)
-  const animVals = useRef(COLS.map(() => new Animated.Value(0))).current;
+  }> = hasPodium
+    ? [
+        { row: rows[1], medal: '🥈', bgColor: '#C0C0C0', fullHeight: 80, position: '2' },
+        { row: rows[0], medal: '🥇', bgColor: '#FFD700', fullHeight: 110, position: '1' },
+        { row: rows[2], medal: '🥉', bgColor: '#CD7F32', fullHeight: 60, position: '3' },
+      ]
+    : [];
 
   useEffect(() => {
+    if (!hasPodium) return;
     animVals.forEach((av) => av.setValue(0));
     const anims = COLS.map((col, i) =>
       Animated.timing(animVals[i], {
@@ -221,9 +233,11 @@ function Podium({ rows, colors }: { rows: LeaderboardRow[]; colors: AppColors })
       })
     );
     Animated.parallel(anims).start();
-  // We only want this to run on mount
+  // We only want this to run on mount / when rows change
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows]);
+
+  if (!hasPodium) return null;
 
   return (
     <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.sm }}>
@@ -299,16 +313,20 @@ export default function LeaderboardScreen() {
   useEffect(() => {
     const damId = route.params?.damId;
     const riverId = route.params?.riverId;
+    if (!damId && !riverId) return;
     if (damId) {
       const d = DAMS.find((x) => x.id === damId);
       if (d) setScopePick({ mode: 'dam', id: d.id, name: d.name });
-      return;
-    }
-    if (riverId) {
+    } else if (riverId) {
       const r = RIVERS.find((x) => x.id === riverId);
       if (r) setScopePick({ mode: 'river', id: r.id, name: r.name });
     }
-  }, [route.params?.damId, route.params?.riverId]);
+    // Clear the route params after applying so a later screen focus doesn't
+    // re-fire this effect and silently overwrite the user's manual scope
+    // pick from the in-screen picker. MapScreen follows the same pattern
+    // for its focus-from-elsewhere params.
+    navigation.setParams({ damId: undefined, riverId: undefined } as never);
+  }, [route.params?.damId, route.params?.riverId, navigation]);
 
   const { data, loading, refreshing, error, reload } = useAsync(async () => {
     if (!configured || !user) return [] as LeaderboardRow[];

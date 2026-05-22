@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '../storage/kv';
 import { View, Text, StyleSheet, FlatList, Pressable, Alert } from 'react-native';
 import { useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
@@ -113,8 +113,12 @@ export default function HashtagFeedScreen() {
     } catch { /* ignore */ }
   }, [navigation, user?.uid]);
 
+  // Synchronous guard so a double-tap on the reshare action doesn't create
+  // two copies of the same repost in the feed before the first finishes.
+  const repostingRef = useRef(false);
   const instantRepost = useCallback(async (target: ResharedRef) => {
-    if (!user) return;
+    if (!user || repostingRef.current) return;
+    repostingRef.current = true;
     try {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       await createPost({
@@ -128,6 +132,8 @@ export default function HashtagFeedScreen() {
       Toast.show({ type: 'success', text1: 'Споделено в лентата', visibilityTime: 1500 });
     } catch (e) {
       notifyError('Грешка при споделяне', e instanceof Error ? e.message : 'Неуспешно споделяне.');
+    } finally {
+      repostingRef.current = false;
     }
   }, [user, myPhotoUrl]);
 

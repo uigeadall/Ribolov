@@ -13,18 +13,7 @@ import { catchesStore } from '../storage/storage';
 import type { Catch } from '../types';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
-
-function useCountUp(target: number, duration = 900): number {
-  const [value, setValue] = useState(0);
-  const animRef = useRef<Animated.Value>(new Animated.Value(0));
-  useEffect(() => {
-    animRef.current.setValue(0);
-    Animated.timing(animRef.current, { toValue: target, duration, useNativeDriver: false }).start();
-    const listener = animRef.current.addListener(({ value: v }) => setValue(v));
-    return () => animRef.current.removeListener(listener);
-  }, [target, duration]);
-  return value;
-}
+import { useCountUp } from '../hooks/useCountUp';
 
 function AnimatedStatNum({ value, decimals = 0, suffix = '', color }: { value: number; decimals?: number; suffix?: string; color?: string }) {
   const { colors } = useTheme();

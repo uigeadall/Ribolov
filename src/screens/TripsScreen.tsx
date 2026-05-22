@@ -237,6 +237,10 @@ export default function TripsScreen() {
           data={items}
           keyExtractor={(t) => t.id}
           removeClippedSubviews={Platform.OS === 'android'}
+          // Without this, the first tap on a row while the keyboard is open
+          // (from the "Add trip" title input above) only dismisses the keyboard
+          // instead of navigating into TripDetail.
+          keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ padding: spacing.lg, paddingTop: 0, flexGrow: 1 }}
           ListEmptyComponent={
             <EmptyState

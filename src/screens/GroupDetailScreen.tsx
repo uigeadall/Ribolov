@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import Toast from 'react-native-toast-message';
 import {
   View, Text, StyleSheet, FlatList, Pressable,
@@ -73,6 +73,9 @@ export default function GroupDetailScreen() {
   const [postText, setPostText] = useState('');
   const [posting, setPosting] = useState(false);
   const [joining, setJoining] = useState(false);
+  // Synchronous guard so a double-tap on the Join/Leave button can't fire
+  // joinGroup/leaveGroup twice before React commits setJoining(true).
+  const joiningRef = useRef(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const isAdmin = group?.createdBy === user?.uid;
@@ -235,7 +238,8 @@ export default function GroupDetailScreen() {
   useFocusEffect(useCallback(() => { void load(); }, [load]));
 
   const handleJoin = async () => {
-    if (!user || !configured) return;
+    if (!user || !configured || joiningRef.current) return;
+    joiningRef.current = true;
     setJoining(true);
     try {
       if (joined) {
@@ -250,6 +254,7 @@ export default function GroupDetailScreen() {
     } catch (e: unknown) {
       handleError(e);
     } finally {
+      joiningRef.current = false;
       setJoining(false);
     }
   };

@@ -51,6 +51,10 @@ export default function CreatePostScreen() {
   const [text, setText] = useState('');
   const [photoUri, setPhotoUri] = useState<string | undefined>();
   const [posting, setPosting] = useState(false);
+  // Synchronous guard so a sub-frame double-tap on "Сподели" can't fire
+  // submit() twice before React commits setPosting(true) — would otherwise
+  // create two duplicate posts.
+  const submittingRef = useRef(false);
   const inputRef = useRef<TextInput>(null);
   const selectionRef = useRef({ start: 0, end: 0 });
 
@@ -140,11 +144,12 @@ export default function CreatePostScreen() {
   };
 
   const submit = async () => {
-    if (!user || posting) return;
+    if (!user || posting || submittingRef.current) return;
     if (!text.trim() && !photoUri && !reshare) {
       notifyInfo('Празна публикация', 'Добави текст или снимка.');
       return;
     }
+    submittingRef.current = true;
     setPosting(true);
     try {
       // Resolve which @handles correspond to known users. Iterating
@@ -196,6 +201,7 @@ export default function CreatePostScreen() {
     } catch (e: unknown) {
       handleError(e);
     } finally {
+      submittingRef.current = false;
       setPosting(false);
     }
   };

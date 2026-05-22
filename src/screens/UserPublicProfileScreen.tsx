@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -393,10 +393,18 @@ export default function UserPublicProfileScreen() {
     }
   }, [configured, uid, user, photoUrlHint]);
 
+  // First focus shows skeleton (no cached data). Subsequent focuses refresh
+  // silently so the profile stays visible while we re-fetch in the background.
+  const initialFocusRef = useRef(true);
   useFocusEffect(
     useCallback(() => {
       setPhotoUrl(photoUrlHint?.trim() ? photoUrlHint.trim() : undefined);
-      setLoading(true);
+      if (initialFocusRef.current) {
+        initialFocusRef.current = false;
+        setLoading(true);
+      } else {
+        setRefreshing(true);
+      }
       void load();
     }, [load, photoUrlHint])
   );

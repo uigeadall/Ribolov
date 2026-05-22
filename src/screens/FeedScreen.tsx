@@ -131,6 +131,13 @@ export default function FeedScreen() {
   }, []);
 
   useEffect(() => {
+    // When the active user changes, reset session-scoped UI state so the
+    // previous account's avatar and "new posts" baseline don't bleed into
+    // the next account's session.
+    setMyPhotoUrl(undefined);
+    seenTopIdRef.current = null;
+    newPostsCountRef.current = 0;
+    setNewPostsCount(0);
     if (!user?.uid) return;
     AsyncStorage.getItem(`@ribolov/profilePhoto/${user.uid}`)
       .then((v) => { if (v) setMyPhotoUrl(v); })

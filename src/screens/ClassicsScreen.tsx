@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -84,10 +84,16 @@ export default function ClassicsScreen() {
       .catch(() => {});
   }, [data, user?.uid]);
 
+  // Per-id in-flight set so a rapid double-tap on the same row's heart can't
+  // fire two toggleCatchReaction calls and flicker the counter ±2. Different
+  // rows are still independent.
+  const likingIdsRef = useRef<Set<string>>(new Set());
   const onLike = async (row: RankedClassicPhoto) => {
     if (!user || !configured) return;
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const id = row.item.id;
+    if (likingIdsRef.current.has(id)) return;
+    likingIdsRef.current.add(id);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const liked = myLikes.has(id);
     setMyLikes((prev) => { const next = new Set(prev); liked ? next.delete(id) : next.add(id); return next; });
     setLocalRows((prev) => prev.map((r) => r.item.id === id ? { ...r, likes: r.likes + (liked ? -1 : 1) } : r));
@@ -97,6 +103,8 @@ export default function ClassicsScreen() {
       // Roll back optimistic update on failure so the UI matches the server.
       setMyLikes((prev) => { const next = new Set(prev); liked ? next.add(id) : next.delete(id); return next; });
       setLocalRows((prev) => prev.map((r) => r.item.id === id ? { ...r, likes: r.likes + (liked ? 1 : -1) } : r));
+    } finally {
+      likingIdsRef.current.delete(id);
     }
   };
 

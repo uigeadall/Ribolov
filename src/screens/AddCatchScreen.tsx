@@ -323,6 +323,19 @@ export default function AddCatchScreen() {
 
   useEffect(() => {
     if (!form.locationCoords) return;
+    // When editing, only invalidate cached conditions if the user actually
+    // moved the catch. Otherwise the prefill from initialCatch.conditions
+    // stays in place as a fallback when the network fetch fails — losing
+    // those originally-saved conditions on a slow connection would be a
+    // worse outcome than slightly stale conditions on the new spot.
+    const initLoc = initialCatch?.location;
+    const movedFromInitial =
+      !!initLoc &&
+      (Math.abs(initLoc.latitude - form.locationCoords.lat) > 1e-6 ||
+        Math.abs(initLoc.longitude - form.locationCoords.lon) > 1e-6);
+    if (movedFromInitial) {
+      conditionsRef.current = null;
+    }
     let cancelled = false;
     fetchWeather(form.locationCoords.lat, form.locationCoords.lon)
       .then((snap) => {
@@ -340,7 +353,7 @@ export default function AddCatchScreen() {
     return () => {
       cancelled = true;
     };
-  }, [form.locationCoords]);
+  }, [form.locationCoords, initialCatch?.location]);
 
   useEffect(() => {
     if (!editCatchId || !configured || !user) return;
@@ -550,7 +563,16 @@ export default function AddCatchScreen() {
           }
         : undefined,
       ...(form.tripId ? { tripId: form.tripId } : {}),
-      conditions: conditionsRef.current ?? initialCatch?.conditions ?? undefined,
+      // When editing, only fall back to the originally-saved conditions if
+      // the user hasn't moved the catch — otherwise we'd persist conditions
+      // belonging to a different lat/lon when the live weather fetch fails.
+      conditions: conditionsRef.current ?? (
+        initialCatch?.location && form.locationCoords &&
+        Math.abs(initialCatch.location.latitude - form.locationCoords.lat) < 1e-6 &&
+        Math.abs(initialCatch.location.longitude - form.locationCoords.lon) < 1e-6
+          ? initialCatch.conditions
+          : undefined
+      ),
     };
 
     try {
@@ -582,10 +604,19 @@ export default function AddCatchScreen() {
             : pb.field === 'weight'
             ? 'Нов личен рекорд по тегло! 🏆'
             : 'Нов личен рекорд по дължина! 🏆';
-        Alert.alert('Личен рекорд!', `${item.speciesName} — ${pbMsg}`);
-      }
-
-      if (newUnlocks.length > 0) {
+        // If there are no achievement unlocks to show, the alert is the only
+        // thing keeping the user on this screen — fire the goBack on Alert
+        // dismissal so the alert doesn't orphan onto LogbookScreen after the
+        // screen unmounts.
+        if (newUnlocks.length === 0) {
+          Alert.alert('Личен рекорд!', `${item.speciesName} — ${pbMsg}`, [
+            { text: 'OK', onPress: () => navigation.goBack() },
+          ]);
+        } else {
+          Alert.alert('Личен рекорд!', `${item.speciesName} — ${pbMsg}`);
+          setUnlockedNow(newUnlocks);
+        }
+      } else if (newUnlocks.length > 0) {
         setUnlockedNow(newUnlocks);
       } else {
         navigation.goBack();
@@ -673,6 +704,12 @@ export default function AddCatchScreen() {
                     cameraVerifiedPhoto: false,
                   },
                 });
+                // LOAD_CATCH is excluded from the dispatch-level dirty-tracker
+                // because it normally fires from the edit/duplicate prefill,
+                // which isn't a user interaction. This chip *is* a user
+                // interaction — mark the form dirty so the unsaved-changes
+                // warning fires if the user navigates away without saving.
+                formDirtyRef.current = true;
               }}
               style={styles.chipPill}
             >

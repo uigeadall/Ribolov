@@ -274,8 +274,19 @@ export async function pushCatch(c: Catch, ownerUid: string, ownerName: string, i
   if (isPublic) {
     await setDoc(doc(fb.db, 'publicCatches', c.id), payload, { merge: true });
   } else {
-    // Remove from public feed if the catch was previously shared.
-    await deleteDoc(doc(fb.db, 'publicCatches', c.id)).catch(() => {});
+    // Remove from public feed if the catch was previously shared. Let the
+    // error propagate — the caller is normally a sync-queue flush which has
+    // its own retry/backoff, and previously swallowing the rejection meant
+    // toggling a catch from public→private could silently fail (catch stays
+    // visible in everyone's feed forever).
+    try {
+      await deleteDoc(doc(fb.db, 'publicCatches', c.id));
+    } catch (e: unknown) {
+      // not-found is fine — the catch was already private. Anything else
+      // surfaces so the queue retries.
+      const code = (e && typeof e === 'object' && 'code' in e) ? String((e as { code: unknown }).code) : '';
+      if (code !== 'not-found') throw e;
+    }
   }
 }
 
@@ -329,10 +340,17 @@ export async function deleteCatchEverywhere(catchId: string, ownerUid: string): 
 
 export async function removeFromPublicFeed(catchId: string, ownerUid: string): Promise<void> {
   const fb = requireFirebase();
-  await Promise.all([
-    deleteDoc(doc(fb.db, 'publicCatches', catchId)),
-    setDoc(doc(fb.db, 'users', ownerUid, 'catches', catchId), { isPublic: false }, { merge: true }),
-  ]);
+  // Order matters. If we did these in parallel and the public-feed delete
+  // failed while the isPublic:false write succeeded, the user's logbook would
+  // claim the catch is private while it remained publicly visible. Run the
+  // public delete first; only mark private locally once it's actually gone.
+  try {
+    await deleteDoc(doc(fb.db, 'publicCatches', catchId));
+  } catch (e: unknown) {
+    const code = (e && typeof e === 'object' && 'code' in e) ? String((e as { code: unknown }).code) : '';
+    if (code !== 'not-found') throw e;
+  }
+  await setDoc(doc(fb.db, 'users', ownerUid, 'catches', catchId), { isPublic: false }, { merge: true });
 }
 
 export async function deletePhotoFromFeedPost(catchId: string, ownerUid: string): Promise<void> {
@@ -367,9 +385,18 @@ export async function fetchPublicFeed(
   const key = `${maxItems}:${afterDoc?.id ?? ''}:${(ownerUids ?? []).sort().join(',')}`;
   const inflight = _feedInflight.get(key);
   if (inflight) return inflight;
-  const p = _fetchPublicFeedImpl(maxItems, afterDoc, ownerUids);
+  // Build the inflight promise so the cache cleanup runs inside the same chain
+  // that callers await. The earlier `p.finally(() => ...)` discarded a new
+  // promise — when the impl rejected, that orphan promise raised an
+  // "unhandled promise rejection" on every failed feed fetch.
+  const p = (async () => {
+    try {
+      return await _fetchPublicFeedImpl(maxItems, afterDoc, ownerUids);
+    } finally {
+      _feedInflight.delete(key);
+    }
+  })();
   _feedInflight.set(key, p);
-  p.finally(() => _feedInflight.delete(key));
   return p;
 }
 
@@ -390,25 +417,35 @@ async function _fetchPublicFeedImpl(
     for (let i = 0; i < ownerUids.length; i += CHUNK) {
       chunks.push(ownerUids.slice(i, i + CHUNK));
     }
+    // When paginating, use the cursor doc's `date` as a strict upper bound
+    // on each chunk. Without this every page returned the same top items
+    // because lastDoc was hardcoded to null and afterDoc was ignored —
+    // users following >30 anglers could never page past the first batch.
+    const afterDate = (afterDoc?.data() as { date?: string } | undefined)?.date;
     const snaps = await Promise.all(
-      chunks.map((chunk) =>
-        getDocs(
-          query(
-            collection(fb.db, 'publicCatches'),
-            where('ownerUid', 'in', chunk),
-            orderBy('date', 'desc'),
-            limit(maxItems + 1),
-          ),
-        ),
-      ),
+      chunks.map((chunk) => {
+        const constraints: Parameters<typeof query>[1][] = [
+          where('ownerUid', 'in', chunk),
+          orderBy('date', 'desc'),
+          limit(maxItems + 1),
+        ];
+        if (afterDate) constraints.splice(1, 0, where('date', '<', afterDate));
+        return getDocs(query(collection(fb.db, 'publicCatches'), ...constraints));
+      }),
     );
-    const allItems: CloudCatch[] = [];
+    const all: { item: CloudCatch; snap: DocumentSnapshot }[] = [];
     for (const snap of snaps) {
-      for (const d of snap.docs) allItems.push(d.data() as CloudCatch);
+      for (const d of snap.docs) all.push({ item: d.data() as CloudCatch, snap: d });
     }
-    allItems.sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
-    const hasMore = allItems.length > maxItems;
-    return { items: allItems.slice(0, maxItems), lastDoc: null, hasMore };
+    all.sort((a, b) => (b.item.date ?? '').localeCompare(a.item.date ?? ''));
+    const hasMore = all.length > maxItems;
+    const sliced = all.slice(0, maxItems);
+    const lastSnap = sliced[sliced.length - 1]?.snap ?? null;
+    return {
+      items: sliced.map((s) => s.item),
+      lastDoc: lastSnap,
+      hasMore,
+    };
   }
 
   const constraints: Parameters<typeof query>[1][] = [

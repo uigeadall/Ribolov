@@ -117,10 +117,13 @@ export async function fetchOlderConversations(
   if (!myUid || !beforeMs) return [];
   // Composite (participantIds CONTAINS, lastMessageAt DESC) index already
   // exists for the live subscription — same query shape works here.
+  // lastMessageAt is written with serverTimestamp(), stored as a Firestore
+  // Timestamp — comparing it to a JS number always returns zero results.
+  // Convert the millisecond boundary to a Timestamp so the inequality matches.
   const q = query(
     collection(fb.db, 'conversations'),
     where('participantIds', 'array-contains', myUid),
-    where('lastMessageAt', '<', beforeMs),
+    where('lastMessageAt', '<', Timestamp.fromMillis(beforeMs)),
     orderBy('lastMessageAt', 'desc'),
     limit(n),
   );
@@ -434,6 +437,13 @@ export function subscribeUnreadMessagesCount(
   myUid: string,
   onNext: (count: number) => void,
 ): () => void {
+  // Guard against signed-out callers — without a uid the inner subscribes
+  // would build invalid Firestore paths like `users//mutedConversations`,
+  // which logs a console error and leaks a half-attached listener.
+  if (!myUid) {
+    onNext(0);
+    return () => {};
+  }
   // Mute-aware: sums unread across conversations the user hasn't muted. The
   // user-aggregate field `users/{uid}.unreadMessageCount` is still maintained
   // by markConversationRead/Unread and the onNewMessage Cloud Function, but

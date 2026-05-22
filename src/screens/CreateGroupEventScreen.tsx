@@ -58,6 +58,7 @@ export default function CreateGroupEventScreen() {
           title: title.trim(),
           description: description.trim() || undefined,
           dateIso: date.toISOString(),
+          locationName: locationName.trim() || undefined,
         },
         { uid: user.uid, displayName: user.displayName ?? user.email ?? 'Рибар' },
       );

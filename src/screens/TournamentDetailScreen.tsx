@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Text, StyleSheet, View, Pressable, FlatList, Modal, ActivityIndicator, Alert,
 } from 'react-native';
@@ -26,6 +26,7 @@ import type { Catch } from '../types';
 import {
   fetchTournamentPhotoEntries,
   getMyLikedEntries,
+  isJoinedTournament,
   submitCatchToTournament,
   toggleTournamentEntryLike,
   type TournamentPhotoEntry,
@@ -42,6 +43,11 @@ export default function TournamentDetailScreen() {
   const { user } = useAuth();
   const [t, setT] = useState<Tournament | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
+  // Track whether the current user is already a participant so the join button
+  // can reflect reality. Without this, the button stayed as "Участвай" even
+  // after a successful join, and rapid double-taps double-fired the write.
+  const [isJoined, setIsJoined] = useState(false);
+  const joiningRef = useRef(false);
 
   const [entries, setEntries] = useState<TournamentPhotoEntry[]>([]);
   const [myLikes, setMyLikes] = useState<Set<string>>(new Set());
@@ -52,6 +58,10 @@ export default function TournamentDetailScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [submitOpen, setSubmitOpen] = useState(false);
   const [myCatches, setMyCatches] = useState<Catch[]>([]);
+  // Count of catches the picker filtered out because their photo is still
+  // uploading (file:// URI). Surfaced as a hint in the modal so the user
+  // understands why their just-taken photo isn't in the list.
+  const [pendingUploadCount, setPendingUploadCount] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [viewer, setViewer] = useState<TournamentPhotoEntry | null>(null);
 
@@ -62,6 +72,11 @@ export default function TournamentDetailScreen() {
       setT(snap.exists() ? (snap.data() as Tournament) : null);
     });
   }, [route.params.id]);
+
+  useEffect(() => {
+    if (!user?.uid) { setIsJoined(false); return; }
+    isJoinedTournament(route.params.id, user.uid).then(setIsJoined).catch(() => {});
+  }, [route.params.id, user?.uid]);
 
   const loadEntries = useCallback(async (silent = false) => {
     if (!silent) setEntriesLoading(true);
@@ -133,12 +148,15 @@ export default function TournamentDetailScreen() {
   }), [colors, mode]);
 
   const onJoin = async () => {
-    if (!user || !t) return;
+    if (!user || !t || isJoined || joiningRef.current) return;
+    joiningRef.current = true;
     setBusy(true);
     try {
       await joinTournament(t.id, user.uid, user.displayName || user.email || 'Рибар');
+      setIsJoined(true);
       Toast.show({ type: 'success', text1: 'Записан си!', text2: `Участваш в „${t.name}".`, visibilityTime: 2500 });
     } finally {
+      joiningRef.current = false;
       setBusy(false);
     }
   };
@@ -174,7 +192,10 @@ export default function TournamentDetailScreen() {
     const list = await catchesStore.list();
     // Only allow catches whose photo is already uploaded to the cloud (https URL).
     // Local file:// URIs aren't readable by other users and would show broken images.
-    setMyCatches(list.filter((c) => !!c.photoUri && /^https?:\/\//i.test(c.photoUri)));
+    const ready = list.filter((c) => !!c.photoUri && /^https?:\/\//i.test(c.photoUri));
+    const pending = list.filter((c) => !!c.photoUri && !/^https?:\/\//i.test(c.photoUri)).length;
+    setMyCatches(ready);
+    setPendingUploadCount(pending);
     setSubmitOpen(true);
   };
 
@@ -239,6 +260,18 @@ export default function TournamentDetailScreen() {
 
   const submitCatch = async (c: Catch) => {
     if (!user || !c.photoUri) return;
+    // Reject catches that don't match a single-species tournament's species.
+    // Without this, "Само шаран" tournaments quietly accepted any catch and
+    // rule-breaking entries appeared on the leaderboard.
+    if (t?.speciesId && c.speciesId && t.speciesId !== c.speciesId) {
+      Toast.show({
+        type: 'error',
+        text1: 'Друг вид',
+        text2: `Турнирът приема само ${t.speciesName ?? 'избрания вид'}.`,
+        visibilityTime: 3000,
+      });
+      return;
+    }
     setSubmitting(true);
     try {
       await submitCatchToTournament(route.params.id, {
@@ -322,7 +355,12 @@ export default function TournamentDetailScreen() {
 
             {user ? (
               <View style={{ paddingHorizontal: spacing.lg, gap: spacing.sm, marginBottom: spacing.sm }}>
-                <Button title="Участвай" onPress={onJoin} loading={busy} />
+                <Button
+                  title={isJoined ? 'Участваш' : 'Участвай'}
+                  onPress={onJoin}
+                  loading={busy}
+                  disabled={isJoined}
+                />
                 <Button title="Добави твоя улов" variant="secondary" onPress={openSubmitModal} />
               </View>
             ) : null}
@@ -418,6 +456,13 @@ export default function TournamentDetailScreen() {
           <View style={styles.modalSheet}>
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>Избери улов за добавяне</Text>
+            {pendingUploadCount > 0 ? (
+              <Text style={{ ...typography.caption, color: colors.textMuted, textAlign: 'center', paddingHorizontal: spacing.lg, marginBottom: spacing.sm }}>
+                {pendingUploadCount === 1
+                  ? '1 улов чака качване на снимка — опитай след малко.'
+                  : `${pendingUploadCount} улова чакат качване на снимка — опитай след малко.`}
+              </Text>
+            ) : null}
             {submitting ? (
               <View style={{ alignItems: 'center', padding: spacing.xl }}>
                 <ActivityIndicator color={colors.primary} />

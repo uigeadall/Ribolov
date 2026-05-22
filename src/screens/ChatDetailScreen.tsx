@@ -352,9 +352,12 @@ export default function ChatDetailScreen() {
     // it concurrently with markConversationRead means the transaction may zero
     // unreadCounts before the read sees it, and the divider never appears.
     // Best-effort: if the read fails we just skip the divider.
+    let mounted = true;
     (async () => {
       const count = await fetchMyUnreadInConversation(convId, user.uid).catch(() => 0);
-      if (count > 0) setInitialUnreadCount(count);
+      // Guard the setState in case the user backs out before this resolves;
+      // otherwise React logs a set-state-on-unmounted warning.
+      if (mounted && count > 0) setInitialUnreadCount(count);
       markConversationRead(convId, user.uid).catch(() => {});
     })();
     const unsubMsgs = subscribeConversationMessages(convId, (next) => {
@@ -374,6 +377,7 @@ export default function ChatDetailScreen() {
     const unsubTyping = subscribeTyping(convId, user.uid, setTypingUid);
     const unsubReactions = subscribeConversationReactions(convId, setReactions);
     return () => {
+      mounted = false;
       unsubMsgs();
       unsubPresence();
       unsubTyping();

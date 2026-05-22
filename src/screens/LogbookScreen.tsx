@@ -56,6 +56,14 @@ function endOfDay(d: Date): number {
   const x = new Date(d); x.setHours(23, 59, 59, 999); return x.getTime();
 }
 
+/** Sort catches newest-first. Coalesces unparseable dates to 0 so the
+ *  comparator never returns NaN — Array.prototype.sort with a NaN result is
+ *  undefined behavior and produced nondeterministic ordering for any catch
+ *  with a malformed `date` field. */
+function byDateDesc(a: { date: string }, b: { date: string }): number {
+  return (Date.parse(b.date) || 0) - (Date.parse(a.date) || 0);
+}
+
 function useCountUp(target: number, duration = 800): number {
   const [val, setVal] = React.useState(0);
   React.useEffect(() => {
@@ -354,7 +362,7 @@ function LogbookCalendar({ catches, colors, onDayPress, selectedDay, calMonth, s
           const cs = catchesByDay.get(key);
           if (cs) all.push(...cs);
         }
-        return all.sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+        return all.sort(byDateDesc);
       })();
 
   const cells: (number | null)[] = [];
@@ -441,7 +449,15 @@ export default function LogbookScreen() {
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      // On sign-out: drop the prior user's catches from memory and clear
+      // the tab badge so it doesn't keep counting "unsynced" entries that
+      // wipeAllLocalAppData has already removed from storage.
+      setItems([]);
+      navigation.getParent()?.setOptions({ tabBarBadge: undefined });
+      celebrationShownRef.current = false;
+      return;
+    }
     const unsynced = items.filter((c) => !c.syncedToCloud).length;
     navigation.getParent()?.setOptions({ tabBarBadge: unsynced > 0 ? unsynced : undefined });
   }, [items, user, navigation]);
@@ -539,7 +555,7 @@ export default function LogbookScreen() {
   }, [items, uniqueSpeciesCount]);
 
   const sections = useMemo(() => {
-    const sorted = [...filtered].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+    const sorted = [...filtered].sort(byDateDesc);
     const map = new Map<string, Catch[]>();
     sorted.forEach((c) => {
       const key = c.date.slice(0, 7);
@@ -610,7 +626,7 @@ export default function LogbookScreen() {
       // Refresh the local catch list — the queue updated syncedToCloud on
       // success, but our items state needs a re-read to mirror it.
       const fresh = await catchesStore.list();
-      setItems(fresh.sort((a, b) => Date.parse(b.date) - Date.parse(a.date)));
+      setItems(fresh.sort(byDateDesc));
       Toast.show({ type: 'success', text1: 'Опитваме отново…', visibilityTime: 1500 });
     } catch {
       Toast.show({ type: 'error', text1: 'Грешка', text2: 'Опитай отново по-късно.', visibilityTime: 2000 });
@@ -621,7 +637,7 @@ export default function LogbookScreen() {
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
     if (!pendingDelete) return;
     await catchesStore.save(pendingDelete);
-    setItems((prev) => [...prev, pendingDelete].sort((a, b) => Date.parse(b.date) - Date.parse(a.date)));
+    setItems((prev) => [...prev, pendingDelete].sort(byDateDesc));
     setPendingDelete(null);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }, [pendingDelete]);
@@ -1027,14 +1043,14 @@ export default function LogbookScreen() {
               {/* Date range */}
               <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textMuted, letterSpacing: 0.5, marginBottom: spacing.sm, textTransform: 'uppercase' }}>Период</Text>
               <View style={{ flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg }}>
-                <Pressable onPress={() => setPickFrom(true)} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md, backgroundColor: colors.surfaceAlt, borderRadius: 14, borderWidth: 1, borderColor: colors.border }}>
+                <Pressable onPress={() => { setPickTo(false); setPickFrom(true); }} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md, backgroundColor: colors.surfaceAlt, borderRadius: 14, borderWidth: 1, borderColor: colors.border }}>
                   <Ionicons name="calendar-outline" size={18} color={colors.primary} />
                   <View>
                     <Text style={{ fontSize: 11, color: colors.textMuted, fontWeight: '700' }}>От</Text>
                     <Text style={{ fontSize: 13, color: dateFrom ? colors.primary : colors.textMuted, fontWeight: '700' }}>{dateFrom ? dateFrom.toLocaleDateString('bg-BG') : 'Избери'}</Text>
                   </View>
                 </Pressable>
-                <Pressable onPress={() => setPickTo(true)} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md, backgroundColor: colors.surfaceAlt, borderRadius: 14, borderWidth: 1, borderColor: colors.border }}>
+                <Pressable onPress={() => { setPickFrom(false); setPickTo(true); }} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md, backgroundColor: colors.surfaceAlt, borderRadius: 14, borderWidth: 1, borderColor: colors.border }}>
                   <Ionicons name="calendar-outline" size={18} color={colors.primary} />
                   <View>
                     <Text style={{ fontSize: 11, color: colors.textMuted, fontWeight: '700' }}>До</Text>

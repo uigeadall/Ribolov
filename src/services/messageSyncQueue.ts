@@ -49,13 +49,17 @@ const BASE_DELAY_MS = 3_000;
 const MAX_BACKOFF_ATTEMPTS = 8;
 const MAX_DELAY_MS = 1_800_000;
 
-/** Firestore error codes that won't fix themselves on retry — drop these immediately. */
+/** Firestore error codes that won't fix themselves on retry — drop these immediately.
+    NOTE: 'failed-precondition' is intentionally NOT here. App Check token expiry
+    surfaces as failed-precondition during a brief refresh window, and so do
+    transient rules races during account provisioning. Treating it as terminal
+    silently dropped legitimate offline messages. Real rule violations will be
+    retried up to MAX_ATTEMPTS and then abandoned via the normal path. */
 const TERMINAL_CODES = new Set([
   'permission-denied',
   'unauthenticated',
   'invalid-argument',
   'not-found',
-  'failed-precondition', // includes most rule-rejection paths
   'out-of-range',
 ]);
 

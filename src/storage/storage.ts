@@ -207,5 +207,9 @@ export async function wipeAllLocalAppData(): Promise<void> {
     // checklist either — even though B is brand new. Add any future
     // dismissal flags here so they reset on account switch.
     '@ribolov/onboardingChecklistDismissed',
+    // Same reason: User A's first-catch celebration flag was sticking on
+    // shared devices and silently suppressing the celebration for User B's
+    // first catch.
+    '@ribolov/firstCatchCelebrated',
   ]);
 }

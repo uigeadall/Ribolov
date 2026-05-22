@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, FlatList, Pressable,
   TextInput, Platform,
@@ -64,7 +64,13 @@ export default function GroupsScreen() {
   const groups = data?.groups ?? [];
   const myGroups = data?.myGroups ?? [];
 
-  useFocusEffect(useCallback(() => { reload(); }, [reload]));
+  // Skip the initial focus — useAsync auto-runs on mount. Subsequent focuses
+  // do a silent reload so existing data stays visible (no skeleton flicker).
+  const initialFocusRef = useRef(true);
+  useFocusEffect(useCallback(() => {
+    if (initialFocusRef.current) { initialFocusRef.current = false; return; }
+    reload(true);
+  }, [reload]));
 
   const displayed = (tab === 'mine' ? myGroups : groups).filter((g) =>
     !search.trim() || g.name.toLowerCase().includes(search.trim().toLowerCase())

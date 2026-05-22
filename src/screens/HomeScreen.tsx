@@ -456,7 +456,12 @@ export default function HomeScreen() {
       monthList.reduce<Catch | null>((best, c) => (!best || (c.weightKg ?? 0) > (best.weightKg ?? 0) ? c : best), null)
     );
 
-    setRecentCatches([...list].sort((a, b) => Date.parse(b.date) - Date.parse(a.date)).slice(0, 6));
+    setRecentCatches(
+      list
+        .filter((c) => !isNaN(Date.parse(c.date)))
+        .sort((a, b) => Date.parse(b.date) - Date.parse(a.date))
+        .slice(0, 6),
+    );
 
     // "В този ден" — catches on this same calendar day in prior years.
     // Match by month+day, exclude the current year so today's catches
@@ -557,13 +562,24 @@ export default function HomeScreen() {
   }, [loadStats, loadWeather, loadTodayHub]));
 
   useEffect(() => {
-    if (!user || !configured) return;
+    if (!user || !configured) {
+      setUnreadMsgs(0);
+      setUnreadNotifs(0);
+      return;
+    }
     const unsubMsgs   = subscribeUnreadMessagesCount(user.uid, setUnreadMsgs);
     const unsubNotifs  = subscribeMyNotifications(user.uid, (items) =>
       setUnreadNotifs(items.filter((n) => !n.read).length)
     );
     return () => { unsubMsgs(); unsubNotifs(); };
   }, [user, configured]);
+
+  // Reset the focus-effect throttle when auth identity changes so the next
+  // focus re-fetches stats/follows for the new user instead of skipping under
+  // the 5-minute STALE window.
+  useEffect(() => {
+    lastFetchRef.current = 0;
+  }, [user?.uid]);
 
   const onRefresh = async () => {
     lastFetchRef.current = 0;
@@ -888,8 +904,8 @@ export default function HomeScreen() {
                         <Text style={{ fontSize: 13 }}>{moonPhaseEmoji(weather.moonPhaseName)}</Text>
                       </View>
                       <Text style={{ fontSize: 8, fontFamily: 'Nunito_700Bold', color: 'rgba(255,255,255,0.38)', letterSpacing: 0.5 }}>ЛУНА</Text>
-                      <Text style={{ fontSize: 14, fontFamily: 'Nunito_800ExtraBold', color: '#fff' }} numberOfLines={1}>{weather.humidity}<Text style={{ fontSize: 9, color: 'rgba(255,255,255,0.45)', fontFamily: 'Nunito_400Regular' }}>%</Text></Text>
-                      <Text style={{ fontSize: 9, fontFamily: 'Nunito_400Regular', color: 'rgba(255,255,255,0.38)' }} numberOfLines={1}>{weather.moonPhaseName.split(' ').slice(0, -1).join(' ')}</Text>
+                      <Text style={{ fontSize: 14, fontFamily: 'Nunito_800ExtraBold', color: '#fff' }} numberOfLines={1}>{Math.round((1 - Math.abs(0.5 - weather.moonPhase) * 2) * 100)}<Text style={{ fontSize: 9, color: 'rgba(255,255,255,0.45)', fontFamily: 'Nunito_400Regular' }}>%</Text></Text>
+                      <Text style={{ fontSize: 9, fontFamily: 'Nunito_400Regular', color: 'rgba(255,255,255,0.38)' }} numberOfLines={1}>{weather.moonPhaseName}</Text>
                     </View>
                   </View>
                 </>

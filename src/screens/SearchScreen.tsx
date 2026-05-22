@@ -171,7 +171,11 @@ export default function SearchScreen() {
   }, [user?.uid]);
 
   const loadMoreUsers = useCallback(async () => {
-    const trimmed = query2.trim();
+    // Pair the cursor with the query that produced it. Using `query2` state
+    // here would mismatch if the user typed something new before infinite
+    // scroll fires — Firestore would startAfter a doc from the OLD query
+    // anchored to the NEW prefix, yielding stale/empty results.
+    const trimmed = activeQueryRef.current;
     if (loadingMore || !hasMore || !lastUserDocRef.current || trimmed.length < 2) return;
     setLoadingMore(true);
     try {
@@ -187,6 +191,8 @@ export default function SearchScreen() {
           limit(PAGE_SIZE + 1)
         )
       );
+      // If the active query changed while we were awaiting, discard the page.
+      if (activeQueryRef.current !== trimmed) return;
       const docs = snap.docs.slice(0, PAGE_SIZE);
       lastUserDocRef.current = docs[docs.length - 1] ?? null;
       setHasMore(snap.docs.length > PAGE_SIZE);
@@ -200,7 +206,7 @@ export default function SearchScreen() {
     } finally {
       setLoadingMore(false);
     }
-  }, [query2, loadingMore, hasMore, user?.uid]);
+  }, [loadingMore, hasMore, user?.uid]);
 
   const waterResults = useMemo(() => {
     const q = query2.trim().toLowerCase();

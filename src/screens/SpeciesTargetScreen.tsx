@@ -87,9 +87,12 @@ export default function SpeciesTargetScreen() {
     (best, d) => (!best || d.fishingRating > best.fishingRating ? d : best), null
   ), [forecast]);
 
-  // Nearest spots sorted by distance
+  // Nearest spots sorted by distance. Without GPS we don't have a baseline
+  // distance to rank against — returning the first 3 in storage order would
+  // mislabel arbitrary spots as "близки". Render the section as empty in
+  // that case so the user isn't shown random spots under the "nearby" label.
   const nearbySpots = useMemo(() => {
-    if (!userCoord) return spots.slice(0, 3);
+    if (!userCoord) return [];
     return [...spots]
       .sort((a, b) => haversineKm(userCoord, a) - haversineKm(userCoord, b))
       .slice(0, 3);

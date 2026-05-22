@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   View, Text, TextInput, StyleSheet, Pressable, Alert,
   ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator,
@@ -29,25 +29,34 @@ export default function CreateGroupPollScreen() {
   const { groupId, groupName } = route.params;
 
   const [question, setQuestion] = useState('');
-  const [options, setOptions] = useState<string[]>(['', '']);
+  // Track each option as { id, text } so React keys are stable across reorder
+  // and removal. Keying by index caused focus/IME to attach to the wrong row
+  // briefly when a middle option was removed.
+  type Opt = { id: string; text: string };
+  const nextOptIdRef = useRef(2);
+  const [options, setOptions] = useState<Opt[]>([
+    { id: 'opt-0', text: '' },
+    { id: 'opt-1', text: '' },
+  ]);
   const [saving, setSaving] = useState(false);
 
   const heroColors: [string, string, string] = mode === 'dark'
     ? ['#0A1E38', '#050C1A', '#030810']
     : ['#2B87CE', '#1570B8', '#0D559A'];
 
-  const setOption = (idx: number, value: string) => {
-    setOptions((prev) => prev.map((o, i) => i === idx ? value : o));
+  const setOption = (id: string, value: string) => {
+    setOptions((prev) => prev.map((o) => (o.id === id ? { ...o, text: value } : o)));
   };
 
   const addOption = () => {
     if (options.length >= MAX_OPTIONS) return;
-    setOptions((prev) => [...prev, '']);
+    const id = `opt-${nextOptIdRef.current++}`;
+    setOptions((prev) => [...prev, { id, text: '' }]);
   };
 
-  const removeOption = (idx: number) => {
+  const removeOption = (id: string) => {
     if (options.length <= 2) return;
-    setOptions((prev) => prev.filter((_, i) => i !== idx));
+    setOptions((prev) => prev.filter((o) => o.id !== id));
   };
 
   const submit = async () => {
@@ -56,7 +65,7 @@ export default function CreateGroupPollScreen() {
       Alert.alert('Въпрос', 'Въведи въпроса на анкетата.');
       return;
     }
-    const valid = options.filter((o) => o.trim().length > 0);
+    const valid = options.map((o) => o.text.trim()).filter((t) => t.length > 0);
     if (valid.length < 2) {
       Alert.alert('Варианти', 'Трябват поне два непразни варианта.');
       return;
@@ -129,7 +138,7 @@ export default function CreateGroupPollScreen() {
     );
   }
 
-  const canSubmit = question.trim().length > 0 && options.filter((o) => o.trim().length > 0).length >= 2;
+  const canSubmit = question.trim().length > 0 && options.filter((o) => o.text.trim().length > 0).length >= 2;
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -168,17 +177,17 @@ export default function CreateGroupPollScreen() {
           <View>
             <Text style={styles.label}>Варианти</Text>
             {options.map((o, idx) => (
-              <View key={idx} style={[styles.optionRow, { marginBottom: 8 }]}>
+              <View key={o.id} style={[styles.optionRow, { marginBottom: 8 }]}>
                 <TextInput
                   style={[styles.input, styles.optionInput]}
                   placeholder={`Вариант ${idx + 1}`}
                   placeholderTextColor={colors.textMuted}
-                  value={o}
-                  onChangeText={(v) => setOption(idx, v)}
+                  value={o.text}
+                  onChangeText={(v) => setOption(o.id, v)}
                   maxLength={80}
                 />
                 {options.length > 2 ? (
-                  <Pressable style={styles.removeBtn} onPress={() => removeOption(idx)} hitSlop={6}>
+                  <Pressable style={styles.removeBtn} onPress={() => removeOption(o.id)} hitSlop={6}>
                     <Ionicons name="close-circle" size={20} color={colors.textMuted} />
                   </Pressable>
                 ) : null}

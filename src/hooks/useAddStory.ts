@@ -50,7 +50,7 @@ export function useAddStory(
       let result: ImagePicker.ImagePickerResult;
       if (source === 'camera') {
         const perm = await ImagePicker.requestCameraPermissionsAsync();
-        if (!perm.granted) { Alert.alert('Достъ��', 'Разреши достъп до камерата.'); return; }
+        if (!perm.granted) { Alert.alert('Достъп', 'Разреши достъп до камерата.'); return; }
         result = await ImagePicker.launchCameraAsync(opts);
       } else {
         const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -69,7 +69,7 @@ export function useAddStory(
 
   const handlePost = async () => {
     if (!user || savingRef.current) return;
-    if (!text.trim() && !mediaUri) { Alert.alert('Добави съдържание', 'Напиши нещо или д��бави снимка/видео.'); return; }
+    if (!text.trim() && !mediaUri) { Alert.alert('Добави съдържание', 'Напиши нещо или добави снимка/видео.'); return; }
     savingRef.current = true;
     setSaving(true);
     // Track the uploaded media's storage path so we can clean it up if the

@@ -13,6 +13,7 @@ import {
 
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import Toast from 'react-native-toast-message';
 import { Screen } from '../components/Screen';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
@@ -209,7 +210,22 @@ export default function CreateTournamentScreen() {
         isPublic,
       };
       await createTournament(t);
-      await joinTournament(t.id, user.uid, t.hostName);
+      // Host-join is best-effort. If it fails (transient network), the
+      // tournament is already created — don't roll it back (rolling back can
+      // cascade into orphaned subcollection writes), but surface the error so
+      // the user knows to tap "Участвай" themselves on the detail screen.
+      // Otherwise the tournament would be created but the host wouldn't see
+      // it in "Мои турнири" until they manually joined.
+      try {
+        await joinTournament(t.id, user.uid, t.hostName);
+      } catch {
+        Toast.show({
+          type: 'info',
+          text1: 'Турнирът е създаден',
+          text2: 'Натисни „Участвай", за да се запишеш сам.',
+          visibilityTime: 4000,
+        });
+      }
       navigation.replace('TournamentDetail', { id: t.id });
     } catch (e: any) {
       handleError(e);

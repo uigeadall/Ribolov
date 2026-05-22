@@ -26,7 +26,7 @@ export type GroupEvent = {
   description?: string;
   /** ISO datetime of when the event happens. */
   dateIso: string;
-  location?: { latitude: number; longitude: number; name?: string };
+  location?: { latitude?: number; longitude?: number; name?: string };
   createdBy: string;
   createdByName: string;
   /** ISO of creation time. */
@@ -50,8 +50,8 @@ function docToEvent(groupId: string, id: string, d: DocumentData): GroupEvent {
     dateIso: String(d.dateIso ?? ''),
     location: d.location && typeof d.location === 'object'
       ? {
-          latitude: Number(d.location.latitude),
-          longitude: Number(d.location.longitude),
+          latitude: typeof d.location.latitude === 'number' ? d.location.latitude : undefined,
+          longitude: typeof d.location.longitude === 'number' ? d.location.longitude : undefined,
           name: typeof d.location.name === 'string' ? d.location.name : undefined,
         }
       : undefined,
@@ -72,16 +72,21 @@ export async function createEvent(
     title: string;
     description?: string;
     dateIso: string;
-    location?: { latitude: number; longitude: number; name?: string };
+    location?: { latitude?: number; longitude?: number; name?: string };
+    locationName?: string;
   },
   creator: { uid: string; displayName: string },
 ): Promise<string> {
   const fb = requireFirebase();
+  // Allow callers to pass either a full location object or a free-text
+  // locationName — the latter is what the simple "Ново събитие" form collects.
+  const location = input.location
+    ?? (input.locationName?.trim() ? { name: input.locationName.trim() } : undefined);
   const payload = stripUndefinedForFirestore({
     title: input.title.trim().slice(0, 200),
     description: input.description?.trim().slice(0, 2000) || undefined,
     dateIso: input.dateIso,
-    location: input.location,
+    location,
     createdBy: creator.uid,
     createdByName: creator.displayName.slice(0, 120) || 'Рибар',
     createdAt: serverTimestamp(),

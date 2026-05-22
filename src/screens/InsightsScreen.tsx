@@ -169,7 +169,9 @@ export default function InsightsScreen() {
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}>
         <Text style={{ ...typography.h2, color: colors.text, marginBottom: spacing.lg }}>Инсайти</Text>
 
-        Твоят риболовен профил
+        <Text style={{ ...typography.caption, color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 1.2, fontFamily: 'Nunito_700Bold' }}>
+          Твоят риболовен профил
+        </Text>
         <Card style={{ marginTop: spacing.sm }}>
           <InsightRow
             icon="calendar"

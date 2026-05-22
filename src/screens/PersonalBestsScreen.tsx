@@ -131,7 +131,10 @@ export default function PersonalBestsScreen() {
                       </Text>
                       <Text style={styles.date}>{formatCatchDate(item.catchDate)}</Text>
                     </View>
-                    <Pressable onPress={() => shareRecord(item)} hitSlop={8}>
+                    <Pressable
+                      onPress={(e) => { e.stopPropagation(); void shareRecord(item); }}
+                      hitSlop={8}
+                    >
                       <Ionicons name="share-outline" size={22} color={colors.primary} />
                     </Pressable>
                   </View>

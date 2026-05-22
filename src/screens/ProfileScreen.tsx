@@ -159,7 +159,10 @@ export default function ProfileScreen() {
 
   const [publicPosts, setPublicPosts] = useState<CloudCatch[]>([]);
   useFocusEffect(useCallback(() => {
-    if (!user?.uid || !configured) return;
+    if (!user?.uid || !configured) {
+      setPublicPosts([]);
+      return;
+    }
     fetchPublicCatchesByOwner(user.uid, 24).then(setPublicPosts).catch(() => {});
   }, [user?.uid, configured]));
 
@@ -167,7 +170,11 @@ export default function ProfileScreen() {
   const [myGroups, setMyGroups] = useState<Group[]>([]);
 
   const loadSocialData = useCallback(async () => {
-    if (!user?.uid || !configured) return;
+    if (!user?.uid || !configured) {
+      setFriends([]);
+      setMyGroups([]);
+      return;
+    }
     try {
       const [list, groups] = await Promise.all([
         getFollowing(user.uid),

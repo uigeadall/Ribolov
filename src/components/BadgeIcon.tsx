@@ -10,13 +10,14 @@ type Props = {
 };
 
 export function BadgeIcon({ name, size = 24, color, count }: Props) {
-  const capped = Math.min(count, 99);
+  // Show "99+" when over the cap so 250 unread doesn't render the same as 99.
+  const label = count > 99 ? '99+' : String(count);
   return (
     <View style={styles.wrap}>
       <Ionicons name={name} size={size} color={color} />
-      {capped > 0 ? (
-        <View style={[styles.badge, capped > 9 && styles.badgeWide]}>
-          <Text style={styles.badgeText}>{capped}</Text>
+      {count > 0 ? (
+        <View style={[styles.badge, label.length > 1 && styles.badgeWide]}>
+          <Text style={styles.badgeText}>{label}</Text>
         </View>
       ) : null}
     </View>

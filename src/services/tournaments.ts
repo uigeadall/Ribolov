@@ -25,6 +25,12 @@ export async function createTournament(t: Tournament) {
   await setDoc(doc(fb.db, 'tournaments', t.id), stripUndefinedForFirestore(raw), { merge: true });
 }
 
+export async function isJoinedTournament(tournamentId: string, uid: string): Promise<boolean> {
+  const fb = requireFirebase();
+  const snap = await getDoc(doc(fb.db, 'users', uid, 'joinedTournaments', tournamentId));
+  return snap.exists();
+}
+
 export async function joinTournament(tournamentId: string, uid: string, displayName: string) {
   const fb = requireFirebase();
   await setDoc(
@@ -134,11 +140,15 @@ export async function toggleTournamentEntryLike(
   invalidatePhotoEntries(tournamentId);
   if (likeSnap.exists()) {
     await deleteDoc(likeRef);
-    updateDoc(entryRef, { likeCount: increment(-1) }).catch(() => {});
+    // Await the counter increment so a user who backgrounds the app right
+    // after liking doesn't lose the write. The screen's optimistic counter
+    // bump has already given them instant feedback; this only changes when
+    // toggleTournamentEntryLike's promise resolves.
+    await updateDoc(entryRef, { likeCount: increment(-1) });
     return false;
   }
   await setDoc(likeRef, { uid, likedAt: serverTimestamp() });
-  updateDoc(entryRef, { likeCount: increment(1) }).catch(() => {});
+  await updateDoc(entryRef, { likeCount: increment(1) });
   return true;
 }
 

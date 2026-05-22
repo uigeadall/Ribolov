@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { Text, View, StyleSheet, Pressable, ScrollView, RefreshControl } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -239,8 +239,15 @@ export default function TournamentsScreen() {
     }
   }, [user]);
 
+  // First focus shows the skeleton (no cached data yet). Subsequent focuses
+  // refresh silently so the user doesn't see the skeleton flash on every
+  // return to this tab. Pull-to-refresh still has the standard spinner.
+  const initialFocusRef = useRef(true);
   useFocusEffect(useCallback(() => {
-    setLoading(true);
+    if (initialFocusRef.current) {
+      initialFocusRef.current = false;
+      setLoading(true);
+    }
     void load();
   }, [load]));
 

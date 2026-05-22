@@ -109,7 +109,13 @@ export async function flushPendingCatchSync(ctx: {
         toSync = await ensureCatchPhotoUploadedForCloud(c, ctx.user.uid);
       }
       await pushCatch(toSync, ctx.user.uid, ownerName, entry.sharePublic);
-      const synced = { ...toSync, syncedToCloud: true };
+      // Re-read the latest local state before saving syncedToCloud. The user may
+      // have edited this catch between enqueue and flush; if we wrote the stale
+      // `toSync` snapshot back, those edits would be silently overwritten.
+      // catchesStore.save is mutex-serialised, so the read-modify-write below
+      // can't race with another save.
+      const latest = (await catchesStore.list()).find((x) => x.id === entry.catchId);
+      const synced = { ...(latest ?? toSync), syncedToCloud: true };
       await catchesStore.save(synced);
       catchById.set(entry.catchId, synced);
       addBreadcrumb('sync', 'catch_push_ok', { catchId: entry.catchId });

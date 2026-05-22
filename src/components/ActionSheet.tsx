@@ -114,6 +114,20 @@ export function ActionSheetHost() {
 
   const styles = useMemo(() => createStyles(colors, mode), [colors, mode]);
 
+  // Track the deferred-onPress timer so we can cancel it if the host unmounts
+  // (or the sheet is shown/hidden again) within the 50 ms window. Otherwise
+  // the timer could fire `opt.onPress()` against a stale closure / unmounted
+  // screen.
+  const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (pendingTimerRef.current) {
+        clearTimeout(pendingTimerRef.current);
+        pendingTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const onClose = () => {
     setActive(null);
   };
@@ -126,7 +140,11 @@ export function ActionSheetHost() {
     // setTimeout deferral so the close animation can start before the
     // callback's potentially-heavy work (navigation, network fetch) kicks
     // in on the JS thread.
-    setTimeout(() => opt.onPress(), 50);
+    if (pendingTimerRef.current) clearTimeout(pendingTimerRef.current);
+    pendingTimerRef.current = setTimeout(() => {
+      pendingTimerRef.current = null;
+      opt.onPress();
+    }, 50);
   };
 
   return (
