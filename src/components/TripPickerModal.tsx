@@ -20,16 +20,24 @@ export function TripPickerModal({ visible, trips, selectedTripId, onSelect, onCl
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' }} onPress={onClose} />
-      <View
-        style={{
-          backgroundColor: colors.card,
-          borderTopLeftRadius: 16,
-          borderTopRightRadius: 16,
-          paddingBottom: 32,
-          maxHeight: '60%',
-        }}
-      >
+      {/* Single root with flex-end column so the sheet anchors at the bottom.
+          Previously the backdrop Pressable was a sibling with flex:1 and the
+          sheet had no fixed positioning, which on most devices pushed the
+          sheet off-screen entirely. */}
+      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View
+          style={{
+            backgroundColor: colors.card,
+            borderTopLeftRadius: 16,
+            borderTopRightRadius: 16,
+            paddingBottom: 32,
+            maxHeight: '60%',
+          }}
+          // Claim the touch responder so taps in empty sheet areas don't bubble
+          // to the backdrop and dismiss the modal.
+          onStartShouldSetResponder={() => true}
+        >
         <View
           style={{
             flexDirection: 'row',
@@ -78,6 +86,7 @@ export function TripPickerModal({ visible, trips, selectedTripId, onSelect, onCl
             </Pressable>
           )}
         />
+        </View>
       </View>
     </Modal>
   );

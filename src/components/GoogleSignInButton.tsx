@@ -34,7 +34,7 @@ export function GoogleSignInSection({ onIdToken, disabled }: Props) {
     return (
       <View style={hintStyle.box}>
         <Text style={hintStyle.text}>
-          За „Вход с Google" добави OAuth Client IDs в app.json → extra: googleIosClientId,
+          За „Вход с Google“ добави OAuth Client IDs в app.json → extra: googleIosClientId,
           googleAndroidClientId и googleWebClientId (от Google Cloud Console → Credentials), или
           EXPO_PUBLIC_GOOGLE_* env променливи. За Expo Go добави и redirect URI в Web клиента:
           https://auth.expo.io/@tonyjobs97/ribolov-app

@@ -15,6 +15,10 @@ function wmoShort(code: number): string {
   if (code <= 48) return 'Мъгла';
   if (code <= 67) return 'Дъжд';
   if (code <= 77) return 'Сняг';
+  // WMO 80–82 are rain showers — they used to fall through to "Гръм."
+  // because no shower bucket existed. Thunder only starts at 95.
+  if (code <= 82) return 'Превал.';
+  if (code <= 86) return 'Снежни превал.';
   return 'Гръм.';
 }
 

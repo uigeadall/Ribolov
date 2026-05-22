@@ -417,11 +417,13 @@ async function _fetchPublicFeedImpl(
     for (let i = 0; i < ownerUids.length; i += CHUNK) {
       chunks.push(ownerUids.slice(i, i + CHUNK));
     }
-    // When paginating, use the cursor doc's `date` as a strict upper bound
-    // on each chunk. Without this every page returned the same top items
-    // because lastDoc was hardcoded to null and afterDoc was ignored —
-    // users following >30 anglers could never page past the first batch.
+    // When paginating, use the cursor doc's `date` as an INCLUSIVE upper
+    // bound and dedupe by id. A strict `<` bound would silently drop any
+    // catches that share the cursor's date string (date is stored to second
+    // precision, so collisions are rare but real). Using `<=` plus id-dedupe
+    // means same-date items just past the cursor still come through.
     const afterDate = (afterDoc?.data() as { date?: string } | undefined)?.date;
+    const afterId = afterDoc?.id;
     const snaps = await Promise.all(
       chunks.map((chunk) => {
         const constraints: Parameters<typeof query>[1][] = [
@@ -429,13 +431,19 @@ async function _fetchPublicFeedImpl(
           orderBy('date', 'desc'),
           limit(maxItems + 1),
         ];
-        if (afterDate) constraints.splice(1, 0, where('date', '<', afterDate));
+        if (afterDate) constraints.splice(1, 0, where('date', '<=', afterDate));
         return getDocs(query(collection(fb.db, 'publicCatches'), ...constraints));
       }),
     );
     const all: { item: CloudCatch; snap: DocumentSnapshot }[] = [];
+    const seenIds = new Set<string>();
+    if (afterId) seenIds.add(afterId);
     for (const snap of snaps) {
-      for (const d of snap.docs) all.push({ item: d.data() as CloudCatch, snap: d });
+      for (const d of snap.docs) {
+        if (seenIds.has(d.id)) continue;
+        seenIds.add(d.id);
+        all.push({ item: d.data() as CloudCatch, snap: d });
+      }
     }
     all.sort((a, b) => (b.item.date ?? '').localeCompare(a.item.date ?? ''));
     const hasMore = all.length > maxItems;

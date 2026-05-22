@@ -97,6 +97,12 @@ export default function HashtagFeedScreen() {
     navigation.navigate('UserPublicProfile', { uid, displayName });
   }, [navigation]);
 
+  const onPressReshareTarget = useCallback((target: { kind: 'post' | 'catch'; id: string }) => {
+    if (target.kind === 'catch') {
+      (navigation as any).navigate('LogbookTab', { screen: 'CatchDetail', params: { id: target.id } });
+    }
+  }, [navigation]);
+
   const onPressHashtag = useCallback((nextTag: string) => {
     if (nextTag === tag) return;
     // Replace this screen with the new tag so back button still works sensibly
@@ -258,6 +264,7 @@ export default function HashtagFeedScreen() {
               onPressMention={onPressMention}
               onDelete={onDeletePost}
               onReshare={user ? onReshare : undefined}
+              onPressReshareTarget={onPressReshareTarget}
             />
           )}
         />

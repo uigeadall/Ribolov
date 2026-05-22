@@ -21,7 +21,7 @@ const STORY_DURATION = 8000;
 
 const { width: SW, height: SH } = Dimensions.get('window');
 
-const EMOJIS = ['🎣', '🐟', '🌊', '🌅', '🌧️', '☀️', '���', '🤙'];
+const EMOJIS = ['🎣', '🐟', '🌊', '🌅', '🌧️', '☀️', '🔥', '🤙'];
 
 /* ── Flying emoji ─────────────────────────────────────────── */
 function FlyingEmojiView({ item, onDone }: { item: FlyingEmoji; onDone: () => void }) {
@@ -177,12 +177,14 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
   const resumeProgress = useCallback(() => {
     if (!wasPausedRef.current) return;
     wasPausedRef.current = false;
-    // Read current value via a one-shot listener — Animated.Value doesn't
-    // expose a public getValue() in the strict typings.
-    let current = 0;
-    const id = progressAnim.addListener((s) => { current = s.value; });
-    progressAnim.removeListener(id);
-    startProgressFrom(current);
+    // Read the paused position via stopAnimation's callback — that's the
+    // only public API on Animated.Value that yields the current value.
+    // The old listener-based read was wrong: addListener doesn't fire on
+    // attach, so `current` stayed at 0 and hold-to-pause always restarted
+    // the progress bar from the beginning.
+    progressAnim.stopAnimation((current) => {
+      startProgressFrom(current);
+    });
   }, [progressAnim, startProgressFrom]);
 
   // Swipe gesture — fix: use refs so closure is always fresh
@@ -463,7 +465,7 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
                     <View style={styles.commentComposer}>
                       <TextInput
                         style={styles.commentInput}
-                        placeholder="Коментир��й…"
+                        placeholder="Коментирай…"
                         placeholderTextColor="rgba(255,255,255,0.3)"
                         value={viewer.commentDraft}
                         onChangeText={viewer.setCommentDraft}

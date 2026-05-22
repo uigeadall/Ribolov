@@ -151,6 +151,9 @@ export function WeatherIcon({ weatherCode, size = 36, color = '#0E4D64', animate
     return <Ionicons name={wmoIconName(weatherCode)} size={size} color={color} />;
   }
 
+  // Order matters: snow codes (71-77) must be checked BEFORE the rain bucket
+  // (<= 82) because they're numerically smaller and would otherwise match
+  // the rain branch first, leaving the snow branch unreachable.
   const transform =
     weatherCode === 0
       ? [{ rotate: rotateInterp }, { scale }]
@@ -158,9 +161,11 @@ export function WeatherIcon({ weatherCode, size = 36, color = '#0E4D64', animate
       ? [{ translateX: transX }]
       : weatherCode <= 48
       ? [{ translateX: transX }]
-      : weatherCode <= 82
+      : weatherCode <= 67
       ? [{ translateY: transY }, { translateX: transX }]
       : weatherCode <= 77
+      ? [{ translateY: transY }, { translateX: transX }]
+      : weatherCode <= 82
       ? [{ translateY: transY }, { translateX: transX }]
       : [{ scale }];
 

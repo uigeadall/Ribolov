@@ -186,13 +186,19 @@ export async function deleteStory(storyId: string): Promise<void> {
   const fb = requireFirebase();
   const snap = await getDoc(doc(fb.db, 'stories', storyId));
   const mediaUrl = snap.exists() ? (snap.data()?.mediaUrl as string | undefined) : undefined;
-  await deleteDoc(doc(fb.db, 'stories', storyId));
+  // Delete Storage object FIRST. If we deleted the doc first and the Storage
+  // delete then failed (caught silently), the file would orphan forever — no
+  // doc references it for any future cleanup pass. By doing Storage first
+  // and the doc second, a Storage failure leaves the doc intact so the user
+  // can retry deletion later; a doc failure after Storage succeeded just
+  // means a tombstone we can clean up via TTL.
   if (mediaUrl && mediaUrl.includes('firebasestorage.googleapis.com')) {
     try {
       const match = decodeURIComponent(mediaUrl).match(/\/o\/([^?]+)/);
       if (match?.[1]) await deleteObject(ref(fb.storage, match[1]));
     } catch { /* file may already be gone */ }
   }
+  await deleteDoc(doc(fb.db, 'stories', storyId));
 }
 
 /* ── Story Reactions ─────────────────────────────────────── */
@@ -222,7 +228,11 @@ export async function toggleStoryReaction(
     await deleteDoc(ref2);
     return null;
   }
-  await setDoc(ref2, { reaction, displayName: (displayName || 'Рибар').slice(0, 120), createdAt: serverTimestamp() });
+  await setDoc(ref2, stripUndefinedForFirestore({
+    reaction,
+    displayName: (displayName || 'Рибар').slice(0, 120),
+    createdAt: serverTimestamp(),
+  }));
 
   void (async () => {
     const storySnap = await getDoc(doc(fb.db, 'stories', storyId));
@@ -232,7 +242,16 @@ export async function toggleStoryReaction(
     const emoji = STORY_REACTIONS[reaction].emoji;
     await setDoc(
       doc(fb.db, 'users', ownerUid, 'notifications', `storyLike_${uid}_${storyId}`),
-      { actorUid: uid, actorName: (displayName || 'Рибар').slice(0, 120), type: 'storyLike', storyId, reactionEmoji: emoji, preview: '', read: false, createdAt: serverTimestamp() }
+      stripUndefinedForFirestore({
+        actorUid: uid,
+        actorName: (displayName || 'Рибар').slice(0, 120),
+        type: 'storyLike',
+        storyId,
+        reactionEmoji: emoji,
+        preview: '',
+        read: false,
+        createdAt: serverTimestamp(),
+      })
     );
   })().catch(() => {});
 
@@ -293,21 +312,27 @@ export async function addStoryComment(
   const fb = requireFirebase();
   const trimmed = text.trim();
   if (!trimmed) return;
-  await addDoc(collection(fb.db, 'stories', storyId, 'comments'), {
+  await addDoc(collection(fb.db, 'stories', storyId, 'comments'), stripUndefinedForFirestore({
     authorUid,
     authorName: (authorName || 'Рибар').slice(0, 120),
     text: trimmed.slice(0, 500),
     createdAt: serverTimestamp(),
-  });
+  }));
 
   void (async () => {
     const storySnap = await getDoc(doc(fb.db, 'stories', storyId));
     if (!storySnap.exists()) return;
     const ownerUid = storySnap.data()?.uid as string | undefined;
     if (!ownerUid || ownerUid === authorUid) return;
-    await addDoc(collection(fb.db, 'users', ownerUid, 'notifications'), {
-      actorUid: authorUid, actorName: (authorName || 'Рибар').slice(0, 120), type: 'storyComment', storyId, preview: trimmed.slice(0, 200), read: false, createdAt: serverTimestamp(),
-    });
+    await addDoc(collection(fb.db, 'users', ownerUid, 'notifications'), stripUndefinedForFirestore({
+      actorUid: authorUid,
+      actorName: (authorName || 'Рибар').slice(0, 120),
+      type: 'storyComment',
+      storyId,
+      preview: trimmed.slice(0, 200),
+      read: false,
+      createdAt: serverTimestamp(),
+    }));
   })().catch(() => {});
 }
 

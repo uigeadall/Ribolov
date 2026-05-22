@@ -79,6 +79,11 @@ export function LikersSheet({ visible, onClose, likeCount, likers, loading, onPr
               transform: [{ translateY: sheetPanY }],
             },
           ]}
+          // Claim the touch responder for taps inside the sheet so empty-area
+          // taps don't bubble to the backdrop Pressable and dismiss the modal.
+          // Pan gestures still work because panResponder takes over via the
+          // move-handler ladder.
+          onStartShouldSetResponder={() => true}
           {...panResponder.panHandlers}
         >
           <View style={{ alignItems: 'center', marginBottom: spacing.sm }}>

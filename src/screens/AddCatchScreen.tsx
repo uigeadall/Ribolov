@@ -255,7 +255,11 @@ export default function AddCatchScreen() {
       if (!alive) return;
 
       if (list.length > 0) {
-        const sorted = [...list].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+        // Coalesce NaN to 0 so a single catch with a malformed `date` doesn't
+        // make the comparator nondeterministic and silently swap order.
+        const sorted = [...list].sort(
+          (a, b) => (Date.parse(b.date) || 0) - (Date.parse(a.date) || 0),
+        );
         setLastCatch(sorted[0]);
 
         // Suggested species — most-frequent species name, gated at ≥2 catches.
@@ -613,8 +617,12 @@ export default function AddCatchScreen() {
             { text: 'OK', onPress: () => navigation.goBack() },
           ]);
         } else {
-          Alert.alert('Личен рекорд!', `${item.speciesName} — ${pbMsg}`);
-          setUnlockedNow(newUnlocks);
+          // Chain: dismiss PB alert FIRST, then mount AchievementUnlockModal.
+          // The earlier code mounted both at once and they stacked visually —
+          // the OS Alert obscured the achievement modal.
+          Alert.alert('Личен рекорд!', `${item.speciesName} — ${pbMsg}`, [
+            { text: 'OK', onPress: () => setUnlockedNow(newUnlocks) },
+          ]);
         }
       } else if (newUnlocks.length > 0) {
         setUnlockedNow(newUnlocks);

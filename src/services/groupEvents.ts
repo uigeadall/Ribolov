@@ -11,6 +11,7 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  where,
   writeBatch,
   type DocumentData,
 } from 'firebase/firestore';
@@ -98,10 +99,15 @@ export async function createEvent(
 
 export async function getUpcomingEvents(groupId: string, maxCount = 40): Promise<GroupEvent[]> {
   const fb = requireFirebase();
+  // Cutoff is "today 00:00 UTC" — events earlier than that are past. ISO
+  // strings compare lexicographically when fully zero-padded, so a string
+  // bound works without parsing.
+  const todayIso = new Date(new Date().toISOString().slice(0, 10)).toISOString();
   const snap = await getDocs(
     query(
       collection(fb.db, 'groups', groupId, 'events'),
-      orderBy('dateIso', 'desc'),
+      where('dateIso', '>=', todayIso),
+      orderBy('dateIso', 'asc'),
       limit(maxCount),
     ),
   );

@@ -60,7 +60,7 @@ function ErrorUI({
   return (
     <View style={styles.wrap}>
       <Text style={styles.title}>
-        Грешка{label ? ` в „${label}"` : ''}
+        Грешка{label ? ` в „${label}“` : ''}
       </Text>
       <Text style={styles.msg}>{error.message || String(error)}</Text>
       {__DEV__ ? (

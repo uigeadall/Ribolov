@@ -15,6 +15,7 @@ import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
 import { allowLikeToggle } from './socialRateLimit';
 import { notifyInteraction } from './socialNotifications';
+import { captureException } from './observability';
 import type { ReactionType, ReactionSummaryItem, CatchLiker } from './socialTypes';
 import { REACTIONS } from './socialTypes';
 
@@ -106,7 +107,10 @@ export async function toggleCatchReaction(
   if (removed) return null;
 
   if (isNew) {
-    // Only notify on first reaction, not on reaction change — fire-and-forget
+    // Only notify on first reaction, not on reaction change — fire-and-forget.
+    // We don't await (reaction already succeeded; failing the whole call now
+    // would lie to the user) but we DO capture failures to observability so
+    // silent drops are visible to us, not just users wondering why no bell lit.
     notifyInteraction({
       recipientUid: catchOwnerUid,
       actorUid: myUid,
@@ -114,7 +118,9 @@ export async function toggleCatchReaction(
       type: 'like',
       catchId,
       reactionEmoji: REACTIONS[reaction].emoji,
-    }).catch(() => {});
+    }).catch((e: unknown) => {
+      captureException(e, { area: 'notify_catch_like', catchId, recipientUid: catchOwnerUid });
+    });
   }
   return reaction;
 }
@@ -246,7 +252,9 @@ export async function togglePostReaction(
       type: 'like',
       postId,
       reactionEmoji: REACTIONS[reaction].emoji,
-    }).catch(() => {});
+    }).catch((e: unknown) => {
+      captureException(e, { area: 'notify_post_like', postId, recipientUid: postOwnerUid });
+    });
   }
   return reaction;
 }

@@ -24,12 +24,16 @@ export function allowBurst(key: BucketKey, maxPerWindow: number, windowMs: numbe
   return true;
 }
 
-// Periodically evict keys whose windows have fully expired to prevent unbounded Map growth.
+// Periodically evict keys whose windows have fully expired to prevent unbounded
+// Map growth. The eviction threshold must be AT LEAST the longest window any
+// limiter uses — otherwise hour-long limiters (story/group/event/poll/livePin/
+// waterReport) get their buckets wiped every 5min and the caps silently
+// bypass. 1h is the current max window across all limiters in this file.
+const MAX_LIMITER_WINDOW_MS = 3_600_000;
 let _evictionTimer: ReturnType<typeof setInterval> | null = setInterval(() => {
   const now = Date.now();
   for (const [key, arr] of timestamps) {
-    // Each key encodes its own windowMs implicitly — use the max window (60s) as the eviction threshold.
-    if (arr.every((t) => now - t >= 60_000)) timestamps.delete(key);
+    if (arr.every((t) => now - t >= MAX_LIMITER_WINDOW_MS)) timestamps.delete(key);
   }
 }, 5 * 60 * 1000);
 

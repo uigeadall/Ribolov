@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -47,6 +47,17 @@ export function PeopleYouMayKnowRow({ collapseWhenEmpty = true }: Props) {
     });
   }, [navigation]);
 
+  // Track dismissal timers per-uid so we can clear them on unmount and avoid
+  // setState-on-unmounted warnings if the row tears down within the 700ms
+  // window after a follow.
+  const dismissTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  useEffect(() => {
+    return () => {
+      for (const t of dismissTimersRef.current.values()) clearTimeout(t);
+      dismissTimersRef.current.clear();
+    };
+  }, []);
+
   const onFollow = useCallback(async (u: SuggestedUser) => {
     if (!user) return;
     setFollowBusy((prev) => new Set([...prev, u.uid]));
@@ -57,9 +68,16 @@ export function PeopleYouMayKnowRow({ collapseWhenEmpty = true }: Props) {
       setFollowed((prev) => new Set([...prev, u.uid]));
       // Brief confirmation flash, then remove the tile so the row stays fresh
       // and the user can see new suggestions instead of a pile of "Следваш" pills.
-      setTimeout(() => {
+      const id = setTimeout(() => {
+        dismissTimersRef.current.delete(u.uid);
         setDismissed((prev) => new Set([...prev, u.uid]));
       }, 700);
+      dismissTimersRef.current.set(u.uid, id);
+    } catch {
+      // followUser threw — without this, the tile would stay in a permanent
+      // half-state: not followed, not dismissed, but busy clears via finally.
+      // Surface nothing user-facing (Haptic was the action acknowledgement);
+      // just let the user retry by tapping again.
     } finally {
       setFollowBusy((prev) => { const s = new Set(prev); s.delete(u.uid); return s; });
     }

@@ -35,7 +35,7 @@ export function FacebookSignInSection({ onAccessToken, disabled }: Props) {
     return (
       <View style={hintStyle.box}>
         <Text style={hintStyle.text}>
-          За „Вход с Facebook" добави facebookAppId в app.json → extra или EXPO_PUBLIC_FACEBOOK_APP_ID
+          За „Вход с Facebook“ добави facebookAppId в app.json → extra или EXPO_PUBLIC_FACEBOOK_APP_ID
           (от Meta for Developers → Your Apps → Settings → Basic → App ID).
         </Text>
       </View>

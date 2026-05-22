@@ -47,6 +47,8 @@ type Props = {
   onPressMention: (handle: string) => void;
   onDelete?: (post: Post) => void;
   onReshare?: (post: Post) => void;
+  /** Tapping the embedded reshare/quote card. Opens the original post or catch. */
+  onPressReshareTarget?: (target: NonNullable<Post['reshareOf']>) => void;
 };
 
 function formatPostDate(iso: string): string {
@@ -63,7 +65,7 @@ function formatPostDate(iso: string): string {
 
 function PostCardInner({
   post, myUid, myDisplayName, myPhotoUrl, resolvedAvatarUrl,
-  onPressAuthor, onPressHashtag, onPressMention, onDelete, onReshare,
+  onPressAuthor, onPressHashtag, onPressMention, onDelete, onReshare, onPressReshareTarget,
 }: Props) {
   const { colors, mode } = useTheme();
   const { configured } = useAuth();
@@ -438,7 +440,14 @@ function PostCardInner({
       {post.reshareOf ? (
         <Pressable
           style={styles.reshareCard}
-          onPress={() => onPressAuthor(post.reshareOf!.ownerUid, post.reshareOf!.ownerName)}
+          // Tap opens the original post/catch the quote is referencing, not
+          // the original author's profile. Fall back to opening the author
+          // if the parent didn't wire onPressReshareTarget (older callers).
+          onPress={() => {
+            const target = post.reshareOf!;
+            if (onPressReshareTarget) onPressReshareTarget(target);
+            else onPressAuthor(target.ownerUid, target.ownerName);
+          }}
         >
           <View style={styles.reshareHeader}>
             <View style={styles.reshareAvatar}>

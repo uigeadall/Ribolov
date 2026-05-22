@@ -22,6 +22,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
+import Toast from 'react-native-toast-message';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { looksNonBulgarian, openTranslation } from '../utils/captionLanguage';
@@ -873,7 +874,14 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                   onPress={() => {
                     const coords = `${item.location!.latitude?.toFixed(6) ?? ''}, ${item.location!.longitude?.toFixed(6) ?? ''}`;
                     Clipboard.setString(item.location!.name ?? coords);
-                    if (Platform.OS === 'android') ToastAndroid.show('Копирано', ToastAndroid.SHORT);
+                    // Cross-platform confirmation. The previous Android-only
+                    // ToastAndroid call left iOS users with no feedback that
+                    // the copy actually happened.
+                    if (Platform.OS === 'android') {
+                      ToastAndroid.show('Копирано', ToastAndroid.SHORT);
+                    } else {
+                      Toast.show({ type: 'success', text1: 'Копирано', visibilityTime: 1200 });
+                    }
                   }}
                 >
                   <Ionicons name="location" size={12} color={colors.primary} />

@@ -137,7 +137,7 @@ export function ClassicPhotoCard({ row, rank, variant = 'full', onPress }: Props
       <View style={styles.gradient}>
         <Text style={styles.author} numberOfLines={1}>{row.item.ownerName ?? 'Рибар'}</Text>
         {row.item.photoTitle ? (
-          <Text style={styles.title} numberOfLines={1}>„{row.item.photoTitle}"</Text>
+          <Text style={styles.title} numberOfLines={1}>„{row.item.photoTitle}“</Text>
         ) : (
           <Text style={styles.title} numberOfLines={1}>{row.item.speciesName}</Text>
         )}

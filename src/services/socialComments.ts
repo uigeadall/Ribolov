@@ -18,6 +18,7 @@ import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
 import { allowComment } from './socialRateLimit';
 import { notifyInteraction } from './socialNotifications';
+import { captureException } from './observability';
 import type { FeedComment } from './socialTypes';
 
 export async function fetchCatchCommentCount(catchId: string): Promise<number> {
@@ -183,7 +184,9 @@ export async function addCatchComment(
       ...(replyTo ? { replyToId: replyTo.id, replyToName: replyTo.name } : {}),
     })
   );
-  // Notification is fire-and-forget — never block or surface errors to the user
+  // Notification is fire-and-forget — never block the user on it, but log
+  // failures so a silently-dropped bell is visible in observability rather
+  // than only as a user wondering why the recipient never saw their comment.
   notifyInteraction({
     recipientUid: catchOwnerUid,
     actorUid: authorUid,
@@ -191,7 +194,9 @@ export async function addCatchComment(
     type: 'comment',
     catchId,
     preview: trimmed.slice(0, 120),
-  }).catch(() => {});
+  }).catch((e: unknown) => {
+    captureException(e, { area: 'notify_catch_comment', catchId, recipientUid: catchOwnerUid });
+  });
 }
 
 export async function editCatchComment(catchId: string, commentId: string, newText: string): Promise<void> {

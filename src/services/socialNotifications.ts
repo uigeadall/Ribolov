@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore';
 import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
+import { captureException } from './observability';
 import type { SocialNotification } from './socialTypes';
 
 export async function notifyInteraction(opts: {
@@ -196,7 +197,14 @@ export async function sendMentionNotifications(
             read: false,
             createdAt: serverTimestamp(),
           }),
-        ).catch(() => {}),
+        ).catch((e: unknown) => {
+          // Mentions are the only signal for the recipient — there's no
+          // like-count fallback to compensate. Log per-recipient so we can see
+          // if a rules misconfig or missing user doc is silently dropping
+          // notifications. We still don't surface to the actor (their post
+          // succeeded) but we MUST not stay invisible.
+          captureException(e, { area: 'notify_mention', postId, recipientUid: uid });
+        }),
       ),
   );
 }

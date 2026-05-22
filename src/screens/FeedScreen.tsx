@@ -380,6 +380,18 @@ export default function FeedScreen() {
     navigation.navigate('CatchDetail', { id: catchItem.id });
   }, [navigation]);
 
+  // Tapping the embedded reshare card opens the ORIGINAL post or catch,
+  // not the quoter's profile. Was a user-confusion bug: tap a quoted catch
+  // → land on someone's profile instead of the catch detail.
+  const onPressReshareTarget = useCallback((target: { kind: 'post' | 'catch'; id: string }) => {
+    if (target.kind === 'catch') {
+      navigation.navigate('CatchDetail', { id: target.id });
+    } else {
+      // No post-detail screen yet; the closest thing is opening the author.
+      // Once a PostDetail screen exists, route here.
+    }
+  }, [navigation]);
+
   const myDisplayName = user?.displayName ?? user?.email ?? 'Аз';
   const socialEnabled = !!user && !!configured;
 
@@ -596,6 +608,7 @@ export default function FeedScreen() {
         onPressMention={onPressMention}
         onDelete={onDeletePostItem}
         onReshare={user ? onResharePost : undefined}
+        onPressReshareTarget={onPressReshareTarget}
       />
     );
   }, [user?.uid, user, myDisplayName, myPhotoUrl, avatarMap, socialEnabled, visibleIds, onPressAuthor, onPressCatch, onDeletePhoto, onRemovePost, onPressHashtag, onPressMention, onDeletePostItem, onReshareCatch, onResharePost]);
