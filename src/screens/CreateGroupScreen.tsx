@@ -1,4 +1,4 @@
-import React, { useMemo, useReducer, useState } from 'react';
+import React, { useMemo, useReducer, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, Alert, Platform } from 'react-native';
 
 import { Ionicons } from '@expo/vector-icons';
@@ -35,6 +35,9 @@ export default function CreateGroupScreen() {
   const [form, dispatch] = useReducer(formReducer, { name: '', description: '', category: 'club' });
   const { name, description, category } = form;
   const [saving, setSaving] = useState(false);
+  // Name input declares returnKeyType="next" — wire it to actually
+  // advance focus so the keyboard label doesn't lie.
+  const descriptionRef = useRef<TextInput>(null);
 
   const styles = useMemo(() => StyleSheet.create({
     header: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
@@ -84,10 +87,12 @@ export default function CreateGroupScreen() {
           style={styles.input}
           maxLength={60}
           returnKeyType="next"
+          onSubmitEditing={() => descriptionRef.current?.focus()}
         />
 
         <Text style={styles.label}>Описание</Text>
         <TextInput
+          ref={descriptionRef}
           placeholder="Накратко за какво е клубът…"
           placeholderTextColor={colors.textMuted}
           value={description}

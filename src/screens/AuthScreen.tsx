@@ -40,6 +40,12 @@ export default function AuthScreen() {
   // credentials to Firebase; one wins, the second surfaces as a confusing
   // error toast right after sign-in succeeds.
   const submittingRef = useRef(false);
+  // Refs for keyboard "Next" chaining between fields. The TextInputs all
+  // already declare `returnKeyType="next"`, but without onSubmitEditing
+  // wired to .focus() the Next button was a no-op — pressing it just
+  // dismissed the keyboard instead of advancing focus.
+  const emailRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
   // Separate from submittingRef so a stuck reset-email path (slow Firebase
   // response) doesn't block the user from trying to sign in. The Alert
   // confirmation button can fire its onPress twice on a hot device — both
@@ -379,6 +385,7 @@ export default function AuthScreen() {
                     onChangeText={(v) => { setName(v); if (errors.name) setErrors((p) => ({ ...p, name: undefined })); }}
                     style={styles.input}
                     returnKeyType="next"
+                    onSubmitEditing={() => emailRef.current?.focus()}
                   />
                 </View>
                 {errors.name ? <Text style={styles.fieldError}>{errors.name}</Text> : null}
@@ -390,6 +397,7 @@ export default function AuthScreen() {
               <View style={[styles.fieldWrap, errors.email && styles.fieldWrapError]}>
                 <Ionicons name="mail-outline" size={18} color={colors.textMuted} style={styles.fieldIcon} />
                 <TextInput
+                  ref={emailRef}
                   placeholder="твоят@имейл.bg"
                   placeholderTextColor={colors.textMuted}
                   autoCapitalize="none"
@@ -399,6 +407,7 @@ export default function AuthScreen() {
                   onChangeText={(v) => { setEmail(v); if (errors.email) setErrors((p) => ({ ...p, email: undefined })); }}
                   style={styles.input}
                   returnKeyType="next"
+                  onSubmitEditing={() => passwordRef.current?.focus()}
                 />
               </View>
               {errors.email ? <Text style={styles.fieldError}>{errors.email}</Text> : null}
@@ -409,6 +418,7 @@ export default function AuthScreen() {
               <View style={[styles.fieldWrap, errors.password && styles.fieldWrapError]}>
                 <Ionicons name="lock-closed-outline" size={18} color={colors.textMuted} style={styles.fieldIcon} />
                 <TextInput
+                  ref={passwordRef}
                   placeholder="••••••••"
                   placeholderTextColor={colors.textMuted}
                   secureTextEntry={!showPassword}
