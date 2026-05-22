@@ -1,5 +1,6 @@
 import React, { useMemo, useReducer, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, Platform } from 'react-native';
+import Toast from 'react-native-toast-message';
 
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
@@ -53,7 +54,12 @@ export default function CreateGroupScreen() {
 
   const submit = async () => {
     if (!user || !configured) return;
-    if (!name.trim()) { Alert.alert('Грешка', 'Въведи название на клуба.'); return; }
+    if (!name.trim()) {
+      // Validation hint, not a system error — Toast keeps the user's hand on
+      // the keyboard instead of forcing a modal dismiss to fix one field.
+      Toast.show({ type: 'error', text1: 'Въведи название на клуба', visibilityTime: 2000 });
+      return;
+    }
     setSaving(true);
     try {
       const id = await createGroup(

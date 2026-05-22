@@ -62,7 +62,7 @@ export default function FriendsScreen() {
   const [searching, setSearching] = useState(false);
   const [followBusy, setFollowBusy] = useState<Set<string>>(new Set());
 
-  const { data: followedRows, loading: followsLoading, reload: reloadFollows } = useAsync(
+  const { data: followedRows, loading: followsLoading, refreshing: followsRefreshing, reload: reloadFollows } = useAsync(
     async () => {
       if (!user) return [] as FollowedRow[];
       const all = await getFollowing(user.uid);
@@ -343,6 +343,8 @@ export default function FriendsScreen() {
                 keyExtractor={(r) => r.uid}
                 renderItem={({ item }) => renderUserRow(item.uid, item.displayName, item.photoUrl)}
                 keyboardShouldPersistTaps="handled"
+                refreshing={followsRefreshing}
+                onRefresh={() => reloadFollows(true)}
               />
               </FadeIn>
             )}

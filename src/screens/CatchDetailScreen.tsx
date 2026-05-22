@@ -11,6 +11,7 @@ import { Image } from 'expo-image';
 import ViewShot from 'react-native-view-shot';
 import * as Haptics from 'expo-haptics';
 import * as Sharing from 'expo-sharing';
+import Toast from 'react-native-toast-message';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
@@ -235,7 +236,10 @@ export default function CatchDetailScreen() {
         await Sharing.shareAsync(uri, { mimeType: 'image/png' });
       }
     } catch {
-      Alert.alert('Грешка', 'Споделянето не успя.');
+      // Share failure is transient (user cancelled, system sheet glitched,
+      // disk full). A modal Alert overstates the severity and forces the
+      // user to dismiss before retrying. Toast disappears on its own.
+      Toast.show({ type: 'error', text1: 'Споделянето не успя', visibilityTime: 2400 });
     } finally {
       setSharing(false);
     }
