@@ -77,8 +77,11 @@ export default function NotificationPreferencesScreen() {
     }
   };
 
-  const cardBg = mode === 'dark' ? '#0E1E35' : '#FFFFFF';
-  const cardBorder = mode === 'dark' ? 'rgba(74,168,232,0.15)' : 'rgba(21,112,184,0.10)';
+  // Use theme tokens so a future accent palette change applies here too —
+  // earlier these were hardcoded hex which drifted from the rest of the
+  // app whenever the theme moved.
+  const cardBg = colors.card;
+  const cardBorder = colors.border;
 
   return (
     <Screen scroll padded={false}>

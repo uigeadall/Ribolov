@@ -25,14 +25,18 @@ export default function PhotoGalleryScreen() {
   useFocusEffect(
     useCallback(() => {
       catchesStore.list().then((list) => {
-        const sorted = [...list].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+        // Coalesce NaN so a single catch with a malformed date doesn't
+        // make the comparator nondeterministic.
+        const sorted = [...list].sort(
+          (a, b) => (Date.parse(b.date) || 0) - (Date.parse(a.date) || 0),
+        );
         const result: PhotoItem[] = [];
         sorted.forEach((c) => {
           if (c.photoUri) result.push({ uri: c.photoUri, catchId: c.id });
           (c.extraPhotoUris ?? []).forEach((uri) => result.push({ uri, catchId: c.id }));
         });
         setPhotos(result);
-      });
+      }).catch(() => {});
     }, [])
   );
 

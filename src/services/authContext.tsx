@@ -180,6 +180,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // account would buzz the new account's device.
       await clearPushToken(u.uid).catch(() => undefined);
     }
+    // Sign out FIRST, then wipe. The earlier order (wipe-then-sign-out) had a
+    // bad failure mode: if firebaseSignOut threw after the wipe, Firebase
+    // persistence would re-authenticate the user on next launch but their
+    // local-only data (spots, gear, trips) was already gone — permanent loss.
+    // Reversing the order keeps local data intact when sign-out fails; the
+    // user simply stays signed in and can retry.
+    let signOutOk = true;
+    try {
+      if (fb) await firebaseSignOut(fb.auth);
+    } catch {
+      signOutOk = false;
+    }
+    if (!signOutOk) {
+      // Sign-out genuinely failed (offline, App Check refresh).
+      // Don't wipe; let the user retry from a known state.
+      throw new Error('Не успяхме да те отпишем. Опитай отново след малко.');
+    }
     await wipeAllLocalAppData().catch(() => undefined);
     await clearCatchSyncQueue().catch(() => undefined);
     await AsyncStorage.removeItem(LAST_UID_KEY).catch(() => undefined);
@@ -189,15 +206,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     resetSocialCaches();
     resetTournamentCaches();
     resetRateLimits();
-    // Local data is already wiped by this point. If firebaseSignOut throws
-    // (transient network), the auth-state listener won't fire — force the user
-    // state to null so the UI reflects "signed out" rather than leaving the
-    // user looking signed in with an empty logbook.
-    try {
-      if (fb) await firebaseSignOut(fb.auth);
-    } finally {
-      setUser(null);
-    }
+    setUser(null);
   }, []);
 
   const resetPassword = useCallback(async (email: string) => {

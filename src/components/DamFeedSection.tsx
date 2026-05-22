@@ -164,7 +164,16 @@ export function DamFeedSection({ damId, damName, user, firebaseConfigured }: Pro
               renderItem={({ item }) => (
                 <Card>
                   <View style={styles.row}>
-                    <Image source={{ uri: item.photoUrl }} style={styles.thumb} contentFit="cover" />
+                    {item.photoUrl ? (
+                      <Image source={{ uri: item.photoUrl }} style={styles.thumb} contentFit="cover" />
+                    ) : (
+                      // Posts created via the optimistic path can briefly have
+                      // empty photoUrl before Storage upload completes. expo-image
+                      // warns "Source 'uri' should not be an empty string" and
+                      // renders a broken tile — render a placeholder until the
+                      // upload finishes and the snapshot re-emits with a URL.
+                      <View style={styles.thumb} />
+                    )}
                     <View style={styles.meta}>
                       <Text style={styles.author} numberOfLines={1}>
                         {item.ownerName || 'Рибар'}

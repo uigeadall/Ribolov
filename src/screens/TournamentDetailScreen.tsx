@@ -68,9 +68,17 @@ export default function TournamentDetailScreen() {
   useEffect(() => {
     const fb = ensureFirebase();
     if (!fb) { setT(null); return; }
-    getDoc(doc(fb.db, 'tournaments', route.params.id)).then((snap) => {
-      setT(snap.exists() ? (snap.data() as Tournament) : null);
-    });
+    getDoc(doc(fb.db, 'tournaments', route.params.id))
+      .then((snap) => {
+        setT(snap.exists() ? (snap.data() as Tournament) : null);
+      })
+      .catch(() => {
+        // Without this catch the screen stayed on the loading skeleton
+        // forever after any transient Firestore failure (App Check refresh,
+        // brief network drop). Surfacing as "not found" lets the user back
+        // out and retry instead of staring at shimmer.
+        setT(null);
+      });
   }, [route.params.id]);
 
   useEffect(() => {
@@ -154,7 +162,17 @@ export default function TournamentDetailScreen() {
     try {
       await joinTournament(t.id, user.uid, user.displayName || user.email || 'Рибар');
       setIsJoined(true);
-      Toast.show({ type: 'success', text1: 'Записан си!', text2: `Участваш в „${t.name}".`, visibilityTime: 2500 });
+      Toast.show({ type: 'success', text1: 'Записан си!', text2: `Участваш в „${t.name}“.`, visibilityTime: 2500 });
+    } catch {
+      // Without this the user got no feedback on a join failure — the button
+      // reset but isJoined stayed false and no toast appeared, looking like
+      // a no-op. Surface the error so they know to retry.
+      Toast.show({
+        type: 'error',
+        text1: 'Грешка при записване',
+        text2: 'Опитай отново след малко.',
+        visibilityTime: 2500,
+      });
     } finally {
       joiningRef.current = false;
       setBusy(false);
@@ -226,8 +244,8 @@ export default function TournamentDetailScreen() {
           onPress: async () => {
             try {
               const intro = c.weightKg != null
-                ? `${c.speciesName} · ${c.weightKg} кг — участвам в „${t.name}". #${tag}`
-                : `${c.speciesName} — участвам в „${t.name}". #${tag}`;
+                ? `${c.speciesName} · ${c.weightKg} кг — участвам в „${t.name}“. #${tag}`
+                : `${c.speciesName} — участвам в „${t.name}“. #${tag}`;
               await createPost({
                 ownerUid: user.uid,
                 ownerName: user.displayName ?? user.email ?? 'Рибар',
@@ -263,14 +281,23 @@ export default function TournamentDetailScreen() {
     // Reject catches that don't match a single-species tournament's species.
     // Without this, "Само шаран" tournaments quietly accepted any catch and
     // rule-breaking entries appeared on the leaderboard.
-    if (t?.speciesId && c.speciesId && t.speciesId !== c.speciesId) {
-      Toast.show({
-        type: 'error',
-        text1: 'Друг вид',
-        text2: `Турнирът приема само ${t.speciesName ?? 'избрания вид'}.`,
-        visibilityTime: 3000,
-      });
-      return;
+    if (t?.speciesId) {
+      // Match by speciesId when present; fall back to speciesName for
+      // legacy catches missing speciesId. Without the name fallback, any
+      // catch lacking speciesId silently slipped through.
+      const matchesId = !!c.speciesId && c.speciesId === t.speciesId;
+      const matchesName =
+        !!c.speciesName && !!t.speciesName &&
+        c.speciesName.trim().toLowerCase() === t.speciesName.trim().toLowerCase();
+      if (!matchesId && !matchesName) {
+        Toast.show({
+          type: 'error',
+          text1: 'Друг вид',
+          text2: `Турнирът приема само ${t.speciesName ?? 'избрания вид'}.`,
+          visibilityTime: 3000,
+        });
+        return;
+      }
     }
     setSubmitting(true);
     try {
@@ -283,7 +310,9 @@ export default function TournamentDetailScreen() {
       });
       setSubmitOpen(false);
       Toast.show({ type: 'success', text1: 'Снимката е добавена!', visibilityTime: 2000 });
-      void loadEntries();
+      // Silent refetch so the user doesn't see the entries-loading skeleton
+      // flash over the list immediately after the success toast.
+      void loadEntries(true);
       // Offer to also share to the public feed with the tournament hashtag.
       offerShareToFeed(c);
     } catch {

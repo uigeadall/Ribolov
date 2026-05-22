@@ -126,7 +126,7 @@ export default function GearScreen() {
   const cancelEdit = () => dispatch({ type: 'CANCEL_EDIT' });
 
   const confirmDelete = (item: GearItem) => {
-    Alert.alert('Изтриване', `Изтриване на „${item.name}"?`, [
+    Alert.alert('Изтриване', `Изтриване на „${item.name}“?`, [
       { text: 'Отказ', style: 'cancel' },
       {
         text: 'Изтрий',

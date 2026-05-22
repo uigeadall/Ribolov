@@ -9,6 +9,7 @@ export function wmoIconName(code: number): IoniconName {
   if (code <= 48) return 'cloudy-outline';
   if (code <= 67) return 'rainy-outline';
   if (code <= 77) return 'snow-outline';
-  if (code <= 82) return 'rainy-outline';
-  return 'thunderstorm-outline';
+  if (code <= 82) return 'rainy-outline';        // rain showers
+  if (code <= 86) return 'snow-outline';         // snow showers — were falling through to thunderstorm
+  return 'thunderstorm-outline';                 // 95-99
 }

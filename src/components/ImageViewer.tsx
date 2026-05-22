@@ -19,7 +19,8 @@ const { width: W, height: H } = Dimensions.get('window');
 const SWIPE_DISMISS_DY = 110;          // px past which a vertical drag dismisses
 const FLICK_DISMISS_VY = 0.7;          // vy threshold for velocity-based dismiss
 const DOUBLE_TAP_WINDOW_MS = 280;      // gap under which two taps count as a double
-const DOUBLE_TAP_MAX_MOVEMENT = 10;    // px — taps further apart aren't a double
+const DOUBLE_TAP_MAX_MOVEMENT = 10;    // px — drag distance within a single tap
+const DOUBLE_TAP_MAX_DISTANCE = 40;    // px — max distance between the two taps
 const DOUBLE_TAP_ZOOM = 2.5;           // scale that double-tap zooms TO when zoomed out
 
 export function ImageViewer({ uri, visible, onClose }: Props) {
@@ -148,7 +149,14 @@ export function ImageViewer({ uri, visible, onClose }: Props) {
         if (wasTap) {
           const now = Date.now();
           const prev = lastTapRef.current;
-          const isDouble = prev && (now - prev.t) < DOUBLE_TAP_WINDOW_MS;
+          // Require BOTH (a) the time-between-taps under the window AND
+          // (b) the two taps to land near each other. Without the distance
+          // check, tapping opposite corners of the photo register as a
+          // double-tap and accidentally toggle zoom.
+          const closeEnough =
+            !!prev &&
+            Math.hypot(gs.x0 - prev.x, gs.y0 - prev.y) < DOUBLE_TAP_MAX_DISTANCE;
+          const isDouble = prev && (now - prev.t) < DOUBLE_TAP_WINDOW_MS && closeEnough;
           if (isDouble) {
             // Toggle: zoomed → out, zoomed-out → in to DOUBLE_TAP_ZOOM.
             // We don't try to zoom to the tap point — keeping it center-zoom

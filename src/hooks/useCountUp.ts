@@ -12,6 +12,11 @@ export function useCountUp(target: number, duration = 700): number {
   const [value, setValue] = useState(0);
 
   useEffect(() => {
+    // Stop any animation still running from a previous target before
+    // starting a new one. Otherwise two Animated.timing chains drive the
+    // same Animated.Value concurrently and the listener emits interleaved
+    // values — the counter jitters / regresses on rapid stats refresh.
+    anim.stopAnimation();
     anim.setValue(0);
     const id = anim.addListener(({ value: v }) => setValue(v));
     Animated.timing(anim, {

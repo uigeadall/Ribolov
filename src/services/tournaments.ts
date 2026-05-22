@@ -3,6 +3,7 @@ import {
   deleteDoc,
   doc,
   documentId,
+  getCountFromServer,
   getDoc,
   getDocs,
   increment,
@@ -292,24 +293,36 @@ export type MyTournamentRank = {
   total: number;
 };
 
-/** Fetches the current user's standing in a tournament. Uses the same
-    `photoEntries` collection that the detail screen renders, so the rank
-    here matches what the user sees on the leaderboard. Best-effort — on
+/** Fetches the current user's standing in a tournament. Best-effort — on
     any Firestore error this returns `{ rank: null, total: 0 }` so the
-    caller can silently skip rendering the rank pill. */
+    caller can silently skip rendering the rank pill.
+
+    Implementation: directly reads the user's own photoEntry doc (keyed by
+    ownerUid — see submitCatchToTournament) and counts entries with strictly
+    more likes. The earlier version walked the top-50 leaderboard, which
+    silently dropped users ranked 51+ to `rank: null` even though they had
+    actually submitted. */
 export async function fetchMyTournamentRank(
   tournamentId: string,
   uid: string
 ): Promise<MyTournamentRank> {
   if (!tournamentId || !uid) return { rank: null, total: 0 };
+  const fb = requireFirebase();
   try {
-    const entries = await fetchTournamentPhotoEntries(tournamentId);
-    if (entries.length === 0) return { rank: null, total: 0 };
-    // photoEntries are keyed by ownerUid (one entry per user — see
-    // submitCatchToTournament). They're already sorted by likeCount desc
-    // by the underlying query, so index + 1 is the displayed rank.
-    const idx = entries.findIndex((e) => e.ownerUid === uid);
-    return { rank: idx >= 0 ? idx + 1 : null, total: entries.length };
+    const entriesCol = collection(fb.db, 'tournaments', tournamentId, 'photoEntries');
+    const myEntrySnap = await getDoc(doc(entriesCol, uid));
+    // Total competing entries — accurate regardless of leaderboard depth.
+    const totalSnap = await getCountFromServer(entriesCol);
+    const total = totalSnap.data().count;
+    if (!myEntrySnap.exists()) return { rank: null, total };
+    const myLikeCount = (myEntrySnap.data()?.likeCount as number | undefined) ?? 0;
+    // Rank = 1 + (entries with strictly more likes). Same-tie users share a
+    // rank window — acceptable for a leaderboard with no canonical tiebreak.
+    const aboveSnap = await getCountFromServer(
+      query(entriesCol, where('likeCount', '>', myLikeCount))
+    );
+    const rank = aboveSnap.data().count + 1;
+    return { rank, total };
   } catch {
     return { rank: null, total: 0 };
   }

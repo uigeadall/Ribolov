@@ -222,7 +222,7 @@ export default function CreateTournamentScreen() {
         Toast.show({
           type: 'info',
           text1: 'Турнирът е създаден',
-          text2: 'Натисни „Участвай", за да се запишеш сам.',
+          text2: 'Натисни „Участвай“, за да се запишеш сам.',
           visibilityTime: 4000,
         });
       }

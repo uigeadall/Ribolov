@@ -42,7 +42,6 @@ import {
   subscribeActiveLivePins,
   createLiveFishingPin,
   deleteLiveFishingPin,
-  getMyActiveLivePin,
   type LiveFishingPin,
 } from '../services/liveFishingPins';
 import { ensureDirectConversation } from '../services/cloudSync';
@@ -392,11 +391,13 @@ export default function MapScreen() {
   }, [configured]);
 
   // Track whether THIS user already has an active pin (so the FAB toggles).
+  // Derive from the realtime `livePins` subscription rather than firing a
+  // separate Firestore read every time pins update — the subscription is
+  // already returning all active pins, so we can just find ours in there.
   useEffect(() => {
     if (!configured || !user) { setMyActivePin(null); return; }
-    let cancelled = false;
-    getMyActiveLivePin(user.uid).then((p) => { if (!cancelled) setMyActivePin(p); });
-    return () => { cancelled = true; };
+    const mine = livePins.find((p) => p.ownerUid === user.uid) ?? null;
+    setMyActivePin(mine);
   }, [configured, user, livePins]);
 
   // Pulse the FAB while an active pin is up — subtle visual cue that a session is running.
@@ -460,6 +461,10 @@ export default function MapScreen() {
       } catch { /* ignore */ }
     }
     if (lat == null || lon == null) {
+      // Reset the synchronous guard before bailing — otherwise it stayed
+      // true and every subsequent "Тук съм" tap silently no-op'd until
+      // app restart.
+      liveSavingRef.current = false;
       Alert.alert('Локация', 'За пускане на жив пин е нужна локация. Разреши GPS.');
       return;
     }
@@ -638,7 +643,7 @@ export default function MapScreen() {
 
   const removeSelected = () => {
     if (!selected) return;
-    Alert.alert('Изтриване', `Изтриване на „${selected.name}"?`, [
+    Alert.alert('Изтриване', `Изтриване на „${selected.name}“?`, [
       { text: 'Отказ', style: 'cancel' },
       {
         text: 'Изтрий',
@@ -720,7 +725,7 @@ export default function MapScreen() {
       setSelectedWater(null);
       setShowFavoritesOnly(true);
       mapRef.current?.flyTo(item.latitude, item.longitude, 12);
-      Toast.show({ type: 'success', text1: 'Запазен в любими', text2: `„${item.name}" е добавен в любимите ти спотове.`, visibilityTime: 2500 });
+      Toast.show({ type: 'success', text1: 'Запазен в любими', text2: `„${item.name}“ е добавен в любимите ти спотове.`, visibilityTime: 2500 });
     },
     [spots]
   );

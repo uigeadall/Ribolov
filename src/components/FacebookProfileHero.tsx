@@ -267,7 +267,10 @@ export function FacebookProfileHero({
             <View style={styles.avatarInner}>
               {avatarUrl ? (
                 <Image
-                  source={{ uri: avatarUrl }}
+                  // Use the avatar variant so own-profile loads at the same
+                  // (small) resolution as other-profile cards. Was loading the
+                  // original-size image only in the editable branch.
+                  source={{ uri: getImageVariant(avatarUrl, ImageSize.avatar) ?? avatarUrl }}
                   style={styles.avatarImg}
                   contentFit="cover"
                   cachePolicy="memory-disk"

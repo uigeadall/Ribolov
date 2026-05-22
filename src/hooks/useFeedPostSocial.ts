@@ -161,9 +161,32 @@ export function useFeedPostSocial({
   }, [socialEnabled, myUid, catchId, isVisible]);
 
   useEffect(() => {
-    setPendingComments((pending) =>
-      pending.filter((p) => !comments.some((c) => c.authorUid === p.authorUid && c.text === p.text))
-    );
+    // Drop pending entries 1-for-1 against matching real comments. The earlier
+    // `comments.some(...)` check matched on (authorUid, text) and dropped ALL
+    // pending entries with that pair as soon as the first real one arrived —
+    // so two rapid identical comments collapsed to one optimistically until the
+    // second snapshot caught up. Now we tally real-vs-pending counts per pair
+    // and keep any pending entries beyond the real count.
+    setPendingComments((pending) => {
+      const realCounts = new Map<string, number>();
+      for (const c of comments) {
+        const key = `${c.authorUid}|${c.text}`;
+        realCounts.set(key, (realCounts.get(key) ?? 0) + 1);
+      }
+      const dropCounts = new Map<string, number>();
+      const remaining: FeedComment[] = [];
+      for (const p of pending) {
+        const key = `${p.authorUid}|${p.text}`;
+        const realCount = realCounts.get(key) ?? 0;
+        const alreadyDropped = dropCounts.get(key) ?? 0;
+        if (alreadyDropped < realCount) {
+          dropCounts.set(key, alreadyDropped + 1);
+        } else {
+          remaining.push(p);
+        }
+      }
+      return remaining;
+    });
   }, [comments]);
 
   const openLikers = useCallback(async () => {
@@ -336,8 +359,11 @@ export function useFeedPostSocial({
       await addCatchComment(catchId, myUid, myDisplayName, t, item.ownerUid, reply ?? undefined);
     } catch (e) {
       setPendingComments((prev) => prev.filter((c) => c.id !== tempId));
-      setDraft(t);
-      setReplyingTo(reply);
+      // Only restore the failed text if the user hasn't already started
+      // typing the next comment. Earlier the unconditional setDraft(t)
+      // clobbered whatever they had begun typing since pressing send.
+      setDraft((current) => (current.trim() === '' ? t : current));
+      setReplyingTo((current) => current ?? reply);
       Alert.alert('Коментар', e instanceof Error ? e.message : 'Неуспешно изпращане.');
     } finally {
       sendBusyRef.current = false;
