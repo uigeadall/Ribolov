@@ -4,6 +4,7 @@
 // Auth tokens are written rarely (login / refresh) so the perf delta vs MMKV
 // is invisible; what matters is matching the persistence contract Firebase
 // expects so token round-trips work.
+import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { initializeAuth, getAuth, Auth, getReactNativePersistence } from 'firebase/auth';
@@ -19,6 +20,13 @@ export type FirebaseBundle = {
 };
 
 function authForApp(app: FirebaseApp): Auth {
+  // Web build of firebase/auth does NOT expose getReactNativePersistence and
+  // doesn't need it — IndexedDB/localStorage is wired up automatically by
+  // getAuth(). The RN-only path uses AsyncStorage so auth tokens survive
+  // a process kill. This branch lets the same codebase bundle for both.
+  if (Platform.OS === 'web') {
+    return getAuth(app);
+  }
   try {
     return initializeAuth(app, {
       persistence: getReactNativePersistence(AsyncStorage),

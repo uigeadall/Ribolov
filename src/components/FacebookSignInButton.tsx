@@ -96,6 +96,16 @@ function FacebookSignInInner({ onAccessToken, disabled }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [response]);
 
+  // Dev-only: long-press to reveal the redirect URI the SDK actually resolves
+  // to at runtime. Paste it verbatim into Meta Developer → App → Facebook
+  // Login → Valid OAuth Redirect URIs. In Expo Go this will look like
+  // exp://... which Facebook rejects — that's the signal you need a dev build
+  // for FB. In a dev build it resolves to ribolov-app:// which FB accepts.
+  const onLongPress = () => {
+    if (!__DEV__) return;
+    Alert.alert('Facebook redirect URI', request?.redirectUri ?? '(not ready)');
+  };
+
   return (
     <Button
       title="Продължи с Facebook"
@@ -103,6 +113,7 @@ function FacebookSignInInner({ onAccessToken, disabled }: Props) {
       loading={busy}
       disabled={disabled || !request}
       onPress={() => promptAsync()}
+      onLongPress={onLongPress}
     />
   );
 }

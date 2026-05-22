@@ -15,6 +15,7 @@ import { shadowButton } from '../theme/shadows';
 type Props = {
   title: string;
   onPress: () => void;
+  onLongPress?: () => void;
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
   loading?: boolean;
   disabled?: boolean;
@@ -22,7 +23,7 @@ type Props = {
   compact?: boolean;
 };
 
-export function Button({ title, onPress, variant = 'primary', loading, disabled, style, compact }: Props) {
+export function Button({ title, onPress, onLongPress, variant = 'primary', loading, disabled, style, compact }: Props) {
   const { colors, mode } = useTheme();
   const styles = useMemo(() => {
     const bg =
@@ -69,6 +70,7 @@ export function Button({ title, onPress, variant = 'primary', loading, disabled,
   return (
     <Pressable
       onPress={onPress}
+      onLongPress={onLongPress}
       disabled={isDisabled}
       android_ripple={{ color: variant === 'primary' ? 'rgba(255,255,255,0.2)' : `${colors.primary}22` }}
       style={[styles.btn, isDisabled && styles.disabled, style]}
