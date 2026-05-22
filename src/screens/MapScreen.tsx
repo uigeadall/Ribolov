@@ -2357,8 +2357,17 @@ const SpotSheet = React.memo(function SpotSheet({
     : colors.primary;
   return (
     <Modal visible={!!spot} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
-        <Animated.View style={[styles.modal, { transform: [{ translateY: sheetPanY }] }]}>
+      {/* Backdrop is a Pressable so tapping outside the sheet dismisses it —
+          standard iOS bottom-sheet behavior (Apple Maps, Google Maps,
+          Files.app all do this). The sheet itself sits above and consumes
+          its own touches, so taps land on the backdrop only when the user
+          actually intended to leave the sheet. The sheet is text-input-free
+          (no accidental data loss). */}
+      <Pressable style={styles.modalOverlay} onPress={onClose} accessibilityRole="button" accessibilityLabel="Затвори">
+        <Animated.View
+          style={[styles.modal, { transform: [{ translateY: sheetPanY }] }]}
+          onStartShouldSetResponder={() => true}
+        >
           <View {...panResponder.panHandlers} style={{ alignItems: 'center', paddingTop: spacing.sm, paddingBottom: spacing.xs }}>
             <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border }} />
           </View>
@@ -2498,7 +2507,7 @@ const SpotSheet = React.memo(function SpotSheet({
             <Button title="Изтрий" variant="danger" onPress={onRemove} style={{ flex: 1 }} />
           </View>
         </Animated.View>
-      </View>
+      </Pressable>
     </Modal>
   );
 });
