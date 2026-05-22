@@ -23,6 +23,7 @@ import { collection, getDocs, limit, orderBy, query, startAt, endAt, startAfter 
 import { ensureFirebase } from '../services/firebase';
 import { useAuth } from '../services/authContext';
 import { useAppNavigation } from '../navigation/useAppNavigation';
+import { getBlockedUids } from '../services/blockUser';
 
 type Tab = 'users' | 'waters' | 'species';
 type UserResult = { uid: string; displayName: string; city?: string; photoUrl?: string };
@@ -46,6 +47,13 @@ export default function SearchScreen() {
   const [hasMore, setHasMore] = useState(false);
   const lastUserDocRef = useRef<DocumentSnapshot | null>(null);
   const activeQueryRef = useRef('');
+  // Cached block list so we filter every fresh query AND every paginated
+  // loadMore. Without this, a blocked user shows up in search results
+  // (privacy violation — the searcher can navigate to a profile they
+  // explicitly blocked, and worse, a user who blocked THIS user can be
+  // searched and contacted). Refreshed each fresh query so a mid-session
+  // block becomes effective immediately.
+  const blockedUidsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     AsyncStorage.getItem('@ribolov/recentSearches').then((v) => {
@@ -134,6 +142,11 @@ export default function SearchScreen() {
     try {
       const fb = ensureFirebase();
       if (!fb) return;
+      // Refresh the block list per fresh query so a recent block applies.
+      // `getBlockedUids` is server-cached so the cost is low.
+      if (user?.uid) {
+        blockedUidsRef.current = await getBlockedUids(user.uid).catch(() => new Set<string>());
+      }
       const snap = await getDocs(
         query(
           collection(fb.db, 'users'),
@@ -147,7 +160,8 @@ export default function SearchScreen() {
       const docs = snap.docs.slice(0, PAGE_SIZE);
       lastUserDocRef.current = docs[docs.length - 1] ?? null;
       setHasMore(snap.docs.length > PAGE_SIZE);
-      setUserResults(docs.map(toResult).filter((r) => r.uid !== user?.uid));
+      const blocked = blockedUidsRef.current;
+      setUserResults(docs.map(toResult).filter((r) => r.uid !== user?.uid && !blocked.has(r.uid)));
     } catch {
       setUserResults([]);
       setHasMore(false);
@@ -176,9 +190,10 @@ export default function SearchScreen() {
       const docs = snap.docs.slice(0, PAGE_SIZE);
       lastUserDocRef.current = docs[docs.length - 1] ?? null;
       setHasMore(snap.docs.length > PAGE_SIZE);
+      const blocked = blockedUidsRef.current;
       setUserResults((prev) => [
         ...prev,
-        ...docs.map(toResult).filter((r) => r.uid !== user?.uid),
+        ...docs.map(toResult).filter((r) => r.uid !== user?.uid && !blocked.has(r.uid)),
       ]);
     } catch {
       // silent — user can scroll back and retry

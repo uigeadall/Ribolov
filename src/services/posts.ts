@@ -109,10 +109,23 @@ export async function createPost(input: CreatePostInput): Promise<string> {
     reshareOf: input.reshareOf,
   };
 
-  await setDoc(
-    doc(fb.db, POSTS_COLLECTION, id),
-    stripUndefinedForFirestore({ ...payload, createdAt: serverTimestamp() }),
-  );
+  try {
+    await setDoc(
+      doc(fb.db, POSTS_COLLECTION, id),
+      stripUndefinedForFirestore({ ...payload, createdAt: serverTimestamp() }),
+    );
+  } catch (e) {
+    // If the Firestore write fails after we already uploaded the photo,
+    // clean up the orphan storage file. Otherwise the file sits in
+    // publicCatchPhotos/{uid}/posts/ forever — no doc references it, no
+    // cleanup function walks storage, and it counts against the user's
+    // bucket quota indefinitely. Same fix shape as the stories orphan
+    // cleanup in round 14 (deleteStoryMedia).
+    if (photoStoragePath) {
+      void deleteObject(ref(fb.storage, photoStoragePath)).catch(() => {});
+    }
+    throw e;
+  }
 
   // Fire-and-forget: notify every mentioned user. Self-mentions and dupes are
   // filtered inside sendMentionNotifications.
