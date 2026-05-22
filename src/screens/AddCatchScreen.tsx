@@ -373,13 +373,6 @@ export default function AddCatchScreen() {
   }, [editCatchId, configured, user]);
 
   const pickPhoto = async () => {
-    if (form.shareToFeed) {
-      Alert.alert(
-        'Само камерата',
-        'За публично споделяне и класиките снимката трябва да е заснета с камерата в приложението — така се ограничава качване на стари снимки от галерията.'
-      );
-      return;
-    }
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       notifyInfo('Нужно е разрешение', 'Разреши достъп до галерията, за да добавиш снимка.');
@@ -521,14 +514,6 @@ export default function AddCatchScreen() {
     if (!form.speciesId) return;
     const trimmedPhotoTitle = form.photoTitle.trim().slice(0, 120);
     const uri = form.photoUri?.trim();
-    if (form.shareToFeed && uri && !isRemoteImageUri(uri) && !form.cameraVerifiedPhoto) {
-      Alert.alert(
-        'Нужна е камерата',
-        'За публично споделяне и участие в класиките снимката не може да е от галерията. Направи я с камерата в приложението или изключи публичното споделяне.'
-      );
-      return;
-    }
-
     savingRef.current = true;
     setSaving(true);
     const id = catchIdRef.current;
@@ -895,7 +880,7 @@ export default function AddCatchScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.summaryRowLabel}>Сподели в лентата</Text>
                 <Text style={styles.summaryRowSub}>
-                  {user ? 'Видим за всички, изисква снимка от камерата.' : 'Изисква акаунт.'}
+                  {user ? 'Видим за всички.' : 'Изисква акаунт.'}
                 </Text>
               </View>
               <Switch
@@ -904,18 +889,6 @@ export default function AddCatchScreen() {
                   if (!v) {
                     dispatch({ type: 'SET_SHARE_TO_FEED', payload: false });
                     dispatch({ type: 'SET_ENTER_LEADERBOARD', payload: false });
-                    return;
-                  }
-                  if (
-                    form.photoUri?.trim() &&
-                    !isRemoteImageUri(form.photoUri) &&
-                    !form.cameraVerifiedPhoto
-                  ) {
-                    Alert.alert(
-                      'Галерията не се ползва за класики',
-                      'За публично споделяне трябва снимка от камерата. Премахни текущата снимка или я заснеми отново с „Снимай".',
-                      [{ text: 'OK', style: 'cancel' }]
-                    );
                     return;
                   }
                   dispatch({ type: 'SET_SHARE_TO_FEED', payload: true });

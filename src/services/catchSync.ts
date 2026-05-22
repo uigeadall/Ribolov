@@ -253,8 +253,15 @@ export async function ensureCatchPhotoUploadedForCloud(c: Catch, ownerUid: strin
 export async function pushCatch(c: Catch, ownerUid: string, ownerName: string, isPublic: boolean) {
   const fb = requireFirebase();
   const rawPhoto = await fetchOwnerPhoto(fb, ownerUid);
+  // Firestore rules require ownerPhotoUrl, if present, to be an https URL
+  // (publicCatches CREATE in firestore.rules). A data: URL or file:// path
+  // — possible if the auth provider returned a non-https photoURL, or the
+  // in-app composer cached a base64 data URI — would otherwise reject the
+  // whole publicCatches write with "Missing or insufficient permissions".
+  // Drop the field entirely when the value isn't a clean https URL.
+  const isCleanHttps = /^https:\/\//i.test(rawPhoto);
   const ownerPhotoPatch =
-    rawPhoto !== '' ? { ownerPhotoUrl: rawPhoto } : { ownerPhotoUrl: deleteField() };
+    isCleanHttps ? { ownerPhotoUrl: rawPhoto } : { ownerPhotoUrl: deleteField() };
   const rawPayload: Record<string, unknown> = {
     ...c,
     syncedToCloud: true,

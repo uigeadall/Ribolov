@@ -37,10 +37,10 @@ export async function fetchRankedClassicPhotos(
   const resultLimit = opts?.resultLimit ?? 24;
 
   const raw = await fetchPublicCatchesSince(sinceIso, maxCandidates * 3);
-  // Only in-app camera photos are eligible — gallery imports are excluded.
+  // Any public catch with a photo is eligible — the previous in-app-camera
+  // requirement was dropped so users with gallery imports can also compete.
   const withPhoto = raw.filter(
-    (c) => c.photoTakenWithAppCamera === true &&
-           typeof c.photoUri === 'string' && c.photoUri.trim().length > 0
+    (c) => typeof c.photoUri === 'string' && c.photoUri.trim().length > 0
   );
   const scored: RankedClassicPhoto[] = withPhoto
     .slice(0, maxCandidates)
