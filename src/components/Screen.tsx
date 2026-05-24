@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import {
+  StatusBar,
   StyleSheet,
   View,
   ViewProps,
@@ -81,7 +82,7 @@ export function Screen({
   const body = avoidKeyboard ? (
     <KeyboardAvoidingView
       style={styles.fill}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       {scrollBody}
     </KeyboardAvoidingView>
@@ -91,6 +92,15 @@ export function Screen({
 
   return (
     <SafeAreaView style={styles.safe} edges={safeAreaEdges}>
+      {/* Match status-bar icon color to the current theme so a dark→light
+          flip doesn't leave white icons on a white bar (and vice versa).
+          On Android this also sets translucent so the gradient bleeds under
+          the bar correctly with edgeToEdgeEnabled in app.json. */}
+      <StatusBar
+        barStyle={mode === 'dark' ? 'light-content' : 'dark-content'}
+        backgroundColor="transparent"
+        translucent
+      />
       <LinearGradient
         colors={gradientColors}
         start={{ x: 0.25, y: 0 }}

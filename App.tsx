@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Linking } from 'react-native';
 import * as Updates from 'expo-updates';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { useFonts, Nunito_400Regular, Nunito_500Medium, Nunito_600SemiBold, Nunito_700Bold, Nunito_800ExtraBold } from '@expo-google-fonts/nunito';
@@ -17,6 +18,8 @@ import { initFirebaseAppCheckBridge } from './src/services/firebaseAppCheckBridg
 import OnboardingScreen from './src/screens/OnboardingScreen';
 import { OfflineBar } from './src/components/OfflineBar';
 import AppSplashScreen from './src/components/AppSplashScreen';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
+import { parseInviteUrl, storePendingReferrer } from './src/services/referral';
 
 const ONBOARDING_KEY = '@ribolov/onboarding_done';
 
@@ -47,7 +50,27 @@ export default function App() {
         .then((res) => { if (res) void Updates.reloadAsync(); })
         .catch(() => {});
     }
-    return () => clearTimeout(t);
+    // Deep-link handler for friend-invite URLs (ribolov-app://invite/<uid>).
+    // Cold-start delivery comes via getInitialURL; warm resume comes via the
+    // 'url' event. Both feed into the same storePendingReferrer call so the
+    // attribution path stays single-source. The actual write to Firestore
+    // happens later in authContext after onAuthStateChanged delivers the
+    // signed-in user — splitting capture from redemption lets the link
+    // arrive before, during, or after onboarding without losing it.
+    Linking.getInitialURL()
+      .then((url) => {
+        const inviter = url ? parseInviteUrl(url) : null;
+        if (inviter) void storePendingReferrer(inviter);
+      })
+      .catch(() => undefined);
+    const urlSub = Linking.addEventListener('url', ({ url }) => {
+      const inviter = parseInviteUrl(url);
+      if (inviter) void storePendingReferrer(inviter);
+    });
+    return () => {
+      clearTimeout(t);
+      urlSub.remove();
+    };
   }, []);
 
   const handleOnboardingDone = async () => {
@@ -61,18 +84,24 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <ThemeProvider>
-          <AuthProvider>
-            {onboardingDone ? (
-              <>
-                <RootNavigator />
-                <StatusBar style="auto" />
-              </>
-            ) : (
-              <OnboardingScreen onDone={handleOnboardingDone} />
-            )}
-            <SafeToast />
-            <ActionSheetHost />
-          </AuthProvider>
+          {/* Top-level boundary so any unhandled render crash anywhere in the
+              tree gets reported to Sentry (via the ErrorBoundary's
+              componentDidCatch) AND shown to the user as a fallback screen
+              instead of a white screen + silent dead app. */}
+          <ErrorBoundary label="app_root">
+            <AuthProvider>
+              {onboardingDone ? (
+                <>
+                  <RootNavigator />
+                  <StatusBar style="auto" />
+                </>
+              ) : (
+                <OnboardingScreen onDone={handleOnboardingDone} />
+              )}
+              <SafeToast />
+              <ActionSheetHost />
+            </AuthProvider>
+          </ErrorBoundary>
         </ThemeProvider>
         <OfflineBar />
       </SafeAreaProvider>

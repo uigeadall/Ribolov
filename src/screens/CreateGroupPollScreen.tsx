@@ -141,7 +141,7 @@ export default function CreateGroupPollScreen() {
   const canSubmit = question.trim().length > 0 && options.filter((o) => o.text.trim().length > 0).length >= 2;
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <Screen padded={false} avoidKeyboard={false}>
         <LinearGradient colors={heroColors} style={styles.hero}>
           <Pressable onPress={() => navigation.goBack()} hitSlop={8} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Назад">

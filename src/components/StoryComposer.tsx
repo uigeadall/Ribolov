@@ -199,7 +199,7 @@ export function StoryComposer({ visible, onClose, addStory }: Props) {
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose} presentationStyle="pageSheet">
-      <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <LinearGradient colors={heroColors} style={styles.hero}>
           <Pressable onPress={onClose} style={styles.closeBtn} hitSlop={8}>
             <Ionicons name="close" size={22} color="#fff" />

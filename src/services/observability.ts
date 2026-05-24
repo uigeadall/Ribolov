@@ -1,85 +1,40 @@
-import * as Sentry from '@sentry/react-native';
+/**
+ * Observability stub. Sentry was removed for cost reasons — this module
+ * preserves the public API (initObservability / setObservabilityUser /
+ * captureException / addBreadcrumb) so the ~14 call sites across the
+ * codebase keep compiling without churn. If we later wire a different error
+ * reporter, slot the implementation in here and every existing call site
+ * picks it up automatically.
+ *
+ * captureException still logs to the console in dev so unexpected errors
+ * surface during development; everything else is a silent no-op.
+ */
 
-let sentryReady = false;
-
-function trimStr(v: unknown): string {
-  return typeof v === 'string' ? v.trim() : '';
-}
-
-/** DSN от EXPO_PUBLIC_SENTRY_DSN или app.json extra.sentryDsn */
-export function getSentryDsn(): string {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const Constants = require('expo-constants').default as typeof import('expo-constants').default;
-    const e = (Constants.expoConfig?.extra ?? {}) as Record<string, unknown>;
-    return trimStr(e.sentryDsn) || trimStr(process.env.EXPO_PUBLIC_SENTRY_DSN);
-  } catch {
-    return trimStr(process.env.EXPO_PUBLIC_SENTRY_DSN);
-  }
-}
-
-/** Извикай веднъж при стартиране на приложението (преди UI). */
 export function initObservability(): void {
-  if (sentryReady) return;
-  const dsn = getSentryDsn();
-  if (!dsn) {
-    sentryReady = true;
-    return;
-  }
-  try {
-    Sentry.init({
-      dsn,
-      enabled: true,
-      enableAutoSessionTracking: true,
-      tracesSampleRate: __DEV__ ? 0.15 : 0.05,
-      attachStacktrace: true,
-    });
-    sentryReady = true;
-  } catch {
-    sentryReady = true;
+  /* no-op — Sentry removed */
+}
+
+export function setObservabilityUser(
+  _uid: string | null,
+  _displayName?: string | null,
+): void {
+  /* no-op — Sentry removed */
+}
+
+export function captureException(
+  error: unknown,
+  context?: Record<string, string>,
+): void {
+  if (__DEV__) {
+    // eslint-disable-next-line no-console
+    console.error('[captureException]', error, context);
   }
 }
 
-export function captureException(error: unknown, context?: Record<string, string>): void {
-  try {
-    if (!getSentryDsn()) {
-      // eslint-disable-next-line no-console
-      console.error('[captureException]', error, context);
-      return;
-    }
-    Sentry.withScope((scope) => {
-      if (context) {
-        Object.entries(context).forEach(([k, v]) => scope.setTag(k, v));
-      }
-      Sentry.captureException(error);
-    });
-  } catch {
-    /* ignore */
-  }
-}
-
-export function captureMessage(message: string, level: Sentry.SeverityLevel = 'info'): void {
-  try {
-    if (!getSentryDsn()) return;
-    Sentry.captureMessage(message, level);
-  } catch {
-    /* ignore */
-  }
-}
-
-export function addBreadcrumb(category: string, message: string, data?: Record<string, unknown>): void {
-  try {
-    if (!getSentryDsn()) return;
-    Sentry.addBreadcrumb({ category, message, data, level: 'info' });
-  } catch {
-    /* ignore */
-  }
-}
-
-export async function flushObservability(): Promise<void> {
-  try {
-    await Sentry.flush();
-  } catch {
-    /* ignore */
-  }
+export function addBreadcrumb(
+  _category: string,
+  _message: string,
+  _data?: Record<string, unknown>,
+): void {
+  /* no-op — Sentry removed */
 }

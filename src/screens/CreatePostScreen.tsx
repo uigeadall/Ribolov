@@ -51,6 +51,8 @@ export default function CreatePostScreen() {
   const [text, setText] = useState('');
   const [photoUri, setPhotoUri] = useState<string | undefined>();
   const [posting, setPosting] = useState(false);
+  // 0..1 upload progress, surfaced as a thin bar at the top during posting.
+  const [uploadProgress, setUploadProgress] = useState(0);
   // Synchronous guard so a sub-frame double-tap on "Сподели" can't fire
   // submit() twice before React commits setPosting(true) — would otherwise
   // create two duplicate posts.
@@ -194,6 +196,7 @@ export default function CreatePostScreen() {
         localPhotoUri: photoUri,
         mentionUids,
         reshareOf: reshare,
+        onUploadProgress: (f) => setUploadProgress(f),
       });
       Toast.show({ type: 'success', text1: 'Публикувано', visibilityTime: 1800 });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -203,6 +206,7 @@ export default function CreatePostScreen() {
     } finally {
       submittingRef.current = false;
       setPosting(false);
+      setUploadProgress(0);
     }
   };
 
@@ -339,8 +343,21 @@ export default function CreatePostScreen() {
   const charsRemaining = MAX_TEXT - text.length;
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <Screen padded={false} avoidKeyboard={false}>
+        {/* Upload progress bar — visible during posting when a photo is
+            uploading. Lets users on slow connections see something. */}
+        {posting && uploadProgress > 0 && uploadProgress < 1 ? (
+          <View style={{ height: 2, backgroundColor: colors.border }}>
+            <View
+              style={{
+                height: 2,
+                width: `${Math.round(uploadProgress * 100)}%`,
+                backgroundColor: colors.primary,
+              }}
+            />
+          </View>
+        ) : null}
         <LinearGradient colors={heroColors} style={styles.hero}>
           <Pressable onPress={() => navigation.goBack()} hitSlop={8} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Назад">
             <Ionicons name="chevron-back" size={22} color="#fff" />

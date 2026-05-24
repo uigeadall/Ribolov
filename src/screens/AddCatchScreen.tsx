@@ -16,6 +16,7 @@ import {
   FlatList,
 } from 'react-native';
 import { useRoute, RouteProp } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 import { LogbookStackParamList } from '../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
@@ -41,6 +42,8 @@ import { ensureFirebase } from '../services/firebase';
 import { enqueueCatchSync } from '../services/catchSyncQueue';
 import { checkBanPeriod } from '../services/notifications';
 import { checkNewPersonalBest } from '../services/personalBests';
+import { getFollowerUids } from '../services/social';
+import { notifyPersonalBest } from '../services/socialNotifications';
 import { checkForNewUnlocks } from '../services/achievements';
 import { AchievementUnlockModal } from '../components/AchievementUnlockModal';
 import { SpeciesPicker } from '../components/SpeciesPicker';
@@ -145,6 +148,7 @@ export default function AddCatchScreen() {
   const editCatchId = route.params?.editCatchId;
   const duplicateCatchId = route.params?.duplicateCatchId;
   const { colors, mode } = useTheme();
+  const insets = useSafeAreaInsets();
   const styles = useMemo(() => createAddCatchStyles(colors), [colors]);
   const { user, configured } = useAuth();
 
@@ -172,6 +176,9 @@ export default function AddCatchScreen() {
 
   const [recentBaits, setRecentBaits] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  // 0..1 photo upload fraction. Only rendered while saving and a fraction
+  // has been reported. Reset on each new save.
+  const [uploadProgress, setUploadProgress] = useState(0);
   // Synchronous double-tap guard. `saving` state updates via React's batched
   // re-render, so two taps in the same JS tick both see `disabled={false}`
   // and both fire `save()`. With the same catchIdRef both writes target the
@@ -494,7 +501,12 @@ export default function AddCatchScreen() {
         oldStoragePath !== catchItem.photoStoragePath;
 
       if (newLocalUri) {
-        toSync = await ensureCatchPhotoUploadedForCloud(catchItem, user.uid);
+        // Surface upload bytes as a thin progress bar at the top of the
+        // screen so users on slow connections see something happen instead
+        // of staring at a frozen "Запази" button.
+        toSync = await ensureCatchPhotoUploadedForCloud(catchItem, user.uid, (f) => {
+          setUploadProgress(f);
+        });
       }
       await pushCatch(toSync, user.uid, user.displayName ?? user.email ?? 'Рибар', sharePublic);
       await catchesStore.save({ ...toSync, syncedToCloud: true });
@@ -516,6 +528,7 @@ export default function AddCatchScreen() {
     const uri = form.photoUri?.trim();
     savingRef.current = true;
     setSaving(true);
+    setUploadProgress(0);
     const id = catchIdRef.current;
     const photoTakenWithAppCamera = !uri
       ? undefined
@@ -593,6 +606,28 @@ export default function AddCatchScreen() {
             : pb.field === 'weight'
             ? 'Нов личен рекорд по тегло! 🏆'
             : 'Нов личен рекорд по дължина! 🏆';
+        // Fan out the PB to the user's followers — gated on shareToFeed
+        // because a private catch shouldn't surface as a public PB. Wrapped
+        // in setTimeout so it doesn't block the alert/animation; capped
+        // inside getFollowerUids so a viral account doesn't write 10k docs.
+        if (form.shareToFeed && user) {
+          setTimeout(() => {
+            void (async () => {
+              try {
+                const followers = await getFollowerUids(user.uid);
+                if (followers.length === 0) return;
+                const weight = item.weightKg != null ? ` · ${item.weightKg} кг` : '';
+                await notifyPersonalBest({
+                  actorUid: user.uid,
+                  actorName: user.displayName ?? user.email ?? 'Рибар',
+                  followerUids: followers,
+                  catchId: item.id,
+                  preview: `${item.speciesName}${weight} — личен рекорд 🏆`,
+                });
+              } catch { /* fire-and-forget */ }
+            })();
+          }, 1500);
+        }
         // If there are no achievement unlocks to show, the alert is the only
         // thing keeping the user on this screen — fire the goBack on Alert
         // dismissal so the alert doesn't orphan onto LogbookScreen after the
@@ -620,8 +655,23 @@ export default function AddCatchScreen() {
         void (async () => {
           const sync = await syncCatchToCloud(item, form.shareToFeed);
           if (!sync.ok) {
-            console.error('[CatchSync] failed:', sync.message);
+            if (__DEV__) {
+              // eslint-disable-next-line no-console
+              console.error('[CatchSync] failed:', sync.message);
+            }
             await enqueueCatchSync(item.id, form.shareToFeed).catch(() => {});
+            // Tell the user the local save succeeded but the cloud push didn't
+            // land yet. Without this, an offline save looked identical to an
+            // online one and users wouldn't realise their photo wasn't yet
+            // visible to followers — they'd assume sharing was broken when in
+            // reality the queue was just waiting on network.
+            Toast.show({
+              type: 'info',
+              text1: 'Записан локално',
+              text2: 'Ще се синхронизира щом имаш мрежа.',
+              position: 'bottom',
+              visibilityTime: 3000,
+            });
           }
         })();
       } else if (form.shareToFeed) {
@@ -632,6 +682,7 @@ export default function AddCatchScreen() {
     } finally {
       savingRef.current = false;
       setSaving(false);
+      setUploadProgress(0);
     }
   };
 
@@ -656,7 +707,27 @@ export default function AddCatchScreen() {
 
   return (
     <Screen padded={false}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 24 }} {...keyboardAwareScrollProps}>
+      {/* Upload progress bar — shows during save when a photo is uploading.
+          Pinned at the top so it's visible while the user is staring at the
+          save button waiting for something to happen. Falls back to an
+          indeterminate-feeling 2pt line at the very start of the upload. */}
+      {saving && uploadProgress > 0 && uploadProgress < 1 ? (
+        <View style={{ height: 2, backgroundColor: colors.border }}>
+          <View
+            style={{
+              height: 2,
+              width: `${Math.round(uploadProgress * 100)}%`,
+              backgroundColor: colors.primary,
+            }}
+          />
+        </View>
+      ) : null}
+      <ScrollView
+        // Bottom padding clears the fixed save bar (~76pt + safe-area inset)
+        // so the last form section doesn't sit underneath it.
+        contentContainerStyle={{ paddingBottom: 96 + insets.bottom }}
+        {...keyboardAwareScrollProps}
+      >
 
         {/* ── PHOTO HERO ── */}
         <PhotoSection
@@ -712,7 +783,17 @@ export default function AddCatchScreen() {
             </Pressable>
           ) : null}
 
-          {suggestedSpecies && form.speciesId === speciesList[0].id && !editCatchId ? (
+          {/* Suggested-species chip. Shows only when (a) we have a suggestion,
+              (b) the user hasn't manually picked a different species (still on
+              the default placeholder), (c) we're not editing an existing catch,
+              and (d) the suggestion isn't the SAME as the current default — the
+              earlier check missed (d) and showed the chip as noise whenever the
+              default species happened to also be the user's most-frequent. */}
+          {suggestedSpecies
+            && form.speciesId === speciesList[0].id
+            && !editCatchId
+            && selectedSpecies?.nameBg.trim().toLowerCase() !== suggestedSpecies.trim().toLowerCase()
+          ? (
             <Pressable
               onPress={() => {
                 const matched = speciesList.find((s) => s.nameBg === suggestedSpecies);
@@ -1110,24 +1191,8 @@ export default function AddCatchScreen() {
             </>
           ) : null}
 
-          {/* ── SAVE BUTTON ── primary app colour, not the old Material blue */}
-          <Pressable
-            onPress={() => void save()}
-            disabled={saving}
-            style={{ borderRadius: 20, overflow: 'hidden', marginTop: 16 }}
-          >
-            <LinearGradient
-              colors={[colors.primary, colors.primaryDark ?? colors.primary]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.saveBtn}
-            >
-              {saving
-                ? <ActivityIndicator color="#fff" />
-                : <Text style={styles.saveBtnText}>{editCatchId ? 'Запази промените' : 'Запази улова'}</Text>
-              }
-            </LinearGradient>
-          </Pressable>
+          {/* Save button moved into a fixed-position bar at the bottom of the
+              screen — see the <View style={styles.stickyBar}> sibling below. */}
 
         </View>
         {/* end sheet */}
@@ -1195,6 +1260,29 @@ export default function AddCatchScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Sticky save bar — pinned at the bottom so the user never has to scroll
+          back through a long form to find the action button. Tab-bar isn't
+          shown on AddCatch, so this is the screen's primary CTA surface. */}
+      <View style={[styles.stickyBar, { paddingBottom: 12 + insets.bottom }]} pointerEvents="box-none">
+        <Pressable
+          onPress={() => void save()}
+          disabled={saving}
+          style={{ borderRadius: 20, overflow: 'hidden' }}
+        >
+          <LinearGradient
+            colors={[colors.primary, colors.primaryDark ?? colors.primary]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.saveBtn}
+          >
+            {saving
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={styles.saveBtnText}>{editCatchId ? 'Запази промените' : 'Запази улова'}</Text>
+            }
+          </LinearGradient>
+        </Pressable>
+      </View>
 
     </Screen>
   );
@@ -2006,6 +2094,18 @@ function createAddCatchStyles(colors: AppColors) {
       fontFamily: 'Nunito_800ExtraBold',
       color: '#fff',
       letterSpacing: 0.2,
+    },
+    // ── Sticky save bar (sibling to the ScrollView) ──
+    // Floats over the bottom of the screen with a subtle top border so the
+    // form content scrolling beneath has a visual edge to slide under.
+    stickyBar: {
+      position: 'absolute',
+      left: 0, right: 0, bottom: 0,
+      paddingHorizontal: spacing.lg,
+      paddingTop: 10,
+      backgroundColor: colors.background,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
     },
 
     // ── Misc (kept for WeightEstimator and any residual uses) ──

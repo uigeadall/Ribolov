@@ -314,7 +314,7 @@ export default function AuthScreen() {
   return (
     <Screen padded={false} safeAreaEdges={['left', 'right']}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
       >
         <View style={{ flex: 1 }}>

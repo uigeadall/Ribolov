@@ -271,6 +271,23 @@ export default function ClassicsScreen() {
     },
     emptyTitle: { ...typography.h2, color: '#fff', textAlign: 'center' },
     emptyBody: { ...typography.body, color: 'rgba(255,255,255,0.55)', textAlign: 'center', lineHeight: 22 },
+    // CTA on the empty state — solid accent so it pops against the dark
+    // gradient banner. Matches the rest of the app's primary-action style.
+    emptyCta: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginTop: spacing.lg,
+      paddingHorizontal: spacing.xl,
+      paddingVertical: spacing.md - 2,
+      borderRadius: radius.pill,
+      backgroundColor: colors.primary,
+    },
+    emptyCtaText: {
+      ...typography.bodyBold,
+      color: '#fff',
+      fontSize: 15,
+    },
     stepsCard: {
       marginHorizontal: spacing.lg, marginTop: spacing.xl,
       borderRadius: radius.lg, overflow: 'hidden',
@@ -386,7 +403,13 @@ export default function ClassicsScreen() {
       <StatusBar barStyle="light-content" />
 
       {/* Full-screen viewer */}
-      <Modal visible={!!fullScreen} transparent={false} animationType="fade" statusBarTranslucent>
+      <Modal
+        visible={!!fullScreen}
+        transparent={false}
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setFullScreen(null)}
+      >
         <StatusBar hidden />
         <View style={s.fsRoot}>
           {fullScreen && (
@@ -463,6 +486,15 @@ export default function ClassicsScreen() {
             <Text style={s.emptyBody}>
               Сподели публично улова си в Лентата, за да участва в класацията.
             </Text>
+            <Pressable
+              onPress={() => (navigation as any).navigate('LogbookTab', { screen: 'AddCatch', params: {} })}
+              style={s.emptyCta}
+              accessibilityRole="button"
+              accessibilityLabel="Сподели улов"
+            >
+              <Ionicons name="add-circle" size={18} color="#fff" />
+              <Text style={s.emptyCtaText}>Сподели улов</Text>
+            </Pressable>
           </View>
           {StepsCard}
         </ScrollView>

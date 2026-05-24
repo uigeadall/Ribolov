@@ -200,9 +200,20 @@ export default function MapScreen() {
   const [heatmapCells, setHeatmapCells] = useState<HeatmapCell[]>([]);
   const [showHeatmap, setShowHeatmap] = useState(false);
   const [heatmapLoading, setHeatmapLoading] = useState(false);
+  // Tracks the most recent heatmap fetch failure so the chip can flag the
+  // offline/error state instead of looking like "loaded but empty".
+  // Previously a network failure silently set cells to [] and the user just
+  // saw a blank map with an inert "Хийтмап" chip — no signal anything went
+  // wrong. The toast on failure makes the cause immediately visible; the
+  // chip colour tracks the error so a subsequent retry tap clears it.
+  const [heatmapError, setHeatmapError] = useState(false);
   // Spot DM-share — when set, SharePickerModal opens with this spot's SharedRef.
   // Cleared when the picker closes (regardless of whether the user actually sent).
   const [shareSpotRef, setShareSpotRef] = useState<Spot | null>(null);
+  // Same as above but for water bodies (dams / rivers). They share the modal
+  // but have a different source type, so we track them separately to keep
+  // the SharedRef builder calls type-safe.
+  const [shareWaterRef, setShareWaterRef] = useState<SelectedWater | null>(null);
 
   // Live "fishing here right now" pins
   const [livePins, setLivePins] = useState<LiveFishingPin[]>([]);
@@ -262,12 +273,28 @@ export default function MapScreen() {
     }
     let cancelled = false;
     setHeatmapLoading(true);
+    setHeatmapError(false);
     // ~6 months of public catches — enough to populate cells; small enough
     // to stay under the 2500-doc limit on the service side for most regions.
     const since = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     fetchSpeciesHeatmap(since, filterSpecies ?? undefined)
-      .then((cells) => { if (!cancelled) setHeatmapCells(cells); })
-      .catch(() => { if (!cancelled) setHeatmapCells([]); })
+      .then((cells) => {
+        if (cancelled) return;
+        setHeatmapCells(cells);
+        setHeatmapError(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setHeatmapCells([]);
+        setHeatmapError(true);
+        Toast.show({
+          type: 'info',
+          text1: 'Хийтмапът не е наличен',
+          text2: 'Провери връзката и опитай отново.',
+          position: 'bottom',
+          visibilityTime: 2800,
+        });
+      })
       .finally(() => { if (!cancelled) setHeatmapLoading(false); });
     return () => { cancelled = true; };
   }, [showHeatmap, filterSpecies]);
@@ -1108,7 +1135,11 @@ export default function MapScreen() {
             {heatmapLoading ? (
               <ActivityIndicator size="small" color={showHeatmap ? '#fff' : colors.primary} />
             ) : (
-              <Ionicons name="flame-outline" size={13} color={showHeatmap ? '#fff' : colors.textMuted} />
+              <Ionicons
+                name={heatmapError && showHeatmap ? 'cloud-offline-outline' : 'flame-outline'}
+                size={13}
+                color={showHeatmap ? '#fff' : colors.textMuted}
+              />
             )}
             <Text style={{ fontSize: 12, fontFamily: 'Nunito_700Bold', color: showHeatmap ? '#fff' : colors.text }}>
               Хийтмап
@@ -1177,6 +1208,7 @@ export default function MapScreen() {
         onOpenInAppRoute={() => void openInAppRouteToWater()}
         onExternalRoute={() => void openExternalDrivingRouteToWater()}
         onOpenLeaderboard={handleOpenLeaderboard}
+        onShareToFriend={() => { if (selectedWater) setShareWaterRef(selectedWater); }}
         onOpenReportSheet={() => setReportSheetOpen(true)}
         onCloseReportSheet={() => setReportSheetOpen(false)}
         onReportActivityChange={setReportActivity}
@@ -1207,6 +1239,23 @@ export default function MapScreen() {
           visible
           onClose={() => setShareSpotRef(null)}
           sharedRef={buildSpotSharedRef(shareSpotRef)}
+        />
+      )}
+
+      {/* Same picker for water bodies — uses the spot SharedRef shape (id,
+          name, waterType, lat/lng) so the chat-side renderer doesn't need a
+          new kind. Subtitle becomes "Язовир" / "Река" for receiver context. */}
+      {shareWaterRef && (
+        <SharePickerModal
+          visible
+          onClose={() => setShareWaterRef(null)}
+          sharedRef={buildSpotSharedRef({
+            id: shareWaterRef.item.id,
+            name: shareWaterRef.item.name,
+            waterType: shareWaterRef.kind === 'dam' ? 'Язовир' : 'Река',
+            latitude: shareWaterRef.item.latitude,
+            longitude: shareWaterRef.item.longitude,
+          })}
         />
       )}
 
@@ -1798,6 +1847,7 @@ type WaterBodySheetProps = {
   onOpenInAppRoute: () => void;
   onExternalRoute: () => void;
   onOpenLeaderboard: () => void;
+  onShareToFriend: () => void;
   onOpenReportSheet: () => void;
   onCloseReportSheet: () => void;
   onReportActivityChange: (n: number) => void;
@@ -1828,6 +1878,7 @@ const WaterBodySheet = React.memo(function WaterBodySheet({
   onOpenInAppRoute,
   onExternalRoute,
   onOpenLeaderboard,
+  onShareToFriend,
   onOpenReportSheet,
   onCloseReportSheet,
   onReportActivityChange,
@@ -1837,6 +1888,20 @@ const WaterBodySheet = React.memo(function WaterBodySheet({
 }: WaterBodySheetProps) {
   const styles = useMemo(() => createMapStyles(colors), [colors]);
   const sheetPanY = useRef(new Animated.Value(0)).current;
+  // Section navigator — track each section header's Y position so the chip
+  // row at the top can scroll the user straight to e.g. "Рапорти" without
+  // them having to swipe past everything else first.
+  const scrollRef = useRef<ScrollView | null>(null);
+  const sectionYRef = useRef<Record<string, number>>({});
+  const onSectionLayout = useCallback((key: string) => (e: { nativeEvent: { layout: { y: number } } }) => {
+    sectionYRef.current[key] = e.nativeEvent.layout.y;
+  }, []);
+  const scrollToSection = useCallback((key: string) => {
+    const y = sectionYRef.current[key];
+    if (y == null) return;
+    // Subtract a little so the section title isn't pinned right to the top.
+    scrollRef.current?.scrollTo({ y: Math.max(0, y - 12), animated: true });
+  }, []);
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, g) => g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx),
@@ -1874,6 +1939,7 @@ const WaterBodySheet = React.memo(function WaterBodySheet({
               <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border }} />
             </View>
             <ScrollView
+              ref={scrollRef}
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingBottom: spacing.xxl + 24 }}
             >
@@ -1941,16 +2007,97 @@ const WaterBodySheet = React.memo(function WaterBodySheet({
                         <Text style={styles.damMetaText}>{selectedWater.item.lengthKm}</Text>
                       </View>
                     ) : null}
-                    <View style={[styles.damMetaChip, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}>
-                      <Ionicons name="location-outline" size={14} color={colors.textMuted} />
-                      <Text style={styles.damMetaText}>
-                        {selectedWater.item.latitude.toFixed(3)},{' '}
-                        {selectedWater.item.longitude.toFixed(3)}
-                      </Text>
-                    </View>
+                    {/* Dropped the raw "lat, lng" coordinate chip — it added no
+                        user value (the user is looking at the map; coords are
+                        already implicit) and crowded the row. */}
                   </View>
 
-                  <Text style={styles.speciesTitle}>Време сега</Text>
+                  {/* Primary CTA, hoisted above the fold. The verb this screen
+                      exists to enable — was previously buried after ~1400pt of
+                      weather + reports + forecast + species + level scrolls. */}
+                  <Pressable
+                    onPress={onRecordCatch}
+                    style={({ pressed }) => [styles.primaryCta, pressed && { opacity: 0.85 }]}
+                  >
+                    <Ionicons name="fish" size={20} color="#fff" />
+                    <Text style={styles.primaryCtaText}>Запиши улов от тук</Text>
+                  </Pressable>
+
+                  {/* Secondary actions — compact icon pills, horizontal scroll. */}
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.pillRowContent}
+                  >
+                    <Pressable style={styles.iconPill} onPress={onSaveAsFavorite}>
+                      <Ionicons name="star-outline" size={18} color="#C49A00" />
+                      <Text style={styles.iconPillText}>Любими</Text>
+                    </Pressable>
+                    <Pressable style={styles.iconPill} onPress={onShowOnMap}>
+                      <Ionicons name="map-outline" size={18} color={colors.primary} />
+                      <Text style={styles.iconPillText}>На карта</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.iconPill, routeLoading && { opacity: 0.6 }]}
+                      onPress={onOpenInAppRoute}
+                      disabled={routeLoading}
+                    >
+                      {routeLoading
+                        ? <ActivityIndicator size="small" color={colors.primary} />
+                        : <Ionicons name="navigate-outline" size={18} color={colors.primary} />}
+                      <Text style={styles.iconPillText}>Маршрут</Text>
+                    </Pressable>
+                    <Pressable style={styles.iconPill} onPress={onExternalRoute}>
+                      <Ionicons name="open-outline" size={18} color={colors.primary} />
+                      <Text style={styles.iconPillText}>Навигация</Text>
+                    </Pressable>
+                    <Pressable style={styles.iconPill} onPress={onOpenLeaderboard}>
+                      <Ionicons name="trophy-outline" size={18} color="#C49A00" />
+                      <Text style={styles.iconPillText}>Класиране</Text>
+                    </Pressable>
+                    {/* DM the water body to a friend. Uses the existing spot
+                        SharedRef shape — receiver sees a 📍 card they can tap. */}
+                    <Pressable style={styles.iconPill} onPress={onShareToFriend}>
+                      <Ionicons name="paper-plane-outline" size={18} color={colors.primary} />
+                      <Text style={styles.iconPillText}>Сподели</Text>
+                    </Pressable>
+                  </ScrollView>
+
+                  {/* Section navigator — jumps to specific sections so users
+                      reading a long water body sheet (weather + photos +
+                      reports + forecast + species + level) don't have to swipe
+                      through everything they don't care about. */}
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingVertical: spacing.xs, gap: 6 }}
+                  >
+                    {[
+                      { key: 'weather', label: 'Време' },
+                      { key: 'photos', label: 'Снимки' },
+                      { key: 'reports', label: 'Рапорти' },
+                      { key: 'forecast', label: 'Прогноза' },
+                      ...(selectedWater.item.species.length > 0 ? [{ key: 'species', label: 'Видове' }] : []),
+                      ...(selectedWater.kind === 'dam' ? [{ key: 'level', label: 'Ниво' }] : []),
+                    ].map((s) => (
+                      <Pressable
+                        key={s.key}
+                        onPress={() => scrollToSection(s.key)}
+                        style={{
+                          paddingHorizontal: spacing.md,
+                          paddingVertical: 6,
+                          borderRadius: radius.pill,
+                          backgroundColor: colors.surfaceAlt,
+                          borderWidth: 1,
+                          borderColor: colors.border,
+                        }}
+                      >
+                        <Text style={{ ...typography.small, color: colors.text, fontWeight: '600' }}>{s.label}</Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+
+                  <Text style={styles.speciesTitle} onLayout={onSectionLayout('weather')}>Време сега</Text>
                   {damWeatherStatus === 'loading' ? (
                     <View style={[styles.weatherCard, styles.weatherCenter]}>
                       <ActivityIndicator color={colors.primary} />
@@ -2035,7 +2182,20 @@ const WaterBodySheet = React.memo(function WaterBodySheet({
 
                   {damWeather ? <BiteForecast weather={damWeather} /> : null}
 
-                  <Text style={styles.speciesTitle}>Рапорти от рибари</Text>
+                  {/* Community photos hoisted above reports/forecast/species —
+                      emotional content + social proof that anglers actually
+                      scroll for. Was buried at the bottom of the sheet.
+                      Wrapped in a View so the section navigator can scroll to it. */}
+                  <View onLayout={onSectionLayout('photos')}>
+                    <DamFeedSection
+                      damId={selectedWater.item.id}
+                      damName={selectedWater.item.name}
+                      user={user}
+                      firebaseConfigured={firebaseConfigured}
+                    />
+                  </View>
+
+                  <Text style={styles.speciesTitle} onLayout={onSectionLayout('reports')}>Рапорти от рибари</Text>
                   {waterReports.length === 0 ? (
                     <Text style={{ ...typography.caption, color: colors.textMuted, marginBottom: spacing.sm }}>
                       Все още няма рапорти за последните 24 ч.
@@ -2192,7 +2352,7 @@ const WaterBodySheet = React.memo(function WaterBodySheet({
                     )
                   ) : null}
 
-                  <Text style={styles.speciesTitle}>Прогноза 7 дни</Text>
+                  <Text style={styles.speciesTitle} onLayout={onSectionLayout('forecast')}>Прогноза 7 дни</Text>
                   <ForecastStrip
                     latitude={selectedWater.item.latitude}
                     longitude={selectedWater.item.longitude}
@@ -2201,7 +2361,7 @@ const WaterBodySheet = React.memo(function WaterBodySheet({
 
                   {selectedWater.item.species.length > 0 ? (
                     <>
-                      <Text style={styles.speciesTitle}>Срещани видове</Text>
+                      <Text style={styles.speciesTitle} onLayout={onSectionLayout('species')}>Срещани видове</Text>
                       <View style={styles.speciesRow}>
                         {selectedWater.item.species.map((sp) => (
                           <View key={sp} style={styles.speciesChip}>
@@ -2212,9 +2372,18 @@ const WaterBodySheet = React.memo(function WaterBodySheet({
                     </>
                   ) : null}
 
-                  {damLevel ? (
+                  {damLevel ? (() => {
+                    // Tier the bar color by fill — low water dramatically
+                    // changes fishing, so the bar should communicate severity
+                    // at a glance rather than always being the primary accent.
+                    // <30% → danger, 30–60% → warning, 60+% → primary.
+                    const levelColor =
+                      damLevel.fillPercent < 30 ? '#E04A4A' :
+                      damLevel.fillPercent < 60 ? '#E8B923' :
+                      colors.primary;
+                    return (
                     <>
-                      <Text style={styles.speciesTitle}>Ниво на язовира</Text>
+                      <Text style={styles.speciesTitle} onLayout={onSectionLayout('level')}>Ниво на язовира</Text>
                       <View
                         style={{
                           backgroundColor: colors.primarySurface,
@@ -2226,9 +2395,9 @@ const WaterBodySheet = React.memo(function WaterBodySheet({
                         }}
                       >
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-                          <Ionicons name="water" size={22} color={colors.primary} />
+                          <Ionicons name="water" size={22} color={levelColor} />
                           <View style={{ flex: 1 }}>
-                            <Text style={{ ...typography.h2, color: colors.primary }}>
+                            <Text style={{ ...typography.h2, color: levelColor }}>
                               {damLevel.fillPercent}%
                             </Text>
                             <Text style={{ ...typography.caption, color: colors.textMuted }}>
@@ -2250,65 +2419,19 @@ const WaterBodySheet = React.memo(function WaterBodySheet({
                             style={{
                               height: 8,
                               width: `${damLevel.fillPercent}%`,
-                              backgroundColor: colors.primary,
+                              backgroundColor: levelColor,
                               borderRadius: 4,
                             }}
                           />
                         </View>
                       </View>
                     </>
-                  ) : null}
+                    );
+                  })() : null}
 
-                  <DamFeedSection
-                    damId={selectedWater.item.id}
-                    damName={selectedWater.item.name}
-                    user={user}
-                    firebaseConfigured={firebaseConfigured}
-                  />
-
-                  {/* Primary CTA — the action we actually want users to take. */}
-                  <Pressable
-                    onPress={onRecordCatch}
-                    style={({ pressed }) => [styles.primaryCta, pressed && { opacity: 0.85 }]}
-                  >
-                    <Ionicons name="fish" size={20} color="#fff" />
-                    <Text style={styles.primaryCtaText}>Запиши улов от тук</Text>
-                  </Pressable>
-
-                  {/* Secondary actions — compact icon pills, horizontal scroll
-                      so we never have wrap issues regardless of label length. */}
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.pillRowContent}
-                  >
-                    <Pressable style={styles.iconPill} onPress={onSaveAsFavorite}>
-                      <Ionicons name="star-outline" size={18} color="#C49A00" />
-                      <Text style={styles.iconPillText}>Любими</Text>
-                    </Pressable>
-                    <Pressable style={styles.iconPill} onPress={onShowOnMap}>
-                      <Ionicons name="map-outline" size={18} color={colors.primary} />
-                      <Text style={styles.iconPillText}>На карта</Text>
-                    </Pressable>
-                    <Pressable
-                      style={[styles.iconPill, routeLoading && { opacity: 0.6 }]}
-                      onPress={onOpenInAppRoute}
-                      disabled={routeLoading}
-                    >
-                      {routeLoading
-                        ? <ActivityIndicator size="small" color={colors.primary} />
-                        : <Ionicons name="navigate-outline" size={18} color={colors.primary} />}
-                      <Text style={styles.iconPillText}>Маршрут</Text>
-                    </Pressable>
-                    <Pressable style={styles.iconPill} onPress={onExternalRoute}>
-                      <Ionicons name="open-outline" size={18} color={colors.primary} />
-                      <Text style={styles.iconPillText}>Навигация</Text>
-                    </Pressable>
-                    <Pressable style={styles.iconPill} onPress={onOpenLeaderboard}>
-                      <Ionicons name="trophy-outline" size={18} color="#C49A00" />
-                      <Text style={styles.iconPillText}>Класиране</Text>
-                    </Pressable>
-                  </ScrollView>
+                  {/* Primary CTA + action pills moved up under the metadata
+                      row (line ~1953) so users hit the actions immediately
+                      instead of scrolling past weather/reports/forecast. */}
                 </>
               ) : null}
               {/* Standalone "Затвори" text removed — the drag handle is the

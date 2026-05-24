@@ -28,6 +28,7 @@ import { uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Screen } from '../components/Screen';
+import { ThemedTextInput } from '../components/ThemedTextInput';
 import { ActionSheet } from '../components/ActionSheet';
 import { ImageViewer } from '../components/ImageViewer';
 import { useTheme } from '../services/themeContext';
@@ -989,7 +990,7 @@ export default function ChatDetailScreen() {
   const sendActive = (hasSendText || !!pendingMedia) && !blockedByMe;
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <Screen padded={false} safeAreaEdges={['top', 'left', 'right']} avoidKeyboard={false}>
 
         {/* Gradient header */}
@@ -1063,7 +1064,7 @@ export default function ChatDetailScreen() {
         {searchOpen && (
           <View style={styles.searchBar}>
             <Ionicons name="search-outline" size={18} color={colors.textMuted} />
-            <TextInput
+            <ThemedTextInput
               style={{ flex: 1, color: colors.text, fontSize: 15, paddingVertical: 2 }}
               placeholder="Търси в съобщенията…"
               placeholderTextColor={colors.textMuted}
@@ -1465,7 +1466,7 @@ export default function ChatDetailScreen() {
           </Pressable>
 
           <View style={styles.inputWrap}>
-            <TextInput
+            <ThemedTextInput
               style={styles.input}
               placeholder={
                 blockedByMe ? 'Блокиран потребител'

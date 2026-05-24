@@ -152,12 +152,17 @@ function TournamentRow({
   // AND (b) the leaderboard has competitors. For ended tournaments this is the
   // final standing; for active ones it's a live-ish snapshot (refreshed on focus).
   const showRank = rank && rank.rank != null && rank.total > 0;
-  // Gold/silver/bronze accent for top-3 — anything else is the primary color.
+  // Tiered accent: podium gets medal colors, top 10 gets the primary accent,
+  // 11+ uses textMuted. Previously everything past #3 collapsed to one color
+  // — a user at #4 looked identical to a user at #58, which removed the
+  // emotional gradient that motivates competing toward the podium.
   const rankColor =
-    showRank && rank!.rank === 1 ? '#E8B923' :
-    showRank && rank!.rank === 2 ? '#9AA0A6' :
-    showRank && rank!.rank === 3 ? '#CD7F32' :
-    colors.primary;
+    !showRank ? colors.primary :
+    rank!.rank === 1 ? '#E8B923' :
+    rank!.rank === 2 ? '#9AA0A6' :
+    rank!.rank === 3 ? '#CD7F32' :
+    rank!.rank! <= 10 ? colors.primary :
+    colors.textMuted;
   return (
     <Pressable onPress={onPress} style={styles.row}>
       <View style={styles.iconCircle}>

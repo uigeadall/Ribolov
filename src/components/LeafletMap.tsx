@@ -413,6 +413,10 @@ export const LeafletMap = forwardRef<LeafletMapHandle, Props>(function LeafletMa
       onMessage={onMsg}
       javaScriptEnabled
       domStorageEnabled
+      // GPU-accelerated rendering for smooth pan/zoom on Android. Without
+      // this, Leaflet tile rendering falls back to software compositing and
+      // stutters noticeably during gestures. iOS ignores the prop.
+      androidLayerType="hardware"
     />
   );
 });

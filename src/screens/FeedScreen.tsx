@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { ActionSheet } from '../components/ActionSheet';
 import { Card } from '../components/Card';
+import { ComposeFab } from '../components/ComposeFab';
 import { EmptyState } from '../components/EmptyState';
 import { Button } from '../components/Button';
 import { FeedPost, FeedItem } from '../components/FeedPost';
@@ -387,8 +388,7 @@ export default function FeedScreen() {
     if (target.kind === 'catch') {
       navigation.navigate('CatchDetail', { id: target.id });
     } else {
-      // No post-detail screen yet; the closest thing is opening the author.
-      // Once a PostDetail screen exists, route here.
+      (navigation as any).navigate('PostDetail', { id: target.id });
     }
   }, [navigation]);
 
@@ -1036,51 +1036,9 @@ export default function FeedScreen() {
         {waveContent}
       </View>
 
-      {/* Compose FAB — opens an action sheet so the user can pick between
-          a catch entry and a free-form post without losing this screen as
-          their back destination. */}
-      {user && configured ? (
-        <Pressable
-          onPress={() => {
-            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            ActionSheet.show({
-              title: 'Какво искаш да споделиш?',
-              options: [
-                {
-                  label: 'Сподели улов',
-                  icon: 'fish-outline',
-                  onPress: () => (navigation as any).navigate('LogbookTab', { screen: 'AddCatch', params: {} }),
-                },
-                {
-                  label: 'Напиши пост',
-                  icon: 'create-outline',
-                  onPress: () => navigation.navigate('CreatePost'),
-                },
-              ],
-            });
-          }}
-          style={{
-            position: 'absolute',
-            right: spacing.lg,
-            bottom: 100,
-            width: 56,
-            height: 56,
-            borderRadius: 28,
-            backgroundColor: colors.primary,
-            alignItems: 'center',
-            justifyContent: 'center',
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 6 },
-            shadowOpacity: 0.35,
-            shadowRadius: 12,
-            elevation: 8,
-          }}
-          accessibilityRole="button"
-          accessibilityLabel="Сподели"
-        >
-          <Ionicons name="add" size={30} color="#fff" />
-        </Pressable>
-      ) : null}
+      {/* Compose FAB — shared component (also used on Home + Logbook) so the
+          compose entrypoint feels identical across high-traffic surfaces. */}
+      <ComposeFab />
     </View>
   );
 }

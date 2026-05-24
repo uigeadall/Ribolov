@@ -2,6 +2,7 @@ import * as admin from "firebase-admin";
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { logger } from "firebase-functions/v2";
 import { FieldValue } from "firebase-admin/firestore";
 
 admin.initializeApp();
@@ -157,6 +158,11 @@ export const onNotificationCreated = onDocumentCreated(
     if (!token || !token.startsWith("ExponentPushToken[")) return;
 
     const actorName = (data.actorName ?? "Рибар") as string;
+    // Reaction emoji (when present) is more informative than "хареса" — pass
+    // it through to the body so the lock-screen preview reflects the actual
+    // reaction the user picked.
+    const reactionEmoji = typeof data.reactionEmoji === "string" ? data.reactionEmoji : "";
+    const preview = typeof data.preview === "string" ? data.preview : "";
 
     let title = "Ribolov";
     let body = "Имаш ново известие.";
@@ -164,11 +170,15 @@ export const onNotificationCreated = onDocumentCreated(
     switch (type) {
       case "like":
         title = "Ново харесване";
-        body = `${actorName} хареса твой улов.`;
+        body = reactionEmoji
+          ? `${actorName} реагира с ${reactionEmoji} на твой улов.`
+          : `${actorName} хареса твой улов.`;
         break;
       case "comment":
         title = "Нов коментар";
-        body = `${actorName} коментира твой улов.`;
+        body = preview
+          ? `${actorName}: ${preview.slice(0, 80)}`
+          : `${actorName} коментира твой улов.`;
         break;
       case "follow":
         title = "Нов последовател";
@@ -176,23 +186,40 @@ export const onNotificationCreated = onDocumentCreated(
         break;
       case "storyLike":
         title = "Реакция на история";
-        body = `${actorName} реагира на твоята история.`;
+        body = reactionEmoji
+          ? `${actorName} реагира с ${reactionEmoji} на твоята история.`
+          : `${actorName} реагира на твоята история.`;
         break;
       case "storyComment":
         title = "Коментар на история";
-        body = `${actorName} коментира твоята история.`;
+        body = preview
+          ? `${actorName}: ${preview.slice(0, 80)}`
+          : `${actorName} коментира твоята история.`;
         break;
       case "mention":
         title = "Спомена те";
         body = `${actorName} те спомена в публикация.`;
+        break;
+      case "reshare":
+        title = "Споделено";
+        body = `${actorName} сподели твоята публикация.`;
+        break;
+      case "personalBest":
+        title = "Личен рекорд!";
+        body = preview
+          ? `${actorName}: ${preview.slice(0, 80)}`
+          : `${actorName} счупи личен рекорд.`;
         break;
     }
 
     await sendExpoPush(token, title, body, {
       type,
       notifId: event.params.notifId,
-      // Carry catchId/storyId/actorUid so the tap handler can deep-link.
+      // Carry catchId/postId/storyId/actorUid so the tap handler can
+      // deep-link to the right target. postId was missing before — taps on
+      // reshare/comment-on-post notifications had nowhere to land.
       catchId: typeof data.catchId === "string" ? data.catchId : "",
+      postId: typeof data.postId === "string" ? data.postId : "",
       storyId: typeof data.storyId === "string" ? data.storyId : "",
       actorUid: typeof data.actorUid === "string" ? data.actorUid : "",
       actorName,
@@ -264,8 +291,7 @@ export const onNewMessage = onDocumentCreated(
           }
         }
       } catch (e) {
-        // eslint-disable-next-line no-console
-        console.warn(`[onNewMessage] sharedRef check failed`, e);
+        logger.warn(`[onNewMessage] sharedRef check failed`, e);
       }
       if (!valid) {
         // Soft-delete: strip the sharedRef + clear text so the client renders
@@ -279,8 +305,7 @@ export const onNewMessage = onDocumentCreated(
             text: "",
           });
         } catch (e) {
-          // eslint-disable-next-line no-console
-          console.warn(`[onNewMessage] sharedRef soft-delete failed`, e);
+          logger.warn(`[onNewMessage] sharedRef soft-delete failed`, e);
         }
         return;
       }
@@ -562,8 +587,7 @@ export const tournamentEndingSoonReminder = onSchedule(
       .get();
 
     if (tournamentsSnap.empty) {
-      // eslint-disable-next-line no-console
-      console.log(`[tournamentEndingSoonReminder] no tournaments ending on ${tomorrowIso}`);
+      logger.info(`[tournamentEndingSoonReminder] no tournaments ending on ${tomorrowIso}`);
       return;
     }
 
@@ -578,8 +602,7 @@ export const tournamentEndingSoonReminder = onSchedule(
       const markerRef = db.doc(`tournaments/${tournamentId}/_meta/reminderSent24h`);
       const markerSnap = await markerRef.get();
       if (markerSnap.exists) {
-        // eslint-disable-next-line no-console
-        console.log(`[tournamentEndingSoonReminder] ${tournamentId} already reminded — skip`);
+        logger.info(`[tournamentEndingSoonReminder] ${tournamentId} already reminded — skip`);
         continue;
       }
 
@@ -592,8 +615,7 @@ export const tournamentEndingSoonReminder = onSchedule(
         .limit(PARTICIPANT_LIMIT)
         .get();
       if (participantsSnap.size >= PARTICIPANT_LIMIT) {
-        // eslint-disable-next-line no-console
-        console.warn(`[tournamentEndingSoonReminder] ${tournamentId} hit participant cap of ${PARTICIPANT_LIMIT}`);
+        logger.warn(`[tournamentEndingSoonReminder] ${tournamentId} hit participant cap of ${PARTICIPANT_LIMIT}`);
       }
       if (participantsSnap.empty) {
         // Still write the marker so we don't keep re-checking the empty list.
@@ -622,8 +644,7 @@ export const tournamentEndingSoonReminder = onSchedule(
           sent += 1;
         } catch (e) {
           // One bad participant shouldn't kill the rest of the loop.
-          // eslint-disable-next-line no-console
-          console.warn(`[tournamentEndingSoonReminder] ${tournamentId}/${uid} failed`, e);
+          logger.warn(`[tournamentEndingSoonReminder] ${tournamentId}/${uid} failed`, e);
         }
       }
 
@@ -634,8 +655,7 @@ export const tournamentEndingSoonReminder = onSchedule(
       totalSent += sent;
     }
 
-    // eslint-disable-next-line no-console
-    console.log(`[tournamentEndingSoonReminder] sent ${totalSent} pushes across ${tournamentsSnap.size} tournaments`);
+    logger.info(`[tournamentEndingSoonReminder] sent ${totalSent} pushes across ${tournamentsSnap.size} tournaments`);
   },
 );
 
@@ -655,8 +675,7 @@ export const cleanupOldNotifications = onSchedule("every day 04:00", async () =>
     .get();
 
   if (snapshot.empty) {
-    // eslint-disable-next-line no-console
-    console.log("[cleanupOldNotifications] no expired notifs to delete");
+    logger.info("[cleanupOldNotifications] no expired notifs to delete");
     return;
   }
 
@@ -676,8 +695,7 @@ export const cleanupOldNotifications = onSchedule("every day 04:00", async () =>
   }
   if (inBatch > 0) await batch.commit();
 
-  // eslint-disable-next-line no-console
-  console.log(`[cleanupOldNotifications] deleted ${processed} expired read notifications`);
+  logger.info(`[cleanupOldNotifications] deleted ${processed} expired read notifications`);
 });
 
 // ---------------------------------------------------------------------------
@@ -730,8 +748,7 @@ async function deleteByQuery(
     hasMore = snap.size === DELETE_PHASE_LIMIT;
   }
   if (total > 0) {
-    // eslint-disable-next-line no-console
-    console.log(`[deleteMyAccount] ${label}: deleted ${total}`);
+    logger.info(`[deleteMyAccount] ${label}: deleted ${total}`);
   }
   return total;
 }
@@ -743,8 +760,7 @@ async function deleteByQuery(
 async function recursiveDelete(refs: admin.firestore.DocumentReference[]): Promise<void> {
   for (const ref of refs) {
     await db.recursiveDelete(ref).catch((e) => {
-      // eslint-disable-next-line no-console
-      console.warn(`[deleteMyAccount] recursiveDelete failed for ${ref.path}`, e);
+      logger.warn(`[deleteMyAccount] recursiveDelete failed for ${ref.path}`, e);
     });
   }
 }
@@ -783,12 +799,10 @@ export const deleteMyAccount = onCall(async (request) => {
         hasMore = snap.size === DELETE_PHASE_LIMIT;
       }
       if (pageTotal > 0) {
-        // eslint-disable-next-line no-console
-        console.log(`[deleteMyAccount] ${label}: recursively deleted ${pageTotal}`);
+        logger.info(`[deleteMyAccount] ${label}: recursively deleted ${pageTotal}`);
       }
     } catch (e) {
-      // eslint-disable-next-line no-console
-      console.warn(`[deleteMyAccount] ${label} phase failed`, e);
+      logger.warn(`[deleteMyAccount] ${label} phase failed`, e);
     }
   }
 
@@ -852,8 +866,7 @@ export const deleteMyAccount = onCall(async (request) => {
     }
     if (inBatch > 0) await batch.commit();
   } catch (e) {
-    // eslint-disable-next-line no-console
-    console.warn(`[deleteMyAccount] follow backref cleanup failed`, e);
+    logger.warn(`[deleteMyAccount] follow backref cleanup failed`, e);
   }
 
   // 2f) Conversations the user is part of. For two-user chats we keep the
@@ -904,8 +917,7 @@ export const deleteMyAccount = onCall(async (request) => {
       cursor = convSnap.docs[convSnap.docs.length - 1];
     }
   } catch (e) {
-    // eslint-disable-next-line no-console
-    console.warn(`[deleteMyAccount] conversation cleanup failed`, e);
+    logger.warn(`[deleteMyAccount] conversation cleanup failed`, e);
   }
 
   // ── Phase 3: the user's own /users/{uid} doc + all its subcollections.
@@ -914,12 +926,10 @@ export const deleteMyAccount = onCall(async (request) => {
   try {
     await db.recursiveDelete(db.doc(`users/${uid}`));
   } catch (e) {
-    // eslint-disable-next-line no-console
-    console.warn(`[deleteMyAccount] users/${uid} delete failed`, e);
+    logger.warn(`[deleteMyAccount] users/${uid} delete failed`, e);
   }
 
-  // eslint-disable-next-line no-console
-  console.log(`[deleteMyAccount] cascade complete for ${uid}`);
+  logger.info(`[deleteMyAccount] cascade complete for ${uid}`);
   return { ok: true };
 });
 

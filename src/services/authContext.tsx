@@ -29,6 +29,8 @@ import { resetSocialCaches } from './social';
 import { resetTournamentCaches } from './tournaments';
 import { resetRateLimits } from './socialRateLimit';
 import { pushUserProfilePublic, mirrorAuthDisplayNameIfMissing } from './userProfile';
+import { setObservabilityUser } from './observability';
+import { acceptPendingReferral } from './referral';
 
 export type AuthContextValue = {
   user: User | null;
@@ -108,9 +110,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // requires the field to exist). Only writes when the field is
           // currently missing so we never overwrite a user-edited name.
           mirrorAuthDisplayNameIfMissing(u.uid, u.displayName).catch(() => undefined);
+          // Redeem any pending friend-invite deep link captured by App.tsx
+          // before/during sign-up. No-op if there's nothing pending or the
+          // user is already attributed — see referral.acceptPendingReferral
+          // for the idempotency rules.
+          acceptPendingReferral(u.uid).catch(() => undefined);
         } else {
           await AsyncStorage.removeItem(LAST_UID_KEY).catch(() => undefined);
         }
+        // Tag observability events with the current user. After Sentry was
+        // removed this is a no-op, but kept wired so future error-reporter
+        // integrations pick up user identity automatically.
+        setObservabilityUser(u?.uid ?? null, u?.displayName);
         setUser(u);
         setLoading(false);
       })();

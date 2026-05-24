@@ -203,10 +203,10 @@ export default function TripsScreen() {
               <DateTimePicker
                 value={date}
                 mode="date"
-                // inline calendar grid is far more legible than the spinner wheel,
-                // which inherits the system colour scheme and goes near-invisible
-                // when system + app themes disagree.
-                display="inline"
+                // inline calendar grid is far more legible than the spinner wheel
+                // on iOS — but "inline" is iOS-only. On Android it breaks the
+                // picker outright; use the platform-default ("calendar") instead.
+                display={Platform.OS === 'ios' ? 'inline' : 'default'}
                 themeVariant={mode === 'dark' ? 'dark' : 'light'}
                 accentColor={colors.primary}
                 textColor={colors.text}

@@ -44,9 +44,15 @@ export function FishingRefreshControl(props: RefreshControlProps) {
     <>
       {refreshing && (
         <Animated.View style={[styles.fishContainer, {
-          transform: [{ scale: scaleAnim }, { rotate }],
+          transform: [{ scale: scaleAnim }],
         }]}>
-          <Animated.Text style={styles.fish}>🎣</Animated.Text>
+          <Animated.Text style={[styles.fish, { transform: [{ rotate }] }]}>🎣</Animated.Text>
+          {/* Caption so the user knows it's working on a slow connection,
+              not stuck. Lives inside the scaling container so it fades in
+              and out with the fish. Not rotated — only the fish bobs. */}
+          <Animated.Text style={[styles.caption, { color: colors.textMuted }]}>
+            Зареждам…
+          </Animated.Text>
         </Animated.View>
       )}
       <RefreshControl
@@ -64,11 +70,18 @@ export function FishingRefreshControl(props: RefreshControlProps) {
 const styles = StyleSheet.create({
   fishContainer: {
     position: 'absolute',
-    top: -52,
+    top: -60,
     alignSelf: 'center',
     zIndex: 10,
+    alignItems: 'center',
   },
   fish: {
     fontSize: 28,
+  },
+  caption: {
+    fontSize: 11,
+    fontFamily: 'Nunito_600SemiBold',
+    marginTop: 2,
+    letterSpacing: 0.2,
   },
 });

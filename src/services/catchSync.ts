@@ -14,6 +14,7 @@ import {
   deleteField,
   startAfter,
   writeBatch,
+  runTransaction,
   type DocumentSnapshot,
 } from 'firebase/firestore';
 import { ref, getDownloadURL, deleteObject } from 'firebase/storage';
@@ -99,8 +100,10 @@ export async function waitForResizedUrl(
     attempt += 1;
     try {
       const url = await getDownloadURL(ref(storage, resizedPath));
-      // eslint-disable-next-line no-console
-      console.log('[catchSync] resize variant ready', { attempt, resizedPath });
+      if (__DEV__) {
+        // eslint-disable-next-line no-console
+        console.log('[catchSync] resize variant ready', { attempt, resizedPath });
+      }
       return url;
     } catch {
       await new Promise((r) => setTimeout(r, 1500));
@@ -109,10 +112,13 @@ export async function waitForResizedUrl(
   return null;
 }
 
+export type UploadProgressFn = (fraction: number) => void;
+
 export async function uploadLocalPhotoToStorage(
   fb: ReturnType<typeof requireFirebase>,
   uri: string,
   storagePath: string,
+  onProgress?: UploadProgressFn,
 ): Promise<string> {
   const extMatch = uri.split('?')[0].match(/\.(jpg|jpeg|png|webp)$/i);
   const ext = extMatch ? extMatch[1].toLowerCase() : 'jpg';
@@ -137,22 +143,41 @@ export async function uploadLocalPhotoToStorage(
       throw new Error(`Source file is 0 bytes: ${uri}`);
     }
 
-    // eslint-disable-next-line no-console
-    console.log('[catchSync] uploading', {
-      uri,
-      bytes: fileSize,
-      to: `${storageBucket}/${storagePath}`,
-    });
+    if (__DEV__) {
+      // eslint-disable-next-line no-console
+      console.log('[catchSync] uploading', {
+        uri,
+        bytes: fileSize,
+        to: `${storageBucket}/${storagePath}`,
+      });
+    }
 
-    const result = await FileSystem.uploadAsync(
-      `https://firebasestorage.googleapis.com/v0/b/${storageBucket}/o?uploadType=media&name=${encodeURIComponent(storagePath)}`,
+    // createUploadTask + onProgress drives the visible top progress bar in
+    // AddCatchScreen / CreatePostScreen. With a no-op onProgress this behaves
+    // identically to the previous uploadAsync call.
+    const targetUrl =
+      `https://firebasestorage.googleapis.com/v0/b/${storageBucket}/o` +
+      `?uploadType=media&name=${encodeURIComponent(storagePath)}`;
+    const uploadTask = FileSystem.createUploadTask(
+      targetUrl,
       uri,
       {
         httpMethod: 'POST',
         uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': contentType },
       },
+      onProgress
+        ? (p) => {
+            const total = p.totalBytesExpectedToSend || fileSize || 1;
+            const sent = p.totalBytesSent || 0;
+            onProgress(Math.max(0, Math.min(1, sent / total)));
+          }
+        : undefined,
     );
+    const result = await uploadTask.uploadAsync();
+    if (!result) {
+      throw new Error('Upload returned no result');
+    }
 
     if (result.status < 200 || result.status >= 300) {
       throw new Error(`Storage upload HTTP ${result.status}: ${result.body.slice(0, 200)}`);
@@ -171,13 +196,15 @@ export async function uploadLocalPhotoToStorage(
       // Non-JSON response — log it so we can see what we got.
     }
 
-    // eslint-disable-next-line no-console
-    console.log('[catchSync] upload response', {
-      status: result.status,
-      uploadedSize,
-      uploadedName,
-      bodyPreview: result.body.slice(0, 400),
-    });
+    if (__DEV__) {
+      // eslint-disable-next-line no-console
+      console.log('[catchSync] upload response', {
+        status: result.status,
+        uploadedSize,
+        uploadedName,
+        bodyPreview: result.body.slice(0, 400),
+      });
+    }
 
     if (uploadedSize === 0 || !uploadedName) {
       throw new Error(
@@ -195,10 +222,23 @@ export async function uploadLocalPhotoToStorage(
   });
 }
 
-export async function ensureCatchPhotoUploadedForCloud(c: Catch, ownerUid: string): Promise<Catch> {
+export async function ensureCatchPhotoUploadedForCloud(
+  c: Catch,
+  ownerUid: string,
+  onProgress?: UploadProgressFn,
+): Promise<Catch> {
   const uri = c.photoUri?.trim();
   const cloud = getCloudinaryUploadConfig();
   let updated = { ...c };
+
+  // Count how many uploads we'll actually do so we can map per-upload fraction
+  // to overall fraction. Primary photo (1) + non-remote extras.
+  const extraLocalsCount = (c.extraPhotoUris ?? []).filter((u) => u && !isRemote(u)).length;
+  const totalUploads = (uri && !isRemote(uri) ? 1 : 0) + extraLocalsCount;
+  let uploadIdx = 0;
+  const reportProgress = onProgress
+    ? (perUpload: number) => onProgress((uploadIdx + perUpload) / Math.max(1, totalUploads))
+    : undefined;
 
   if (uri && !isRemote(uri)) {
     if (cloud) {
@@ -206,12 +246,16 @@ export async function ensureCatchPhotoUploadedForCloud(c: Catch, ownerUid: strin
         uploadImageToCloudinary(uri, cloud.cloudName, cloud.uploadPreset)
       );
       updated = { ...updated, photoUri: secureUrl, photoStoragePath: `${CLOUDINARY_PREFIX}${publicId}` };
+      uploadIdx += 1;
+      reportProgress?.(0);
     } else {
       const fb = requireFirebase();
       const extMatch = uri.split('?')[0].match(/\.(jpg|jpeg|png|webp)$/i);
       const ext = extMatch ? extMatch[1].toLowerCase() : 'jpg';
       const path = `publicCatchPhotos/${ownerUid}/${c.id}/${Date.now()}.${ext}`;
-      const url = await uploadLocalPhotoToStorage(fb, uri, path);
+      const url = await uploadLocalPhotoToStorage(fb, uri, path, reportProgress);
+      uploadIdx += 1;
+      reportProgress?.(0);
       // This project has Firebase's "Resize Images" extension installed, which
       // creates a `_1200x1200.webp` variant on every upload AND deletes the
       // original by default. The variant is written via Admin SDK so it gets
@@ -220,33 +264,50 @@ export async function ensureCatchPhotoUploadedForCloud(c: Catch, ownerUid: strin
       // fetchers (the original URL we built does not, since raw POST uploads
       // can't generate that token). Wait for the variant, use it as photoUri.
       const resizedUrl = await waitForResizedUrl(fb.storage, path, '_1200x1200');
-      if (resizedUrl) {
-        // eslint-disable-next-line no-console
-        console.log('[catchSync] using resized variant', { resizedUrl: resizedUrl.slice(0, 120) });
-      } else {
-        // eslint-disable-next-line no-console
-        console.warn('[catchSync] resize variant not ready after 15s, falling back to original (may 404 if extension deletes originals)');
+      if (__DEV__) {
+        if (resizedUrl) {
+          // eslint-disable-next-line no-console
+          console.log('[catchSync] using resized variant', { resizedUrl: resizedUrl.slice(0, 120) });
+        } else {
+          // eslint-disable-next-line no-console
+          console.warn('[catchSync] resize variant not ready after 15s, falling back to original (may 404 if extension deletes originals)');
+        }
       }
       updated = { ...updated, photoUri: resizedUrl ?? url, photoStoragePath: path };
     }
   }
 
-  // Upload any extra photos that are still local file:// URIs
+  // Upload any extra photos that are still local file:// URIs.
+  // Mirror the primary-photo path: raw POST upload to Storage, then wait for
+  // the Resize Images extension's _1200x1200.webp variant and use its URL.
+  // The raw POST URL doesn't have the firebaseStorageDownloadTokens metadata
+  // that anonymous fetchers (expo-image in the feed) need, AND the extension
+  // deletes the original after resizing — so the previous code stored URLs
+  // that 404'd for everyone, making the 2nd/3rd/4th carousel slides appear
+  // blank.
   const extras = updated.extraPhotoUris;
   if (extras && extras.length > 0 && extras.some((u) => u && !isRemote(u))) {
     const fb = requireFirebase();
+    // Per-extra progress is omitted intentionally — extras upload in parallel,
+    // so a single linear bar would interleave wildly. We just bump the
+    // overall index by 1 as each extra finishes so the bar still climbs.
     const uploadedExtras = await Promise.all(
       extras.map(async (extraUri, idx) => {
         if (!extraUri || isRemote(extraUri)) return extraUri;
         const extMatch = extraUri.split('?')[0].match(/\.(jpg|jpeg|png|webp)$/i);
         const ext = extMatch ? extMatch[1].toLowerCase() : 'jpg';
         const path = `publicCatchPhotos/${ownerUid}/${c.id}/extra_${idx}_${Date.now()}.${ext}`;
-        return uploadLocalPhotoToStorage(fb, extraUri, path);
+        const url = await uploadLocalPhotoToStorage(fb, extraUri, path);
+        const resizedUrl = await waitForResizedUrl(fb.storage, path, '_1200x1200');
+        uploadIdx += 1;
+        reportProgress?.(0);
+        return resizedUrl ?? url;
       })
     );
     updated = { ...updated, extraPhotoUris: uploadedExtras };
   }
 
+  onProgress?.(1);
   return updated;
 }
 
@@ -279,7 +340,22 @@ export async function pushCatch(c: Catch, ownerUid: string, ownerName: string, i
   const payload = stripUndefinedForFirestore(rawPayload);
   await setDoc(doc(fb.db, 'users', ownerUid, 'catches', c.id), payload, { merge: true });
   if (isPublic) {
-    await setDoc(doc(fb.db, 'publicCatches', c.id), payload, { merge: true });
+    // Atomic read+conditional-write for the likeCount seed. The previous
+    // getDoc-then-setDoc shape had a race: two concurrent flushes of the
+    // same catch could both observe "doesn't exist" and both write
+    // `likeCount: 0`, wiping any reactions accumulated between the reads.
+    // Wrapping in runTransaction makes the existence check and the seeded
+    // write a single Firestore commit — if the doc starts existing during
+    // the txn, Firestore retries automatically and the second pass sees
+    // the live counter.
+    const publicRef = doc(fb.db, 'publicCatches', c.id);
+    await runTransaction(fb.db, async (txn) => {
+      const snap = await txn.get(publicRef);
+      const publicPayload = snap.exists()
+        ? payload
+        : { ...payload, likeCount: 0 };
+      txn.set(publicRef, publicPayload, { merge: true });
+    });
   } else {
     // Remove from public feed if the catch was previously shared. Let the
     // error propagate — the caller is normally a sync-queue flush which has

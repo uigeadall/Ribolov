@@ -117,7 +117,13 @@ export function SpeciesPicker({ visible, selectedId, onSelect, onClose }: Props)
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
+        {/* onStartShouldSetResponder claims the gesture inside the sheet so
+            taps don't bubble to the backdrop and close the modal. RN doesn't
+            implement stopPropagation on synthetic events, so the previous
+            (e) => e.stopPropagation() was a silent no-op — on Android in
+            particular, inside taps sometimes dismissed the picker. Pattern
+            matches SharePickerModal and LikersSheet. */}
+        <Pressable style={styles.sheet} onStartShouldSetResponder={() => true}>
           <View style={styles.handle} />
           <View style={styles.headerRow}>
             <Text style={styles.title}>Вид риба</Text>

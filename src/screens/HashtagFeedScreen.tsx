@@ -100,6 +100,8 @@ export default function HashtagFeedScreen() {
   const onPressReshareTarget = useCallback((target: { kind: 'post' | 'catch'; id: string }) => {
     if (target.kind === 'catch') {
       (navigation as any).navigate('LogbookTab', { screen: 'CatchDetail', params: { id: target.id } });
+    } else {
+      (navigation as any).push('PostDetail', { id: target.id });
     }
   }, [navigation]);
 

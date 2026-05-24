@@ -297,9 +297,18 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
       </View>
 
       {/* ── Full-screen story viewer ── */}
-      <Modal visible={!!viewing} transparent={false} animationType="fade" onRequestClose={closeViewer}>
+      {/* statusBarTranslucent so the system status bar doesn't overlay the
+          progress bar on Android (the app uses edgeToEdgeEnabled in app.json,
+          which otherwise lets the system clock sit on top of the story chrome). */}
+      <Modal
+        visible={!!viewing}
+        transparent={false}
+        animationType="fade"
+        onRequestClose={closeViewer}
+        statusBarTranslucent
+      >
         {viewing ? (
-          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
             <View style={styles.viewerBg} {...panResponder.panHandlers}>
               {/* Progress bar */}
               <View style={{ position: 'absolute', top: insets.top + 8, left: spacing.md, right: spacing.md, flexDirection: 'row', gap: 4, zIndex: 100 }}>

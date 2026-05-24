@@ -95,12 +95,18 @@ service cloud.firestore {
       /** Известия за харесвания и коментари по мои публични улови. */
       match /notifications/{nid} {
         allow read, delete: if isSelf(userId);
-        allow create: if signedIn()
+        // Actor can create/update the notification (latter handles re-follow
+        // after unfollow: the deterministic-id setDoc becomes an UPDATE
+        // because the original notification doc still exists from the first
+        // follow; without allowing update here, the second follow was being
+        // rejected with permission-denied).
+        // Reshare and personalBest types added for the push improvements.
+        allow create, update: if signedIn()
           && request.auth.uid != userId
           && request.resource.data.actorUid == request.auth.uid
           && request.resource.data.actorName is string
           && request.resource.data.actorName.size() <= 120
-          && request.resource.data.type in ['like', 'comment', 'follow', 'storyLike', 'storyComment', 'mention']
+          && request.resource.data.type in ['like', 'comment', 'follow', 'storyLike', 'storyComment', 'mention', 'reshare', 'personalBest']
           && request.resource.data.preview is string
           && request.resource.data.preview.size() <= 200
           && request.resource.data.read == false
@@ -109,9 +115,14 @@ service cloud.firestore {
               && (!('catchId' in request.resource.data) || request.resource.data.catchId == '')
               && request.resource.data.preview == '')
             || (request.resource.data.type in ['like', 'comment']
-              && request.resource.data.catchId is string
-              && request.resource.data.catchId.size() > 0
-              && request.resource.data.catchId.size() <= 128)
+              && (
+                (request.resource.data.catchId is string
+                  && request.resource.data.catchId.size() > 0
+                  && request.resource.data.catchId.size() <= 128)
+                || (request.resource.data.get('postId', '') is string
+                  && request.resource.data.get('postId', '').size() > 0
+                  && request.resource.data.get('postId', '').size() <= 128)
+              ))
             || (request.resource.data.type in ['storyLike', 'storyComment']
               && request.resource.data.storyId is string
               && request.resource.data.storyId.size() > 0
@@ -120,7 +131,17 @@ service cloud.firestore {
               && request.resource.data.catchId is string
               && request.resource.data.catchId.size() > 0
               && request.resource.data.catchId.size() <= 128)
+            || (request.resource.data.type == 'reshare'
+              && request.resource.data.get('postId', '') is string
+              && request.resource.data.get('postId', '').size() > 0
+              && request.resource.data.get('postId', '').size() <= 128)
+            || (request.resource.data.type == 'personalBest'
+              && request.resource.data.catchId is string
+              && request.resource.data.catchId.size() > 0
+              && request.resource.data.catchId.size() <= 128)
           );
+        // Recipient can mark as read — separate from the actor write path
+        // above. Both allow rules OR together for update.
         allow update: if isSelf(userId)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])
           && request.resource.data.read == true;
@@ -181,23 +202,30 @@ service cloud.firestore {
               && request.resource.data.extraPhotoUris.size() <= 5)))
         ||
         // Any signed-in user can step likeCount by exactly ±1 (one reaction
-        // toggle = one count change). Without the ±1 bound, the previous
-        // hasOnly check let any signed-in user write `likeCount: -100000` or
-        // `likeCount: 999999` directly, corrupting popularity rankings and
-        // leaderboards. The /likes/{uid} subcollection still stores the
-        // actual reactions; this rule just lets the counter mirror it.
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
-          && request.resource.data.likeCount is number
-          && request.resource.data.likeCount >= resource.data.likeCount - 1
-          && request.resource.data.likeCount <= resource.data.likeCount + 1)
+        // toggle = one count change). Uses get('likeCount', 0) to default
+        // to 0 when the catch was created before likeCount was a tracked
+        // field — without the default, `resource.data.likeCount - 1` errors
+        // for those legacy docs and the rule rejects the first like with
+        // permission-denied. New catches still get likeCount initialized to
+        // 0 in pushCatch, but the rule handles both shapes.
+        (request.resource.data.likeCount is number
+          && request.resource.data.likeCount >= resource.data.get('likeCount', 0) - 1
+          && request.resource.data.likeCount <= resource.data.get('likeCount', 0) + 1
+          && request.resource.data.ownerUid == resource.data.ownerUid)
       );
       allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
 
       match /likes/{uid} {
         allow read: if signedIn();
-        allow write: if isSelf(uid)
+        // Split into create/update + delete: on delete, request.resource is
+        // null and `'reaction' in request.resource.data` errors → rules engine
+        // denies the write. That broke the unlike flow's transaction (delete
+        // like doc + decrement likeCount), which then rejected with
+        // permission-denied for the whole batch.
+        allow create, update: if isSelf(uid)
           && (!('reaction' in request.resource.data)
             || request.resource.data.reaction in ['heart','fire','trophy','fish','wow']);
+        allow delete: if isSelf(uid);
       }
       match /comments/{commentId} {
         allow read: if signedIn();
@@ -219,11 +247,13 @@ service cloud.firestore {
             && request.resource.data.text.size() > 0
             && request.resource.data.text.size() <= 2000)
           ||
-          // ±1 delta only — same anti-corruption fix as the parent catch.
-          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
-            && request.resource.data.likeCount is number
-            && request.resource.data.likeCount >= resource.data.likeCount - 1
-            && request.resource.data.likeCount <= resource.data.likeCount + 1)
+          // Counter bump — get('likeCount', 0) defaults legacy comments
+          // (created before likeCount was a tracked field) so the rule
+          // doesn't reject the first comment-like with permission-denied.
+          (request.resource.data.likeCount is number
+            && request.resource.data.likeCount >= resource.data.get('likeCount', 0) - 1
+            && request.resource.data.likeCount <= resource.data.get('likeCount', 0) + 1
+            && request.resource.data.authorUid == resource.data.authorUid)
         );
         allow delete: if signedIn() && (
           resource.data.authorUid == request.auth.uid
@@ -232,11 +262,13 @@ service cloud.firestore {
 
         match /likes/{uid} {
           allow read: if signedIn();
-          // Match the enum validation on top-level catch/post likes — comment
-          // reactions are the same shape and must not allow arbitrary values.
-          allow write: if isSelf(uid)
+          // Same split as the parent — delete needs its own clause because
+          // `'reaction' in request.resource.data` errors when request.resource
+          // is null (which it is for deletes), making the whole write reject.
+          allow create, update: if isSelf(uid)
             && (!('reaction' in request.resource.data)
               || request.resource.data.reaction in ['heart','fire','trophy','fish','wow']);
+          allow delete: if isSelf(uid);
         }
       }
     }
@@ -270,20 +302,18 @@ service cloud.firestore {
         // Owner can change anything they could create.
         resource.data.ownerUid == request.auth.uid
         ||
-        // Counter bumps — ±1 delta only. Without the bound, any signed-in
-        // user could write `likeCount: 999999` / `commentCount: 0` directly,
-        // corrupting feed ranking + leaderboards. The /likes/{uid} subcol
-        // stores the actual reaction; this rule just keeps the counter in
-        // step. Same shape as publicCatches.
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
-          && request.resource.data.likeCount is number
-          && request.resource.data.likeCount >= resource.data.likeCount - 1
-          && request.resource.data.likeCount <= resource.data.likeCount + 1)
-        ||
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['commentCount'])
+        // Counter bumps — likeCount/commentCount each by ±1, ownerUid
+        // preserved. get('field', 0) defaults to 0 for legacy docs missing
+        // the field, otherwise `resource.data.X - 1` errors and denies the
+        // write. (Posts initialize both to 0 on create, but legacy posts
+        // and any future create paths that miss it would otherwise fail.)
+        (request.resource.data.likeCount is number
+          && request.resource.data.likeCount >= resource.data.get('likeCount', 0) - 1
+          && request.resource.data.likeCount <= resource.data.get('likeCount', 0) + 1
           && request.resource.data.commentCount is number
-          && request.resource.data.commentCount >= resource.data.commentCount - 1
-          && request.resource.data.commentCount <= resource.data.commentCount + 1)
+          && request.resource.data.commentCount >= resource.data.get('commentCount', 0) - 1
+          && request.resource.data.commentCount <= resource.data.get('commentCount', 0) + 1
+          && request.resource.data.ownerUid == resource.data.ownerUid)
       );
       allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
 
@@ -292,9 +322,13 @@ service cloud.firestore {
         // Validate the reaction enum the same way as /publicCatches likes so
         // that the multi-reaction picker can't be abused to write arbitrary
         // values. Missing-reaction (legacy heart-only) writes still pass.
-        allow write: if isSelf(uid)
+        // delete is a separate clause — `'reaction' in request.resource.data`
+        // errors when request.resource is null (deletes), which would block
+        // the unlike-via-transaction flow with permission-denied.
+        allow create, update: if isSelf(uid)
           && (!('reaction' in request.resource.data)
             || request.resource.data.reaction in ['heart','fire','trophy','fish','wow']);
+        allow delete: if isSelf(uid);
       }
 
       match /comments/{commentId} {
@@ -316,11 +350,11 @@ service cloud.firestore {
             && request.resource.data.text.size() > 0
             && request.resource.data.text.size() <= 2000)
           ||
-          // ±1 delta only — see parent post update rule comment.
-          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
-            && request.resource.data.likeCount is number
-            && request.resource.data.likeCount >= resource.data.likeCount - 1
-            && request.resource.data.likeCount <= resource.data.likeCount + 1)
+          // Counter bump — defaults legacy comments without likeCount.
+          (request.resource.data.likeCount is number
+            && request.resource.data.likeCount >= resource.data.get('likeCount', 0) - 1
+            && request.resource.data.likeCount <= resource.data.get('likeCount', 0) + 1
+            && request.resource.data.authorUid == resource.data.authorUid)
         );
         allow delete: if signedIn() && (
           resource.data.authorUid == request.auth.uid
@@ -329,10 +363,11 @@ service cloud.firestore {
 
         match /likes/{uid} {
           allow read: if signedIn();
-          // Validate the reaction enum like the parent post-likes rule.
-          allow write: if isSelf(uid)
+          // Same delete-split as the parent post-likes / catch-likes rules.
+          allow create, update: if isSelf(uid)
             && (!('reaction' in request.resource.data)
               || request.resource.data.reaction in ['heart','fire','trophy','fish','wow']);
+          allow delete: if isSelf(uid);
         }
       }
     }
@@ -431,11 +466,12 @@ service cloud.firestore {
           // counter-only bump path. The like toggle code path is allowed
           // through the second branch below.
           ;
+        // Counter bump — defaults legacy entries without likeCount.
         allow update: if signedIn()
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
           && request.resource.data.likeCount is number
-          && request.resource.data.likeCount >= resource.data.likeCount - 1
-          && request.resource.data.likeCount <= resource.data.likeCount + 1;
+          && request.resource.data.likeCount >= resource.data.get('likeCount', 0) - 1
+          && request.resource.data.likeCount <= resource.data.get('likeCount', 0) + 1
+          && request.resource.data.ownerUid == resource.data.ownerUid;
         allow delete: if signedIn() && (
           isSelf(ownerUid)
           || get(/databases/$(database)/documents/tournaments/$(tid)).data.hostUid == request.auth.uid

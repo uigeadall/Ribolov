@@ -46,10 +46,25 @@ const writeQ = (entries: Entry[]) => writeSyncQueue(QUEUE_KEY, entries);
 
 export async function enqueueCatchSync(catchId: string, sharePublic: boolean): Promise<void> {
   const q = await readQ();
+  // Preserve the in-flight retry counter if this catch is already in the
+  // queue. Resetting attempts on every enqueue let a perpetually-failing
+  // catch loop forever, since each save would zero it. The user-facing
+  // `forceRetryCatchSync` path still resets attempts intentionally to give
+  // a manual retry a fresh budget.
+  const prev = q.find((e) => e.catchId === catchId);
   const rest = q.filter((e) => e.catchId !== catchId);
-  rest.push({ catchId, sharePublic, attempts: 0 });
+  rest.push({ catchId, sharePublic, attempts: prev?.attempts ?? 0 });
   await writeQ(rest);
   addBreadcrumb('sync', 'catch_enqueue', { catchId, sharePublic: String(sharePublic) });
+}
+
+/** Number of catches currently waiting to upload. Used by the LogbookScreen
+    header pill so users can see at a glance that something is pending —
+    previously the queue was completely silent and users wondered "did it
+    save?" while the catch sat in AsyncStorage. */
+export async function getPendingCatchSyncCount(): Promise<number> {
+  const q = await readQ();
+  return q.length;
 }
 
 export async function clearCatchSyncQueue(): Promise<void> {
@@ -75,8 +90,28 @@ export async function forceRetryCatchSync(
   await flushPendingCatchSync(ctx);
 }
 
+// Module-level mutex for flushPendingCatchSync. Concurrent flushes (e.g. a
+// forceRetryCatchSync from a user tap firing while an ambient AppState
+// resume flush is mid-run) would otherwise both read the same queue
+// snapshot and both write disjoint `remaining` lists — the second writer
+// clobbers the first, leaking already-flushed entries back into the queue
+// (or vice-versa, dropping entries that failed). Serialising flushes via
+// a chained promise mutex makes the queue read+write atomic per flush.
+let _flushChain: Promise<unknown> = Promise.resolve();
+
 /** Изпраща чакащите улови към Firebase с експоненциален backoff. */
 export async function flushPendingCatchSync(ctx: {
+  user: { uid: string; displayName: string | null; email: string | null };
+}): Promise<void> {
+  const next = _flushChain.then(() => runFlush(ctx), () => runFlush(ctx));
+  // Swallow rejections on the chain so a single flush failure doesn't
+  // poison subsequent calls. Callers can still await `next` directly to
+  // observe their own flush's outcome.
+  _flushChain = next.then(() => {}, () => {});
+  return next;
+}
+
+async function runFlush(ctx: {
   user: { uid: string; displayName: string | null; email: string | null };
 }): Promise<void> {
   const entries = await readQ();

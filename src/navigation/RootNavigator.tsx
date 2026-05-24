@@ -32,6 +32,7 @@ import HomeScreen from '../screens/HomeScreen';
 import LogbookScreen from '../screens/LogbookScreen';
 import AddCatchScreen from '../screens/AddCatchScreen';
 import CatchDetailScreen from '../screens/CatchDetailScreen';
+import PostDetailScreen from '../screens/PostDetailScreen';
 import MapScreen from '../screens/MapScreen';
 import SpeciesScreen from '../screens/SpeciesScreen';
 import SpeciesDetailScreen from '../screens/SpeciesDetailScreen';
@@ -136,6 +137,7 @@ function FeedNavigator() {
     <FeedStack.Navigator screenOptions={{ headerShown: false }}>
       <FeedStack.Screen name="FeedList" component={FeedScreenWrapped} />
       <FeedStack.Screen name="CatchDetail" component={CatchDetailScreen} />
+      <FeedStack.Screen name="PostDetail" component={PostDetailScreen} />
       <FeedStack.Screen name="Classics" component={ClassicsScreenWrapped} />
       <FeedStack.Screen name="SavedPosts" component={SavedPostsWrapped} />
       <FeedStack.Screen name="Notifications" component={NotificationsWrapped} />
@@ -442,6 +444,13 @@ export function RootNavigator() {
   const { colors, mode } = useTheme();
   const navigationRef = useNavigationContainerRef<RootStackParamList>();
   const [navReady, setNavReady] = useState(false);
+
+  // Onboarding gating lives in App.tsx (key: @ribolov/onboarding_done) — it
+  // renders OnboardingScreen INSTEAD of the navigator on first launch.
+  // We previously had a second gate here using a different AsyncStorage key
+  // (@ribolov/onboardingComplete), which fired the slides AGAIN after the
+  // App.tsx flag was set. Two gates with divergent keys is the kind of
+  // brittleness that shows up only on real devices — removed.
 
   useNotificationNavigation(navigationRef, navReady);
 

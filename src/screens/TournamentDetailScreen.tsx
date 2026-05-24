@@ -24,11 +24,13 @@ import { joinTournament } from '../services/cloudSync';
 import { catchesStore } from '../storage/storage';
 import type { Catch } from '../types';
 import {
+  fetchMyTournamentRank,
   fetchTournamentPhotoEntries,
   getMyLikedEntries,
   isJoinedTournament,
   submitCatchToTournament,
   toggleTournamentEntryLike,
+  type MyTournamentRank,
   type TournamentPhotoEntry,
 } from '../services/tournaments';
 import { createPost } from '../services/cloudSync';
@@ -47,6 +49,10 @@ export default function TournamentDetailScreen() {
   // can reflect reality. Without this, the button stayed as "Участвай" even
   // after a successful join, and rapid double-taps double-fired the write.
   const [isJoined, setIsJoined] = useState(false);
+  // Current user's rank in this tournament, fetched after join state is known.
+  // Renders inside the join button when the user has submitted, giving every
+  // joined user something to feel proud of beyond "Участваш".
+  const [myRank, setMyRank] = useState<MyTournamentRank | null>(null);
   const joiningRef = useRef(false);
 
   const [entries, setEntries] = useState<TournamentPhotoEntry[]>([]);
@@ -85,6 +91,18 @@ export default function TournamentDetailScreen() {
     if (!user?.uid) { setIsJoined(false); return; }
     isJoinedTournament(route.params.id, user.uid).then(setIsJoined).catch(() => {});
   }, [route.params.id, user?.uid]);
+
+  // Pull the user's current rank when joined — feeds the join button. The
+  // entries list refetch is the natural trigger so the rank stays in sync
+  // with leaderboard changes (likes flipping order).
+  useEffect(() => {
+    if (!user?.uid || !isJoined) { setMyRank(null); return; }
+    let cancelled = false;
+    fetchMyTournamentRank(route.params.id, user.uid)
+      .then((r) => { if (!cancelled) setMyRank(r); })
+      .catch(() => { if (!cancelled) setMyRank(null); });
+    return () => { cancelled = true; };
+  }, [route.params.id, user?.uid, isJoined, entries.length]);
 
   const loadEntries = useCallback(async (silent = false) => {
     if (!silent) setEntriesLoading(true);
@@ -385,7 +403,16 @@ export default function TournamentDetailScreen() {
             {user ? (
               <View style={{ paddingHorizontal: spacing.lg, gap: spacing.sm, marginBottom: spacing.sm }}>
                 <Button
-                  title={isJoined ? 'Участваш' : 'Участвай'}
+                  title={
+                    isJoined
+                      // Show rank inline so every joined user sees something
+                      // concrete about their standing — "Участваш" alone was
+                      // a dead-end after the success toast faded.
+                      ? (myRank && myRank.rank != null && myRank.total > 0
+                          ? `Участваш · #${myRank.rank} от ${myRank.total}`
+                          : 'Участваш')
+                      : 'Участвай'
+                  }
                   onPress={onJoin}
                   loading={busy}
                   disabled={isJoined}
@@ -448,7 +475,13 @@ export default function TournamentDetailScreen() {
       />
 
       {/* Full-screen viewer */}
-      <Modal visible={!!viewer} transparent={false} animationType="fade" statusBarTranslucent>
+      <Modal
+        visible={!!viewer}
+        transparent={false}
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setViewer(null)}
+      >
         <View style={{ flex: 1, backgroundColor: '#000' }}>
           {viewer ? (
             <Image source={{ uri: viewer.photoUri }} style={{ flex: 1 }} contentFit="contain" />

@@ -15,7 +15,6 @@ import { useFocusEffect } from '@react-navigation/native';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
-import { ActionSheet } from '../components/ActionSheet';
 import { useAuth } from '../services/authContext';
 import { WeatherIcon } from '../components/WeatherIcon';
 import { useTheme } from '../services/themeContext';
@@ -44,6 +43,7 @@ import { Image } from 'expo-image';
 import type { Catch } from '../types/index';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 import { ScalePressable } from '../components/ScalePressable';
+import { ComposeFab } from '../components/ComposeFab';
 
 const FALLBACK_COORD = { latitude: 42.6977, longitude: 23.3219 };
 const WAVE = 32;
@@ -383,33 +383,29 @@ const S = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, elevation: 4,
   },
 
-  // ─── Personal best — cinematic ───────────────────────────────────
-  pbCard: {
-    marginHorizontal: spacing.xl, marginBottom: spacing.xl,
-    borderRadius: 24, overflow: 'hidden',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2, shadowRadius: 14, elevation: 8,
+  // ─── Personal best — compact welcome pill (sits near top, between
+  // OnboardingChecklist and the orange CTA). Replaced the full-bleed
+  // cinematic card that used to live at the bottom of the screen — burying
+  // a user's monthly best ~13 sections deep meant most users never saw it.
+  // Surfacing it as a one-line pill gives the win immediate visibility
+  // without competing with the orange CTA for the eye.
+  pbPill: {
+    marginHorizontal: spacing.xl,
+    marginBottom: spacing.md,
+    borderRadius: 16, borderWidth: 1,
+    paddingVertical: 10, paddingHorizontal: 12,
+    flexDirection: 'row', alignItems: 'center', gap: 10,
   },
-  pbCoverImage: { width: '100%', height: 120 },
-  pbGradient: {
-    position: 'absolute', left: 0, right: 0, top: 0, height: 120,
+  pbPillIcon: {
+    width: 34, height: 34, borderRadius: 17,
+    alignItems: 'center', justifyContent: 'center',
   },
-  pbNoCover: {
-    height: 120, alignItems: 'center', justifyContent: 'center',
+  pbPillLabel: {
+    fontSize: 9, fontFamily: 'Nunito_700Bold',
+    letterSpacing: 1, textTransform: 'uppercase',
   },
-  pbBody: {
-    flexDirection: 'row', alignItems: 'center',
-    padding: spacing.lg, gap: spacing.md,
-  },
-  pbStats: { flex: 1 },
-  pbSpecies: {
-    fontSize: 15, fontFamily: 'Nunito_700Bold',
-  },
-  pbWeight: {
-    fontSize: 13, fontFamily: 'Nunito_600SemiBold', marginTop: 2,
-  },
-  pbDate: {
-    fontSize: 11, fontFamily: 'Nunito_400Regular', marginTop: 2,
+  pbPillTitle: {
+    fontSize: 14, fontFamily: 'Nunito_700Bold', marginTop: 1,
   },
 });
 
@@ -522,8 +518,15 @@ export default function HomeScreen() {
     setWeatherStatus('loading');
     let lat = FALLBACK_COORD.latitude, lng = FALLBACK_COORD.longitude, label = 'София (примерно)';
     let granted = false;
+    // Read the existing permission status WITHOUT prompting. The permission
+    // request itself only fires on the Map tab (where location is essential
+    // for showing your position vs the dam markers). Asking on Home — a tab
+    // most users hit first — was a "permission before value" anti-pattern:
+    // the prompt appeared before they understood what the location would buy
+    // them. Now Home shows Sofia weather as a soft fallback and silently
+    // upgrades to live coords the moment the user grants permission elsewhere.
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      const { status } = await Location.getForegroundPermissionsAsync();
       if (status === 'granted') {
         const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
         lat = pos.coords.latitude; lng = pos.coords.longitude; label = 'Твоето местоположение';
@@ -622,29 +625,6 @@ export default function HomeScreen() {
 
   // ── Render ──────────────────────────────────────────────────────
 
-  // Compose action sheet — surfaced both from the existing big CTA card
-  // (which still goes straight to AddCatch) and from a new floating FAB
-  // that lets the user pick post vs catch from anywhere on the screen.
-  const openComposeSheet = useCallback(() => {
-    if (!user || !configured) return;
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    ActionSheet.show({
-      title: 'Какво искаш да споделиш?',
-      options: [
-        {
-          label: 'Сподели улов',
-          icon: 'fish-outline',
-          onPress: () => (navigation as any).navigate('LogbookTab', { screen: 'AddCatch', params: {} }),
-        },
-        {
-          label: 'Напиши пост',
-          icon: 'create-outline',
-          onPress: () => (navigation as any).navigate('FeedTab', { screen: 'CreatePost' }),
-        },
-      ],
-    });
-  }, [user, configured, navigation]);
-
   return (
     <View style={{ flex: 1 }}>
     <Screen
@@ -707,6 +687,25 @@ export default function HomeScreen() {
                     </Text>
                   )}
                 </>
+              ) : weatherStatus === 'error' ? (
+                // Explicit error state instead of rendering nothing. Previously
+                // a failed weather fetch left this slot blank — users couldn't
+                // tell whether the app was still loading or had given up. A
+                // visible "няма мрежа" + retry tap clarifies it and gives them
+                // an action without forcing a full pull-to-refresh.
+                <Pressable
+                  onPress={() => { void loadWeather(); }}
+                  hitSlop={8}
+                  style={{ alignItems: 'flex-end', marginTop: 4, gap: 2 }}
+                >
+                  <Ionicons name="cloud-offline-outline" size={28} color="rgba(255,255,255,0.6)" />
+                  <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11, fontFamily: 'Nunito_700Bold' }}>
+                    Няма мрежа
+                  </Text>
+                  <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, fontFamily: 'Nunito_600SemiBold' }}>
+                    Опитай отново →
+                  </Text>
+                </Pressable>
               ) : null}
             </View>
           </View>
@@ -752,6 +751,26 @@ export default function HomeScreen() {
           />
         ) : null}
 
+        {/* ── Monthly personal best — compact welcome pill ── */}
+        {bestThisMonth && (
+          <ScalePressable
+            style={[S.pbPill, { backgroundColor: cardBg, borderColor: cardBorder }]}
+            onPress={() => navigation.navigate('LogbookTab', { screen: 'CatchDetail', params: { id: bestThisMonth.id } })}
+          >
+            <View style={[S.pbPillIcon, { backgroundColor: accent + '22' }]}>
+              <Text style={{ fontSize: 16 }}>🏆</Text>
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[S.pbPillLabel, { color: mutedColor }]}>Твоят рекорд за месеца</Text>
+              <Text style={[S.pbPillTitle, { color: textColor }]} numberOfLines={1}>
+                {bestThisMonth.speciesName}
+                {bestThisMonth.weightKg != null ? ` · ${bestThisMonth.weightKg} кг` : ''}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={mutedColor} />
+          </ScalePressable>
+        )}
+
         {/* ── Big CTA card ── */}
         <ScalePressable
           style={S.ctaCard}
@@ -774,12 +793,17 @@ export default function HomeScreen() {
           <Ionicons name="chevron-forward" size={22} color="rgba(255,255,255,0.7)" />
         </ScalePressable>
 
-        {/* ── Pill shortcut row — calm surface cards, single accent ── */}
+        {/* ── Pill shortcut row — surfaces reachable nowhere else in one tap.
+            Previously: Места / Лента / Приятели — all three are already
+            bottom-tab destinations, so the pills did nothing the tab bar
+            didn't. Now points at three screens buried two-or-more taps deep
+            (Tournaments, TripPlanner, Classics) so this row actually
+            accelerates navigation instead of duplicating it. ── */}
         <View style={S.pillRow}>
           {[
-            { icon: 'compass' as const, label: 'Места', onPress: () => navigation.navigate('MapTab') },
-            { icon: 'telescope' as const, label: 'Лента', onPress: () => navigation.navigate('FeedTab', { screen: 'FeedList' }) },
-            { icon: 'people' as const, label: 'Приятели', onPress: () => navigation.navigate('FeedTab', { screen: 'Friends' }) },
+            { icon: 'trophy-outline' as const, label: 'Турнири', onPress: () => navigation.navigate('ProfileTab', { screen: 'Tournaments' }) },
+            { icon: 'calendar-outline' as const, label: 'План', onPress: () => navigation.navigate('ProfileTab', { screen: 'TripPlanner' }) },
+            { icon: 'ribbon-outline' as const, label: 'Класики', onPress: () => navigation.navigate('ProfileTab', { screen: 'Classics' }) },
           ].map((p) => (
             <ScalePressable
               key={p.label}
@@ -833,84 +857,22 @@ export default function HomeScreen() {
               ) : null;
             })()}
 
-            <Pressable style={S.weatherCard} onPress={() => navigation.navigate('MapTab')}>
-              {/* Always dark blue background */}
-              <LinearGradient
-                colors={['#0A1828', '#0D2240']}
-                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-                style={S.weatherCardBg}
-              />
+            {/* The detailed dark weather card used to live here, but every
+                stat it surfaced (temp / wind / humidity / moon / fishing
+                rating) was already shown in the hero at the top of the
+                screen. Keeping both was redundant and pushed the actual
+                catch surfaces (Recent, Following, Nearby) below the fold.
+                The 7-day strip stays — it's the only weather surface that
+                isn't a duplicate of the hero. */}
 
-              {weatherStatus === 'loading' && !weather ? (
-                <View style={{ gap: 10 }}>
-                  <Skeleton height={48} width="60%" />
-                  <Skeleton height={74} width="100%" style={{ borderRadius: 14 }} />
-                </View>
-              ) : weather ? (
-                <>
-                  {/* Top shimmer */}
-                  <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, backgroundColor: 'rgba(255,255,255,0.13)' }} />
-
-                  {/* Temperature row */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-                    <View style={{ backgroundColor: 'rgba(255,255,255,0.11)', borderRadius: 14, padding: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)' }}>
-                      <WeatherIcon weatherCode={weather.weatherCode} size={32} color="#fff" />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 2 }}>
-                        <Text style={{ fontSize: 40, fontFamily: 'Nunito_800ExtraBold', color: '#fff', letterSpacing: -2, lineHeight: 44 }}>{weather.temperatureC}</Text>
-                        <Text style={{ fontSize: 17, fontFamily: 'Nunito_600SemiBold', color: 'rgba(255,255,255,0.55)', marginBottom: 7 }}>°C</Text>
-                      </View>
-                      <Text style={{ fontSize: 12, fontFamily: 'Nunito_600SemiBold', color: 'rgba(255,255,255,0.65)' }}>{weather.description} · Усеща се {weather.feelsLikeC}°</Text>
-                    </View>
-                    {/* Fishing score pill — top-right */}
-                    {fLabel && (
-                      <View style={{ alignItems: 'center', gap: 3 }}>
-                        <View style={{ backgroundColor: fLabel.color + '28', borderRadius: 10, borderWidth: 1, borderColor: fLabel.color + '55', paddingHorizontal: 8, paddingVertical: 4 }}>
-                          <Text style={{ fontSize: 15, fontFamily: 'Nunito_800ExtraBold', color: fLabel.color }}>{weather.fishingRating}<Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>/5</Text></Text>
-                        </View>
-                        <View style={{ flexDirection: 'row', gap: 3 }}>
-                          {[1,2,3,4,5].map(i => (
-                            <View key={i} style={{ width: 10, height: 3, borderRadius: 1.5, backgroundColor: i <= weather.fishingRating ? fLabel.color : 'rgba(255,255,255,0.15)' }} />
-                          ))}
-                        </View>
-                        <Text style={{ fontSize: 8, fontFamily: 'Nunito_600SemiBold', color: fLabel.color }}>{fLabel.text}</Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {/* Stats — single horizontal row of 4 */}
-                  <View style={{ flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', overflow: 'hidden' }}>
-                    {[
-                      { iconName: 'flag' as const,         iconColor: '#52A8F0', bg: 'rgba(82,168,240,0.18)',   label: 'ВЯТЪР',    value: `${weather.windKmh}`, unit: 'км/ч', sub: windDirectionLabel(weather.windDirection) },
-                      { iconName: 'speedometer' as const,  iconColor: '#50C8B4', bg: 'rgba(80,200,180,0.18)',   label: 'НАЛЯГАНЕ', value: `${weather.pressureHpa}`, unit: 'hPa', sub: pressureTrend === 'up' ? 'Расте ↑' : pressureTrend === 'down' ? 'Пада ↓' : 'Стабилно' },
-                      { iconName: 'rainy' as const,        iconColor: '#64AAE6', bg: 'rgba(100,170,230,0.18)',  label: 'ДЪЖД',     value: `${weather.precipitationProbability}`, unit: '%', sub: 'вероятност' },
-                    ].map(({ iconName, iconColor, bg, label, value, unit, sub }, idx) => (
-                      <React.Fragment key={label}>
-                        <View style={{ flex: 1, alignItems: 'center', paddingVertical: 10, paddingHorizontal: 4, gap: 3 }}>
-                          <View style={{ width: 26, height: 26, borderRadius: 8, backgroundColor: bg, alignItems: 'center', justifyContent: 'center' }}>
-                            <Ionicons name={iconName} size={13} color={iconColor} />
-                          </View>
-                          <Text style={{ fontSize: 8, fontFamily: 'Nunito_700Bold', color: 'rgba(255,255,255,0.38)', letterSpacing: 0.5 }}>{label}</Text>
-                          <Text style={{ fontSize: 14, fontFamily: 'Nunito_800ExtraBold', color: '#fff', letterSpacing: -0.3 }} numberOfLines={1}>{value}<Text style={{ fontSize: 9, fontFamily: 'Nunito_400Regular', color: 'rgba(255,255,255,0.45)' }}>{unit}</Text></Text>
-                          <Text style={{ fontSize: 9, fontFamily: 'Nunito_400Regular', color: 'rgba(255,255,255,0.38)' }} numberOfLines={1}>{sub}</Text>
-                        </View>
-                        <View style={{ width: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginVertical: 8 }} />
-                      </React.Fragment>
-                    ))}
-                    {/* Moon cell */}
-                    <View style={{ flex: 1, alignItems: 'center', paddingVertical: 10, paddingHorizontal: 4, gap: 3 }}>
-                      <View style={{ width: 26, height: 26, borderRadius: 8, backgroundColor: 'rgba(160,120,220,0.2)', alignItems: 'center', justifyContent: 'center' }}>
-                        <Text style={{ fontSize: 13 }}>{moonPhaseEmoji(weather.moonPhaseName)}</Text>
-                      </View>
-                      <Text style={{ fontSize: 8, fontFamily: 'Nunito_700Bold', color: 'rgba(255,255,255,0.38)', letterSpacing: 0.5 }}>ЛУНА</Text>
-                      <Text style={{ fontSize: 14, fontFamily: 'Nunito_800ExtraBold', color: '#fff' }} numberOfLines={1}>{Math.round((1 - Math.abs(0.5 - weather.moonPhase) * 2) * 100)}<Text style={{ fontSize: 9, color: 'rgba(255,255,255,0.45)', fontFamily: 'Nunito_400Regular' }}>%</Text></Text>
-                      <Text style={{ fontSize: 9, fontFamily: 'Nunito_400Regular', color: 'rgba(255,255,255,0.38)' }} numberOfLines={1}>{weather.moonPhaseName}</Text>
-                    </View>
-                  </View>
-                </>
-              ) : null}
-            </Pressable>
+            {/* Bite forecast inline — same conceptual section as the 7-day strip
+                below ("conditions today + this week"), so we render it under
+                the same Прогноза header instead of giving it its own. */}
+            {weather && (
+              <View style={{ paddingHorizontal: spacing.xl, marginBottom: spacing.md }}>
+                <BiteForecast weather={weather} />
+              </View>
+            )}
 
             {/* 7-day forecast */}
             {(forecast.length > 0 || weatherStatus === 'loading') && (
@@ -954,19 +916,6 @@ export default function HomeScreen() {
               </ScrollView>
             )}
           </>
-        )}
-
-        {/* ── Bite forecast for today (uses existing component) ── */}
-        {weather && (
-          <View style={{ paddingHorizontal: spacing.xl, marginBottom: spacing.lg }}>
-            <View style={S.sectionRow}>
-              <View style={S.sectionLeft}>
-                <View style={[S.sectionAccent, { backgroundColor: primary }]} />
-                <Text style={[S.sectionLabel, { color: mutedColor }]}>Прогноза за хапки</Text>
-              </View>
-            </View>
-            <BiteForecast weather={weather} />
-          </View>
         )}
 
         {/* ── Active tournaments — countdown to soonest ending ── */}
@@ -1270,93 +1219,13 @@ export default function HomeScreen() {
           </>
         )}
 
-        {/* ── Personal best — cinematic card ── */}
-        {bestThisMonth && (
-          <>
-            <View style={S.sectionRow}>
-              <View style={S.sectionLeft}>
-                <View style={[S.sectionAccent, { backgroundColor: accent }]} />
-                <Text style={[S.sectionLabel, { color: mutedColor }]}>Личен рекорд — този месец</Text>
-              </View>
-            </View>
-            <Pressable
-              style={[S.pbCard, { backgroundColor: cardBg }]}
-              onPress={() => navigation.navigate('LogbookTab', { screen: 'LogbookList' })}
-            >
-              {bestThisMonth.photoUri ? (
-                <>
-                  <Image
-                    source={{ uri: bestThisMonth.photoUri }}
-                    style={S.pbCoverImage}
-                    contentFit="cover"
-                  />
-                  <LinearGradient
-                    colors={['rgba(0,0,0,0.05)', 'rgba(0,0,0,0.55)']}
-                    start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
-                    style={S.pbGradient}
-                  />
-                </>
-              ) : (
-                <LinearGradient
-                  colors={[primary + '33', primary + '11']}
-                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-                  style={S.pbNoCover}
-                >
-                  <Text style={{ fontSize: 44 }}>🏆</Text>
-                  {bestThisMonth.weightKg != null && (
-                    <Text style={{ fontSize: 22, fontFamily: 'Nunito_800ExtraBold', color: accent, marginTop: 4 }}>
-                      {bestThisMonth.weightKg} кг
-                    </Text>
-                  )}
-                </LinearGradient>
-              )}
-              <View style={[S.pbBody, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: cardBorder }]}>
-                <View style={S.pbStats}>
-                  <Text style={[S.pbSpecies, { color: textColor }]}>{bestThisMonth.speciesName}</Text>
-                  <Text style={[S.pbWeight, { color: accent }]}>
-                    {bestThisMonth.weightKg != null ? `${bestThisMonth.weightKg} кг` : '—'}
-                    {bestThisMonth.lengthCm != null ? ` · ${bestThisMonth.lengthCm} см` : ''}
-                  </Text>
-                  <Text style={[S.pbDate, { color: mutedColor }]}>
-                    {new Date(bestThisMonth.date).toLocaleDateString('bg-BG', { day: 'numeric', month: 'long' })}
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={mutedColor} />
-              </View>
-            </Pressable>
-          </>
-        )}
-
         <View style={{ height: spacing.xxl }} />
       </View>
     </Screen>
     {/* Floating compose button — outside Screen so it stays pinned while
-        the rest of the page scrolls. Hidden until auth is configured. */}
-    {user && configured ? (
-      <Pressable
-        onPress={openComposeSheet}
-        accessibilityRole="button"
-        accessibilityLabel="Сподели"
-        style={{
-          position: 'absolute',
-          right: spacing.lg,
-          bottom: 100,
-          width: 56,
-          height: 56,
-          borderRadius: 28,
-          backgroundColor: '#F5A020',
-          alignItems: 'center',
-          justifyContent: 'center',
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 6 },
-          shadowOpacity: 0.35,
-          shadowRadius: 12,
-          elevation: 8,
-        }}
-      >
-        <Ionicons name="add" size={30} color="#fff" />
-      </Pressable>
-    ) : null}
+        the rest of the page scrolls. Same component as Feed + Logbook so the
+        compose entrypoint feels consistent across high-traffic surfaces. */}
+    <ComposeFab />
     </View>
   );
 }

@@ -14,6 +14,7 @@ import {
   Modal,
   Keyboard,
   RefreshControl,
+  Share,
   useWindowDimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -40,6 +41,7 @@ import { accentPresets, type AccentTheme } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
 import { shadowCard } from '../theme/shadows';
 import { useAuth, type DeleteAccountCredential } from '../services/authContext';
+import { buildInviteShareMessage } from '../services/referral';
 import { GoogleSignInSection } from '../components/GoogleSignInButton';
 import { AppleSignInSection } from '../components/AppleSignInSection';
 import { updateProfile } from 'firebase/auth';
@@ -1927,6 +1929,21 @@ export default function ProfileScreen() {
                 {/* ── Социални — people, clubs, messages ── */}
                 <Text style={[styles.menuCardTitle, { paddingHorizontal: spacing.sm, paddingTop: spacing.md }]}>Социални</Text>
                 <Card style={styles.menuCardWrap}>
+                  <MenuRow
+                    dense
+                    icon="gift-outline"
+                    title="Покани приятел"
+                    onPress={() => {
+                      setSettingsOpen(false);
+                      if (!user) return;
+                      // Fire-and-forget — Share.share resolves with a result
+                      // we don't need to inspect; the OS sheet handles its
+                      // own cancellation UI. Errors (rare — only thrown when
+                      // the system can't open the sheet at all) we swallow.
+                      void Share.share({ message: buildInviteShareMessage(user.uid) }).catch(() => undefined);
+                    }}
+                    showDivider
+                  />
                   <MenuRow dense icon="people-outline" title="Приятели" onPress={() => { setSettingsOpen(false); navigation.navigate('Friends'); }} showDivider />
                   <MenuRow dense icon="people-circle-outline" title="Клубове" onPress={() => { setSettingsOpen(false); navigation.navigate('Groups'); }} showDivider />
                   <MenuRow dense icon="chatbubbles-outline" title="Съобщения" onPress={() => { setSettingsOpen(false); navigation.navigate('Chats'); }} showDivider />

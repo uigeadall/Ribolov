@@ -24,12 +24,14 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.ribolov.app",
+      "buildNumber": "1",
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Локацията се ползва, за да маркира мястото на твоите улови, да показва близки язовири и реки и да дава локална прогноза за времето.",
         "NSCameraUsageDescription": "Камерата се ползва, за да заснемаш снимки на твоите улови за дневника, профила и публикациите ти.",
         "NSPhotoLibraryUsageDescription": "Достъп до галерията, за да избираш снимки на улови, профилна снимка и снимки за съобщения и публикации.",
         "NSPhotoLibraryAddUsageDescription": "Записва генерираните снимки на улови в галерията, когато ги споделяш.",
+        "NSMicrophoneUsageDescription": "Микрофонът се ползва, когато записваш видео към улов, публикация или съобщение.",
         "NSUserTrackingUsageDescription": "Това разрешение позволява да виждаш по-релевантни препоръки и реклами. Може да го откажеш без последствия.",
         "ITSAppUsesNonExemptEncryption": false,
         "LSApplicationQueriesSchemes": [
@@ -93,7 +95,6 @@
       "expo-font",
       "expo-web-browser",
       "expo-apple-authentication",
-      "@sentry/react-native",
       "expo-sqlite",
       [
         "expo-notifications",
@@ -121,8 +122,7 @@
       "googleAndroidClientId": "",
       "facebookAppId": "",
       "firebaseAppCheckEnabled": "true",
-      "firebaseAppCheckDebugToken": "",
-      "sentryDsn": ""
+      "firebaseAppCheckDebugToken": ""
     },
     "owner": "tonyjobs97"
   }

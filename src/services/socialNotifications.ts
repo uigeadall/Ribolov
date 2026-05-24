@@ -64,6 +64,72 @@ export async function notifyInteraction(opts: {
   }
 }
 
+/** Fire when one user quote-reshares another's post or catch. Recipient's
+    bell + push will surface it. Write goes to users/{recipient}/notifications
+    so both client subscription and the Cloud Function fan-out pick it up. */
+export async function notifyReshare(opts: {
+  recipientUid: string;
+  actorUid: string;
+  actorName: string;
+  /** The new (reshare) post's id — for deep-link from the push. */
+  postId: string;
+  /** When the original was a catch, carry it so the deep-link target is right. */
+  targetCatchId?: string;
+  preview?: string;
+}): Promise<void> {
+  if (!opts.recipientUid || !opts.actorUid || opts.recipientUid === opts.actorUid) return;
+  const fb = requireFirebase();
+  const safeName = (opts.actorName || 'Рибар').trim().slice(0, 120) || 'Рибар';
+  await addDoc(collection(fb.db, 'users', opts.recipientUid, 'notifications'),
+    stripUndefinedForFirestore({
+      actorUid: opts.actorUid,
+      actorName: safeName,
+      type: 'reshare',
+      postId: opts.postId,
+      catchId: opts.targetCatchId ?? '',
+      preview: (opts.preview ?? '').slice(0, 200),
+      read: false,
+      createdAt: serverTimestamp(),
+    }),
+  );
+}
+
+/** Fire when a user logs a personal best. We fan out to their followers so
+    the close-friends graph sees the moment. Bounded — readers paginate
+    followers and we cap at a sensible batch to avoid runaway writes. */
+export async function notifyPersonalBest(opts: {
+  actorUid: string;
+  actorName: string;
+  followerUids: string[];
+  catchId: string;
+  preview: string;
+}): Promise<void> {
+  if (!opts.actorUid || opts.followerUids.length === 0) return;
+  const fb = requireFirebase();
+  const safeName = (opts.actorName || 'Рибар').trim().slice(0, 120) || 'Рибар';
+  await Promise.all(
+    opts.followerUids
+      .filter((uid) => uid && uid !== opts.actorUid)
+      .slice(0, 200)
+      .map((uid) =>
+        setDoc(
+          doc(fb.db, 'users', uid, 'notifications', `personalBest_${opts.actorUid}_${opts.catchId}`),
+          stripUndefinedForFirestore({
+            actorUid: opts.actorUid,
+            actorName: safeName,
+            type: 'personalBest',
+            catchId: opts.catchId,
+            preview: (opts.preview ?? '').slice(0, 200),
+            read: false,
+            createdAt: serverTimestamp(),
+          }),
+        ).catch((e: unknown) => {
+          captureException(e, { area: 'notify_personal_best', catchId: opts.catchId, recipientUid: uid });
+        }),
+      ),
+  );
+}
+
 export function subscribeMyNotifications(myUid: string, onNext: (items: SocialNotification[]) => void): () => void {
   const fb = requireFirebase();
   const q = query(

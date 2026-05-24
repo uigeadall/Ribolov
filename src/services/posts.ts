@@ -24,7 +24,8 @@ import { stripUndefinedForFirestore } from './firestoreSanitize';
 import { uploadLocalPhotoToStorage, waitForResizedUrl } from './catchSync';
 import { extractHashtags } from '../utils/textTokens';
 import { allowComment, allowPostCreate } from './socialRateLimit';
-import { notifyInteraction, sendMentionNotifications } from './socialNotifications';
+import { notifyInteraction, notifyReshare, sendMentionNotifications } from './socialNotifications';
+import { captureException } from './observability';
 import type { FeedComment } from './socialTypes';
 import type { Post, ResharedRef } from '../types';
 
@@ -41,6 +42,10 @@ export type CreatePostInput = {
   mentionUids: string[];
   /** If set, this post is a quote-reshare of another feed item. */
   reshareOf?: ResharedRef;
+  /** 0..1 photo-upload fraction. CreatePostScreen surfaces this as a thin
+      progress bar — silent uploads on slow connections felt like the app
+      had frozen, so we plumb bytes-sent through. */
+  onUploadProgress?: (fraction: number) => void;
 };
 
 export type PostsPage = {
@@ -79,7 +84,15 @@ export async function createPost(input: CreatePostInput): Promise<string> {
     const extMatch = input.localPhotoUri.split('?')[0].match(/\.(jpg|jpeg|png|webp)$/i);
     const ext = extMatch ? extMatch[1].toLowerCase() : 'jpg';
     photoStoragePath = `publicCatchPhotos/${input.ownerUid}/posts/${id}_${Date.now()}.${ext}`;
-    const rawUrl = await uploadLocalPhotoToStorage(fb, input.localPhotoUri, photoStoragePath);
+    const rawUrl = await uploadLocalPhotoToStorage(
+      fb,
+      input.localPhotoUri,
+      photoStoragePath,
+      input.onUploadProgress,
+    );
+    // Once Storage upload reports 100%, we still wait for the resize
+    // extension. Park the bar near 100 so it doesn't snap back.
+    input.onUploadProgress?.(1);
     // The "Resize Images" extension deletes the original after writing the
     // `_1200x1200.webp` variant, so the raw upload URL 404s within seconds.
     // Wait for the variant and use its tokenized download URL instead — same
@@ -137,6 +150,22 @@ export async function createPost(input: CreatePostInput): Promise<string> {
       id,
       text || '',
     ).catch(() => {});
+  }
+
+  // Reshare notification — when this post is a quote of another author's
+  // catch or post, tell them their content was shared. Skip self-shares
+  // (the user quoting their own post doesn't need a bell about it).
+  if (input.reshareOf && input.reshareOf.ownerUid && input.reshareOf.ownerUid !== input.ownerUid) {
+    notifyReshare({
+      recipientUid: input.reshareOf.ownerUid,
+      actorUid: input.ownerUid,
+      actorName: payload.ownerName,
+      postId: id,
+      targetCatchId: input.reshareOf.kind === 'catch' ? input.reshareOf.id : undefined,
+      preview: text ? text.slice(0, 120) : undefined,
+    }).catch((e) => {
+      captureException(e, { area: 'notify_reshare', postId: id, recipientUid: input.reshareOf!.ownerUid });
+    });
   }
 
   return id;

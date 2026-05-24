@@ -20,7 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useAuth } from '../services/authContext';
 import { deleteCatchEverywhere } from '../services/cloudSync';
-import { forceRetryCatchSync } from '../services/catchSyncQueue';
+import { forceRetryCatchSync, getPendingCatchSyncCount } from '../services/catchSyncQueue';
 import Toast from 'react-native-toast-message';
 import { computePersonalBests, isPersonalBestCatch } from '../services/personalBests';
 import { useAppNavigation } from '../navigation/useAppNavigation';
@@ -28,6 +28,8 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Image } from 'expo-image';
 import { Skeleton } from '../components/Skeleton';
+import { ComposeFab } from '../components/ComposeFab';
+import { useCountUp } from '../hooks/useCountUp';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
@@ -64,21 +66,10 @@ function byDateDesc(a: { date: string }, b: { date: string }): number {
   return (Date.parse(b.date) || 0) - (Date.parse(a.date) || 0);
 }
 
-function useCountUp(target: number, duration = 800): number {
-  const [val, setVal] = React.useState(0);
-  React.useEffect(() => {
-    if (target === 0) { setVal(0); return; }
-    const start = Date.now();
-    const tick = () => {
-      const elapsed = Date.now() - start;
-      const progress = Math.min(elapsed / duration, 1);
-      setVal(Math.round((1 - Math.pow(1 - progress, 3)) * target));
-      if (progress < 1) requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  }, [target, duration]);
-  return val;
-}
+// useCountUp moved to src/hooks/useCountUp.ts (Animated-based). Removed the
+// rAF-based local copy that duplicated it. The shared hook returns the raw
+// animated float so decimal callers (animatedKg below) can format precisely;
+// integer callers wrap with Math.round at the call site.
 
 // ── CatchCard ─────────────────────────────────────────────────────────────────
 
@@ -326,9 +317,11 @@ type LogbookCalendarProps = {
   onEditCatch: (item: Catch) => void;
   onRetrySync: (item: Catch) => void;
   bottomPad: number;
+  refreshing: boolean;
+  onRefresh: () => void;
 };
 
-function LogbookCalendar({ catches, colors, onDayPress, selectedDay, calMonth, setCalMonth, personalBests, user, onOpenCatch, onDeleteCatch, onEditCatch, onRetrySync, bottomPad }: LogbookCalendarProps) {
+function LogbookCalendar({ catches, colors, onDayPress, selectedDay, calMonth, setCalMonth, personalBests, user, onOpenCatch, onDeleteCatch, onEditCatch, onRetrySync, bottomPad, refreshing, onRefresh }: LogbookCalendarProps) {
   const daysInMonth = new Date(calMonth.year, calMonth.month + 1, 0).getDate();
   const firstDow = (new Date(calMonth.year, calMonth.month, 1).getDay() + 6) % 7;
 
@@ -370,7 +363,11 @@ function LogbookCalendar({ catches, colors, onDayPress, selectedDay, calMonth, s
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
 
   return (
-    <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+      refreshControl={<FishingRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+    >
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}>
         <Pressable onPress={goToPrev} hitSlop={8} style={{ padding: spacing.sm }}>
           <Ionicons name="chevron-back" size={22} color={colors.primary} />
@@ -508,7 +505,20 @@ export default function LogbookScreen() {
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  // First focus shows the skeleton (no cached data yet). Every subsequent
+  // focus — including returning from AddCatch — reuses items in memory and
+  // refreshes silently. catchesStore.list() is cheap (memory cache hit),
+  // so the reload itself is fast; the toggle to initialLoading=true was
+  // what caused the visible flash.
+  const initialFocusRef = useRef(true);
+  useFocusEffect(useCallback(() => {
+    if (initialFocusRef.current) {
+      initialFocusRef.current = false;
+      void load();
+    } else {
+      void load(true);
+    }
+  }, [load]));
 
   const onRefresh = async () => { setRefreshing(true); await load(true); setRefreshing(false); };
 
@@ -518,9 +528,18 @@ export default function LogbookScreen() {
       if (speciesId && c.speciesId !== speciesId) return false;
       if (chipFilter && c.speciesName !== chipFilter) return false;
       if (releasedOnly && !c.released) return false;
-      const t = new Date(c.date).getTime();
-      if (dateFrom && t < startOfDay(dateFrom)) return false;
-      if (dateTo && t > endOfDay(dateTo)) return false;
+      // Only apply the date filter if we have a parseable date. Without the
+      // isFinite guard, NaN from a malformed `c.date` is neither `< startOfDay`
+      // nor `> endOfDay` — both comparisons return false → the bad-date catch
+      // sneaks past the user's date range every time. Filtering it out gives
+      // predictable behaviour (the range hides it) and stops a single
+      // legacy/corrupt row from polluting tightly-scoped queries.
+      if (dateFrom || dateTo) {
+        const t = Date.parse(c.date);
+        if (!Number.isFinite(t)) return false;
+        if (dateFrom && t < startOfDay(dateFrom)) return false;
+        if (dateTo && t > endOfDay(dateTo)) return false;
+      }
       if (q) {
         const blob = [c.speciesName, c.location?.name, c.notes, c.bait].filter(Boolean).join(' ').toLowerCase();
         if (!blob.includes(q)) return false;
@@ -572,17 +591,44 @@ export default function LogbookScreen() {
   const handleSwipeDelete = useCallback((catchItem: Catch) => {
     // If a previous delete is still pending, commit its cloud cleanup NOW
     // so rapid sequential deletes don't leak orphan docs/files.
+    //
+    // Read pendingDelete from the ref, not the useCallback closure: two
+    // swipes within the same React render tick (or before React commits
+    // the setPendingDelete from the first swipe) both saw `pendingDelete`
+    // as the value from when the callback was last rebuilt — typically
+    // the previous render's value, often `null`. With that stale read,
+    // the first-swipe's catch never got its cloud delete fired,
+    // orphaning it. The ref is updated by the effect below, so it
+    // reflects whatever React has committed at the moment of the second
+    // swipe.
     if (undoTimerRef.current) {
       clearTimeout(undoTimerRef.current);
-      const prev = pendingDelete;
-      const uid = user?.uid;
+      const prev = pendingDeleteRef.current;
+      const uid = userRef.current?.uid;
       if (prev && uid) void deleteCatchEverywhere(prev.id, uid);
     }
     setItems((prev) => prev.filter((c) => c.id !== catchItem.id));
-    catchesStore.remove(catchItem.id).catch(() => {});
     setPendingDelete(catchItem);
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    // Restore the optimistic delete on local storage failure (AsyncStorage
+    // full, quota hit). Without rollback, the user sees the row disappear
+    // and a fresh focus reload silently restores it from disk — leaving them
+    // confused. Surfacing the error + restoring keeps the UI honest.
+    catchesStore.remove(catchItem.id).catch(() => {
+      setItems((prev) => [...prev, catchItem].sort(byDateDesc));
+      setPendingDelete(null);
+      if (undoTimerRef.current) {
+        clearTimeout(undoTimerRef.current);
+        undoTimerRef.current = null;
+      }
+      Toast.show({
+        type: 'error',
+        text1: 'Изтриването не успя',
+        text2: 'Опитай отново след малко.',
+        visibilityTime: 2500,
+      });
+    });
     undoTimerRef.current = setTimeout(() => {
       const uid = user?.uid;
       if (uid) void deleteCatchEverywhere(catchItem.id, uid);
@@ -633,6 +679,80 @@ export default function LogbookScreen() {
     }
   }, [user]);
 
+  // Bulk-retry all pending uploads — fires from the header pill so a user
+  // who sees "3 улова чакат качване" can flush them with one tap instead of
+  // tap-to-retry per row.
+  //
+  // Source the count from getPendingCatchSyncCount (the actual queue) rather
+  // than items.filter(!syncedToCloud). The two can diverge: a catch can be
+  // in the queue but missing from items (synced and removed locally), or
+  // marked synced in items but the queue still has it pending a retry. The
+  // earlier derived count occasionally lied either way.
+  const [pendingUploadCount, setPendingUploadCount] = useState(0);
+  const refreshPendingCount = useCallback(async () => {
+    try {
+      const n = await getPendingCatchSyncCount();
+      setPendingUploadCount(n);
+    } catch {
+      /* best-effort */
+    }
+  }, []);
+  // Re-read on every load (initial + focus + refresh) so the pill follows
+  // the queue, not the local items list.
+  useEffect(() => { void refreshPendingCount(); }, [items, refreshPendingCount]);
+
+  const handleRetryAll = useCallback(async () => {
+    if (!user) return;
+    const pending = items.filter((c) => !c.syncedToCloud);
+    if (pending.length === 0) return;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Neutral "started" toast — short visibility so it's gone by the time
+    // the result toast appears. Earlier this was a success-styled toast
+    // fired before any retry had run, which became a lie when every retry
+    // failed (user saw a green checkmark + no UI change = silent failure).
+    Toast.show({ type: 'info', text1: 'Опитваме отново…', visibilityTime: 1200 });
+    const results = await Promise.allSettled(
+      pending.map((c) =>
+        forceRetryCatchSync(c.id, false, {
+          user: { uid: user.uid, displayName: user.displayName, email: user.email },
+        }),
+      ),
+    );
+    const fresh = await catchesStore.list();
+    setItems(fresh.sort(byDateDesc));
+    void refreshPendingCount();
+    // Compare what's still pending after the retry against what we attempted —
+    // gives us the actual succeeded count even if forceRetryCatchSync
+    // rejected without the catch making it through (e.g. queue-side error
+    // before push). Falls back to settled outcome counts when items
+    // haven't refreshed yet.
+    const stillPending = new Set(fresh.filter((c) => !c.syncedToCloud).map((c) => c.id));
+    const succeeded = pending.filter((c) => !stillPending.has(c.id)).length;
+    const failed = pending.length - succeeded;
+    if (failed === 0) {
+      Toast.show({
+        type: 'success',
+        text1: succeeded === 1 ? 'Уловът е качен' : `${succeeded} улова са качени`,
+        visibilityTime: 2000,
+      });
+    } else if (succeeded === 0) {
+      const rejected = results.filter((r) => r.status === 'rejected');
+      Toast.show({
+        type: 'error',
+        text1: 'Качването не успя',
+        text2: rejected.length === 1 ? 'Опитай отново след малко.' : 'Провери връзката.',
+        visibilityTime: 3000,
+      });
+    } else {
+      Toast.show({
+        type: 'info',
+        text1: `${succeeded} качени · ${failed} чакат`,
+        text2: 'Останалите ще опитаме автоматично.',
+        visibilityTime: 2500,
+      });
+    }
+  }, [user, items, refreshPendingCount]);
+
   const handleUndoDelete = useCallback(async () => {
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
     if (!pendingDelete) return;
@@ -674,9 +794,35 @@ export default function LogbookScreen() {
 
         {/* Title row with view toggles */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 30, fontWeight: '900', color: colors.text, letterSpacing: -0.5 }}>Дневник</Text>
             <Text style={{ fontSize: 13, color: colors.textMuted, marginTop: 2 }}>{subtitle}</Text>
+            {/* Sync-queue pill — closes the "did my catch save?" loop that
+                previously left users guessing while the queue worked in the
+                background. Tap to bulk-retry. */}
+            {user && pendingUploadCount > 0 ? (
+              <Pressable
+                onPress={handleRetryAll}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 6,
+                  alignSelf: 'flex-start',
+                  marginTop: 6,
+                  paddingHorizontal: 10, paddingVertical: 4,
+                  borderRadius: 12,
+                  backgroundColor: colors.primarySurface,
+                  borderWidth: 1, borderColor: colors.primary + '44',
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Опитай качването отново"
+              >
+                <Ionicons name="cloud-upload-outline" size={13} color={colors.primary} />
+                <Text style={{ fontSize: 11, fontFamily: 'Nunito_700Bold', color: colors.primary }}>
+                  {pendingUploadCount === 1
+                    ? '1 улов чака качване'
+                    : `${pendingUploadCount} улова чакат качване`}
+                </Text>
+              </Pressable>
+            ) : null}
           </View>
 
           {/* Segment control: list / grid / gallery / calendar */}
@@ -721,7 +867,7 @@ export default function LogbookScreen() {
           <View style={{ flexDirection: 'row', borderRadius: 14, overflow: 'hidden', backgroundColor: mode === 'dark' ? colors.card : '#F4F6F9', borderWidth: 1, borderColor: colors.border }}>
             {/* Catches */}
             <View style={{ flex: 1, paddingVertical: 12, paddingHorizontal: 10, alignItems: 'center' }}>
-              <Text style={{ fontSize: 22, fontWeight: '900', color: colors.text }}>{animatedCount}</Text>
+              <Text style={{ fontSize: 22, fontWeight: '900', color: colors.text }}>{Math.round(animatedCount)}</Text>
               <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 2 }}>
                 {filtersActive ? `из ${items.length}` : items.length === 1 ? 'улов' : 'улова'}
               </Text>
@@ -874,6 +1020,8 @@ export default function LogbookScreen() {
             onEditCatch={handleSwipeEdit}
             onRetrySync={handleRetrySync}
             bottomPad={bottomPad + 8}
+            refreshing={refreshing}
+            onRefresh={onRefresh}
           />
         ) : items.length === 0 ? (
           <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingHorizontal: spacing.xl, paddingBottom: bottomPad, gap: spacing.lg }}>
@@ -914,7 +1062,7 @@ export default function LogbookScreen() {
             </Pressable>
             <View style={{ flexDirection: 'row', justifyContent: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, flexWrap: 'wrap' }}>
               {[
-                { icon: 'camera-outline' as const, label: 'Снимка от камерата' },
+                { icon: 'camera-outline' as const, label: 'Снимка' },
                 { icon: 'location-outline' as const, label: 'Авто-локация' },
                 { icon: 'cloud-outline' as const, label: 'Време + луна' },
               ].map((feat) => (
@@ -981,13 +1129,11 @@ export default function LogbookScreen() {
         )}
       </View>
 
-      {/* ── Floating add button ── */}
-      <Pressable
-        onPress={() => navigation.navigate('AddCatch')}
-        style={{ position: 'absolute', bottom: 16, right: spacing.lg, width: 60, height: 60, borderRadius: 30, backgroundColor: '#FF8C00', alignItems: 'center', justifyContent: 'center', shadowColor: '#FF6B00', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.6, shadowRadius: 16, elevation: 12 }}
-      >
-        <Ionicons name="add" size={32} color="#fff" />
-      </Pressable>
+      {/* The previous "add catch" FAB used to live here. Removed in favor of
+          the unified ComposeFab (rendered below) which opens an action sheet
+          for both "Сподели улов" and "Напиши пост". Two pluses on one screen
+          confused users — they tapped the orange one thinking it would also
+          show the post option. */}
 
       {/* ── Undo snackbar ── */}
       {pendingDelete ? (
@@ -1100,6 +1246,9 @@ export default function LogbookScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Compose FAB — same component as Home and Feed for consistency. */}
+      <ComposeFab />
     </View>
   );
 }

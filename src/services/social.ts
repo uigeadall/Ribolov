@@ -95,6 +95,18 @@ export async function getFollowing(myUid: string) {
   return data;
 }
 
+/** Returns the uids of everyone who follows `theirUid`, capped to keep
+    the read bounded. Used by personalBest fan-out so a friend's PB lights
+    your bell. A viral angler's follower list can be huge; the cap is a
+    deliberate trade-off (most-recent followers get the notification). */
+export async function getFollowerUids(theirUid: string, maxRead = 200): Promise<string[]> {
+  const fb = requireFirebase();
+  const snap = await getDocs(
+    query(collection(fb.db, 'users', theirUid, 'followers'), limit(maxRead)),
+  );
+  return snap.docs.map((d) => d.id);
+}
+
 /** Returns the people who follow `theirUid` AND whom `myUid` also follows
     (intersection of "their followers" ∩ "my following"). Used for the
     "Followed by @ivan, @stoyan and 4 others you follow" badge on public

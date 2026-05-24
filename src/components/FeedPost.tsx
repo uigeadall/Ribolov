@@ -30,6 +30,7 @@ import type { FeedItem } from '../services/catchSync';
 import { RichText } from './RichText';
 import { ActionSheet, type ActionSheetOption } from './ActionSheet';
 import { useTheme } from '../services/themeContext';
+import { ThemedTextInput } from './ThemedTextInput';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
 import { REACTIONS, type ReactionType } from '../services/socialFeed';
@@ -293,13 +294,16 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
   const sheetPanResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, g) => g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx),
-      onPanResponderMove: Animated.event([null, { dy: sheetPanY }], { useNativeDriver: false }),
+      // Drive translateY natively — Android benefits enormously from skipping
+      // the JS thread during drag. The transform target reads `sheetPanY` as
+      // translateY, so the native event mapping is valid.
+      onPanResponderMove: Animated.event([null, { dy: sheetPanY }], { useNativeDriver: true }),
       onPanResponderRelease: (_, g) => {
         if (g.dy > 80) {
           sheetPanY.setValue(0);
           social.setLikersOpen(false);
         } else {
-          Animated.spring(sheetPanY, { toValue: 0, useNativeDriver: false, speed: 20, bounciness: 6 }).start();
+          Animated.spring(sheetPanY, { toValue: 0, useNativeDriver: true, speed: 20, bounciness: 6 }).start();
         }
       },
     })
@@ -357,7 +361,7 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
   const photoHeight = Math.round(screenWidth * (5 / 4));
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={styles.postWrap}>
 
         {/* ── Post Header ── */}
@@ -685,10 +689,11 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
           <>
             {/* ── Reaction picker (glass pill) — shown between photo and action bar ── */}
             {showPicker && (
+              // Outer holds the shadow/elevation; Android clips elevation
+              // shadows when the same node has overflow:hidden, so the rounded
+              // clip is moved to the inner View.
               <Animated.View
                 style={{
-                  borderRadius: radius.xl,
-                  overflow: 'hidden',
                   marginHorizontal: 12,
                   marginTop: 8,
                   opacity: pickerAnim,
@@ -698,8 +703,10 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                   shadowOpacity: mode === 'dark' ? 0.35 : 0.14,
                   shadowRadius: 14,
                   elevation: 6,
+                  borderRadius: radius.xl,
                 }}
               >
+                <View style={{ borderRadius: radius.xl, overflow: 'hidden' }}>
                 <BlurView
                   intensity={mode === 'dark' ? 68 : 80}
                   tint={mode === 'dark' ? 'dark' : 'light'}
@@ -738,6 +745,7 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                     <Ionicons name="close-circle" size={22} color={mode === 'dark' ? 'rgba(255,255,255,0.45)' : colors.textMuted} />
                   </Pressable>
                 </View>
+                </View>
               </Animated.View>
             )}
 
@@ -756,6 +764,7 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                   disabled={social.likeBusy}
                   hitSlop={8}
                   delayLongPress={300}
+                  android_ripple={{ color: colors.primary + '33', borderless: true, radius: 22 }}
                   style={social.likeBusy ? { opacity: 0.5 } : undefined}
                   accessibilityRole="button"
                   accessibilityLabel={social.myReaction ? 'Промени реакцията' : 'Хареса'}
@@ -773,6 +782,7 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                 <Pressable
                   onPress={() => setCommentsOpen((v) => !v)}
                   hitSlop={8}
+                  android_ripple={{ color: colors.primary + '33', borderless: true, radius: 22 }}
                   accessibilityRole="button"
                   accessibilityLabel="Коментари"
                 >
@@ -783,6 +793,7 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                   <Pressable
                     onPress={() => onReshare(item)}
                     hitSlop={8}
+                    android_ripple={{ color: colors.primary + '33', borderless: true, radius: 22 }}
                     accessibilityRole="button"
                     accessibilityLabel="Сподели в лентата"
                   >
@@ -793,6 +804,7 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                 <Pressable
                   onPress={() => setShareToFriendOpen(true)}
                   hitSlop={8}
+                  android_ripple={{ color: colors.primary + '33', borderless: true, radius: 22 }}
                   accessibilityRole="button"
                   accessibilityLabel="Изпрати на приятел"
                 >
@@ -802,6 +814,7 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                 <Pressable
                   onPress={social.onShare}
                   hitSlop={8}
+                  android_ripple={{ color: colors.primary + '33', borderless: true, radius: 22 }}
                   accessibilityRole="button"
                   accessibilityLabel="Сподели външно"
                 >
@@ -890,6 +903,10 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                       ? item.location!.name
                       : `${item.location!.latitude!.toFixed(4)}, ${item.location!.longitude!.toFixed(4)}`}
                   </Text>
+                  {/* Trailing copy icon signals what tapping does — without
+                      this the pill looked like a "view location" action but
+                      actually copies to clipboard, which surprised users. */}
+                  <Ionicons name="copy-outline" size={11} color={colors.textMuted} style={{ marginLeft: 2 }} />
                 </Pressable>
               ) : null}
 
@@ -1012,7 +1029,7 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                 )}
 
                 <View style={styles.composer}>
-                  <TextInput
+                  <ThemedTextInput
                     style={styles.input}
                     placeholder={social.replyingTo ? `Отговор на ${social.replyingTo.name}…` : 'Коментар…'}
                     placeholderTextColor={colors.textMuted}

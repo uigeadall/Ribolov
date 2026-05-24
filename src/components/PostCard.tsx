@@ -10,6 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import Toast from 'react-native-toast-message';
 import { useTheme } from '../services/themeContext';
+import { ThemedTextInput } from './ThemedTextInput';
 import { ActionSheet } from './ActionSheet';
 import { radius, spacing, typography } from '../theme/typography';
 import type { Post } from '../types';
@@ -483,10 +484,10 @@ function PostCardInner({
 
       {/* Reaction picker (glass pill) — mounts between content and actions */}
       {showPicker && (
+        // Outer holds the elevation/shadow — Android clips elevation shadows
+        // under overflow:hidden, so the BlurView clip lives on the inner View.
         <Animated.View
           style={{
-            borderRadius: radius.xl,
-            overflow: 'hidden',
             marginHorizontal: 12,
             marginTop: 8,
             opacity: pickerAnim,
@@ -496,8 +497,10 @@ function PostCardInner({
             shadowOpacity: mode === 'dark' ? 0.35 : 0.14,
             shadowRadius: 14,
             elevation: 6,
+            borderRadius: radius.xl,
           }}
         >
+          <View style={{ borderRadius: radius.xl, overflow: 'hidden' }}>
           <BlurView
             intensity={mode === 'dark' ? 68 : 80}
             tint={mode === 'dark' ? 'dark' : 'light'}
@@ -535,6 +538,7 @@ function PostCardInner({
               <Ionicons name="close-circle" size={22} color={mode === 'dark' ? 'rgba(255,255,255,0.45)' : colors.textMuted} />
             </Pressable>
           </View>
+          </View>
         </Animated.View>
       )}
 
@@ -542,6 +546,7 @@ function PostCardInner({
       <View style={styles.actions}>
         <Pressable
           style={styles.actionBtn}
+          android_ripple={{ color: colors.primary + '33', borderless: true, radius: 22 }}
           onPress={() => {
             if (!myUid) return;
             animateReaction();
@@ -568,6 +573,7 @@ function PostCardInner({
         </Pressable>
         <Pressable
           style={styles.actionBtn}
+          android_ripple={{ color: colors.primary + '33', borderless: true, radius: 22 }}
           onPress={() => setCommentsOpen((v) => !v)}
           hitSlop={8}
         >
@@ -581,12 +587,18 @@ function PostCardInner({
           ) : null}
         </Pressable>
         {onReshare ? (
-          <Pressable style={styles.actionBtn} onPress={() => onReshare(post)} hitSlop={8}>
+          <Pressable
+            style={styles.actionBtn}
+            android_ripple={{ color: colors.primary + '33', borderless: true, radius: 22 }}
+            onPress={() => onReshare(post)}
+            hitSlop={8}
+          >
             <Ionicons name="repeat-outline" size={22} color={colors.text} />
           </Pressable>
         ) : null}
         <Pressable
           style={styles.actionBtn}
+          android_ripple={{ color: colors.primary + '33', borderless: true, radius: 22 }}
           onPress={() => setShareToFriendOpen(true)}
           hitSlop={8}
           accessibilityLabel="Изпрати на приятел"
@@ -705,7 +717,7 @@ function PostCardInner({
                 </View>
               ) : null}
               <View style={styles.commentComposer}>
-                <TextInput
+                <ThemedTextInput
                   style={styles.commentInput}
                   placeholder={replyingTo ? `Отговор на ${replyingTo.name}…` : 'Напиши коментар…'}
                   placeholderTextColor={colors.textMuted}

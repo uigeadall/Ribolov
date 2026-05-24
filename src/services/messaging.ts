@@ -379,18 +379,29 @@ export async function markConversationRead(convId: string, myUid: string): Promi
   // aborting the whole transaction and leaving the per-conversation badge
   // stuck. Splitting them means a failed aggregate decrement no longer rolls
   // back the conv-doc clear.
+  //
+  // Short-circuit when unreadCount is already 0: ChatDetailScreen calls this
+  // on every message snapshot, and most of those snapshots are firing for
+  // already-read conversations. Without the early-return, every snapshot
+  // ran a no-op transaction that frequently lost the race to the
+  // onNewMessage Cloud Function (which writes to the same doc), spamming
+  // the log with failed-precondition warnings.
   let unread = 0;
   try {
     await runTransaction(fb.db, async (tx) => {
       const snap = await tx.get(convRef);
       if (!snap.exists()) return;
-      unread = (snap.data().unreadCounts?.[myUid] as number) ?? 0;
+      const current = (snap.data().unreadCounts?.[myUid] as number) ?? 0;
+      if (current === 0) {
+        return;
+      }
+      unread = current;
       tx.update(convRef, { [`unreadCounts.${myUid}`]: 0 });
     });
   } catch {
-    // Conv-doc clear failed (likely permission). Caller will retry on next
-    // snapshot since markConversationRead is called per-snapshot from the
-    // message subscription.
+    // Conv-doc clear failed (likely permission or contention). Caller will
+    // retry on the next snapshot since markConversationRead is called
+    // per-snapshot from the message subscription.
   }
 
   // Decrement the user aggregate as a separate best-effort write. Includes
