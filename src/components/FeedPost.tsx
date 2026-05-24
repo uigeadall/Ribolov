@@ -23,8 +23,6 @@ import {
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
-import { BlurView } from 'expo-blur';
-import { LinearGradient } from 'expo-linear-gradient';
 import { looksNonBulgarian, openTranslation } from '../utils/captionLanguage';
 import type { FeedItem } from '../services/catchSync';
 import { RichText } from './RichText';
@@ -36,6 +34,7 @@ import { radius, spacing, typography } from '../theme/typography';
 import { REACTIONS, type ReactionType } from '../services/socialFeed';
 import { formatTimeAgo } from '../utils/formatCatchDate';
 import { useAvatarUrl } from '../hooks/useAvatarUrl';
+import { ReactionPicker } from './ReactionPicker';
 import { useFeedPostSocial } from '../hooks/useFeedPostSocial';
 import { ImageViewer } from './ImageViewer';
 import { SharePickerModal, buildCatchSharedRef } from './SharePickerModal';
@@ -215,18 +214,12 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
 
   const social = useFeedPostSocial({ item, myUid, myDisplayName, ownerName, socialEnabled, isVisible });
   const reactionScale = useRef(new Animated.Value(1)).current;
-  const pickerAnim = useRef(new Animated.Value(0)).current;
 
+  // The shared ReactionPicker owns its own enter/exit animation now;
+  // openPicker / closePicker just toggle the visibility flag.
   const showPicker = social.reactionPickerOpen;
-  const openPicker = () => {
-    social.setReactionPickerOpen(true);
-    Animated.spring(pickerAnim, { toValue: 1, useNativeDriver: true, speed: 18, bounciness: 10 }).start();
-  };
-  const closePicker = () => {
-    Animated.timing(pickerAnim, { toValue: 0, duration: 150, useNativeDriver: true }).start(() => {
-      social.setReactionPickerOpen(false);
-    });
-  };
+  const openPicker = () => social.setReactionPickerOpen(true);
+  const closePicker = () => social.setReactionPickerOpen(false);
 
   // Double-tap to like / save
   const lastTapTimeRef = useRef(0);
@@ -697,67 +690,15 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
 
         {socialEnabled ? (
           <>
-            {/* ── Reaction picker (glass pill) — shown between photo and action bar ── */}
-            {showPicker && (
-              // Outer holds the shadow/elevation; Android clips elevation
-              // shadows when the same node has overflow:hidden, so the rounded
-              // clip is moved to the inner View.
-              <Animated.View
-                style={{
-                  marginHorizontal: 12,
-                  marginTop: 8,
-                  opacity: pickerAnim,
-                  transform: [{ scale: pickerAnim.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] }) }],
-                  shadowColor: '#000',
-                  shadowOffset: { width: 0, height: 4 },
-                  shadowOpacity: mode === 'dark' ? 0.35 : 0.14,
-                  shadowRadius: 14,
-                  elevation: 6,
-                  borderRadius: radius.xl,
-                }}
-              >
-                <View style={{ borderRadius: radius.xl, overflow: 'hidden' }}>
-                <BlurView
-                  intensity={mode === 'dark' ? 68 : 80}
-                  tint={mode === 'dark' ? 'dark' : 'light'}
-                  style={StyleSheet.absoluteFillObject}
-                />
-                <LinearGradient
-                  colors={mode === 'dark'
-                    ? ['rgba(255,255,255,0.10)', 'rgba(255,255,255,0.04)']
-                    : ['rgba(255,255,255,0.72)', 'rgba(255,255,255,0.30)']}
-                  start={{ x: 0, y: 0 }} end={{ x: 0.4, y: 1 }}
-                  style={StyleSheet.absoluteFillObject}
-                />
-                {/* Glass rim */}
-                <View style={[StyleSheet.absoluteFillObject, {
-                  borderRadius: radius.xl, borderWidth: 1,
-                  borderColor: mode === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.82)',
-                }]} />
-                <View style={{ flexDirection: 'row', justifyContent: 'space-around', paddingVertical: spacing.sm, paddingHorizontal: spacing.xs }}>
-                  {(Object.entries(REACTIONS) as [ReactionType, { emoji: string; label: string }][]).map(([type, r]) => (
-                    <Pressable
-                      key={type}
-                      onPress={() => { closePicker(); social.onPickReaction(type); }}
-                      style={{
-                        alignItems: 'center', paddingHorizontal: spacing.sm, paddingVertical: 4,
-                        borderRadius: radius.md,
-                        backgroundColor: social.myReaction === type
-                          ? (mode === 'dark' ? 'rgba(255,255,255,0.18)' : colors.primarySurface)
-                          : 'transparent',
-                      }}
-                    >
-                      <Text style={{ fontSize: 28 }}>{r.emoji}</Text>
-                      <Text style={{ ...typography.caption, color: social.myReaction === type ? colors.primary : colors.textMuted, marginTop: 2, fontSize: 10 }}>{r.label}</Text>
-                    </Pressable>
-                  ))}
-                  <Pressable onPress={closePicker} style={{ alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.sm }}>
-                    <Ionicons name="close-circle" size={22} color={mode === 'dark' ? 'rgba(255,255,255,0.45)' : colors.textMuted} />
-                  </Pressable>
-                </View>
-                </View>
-              </Animated.View>
-            )}
+            {/* ── Reaction picker (glass pill) — shared component. See
+                src/components/ReactionPicker.tsx for the polish rationale
+                (selection haptic, bigger labels, auto-close on idle). ── */}
+            <ReactionPicker
+              visible={showPicker}
+              myReaction={social.myReaction}
+              onPick={(type) => { closePicker(); social.onPickReaction(type); }}
+              onAutoClose={closePicker}
+            />
 
             {/* ── Action bar ── */}
             <View style={styles.actionBar}>

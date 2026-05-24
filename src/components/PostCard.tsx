@@ -5,8 +5,6 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import Toast from 'react-native-toast-message';
 import { useTheme } from '../services/themeContext';
@@ -33,6 +31,7 @@ import {
 import { REACTIONS, type ReactionType, type ReactionSummaryItem } from '../services/socialTypes';
 import type { FeedComment } from '../services/socialTypes';
 import { useAvatarUrl } from '../hooks/useAvatarUrl';
+import { ReactionPicker } from './ReactionPicker';
 import { useAuth } from '../services/authContext';
 import { CommentLikeButton } from './CommentLikeButton';
 import { getImageVariant, ImageSize } from '../utils/imageVariants';
@@ -89,7 +88,9 @@ function PostCardInner({
   const sendingCommentRef = useRef(false);
   const [showPicker, setShowPicker] = useState(false);
   const [shareToFriendOpen, setShareToFriendOpen] = useState(false);
-  const pickerAnim = useRef(new Animated.Value(0)).current;
+  // pickerAnim was kept on this component to drive the inline picker's
+  // enter/exit animation. The shared ReactionPicker now owns its own
+  // Animated.Value internally, so the parent just toggles `showPicker`.
   const reactionScale = useRef(new Animated.Value(1)).current;
   const [viewerOpen, setViewerOpen] = useState(false);
   const [textExpanded, setTextExpanded] = useState(false);
@@ -134,15 +135,8 @@ function PostCardInner({
   }, [post.id]);
   useEffect(() => { reloadReactionSummary(); }, [reloadReactionSummary]);
 
-  const openPicker = useCallback(() => {
-    setShowPicker(true);
-    Animated.spring(pickerAnim, { toValue: 1, useNativeDriver: true, bounciness: 6 }).start();
-  }, [pickerAnim]);
-
-  const closePicker = useCallback(() => {
-    Animated.timing(pickerAnim, { toValue: 0, duration: 160, useNativeDriver: true })
-      .start(({ finished }) => { if (finished) setShowPicker(false); });
-  }, [pickerAnim]);
+  const openPicker = useCallback(() => setShowPicker(true), []);
+  const closePicker = useCallback(() => setShowPicker(false), []);
 
   const animateReaction = useCallback(() => {
     Animated.sequence([
@@ -480,65 +474,16 @@ function PostCardInner({
         />
       ) : null}
 
-      {/* Reaction picker (glass pill) — mounts between content and actions */}
-      {showPicker && (
-        // Outer holds the elevation/shadow — Android clips elevation shadows
-        // under overflow:hidden, so the BlurView clip lives on the inner View.
-        <Animated.View
-          style={{
-            marginHorizontal: 12,
-            marginTop: 8,
-            opacity: pickerAnim,
-            transform: [{ scale: pickerAnim.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] }) }],
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: mode === 'dark' ? 0.35 : 0.14,
-            shadowRadius: 14,
-            elevation: 6,
-            borderRadius: radius.xl,
-          }}
-        >
-          <View style={{ borderRadius: radius.xl, overflow: 'hidden' }}>
-          <BlurView
-            intensity={mode === 'dark' ? 68 : 80}
-            tint={mode === 'dark' ? 'dark' : 'light'}
-            style={StyleSheet.absoluteFillObject}
-          />
-          <LinearGradient
-            colors={mode === 'dark'
-              ? ['rgba(255,255,255,0.10)', 'rgba(255,255,255,0.04)']
-              : ['rgba(255,255,255,0.72)', 'rgba(255,255,255,0.30)']}
-            start={{ x: 0, y: 0 }} end={{ x: 0.4, y: 1 }}
-            style={StyleSheet.absoluteFillObject}
-          />
-          <View style={[StyleSheet.absoluteFillObject, {
-            borderRadius: radius.xl, borderWidth: 1,
-            borderColor: mode === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.82)',
-          }]} />
-          <View style={{ flexDirection: 'row', justifyContent: 'space-around', paddingVertical: spacing.sm, paddingHorizontal: spacing.xs }}>
-            {(Object.entries(REACTIONS) as [ReactionType, { emoji: string; label: string }][]).map(([type, r]) => (
-              <Pressable
-                key={type}
-                onPress={() => { closePicker(); onPickReaction(type); }}
-                style={{
-                  alignItems: 'center', paddingHorizontal: spacing.sm, paddingVertical: 4,
-                  borderRadius: radius.md,
-                  backgroundColor: myReaction === type
-                    ? (mode === 'dark' ? 'rgba(255,255,255,0.18)' : colors.primarySurface)
-                    : 'transparent',
-                }}
-              >
-                <Text style={{ fontSize: 28 }}>{r.emoji}</Text>
-                <Text style={{ ...typography.caption, color: myReaction === type ? colors.primary : colors.textMuted, marginTop: 2, fontSize: 10 }}>{r.label}</Text>
-              </Pressable>
-            ))}
-            <Pressable onPress={closePicker} style={{ alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.sm }}>
-              <Ionicons name="close-circle" size={22} color={mode === 'dark' ? 'rgba(255,255,255,0.45)' : colors.textMuted} />
-            </Pressable>
-          </View>
-          </View>
-        </Animated.View>
-      )}
+      {/* Reaction picker (glass pill) — shared with FeedPost. The picker
+          handles its own enter animation + auto-close timer; we just feed
+          it the visible state, current reaction, and a tap-handler that
+          closes the picker AND commits the reaction. */}
+      <ReactionPicker
+        visible={showPicker}
+        myReaction={myReaction}
+        onPick={(type) => { closePicker(); onPickReaction(type); }}
+        onAutoClose={closePicker}
+      />
 
       {/* Actions */}
       <View style={styles.actions}>
