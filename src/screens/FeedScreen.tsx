@@ -794,8 +794,11 @@ export default function FeedScreen() {
     if (items.length === 0) {
       return (
         <View style={{ flex: 1, paddingTop: headerHeight }}>
-          {/* Suggested anglers — most useful first-time content */}
-          <PeopleYouMayKnowRow collapseWhenEmpty={false} />
+          {/* Suggested anglers — most useful first-time content. Collapses
+              when there's nobody to suggest either (e.g. brand-new account
+              before the suggestion engine has scored candidates), so the
+              empty-state CTA below isn't preceded by an empty row of nothing. */}
+          <PeopleYouMayKnowRow collapseWhenEmpty={true} />
           <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: spacing.lg }}>
             <EmptyState
               icon={scope === 'following' ? 'people-outline' : 'layers-outline'}
@@ -1015,6 +1018,14 @@ export default function FeedScreen() {
     );
   })();
 
+  // Empty-feed signal: when there's nothing in the list, the empty-state CTA
+  // ("Добави първи улов" / "Намери приятели") should be the only entry point
+  // on screen. Without this, a brand-new user saw three competing CTAs at
+  // once — the StoriesRow's "Сподели момент" bubble, the FAB, and the
+  // empty-state's own button — and couldn't tell which path to take. We
+  // gate the StoriesRow and the FAB on this so the empty state stands alone.
+  const feedIsEmpty = items.length === 0;
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       {/* Collapsible header — slides up on scroll, re-appears on scroll back */}
@@ -1026,9 +1037,11 @@ export default function FeedScreen() {
         onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
       >
         {Hero}
-        <View style={{ backgroundColor: colors.background, borderTopLeftRadius: 32, borderTopRightRadius: 32, marginTop: -32 }}>
-          <StoriesRow />
-        </View>
+        {!feedIsEmpty ? (
+          <View style={{ backgroundColor: colors.background, borderTopLeftRadius: 32, borderTopRightRadius: 32, marginTop: -32 }}>
+            <StoriesRow />
+          </View>
+        ) : null}
       </Animated.View>
 
       {/* Full-screen content — each branch handles its own paddingTop */}
@@ -1037,8 +1050,9 @@ export default function FeedScreen() {
       </View>
 
       {/* Compose FAB — shared component (also used on Home + Logbook) so the
-          compose entrypoint feels identical across high-traffic surfaces. */}
-      <ComposeFab />
+          compose entrypoint feels identical across high-traffic surfaces.
+          Hidden on the empty feed so the empty-state CTA owns the action. */}
+      {!feedIsEmpty ? <ComposeFab /> : null}
     </View>
   );
 }

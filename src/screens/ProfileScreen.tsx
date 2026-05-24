@@ -1304,9 +1304,13 @@ export default function ProfileScreen() {
         onPickAvatar={configured ? pickProfileAvatar : undefined}
         topLeft={
           <FacebookHeroButton
-            icon="menu-outline"
+            // settings-outline (gear) reads as "preferences + secondary nav"
+            // much faster than the hamburger this used to be — users were
+            // missing the settings drawer entirely on first visit. The drawer
+            // contents themselves haven't changed; just the entry-point icon.
+            icon="settings-outline"
             onPress={() => { void Haptics.selectionAsync(); setSettingsOpen(true); }}
-            accessibilityLabel="Меню"
+            accessibilityLabel="Настройки"
           />
         }
         topRight={
@@ -1962,6 +1966,9 @@ export default function ProfileScreen() {
                 <Text style={[styles.menuCardTitle, { paddingHorizontal: spacing.sm, paddingTop: spacing.md }]}>Настройки</Text>
                 <Card style={styles.menuCardWrap}>
                   <MenuRow dense icon="settings-outline" title="Настройки за известия" onPress={() => { setSettingsOpen(false); navigation.navigate('NotificationPreferences'); }} showDivider />
+                  {Platform.OS === 'ios' ? (
+                    <MenuRow dense icon="apps-outline" title="Икона на приложението" onPress={() => { setSettingsOpen(false); navigation.navigate('AppIconPicker'); }} showDivider />
+                  ) : null}
                   <MenuRow
                     dense
                     icon="document-text-outline"

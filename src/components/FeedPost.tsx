@@ -171,7 +171,11 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
   const styles = useMemo(() => feedStyles(colors), [colors]);
   const { width: screenWidth } = useWindowDimensions();
   const [commentsOpen, setCommentsOpen] = useState(false);
-  const [viewerUri, setViewerUri] = useState<string | null>(null);
+  // Index into the combined carouselPhotos list when the viewer is open;
+  // null means closed. Tracking the index (not the URI) lets the ImageViewer
+  // open on the same page the user tapped AND keeps the user in-context
+  // when they swipe through the rest in the fullscreen viewer.
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [shareToFriendOpen, setShareToFriendOpen] = useState(false);
   // Image-load error state — flips when expo-image fails to fetch the photoUri.
   // A common failure mode is a published catch whose photoUri is still a local
@@ -284,7 +288,7 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
         tapTimerRef.current = null;
         if (!mountedRef.current || !item.photoUri) return;
         if (Date.now() - lastTapTimeRef.current >= 280) {
-          setViewerUri(item.photoUri);
+          setViewerIndex(0);
         }
       }, 280);
     }
@@ -466,9 +470,10 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
               {/* Pages 1..N — extra photos, tap to zoom. No double-tap; viewer
                   handles the fullscreen swipe/zoom itself. */}
               {(item.extraPhotoUris ?? []).map((uri, i) => (
+                // +1 offset: index 0 is the primary photo, extras occupy 1..N.
                 <Pressable
                   key={`extra-${i}`}
-                  onPress={() => setViewerUri(uri)}
+                  onPress={() => setViewerIndex(i + 1)}
                   style={{ width: screenWidth }}
                 >
                   <View style={{ width: '100%', height: photoHeight, backgroundColor: colors.surfaceAlt }}>
@@ -670,8 +675,13 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
         {/* Lazy-mount: ImageViewer constructs 5 Animated.Values + a PanResponder
             on mount. Without this guard every FeedPost in the list paid for a
             full-screen image viewer the user may never open. */}
-        {viewerUri ? (
-          <ImageViewer uri={viewerUri} visible onClose={() => setViewerUri(null)} />
+        {viewerIndex !== null && carouselPhotos.length > 0 ? (
+          <ImageViewer
+            uris={carouselPhotos}
+            initialIndex={viewerIndex}
+            visible
+            onClose={() => setViewerIndex(null)}
+          />
         ) : null}
 
         {/* Lazy-mount: the share picker subscribes to Firestore and mounts a

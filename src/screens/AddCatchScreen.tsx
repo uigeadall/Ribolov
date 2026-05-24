@@ -46,6 +46,14 @@ import { getFollowerUids } from '../services/social';
 import { notifyPersonalBest } from '../services/socialNotifications';
 import { checkForNewUnlocks } from '../services/achievements';
 import { AchievementUnlockModal } from '../components/AchievementUnlockModal';
+import { FirstCatchCelebration } from '../components/FirstCatchCelebration';
+import AsyncStorage from '../storage/kv';
+
+// AsyncStorage key for the once-ever first-catch celebration. Set on dismiss
+// (regardless of whether user tapped "share" or "done") so a returning user
+// who deletes all their catches and adds a new one doesn't see the same
+// moment a second time — it would feel hollow and faked.
+const FIRST_CATCH_KEY = '@ribolov/firstCatchCelebrationShown';
 import { SpeciesPicker } from '../components/SpeciesPicker';
 import { keyboardAwareScrollProps } from '../utils/keyboardScrollProps';
 import { isRemoteImageUri, formatCatchDate } from '../utils/formatCatchDate';
@@ -188,6 +196,17 @@ export default function AddCatchScreen() {
   // immediately.
   const savingRef = useRef(false);
   const [unlockedNow, setUnlockedNow] = useState<Achievement[]>([]);
+  // First-ever-catch celebration takes precedence over PB alert + achievement
+  // modal. Set inside the save flow when (a) the post-save list has exactly
+  // one catch, (b) we're creating not editing, and (c) the never-shown flag
+  // hasn't been set yet. Null = not celebrating; populated = modal visible.
+  const [firstCatch, setFirstCatch] = useState<{
+    id: string;
+    speciesName: string;
+    weightKg: number | null;
+    photoUri: string | null;
+    alreadyShared: boolean;
+  } | null>(null);
   const [editLoaded, setEditLoaded] = useState(!editCatchId);
   const [initialCatch, setInitialCatch] = useState<Catch | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -598,7 +617,34 @@ export default function AddCatchScreen() {
         visibilityTime: 2000,
       });
 
-      if (pb.isNew && !editCatchId) {
+      // First-ever-catch celebration takes precedence over PB alert +
+      // achievement modal. A first catch is inherently a PB and inherently
+      // triggers the "first catch" achievement — stacking three modals on
+      // top of each other would dilute the moment. The celebration owns the
+      // emotional beat; PB + achievement screens still hold their data so
+      // users can revisit them later from the relevant screens.
+      const isFirstCatchCandidate = allCatches.length === 1 && !editCatchId;
+      let isFirstCatchEver = false;
+      if (isFirstCatchCandidate) {
+        const flag = await AsyncStorage.getItem(FIRST_CATCH_KEY).catch(() => null);
+        isFirstCatchEver = !flag;
+      }
+
+      if (isFirstCatchEver) {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        setFirstCatch({
+          id: item.id,
+          speciesName: item.speciesName,
+          weightKg: item.weightKg ?? null,
+          photoUri: item.photoUri ?? null,
+          // alreadyShared only when both the toggle is on AND we actually have
+          // an account to share from — otherwise the public push is a no-op
+          // and the celebration should still offer the share CTA after sign-in.
+          alreadyShared: form.shareToFeed && !!user,
+        });
+        // Fall through to cloud sync below; skip the PB alert + achievement
+        // modal flow — the celebration's onClose handles goBack.
+      } else if (pb.isNew && !editCatchId) {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
         const pbMsg =
           pb.field === 'both'
@@ -1204,6 +1250,35 @@ export default function AddCatchScreen() {
         achievements={unlockedNow}
         onClose={() => {
           setUnlockedNow([]);
+          navigation.goBack();
+        }}
+      />
+
+      {/* First-ever-catch celebration — fires once per user account on the
+          very first catch save. AsyncStorage flag set on dismiss (either
+          path) so deleting all catches and re-adding doesn't replay the
+          moment. */}
+      <FirstCatchCelebration
+        visible={firstCatch !== null}
+        speciesName={firstCatch?.speciesName ?? ''}
+        weightKg={firstCatch?.weightKg}
+        photoUri={firstCatch?.photoUri}
+        alreadyShared={firstCatch?.alreadyShared ?? false}
+        onShare={() => {
+          // Re-enqueue with sharePublic=true. The original syncCatchToCloud
+          // call (fired in the background after save) may already be in
+          // flight or finished with the user's pre-toggle value; the queue's
+          // dedupe-by-catchId guarantees this second enqueue wins.
+          if (firstCatch) {
+            void enqueueCatchSync(firstCatch.id, true).catch(() => undefined);
+          }
+          void AsyncStorage.setItem(FIRST_CATCH_KEY, '1').catch(() => undefined);
+          setFirstCatch(null);
+          navigation.goBack();
+        }}
+        onClose={() => {
+          void AsyncStorage.setItem(FIRST_CATCH_KEY, '1').catch(() => undefined);
+          setFirstCatch(null);
           navigation.goBack();
         }}
       />

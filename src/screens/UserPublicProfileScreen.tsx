@@ -8,6 +8,7 @@ import {
   Alert,
   FlatList,
   Dimensions,
+  Share,
 } from 'react-native';
 import { FishingRefreshControl } from '../components/FishingRefreshControl';
 import { useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
@@ -106,6 +107,16 @@ function createStyles(colors: AppColors) {
     primaryFollowing: { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
     primaryFollowText: { ...typography.bodyBold, color: '#fff', fontSize: 14 },
     primaryFollowingText: { ...typography.bodyBold, color: colors.text, fontSize: 14 },
+    shareBtn: {
+      width: 40,
+      height: 40,
+      borderRadius: 8,
+      backgroundColor: colors.surfaceAlt,
+      borderWidth: 1,
+      borderColor: colors.border,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
     msgBtn: {
       flex: 1,
       flexDirection: 'row',
@@ -536,6 +547,24 @@ export default function UserPublicProfileScreen() {
         >
           <Ionicons name="chatbubble-outline" size={16} color={colors.text} />
           <Text style={styles.msgBtnText}>Съобщение</Text>
+        </Pressable>
+        {/* Icon-only share button — viral discovery affordance. Profiles
+            without a "share this angler" path are a friction point for new
+            users wanting to recommend someone to a friend. Square (not
+            flexed) so the follow + message buttons keep their dominant
+            visual weight. Text-only payload for now; can upgrade to a
+            deep-link once profile-link handling is wired into App.tsx. */}
+        <Pressable
+          style={styles.shareBtn}
+          onPress={() => {
+            void Share.share({
+              message: `Виж ${summaryName} в Риболов — приложението за дневник на улови.`,
+            }).catch(() => undefined);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Сподели профил"
+        >
+          <Ionicons name="share-social-outline" size={18} color={colors.text} />
         </Pressable>
       </View>
     );

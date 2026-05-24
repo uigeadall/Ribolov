@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -6,13 +6,15 @@ import {
   FlatList,
   Pressable,
   Dimensions,
-  Platform,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 import { Button } from '../components/Button';
+import { fetchPublicFeed, type CloudCatch } from '../services/catchSync';
+import { getImageVariant, ImageSize } from '../utils/imageVariants';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -43,7 +45,7 @@ const SLIDES: Slide[] = [
     key: 'social',
     icon: 'newspaper',
     title: 'Лента на общността',
-    body: 'Следвай рибари, харесвай улови, коментирай и участвай в класирания.',
+    body: 'Виж улови от истински рибари, харесвай, коментирай и участвай в класирания.',
     accent: '#2E9B5A',
   },
   {
@@ -57,11 +59,37 @@ const SLIDES: Slide[] = [
 
 type Props = { onDone: () => void };
 
+/** The "social" slide renders a 3-card preview of real public catches so new
+    users see the community is alive before they sign up. Fetched eagerly on
+    mount (not lazily when the slide appears) so the swipe to the slide finds
+    photos already loaded and avoids a visible loading flash mid-onboarding.
+    Falls back to the generic illustration when offline or the fetch fails —
+    no spinner ever — because losing this slide is acceptable but blocking the
+    onboarding flow on a network round-trip is not. */
+function useOnboardingPreviewCatches(): CloudCatch[] | null {
+  const [items, setItems] = useState<CloudCatch[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchPublicFeed(6)
+      .then((page) => {
+        if (cancelled) return;
+        // Keep only ones with photos — the preview is the photo, no value in
+        // a card with a fish emoji placeholder during onboarding.
+        const withPhotos = page.items.filter((c) => c.photoUri).slice(0, 3);
+        setItems(withPhotos.length >= 2 ? withPhotos : null);
+      })
+      .catch(() => { if (!cancelled) setItems(null); });
+    return () => { cancelled = true; };
+  }, []);
+  return items;
+}
+
 export default function OnboardingScreen({ onDone }: Props) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const listRef = useRef<FlatList>(null);
   const [index, setIndex] = useState(0);
+  const previewCatches = useOnboardingPreviewCatches();
 
   const goNext = () => {
     if (index < SLIDES.length - 1) {
@@ -84,15 +112,43 @@ export default function OnboardingScreen({ onDone }: Props) {
         pagingEnabled
         scrollEnabled={false}
         showsHorizontalScrollIndicator={false}
-        renderItem={({ item }) => (
-          <View style={[styles.slide, { width: SCREEN_W }]}>
-            <View style={[styles.iconRing, { backgroundColor: item.accent }]}>
-              <Ionicons name={item.icon} size={56} color="#fff" />
+        renderItem={({ item }) => {
+          // Special render for the social slide when we managed to load real
+          // public catches — shows three photo cards above the title so users
+          // see actual community activity, not a generic "newspaper" icon.
+          if (item.key === 'social' && previewCatches && previewCatches.length >= 2) {
+            return (
+              <View style={[styles.slide, { width: SCREEN_W }]}>
+                <View style={styles.previewRow}>
+                  {previewCatches.map((c, i) => (
+                    <View key={c.id} style={[styles.previewCard, { transform: [{ rotate: `${(i - 1) * 4}deg` }, { translateY: i === 1 ? -6 : 0 }] }]}>
+                      <Image
+                        source={{ uri: getImageVariant(c.photoUri!, ImageSize.gridThumb) ?? c.photoUri! }}
+                        style={styles.previewImage}
+                        contentFit="cover"
+                        cachePolicy="memory-disk"
+                      />
+                      <View style={styles.previewBadge}>
+                        <Text style={styles.previewBadgeText} numberOfLines={1}>{c.speciesName}</Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+                <Text style={[styles.title, { color: colors.text }]}>{item.title}</Text>
+                <Text style={[styles.body, { color: colors.textMuted }]}>{item.body}</Text>
+              </View>
+            );
+          }
+          return (
+            <View style={[styles.slide, { width: SCREEN_W }]}>
+              <View style={[styles.iconRing, { backgroundColor: item.accent }]}>
+                <Ionicons name={item.icon} size={56} color="#fff" />
+              </View>
+              <Text style={[styles.title, { color: colors.text }]}>{item.title}</Text>
+              <Text style={[styles.body, { color: colors.textMuted }]}>{item.body}</Text>
             </View>
-            <Text style={[styles.title, { color: colors.text }]}>{item.title}</Text>
-            <Text style={[styles.body, { color: colors.textMuted }]}>{item.body}</Text>
-          </View>
-        )}
+          );
+        }}
       />
 
       {/* Dots */}
@@ -128,6 +184,8 @@ export default function OnboardingScreen({ onDone }: Props) {
   );
 }
 
+const PREVIEW_CARD = 130;
+
 const styles = StyleSheet.create({
   root: { flex: 1 },
   slide: {
@@ -149,6 +207,44 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
     elevation: 6,
+  },
+  // Fan-shaped row of 3 cards — middle card lifted + flanking cards rotated
+  // outward gives a Polaroid-stack feel that signals "real photos" rather
+  // than "stock illustration".
+  previewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: -10,
+    marginBottom: spacing.xl,
+    height: PREVIEW_CARD + 30,
+  },
+  previewCard: {
+    width: PREVIEW_CARD,
+    height: PREVIEW_CARD,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
+    borderWidth: 3,
+    borderColor: '#fff',
+  },
+  previewImage: { width: '100%', height: '100%' },
+  previewBadge: {
+    position: 'absolute',
+    bottom: 6, left: 6, right: 6,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingHorizontal: 6, paddingVertical: 2,
+    borderRadius: 6,
+  },
+  previewBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontFamily: 'Nunito_700Bold',
   },
   title: {
     ...typography.h1,

@@ -76,6 +76,7 @@ import SpeciesTargetScreen from '../screens/SpeciesTargetScreen';
 import PhotoGalleryScreen from '../screens/PhotoGalleryScreen';
 import TripPlannerScreen from '../screens/TripPlannerScreen';
 import NotificationPreferencesScreen from '../screens/NotificationPreferencesScreen';
+import AppIconPickerScreen from '../screens/AppIconPickerScreen';
 
 const wrap = (label: string, Component: React.ComponentType<any>) => (props: any) =>
   (
@@ -183,6 +184,7 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="CreateGroupEvent" component={CreateGroupEventScreen} />
       <ProfileStack.Screen name="CreateGroupPoll" component={CreateGroupPollScreen} />
       <ProfileStack.Screen name="NotificationPreferences" component={NotificationPreferencesScreen} />
+      <ProfileStack.Screen name="AppIconPicker" component={AppIconPickerScreen} />
     </ProfileStack.Navigator>
     </ErrorBoundary>
   );

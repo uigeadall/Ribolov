@@ -474,7 +474,7 @@ export default function NotificationsScreen() {
       overflow: 'hidden',
     },
   }), [waveColor]);
-  const [notifTab, setNotifTab] = useState<'all' | 'likes' | 'comments'>('all');
+  const [notifTab, setNotifTab] = useState<'all' | 'likes' | 'comments' | 'follows'>('all');
   // Tactile pull-to-refresh — notifications stream via subscription, so we
   // flash a brief refreshing state for the FishingRefreshControl visual
   // and resolve. Matches FeedScreen + ChatsScreen.
@@ -621,15 +621,17 @@ export default function NotificationsScreen() {
     ids.forEach((id) => { markNotificationRead(user.uid, id).catch(() => {}); });
   }, [setData, user?.uid]);
 
-  const tabDefs: { key: 'all' | 'likes' | 'comments'; label: string }[] = [
+  const tabDefs: { key: 'all' | 'likes' | 'comments' | 'follows'; label: string }[] = [
     { key: 'all', label: 'Всички' },
     { key: 'likes', label: 'Харесвания' },
     { key: 'comments', label: 'Коментари' },
+    { key: 'follows', label: 'Последвания' },
   ];
 
   const filteredItems = useMemo(() => {
     if (notifTab === 'likes') return items.filter((n) => n.type === 'like' || n.type === 'storyLike');
     if (notifTab === 'comments') return items.filter((n) => n.type === 'comment' || n.type === 'storyComment');
+    if (notifTab === 'follows') return items.filter((n) => n.type === 'follow');
     return items;
   }, [items, notifTab]);
 
@@ -692,7 +694,17 @@ export default function NotificationsScreen() {
               <Ionicons name="trash-outline" size={18} color="#fff" />
             </Pressable>
           ) : null}
-          {unreadCount === 0 && readCount === 0 ? <View style={{ width: 40 }} /> : null}
+          {/* Settings shortcut — most users discover notification preferences
+              from inside the inbox ("how do I stop getting these?"), not by
+              digging through Profile → Settings. Always visible so the path
+              to muting is one tap away regardless of inbox state. */}
+          <Pressable
+            onPress={() => navigation.navigate('NotificationPreferences')}
+            hitSlop={8}
+            accessibilityLabel="Настройки за известия"
+          >
+            <Ionicons name="settings-outline" size={18} color="#fff" />
+          </Pressable>
         </View>
       </View>
     </View>
@@ -735,7 +747,9 @@ export default function NotificationsScreen() {
                 ? "Когато някой хареса или коментира твой улов, или те последва, ще се появи тук."
                 : notifTab === 'likes'
                   ? "Нямаш харесвания все още."
-                  : "Нямаш коментари все още."
+                  : notifTab === 'comments'
+                    ? "Нямаш коментари все още."
+                    : "Никой не те е последвал все още."
               }
             />
           </FadeIn>

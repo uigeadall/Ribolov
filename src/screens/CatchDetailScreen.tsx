@@ -77,7 +77,11 @@ export default function CatchDetailScreen() {
   const [sharing, setSharing] = useState(false);
   const [photoAspectRatio, setPhotoAspectRatio] = useState<number | null>(null);
   const [viewerOpen, setViewerOpen] = useState(false);
-  const [viewerUri, setViewerUri] = useState<string>('');
+  // Index into the combined [main, ...extras] list so the viewer opens on the
+  // photo the user actually tapped and they can swipe to the rest. Previously
+  // the viewer was single-image only, which meant tapping extra photo #3
+  // required dismissing the viewer and tapping #4 separately.
+  const [viewerIndex, setViewerIndex] = useState(0);
   const [currentExtraPhoto, setCurrentExtraPhoto] = useState(0);
   const cardRef = useRef<ViewShot>(null);
 
@@ -286,7 +290,7 @@ export default function CatchDetailScreen() {
           {/* ── Full-bleed photo header ── */}
           {item.photoUri ? (
             <View style={{ position: 'relative' }}>
-              <Pressable onPress={() => { setViewerUri(item.photoUri!); setViewerOpen(true); }}>
+              <Pressable onPress={() => { setViewerIndex(0); setViewerOpen(true); }}>
                 <Image
                   source={{ uri: item.photoUri }}
                   style={{ width: '100%', aspectRatio: photoAspectRatio ?? 4 / 3 }}
@@ -382,7 +386,10 @@ export default function CatchDetailScreen() {
                 }}
               >
                 {item.extraPhotoUris!.map((uri, i) => (
-                  <Pressable key={i} onPress={() => { setViewerUri(uri); setViewerOpen(true); }}>
+                  // +1 because index 0 in the combined list is the main photo;
+                  // extras occupy indices 1..N. Without the offset, tapping
+                  // "extra #0" would open the main photo and confuse users.
+                  <Pressable key={i} onPress={() => { setViewerIndex(i + (item.photoUri ? 1 : 0)); setViewerOpen(true); }}>
                     <Image source={{ uri }} style={styles.extraPhoto} contentFit="cover" />
                   </Pressable>
                 ))}
@@ -534,7 +541,12 @@ export default function CatchDetailScreen() {
           </Card>
           </View>
         </ScrollView>
-        <ImageViewer uri={viewerUri} visible={viewerOpen} onClose={() => setViewerOpen(false)} />
+        <ImageViewer
+          uris={[item.photoUri, ...(item.extraPhotoUris ?? [])].filter((u): u is string => !!u)}
+          initialIndex={viewerIndex}
+          visible={viewerOpen}
+          onClose={() => setViewerOpen(false)}
+        />
       </Screen>
     </KeyboardAvoidingView>
   );
