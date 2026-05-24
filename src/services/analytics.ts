@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { NativeModules, Platform } from 'react-native';
 
 /**
  * Firebase Analytics wrapper.
@@ -41,11 +41,24 @@ let cachedInstance: AnalyticsInstance | null | undefined = undefined;
 
 function loadAnalytics(): AnalyticsInstance | null {
   if (cachedInstance !== undefined) return cachedInstance;
+  // Probe for the RNFB core native module BEFORE requiring the analytics JS
+  // module. When the native side isn't bundled (Expo Go, or a dev client
+  // built before this dependency landed), `require('@react-native-firebase/
+  // analytics')` triggers RNFB's autolinker which logs a red "Native module
+  // RNFBAppModule not found" error from Objective-C / Java via the bridge.
+  // That log can't be silenced from JS — even a successful try/catch around
+  // the require leaves the line in the console. Short-circuiting on the
+  // NativeModules probe means we never trigger the autolinker on a build
+  // that lacks the binary, so no spurious log.
+  if (NativeModules.RNFBAppModule == null) {
+    cachedInstance = null;
+    return null;
+  }
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const mod = require('@react-native-firebase/analytics') as AnalyticsModule;
-    // Call the factory NOW so any "native module not found" error happens
-    // inside this try/catch instead of escaping to a downstream call site.
+    // Call the factory NOW so any unexpected init error happens inside this
+    // try/catch instead of escaping to a downstream call site.
     cachedInstance = mod.default();
     return cachedInstance;
   } catch {
