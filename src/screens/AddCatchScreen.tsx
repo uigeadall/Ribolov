@@ -60,6 +60,16 @@ import { isRemoteImageUri, formatCatchDate } from '../utils/formatCatchDate';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { handleError } from '../utils/handleError';
 import { notifyInfo, notifyError } from '../utils/notify';
+import { allowCatchSave } from '../services/socialRateLimit';
+import { logEvent } from '../services/analytics';
+
+// Absolute ceilings used in addition to per-species `maxWeightKg`. Catch any
+// fat-finger entry (e.g. typing 2500 kg of carp) AND stop entirely-unrealistic
+// fish for species with no per-species limit defined. Numbers picked from the
+// upper bound of credible inland-water records: ~200 kg covers monster catfish;
+// ~250 cm is the published max for European catfish (Silurus glanis).
+const ABS_MAX_WEIGHT_KG = 200;
+const ABS_MAX_LENGTH_CM = 250;
 import { checkImageSize } from '../utils/imageSize';
 import { fetchWeather } from '../services/weather';
 import { DAMS } from '../data/dams';
@@ -578,6 +588,63 @@ export default function AddCatchScreen() {
   const save = async () => {
     if (savingRef.current) return;
     if (!form.speciesId) return;
+
+    // ─── Weight / length validation ──────────────────────────────────────
+    // Both fields are optional — a released catch may have no weight, a
+    // quick log might omit length. But if the user typed something, it
+    // needs to fit reality. Per-species `maxWeightKg` caps the legitimate
+    // upper bound (carp at 35 kg, catfish at 120 kg, etc); the absolute
+    // ceilings catch fat-finger typos AND species without a per-species
+    // cap. Negative numbers and NaN are also rejected — the picker's
+    // numeric keyboard allows '-' on some Android keyboards.
+    const parsedWeight = parseFloat(form.weight.replace(',', '.'));
+    if (form.weight.trim().length > 0) {
+      if (!Number.isFinite(parsedWeight) || parsedWeight < 0) {
+        notifyError('Невалидно тегло', 'Въведи положително число в килограми.');
+        return;
+      }
+      const speciesMax = selectedSpecies.maxWeightKg ?? ABS_MAX_WEIGHT_KG;
+      // Cap at min(species max × 1.5, absolute max). The 1.5× headroom on
+      // the species max accommodates exceptional fish (a 50 kg carp is
+      // record-breaking but not impossible) without letting truly bogus
+      // entries through.
+      const allowedMax = Math.min(speciesMax * 1.5, ABS_MAX_WEIGHT_KG);
+      if (parsedWeight > allowedMax) {
+        notifyError(
+          'Теглото е твърде голямо',
+          `Максимално ${Math.round(allowedMax)} кг за ${selectedSpecies.nameBg}.`,
+        );
+        return;
+      }
+    }
+    const parsedLength = parseFloat(form.length.replace(',', '.'));
+    if (form.length.trim().length > 0) {
+      if (!Number.isFinite(parsedLength) || parsedLength < 0) {
+        notifyError('Невалидна дължина', 'Въведи положително число в сантиметри.');
+        return;
+      }
+      if (parsedLength > ABS_MAX_LENGTH_CM) {
+        notifyError(
+          'Дължината е твърде голяма',
+          `Максимално ${ABS_MAX_LENGTH_CM} см.`,
+        );
+        return;
+      }
+    }
+
+    // ─── Rate limiter ─────────────────────────────────────────────────────
+    // Skip when editing — only NEW catches count toward the cap. Editing
+    // an existing catch is a low-cost local write that shouldn't burn the
+    // user's hourly budget. Also skip when no user is signed in (purely
+    // local save can't spam the cloud).
+    if (!editCatchId && user && !allowCatchSave(user.uid)) {
+      notifyError(
+        'Твърде много улови наведнъж',
+        'Опитай отново след малко.',
+      );
+      return;
+    }
+
     const trimmedPhotoTitle = form.photoTitle.trim().slice(0, 120);
     const uri = form.photoUri?.trim();
     savingRef.current = true;
@@ -667,6 +734,18 @@ export default function AddCatchScreen() {
         text1: editCatchId ? 'Уловът е обновен' : 'Уловът е записан',
         visibilityTime: 2000,
       });
+      // Skip on edits — we already log catch_logged on create, and edits
+      // would double-count engagement in the dashboard. Species + has_photo
+      // + shared_public let us slice retention by what kinds of catches
+      // people actually log (e.g. "are photo-less catches a leading
+      // churn indicator?").
+      if (!editCatchId) {
+        logEvent('catch_logged', {
+          species: item.speciesName,
+          has_photo: !!item.photoUri,
+          shared_public: !!form.shareToFeed,
+        });
+      }
 
       // First-ever-catch celebration takes precedence over PB alert +
       // achievement modal. A first catch is inherently a PB and inherently
@@ -683,6 +762,10 @@ export default function AddCatchScreen() {
 
       if (isFirstCatchEver) {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        // High-signal retention event — fires exactly once per user. Lets
+        // us measure D1/D7/D30 retention specifically for users who got
+        // far enough to log their first catch (vs install-only users).
+        logEvent('first_catch_celebrated', { species: item.speciesName });
         setFirstCatch({
           id: item.id,
           speciesName: item.speciesName,

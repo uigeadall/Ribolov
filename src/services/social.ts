@@ -17,6 +17,7 @@ import { stripUndefinedForFirestore } from './firestoreSanitize';
 import { getBlockedUids } from './blockUser';
 import { getUserPublicSummary } from './userProfile';
 import { allowFollowAction } from './socialRateLimit';
+import { logEvent } from './analytics';
 
 const FOLLOWING_TTL_MS = 10 * 60 * 1000;
 const followingCache = new Map<string, { data: { uid: string; displayName: string }[]; at: number }>();
@@ -67,6 +68,7 @@ export async function followUser(myUid: string, targetUid: string, targetName?: 
   await batch.commit();
   followingCache.delete(myUid);
   suggestionsCache.delete(myUid);
+  logEvent('friend_followed');
 }
 
 export async function unfollowUser(myUid: string, targetUid: string) {

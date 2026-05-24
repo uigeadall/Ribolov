@@ -18,6 +18,7 @@ import {
 import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
 import { allowLikeToggle, allowTournamentEntry } from './socialRateLimit';
+import { logEvent } from './analytics';
 import type { Tournament } from '../types';
 
 export async function createTournament(t: Tournament) {
@@ -43,6 +44,7 @@ export async function joinTournament(tournamentId: string, uid: string, displayN
     stripUndefinedForFirestore({ uid, displayName, joinedAt: serverTimestamp() }),
     { merge: true }
   );
+  logEvent('tournament_joined', { tournament_id: tournamentId });
 }
 
 export type TournamentPhotoEntry = {

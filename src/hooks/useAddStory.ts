@@ -46,6 +46,17 @@ export function useAddStory(
         quality: type === 'video' ? 0.8 : 0.85,
         videoMaxDuration: 60,
         allowsEditing: type === 'photo',
+        // Transcode picked / captured videos to 720p H.264 before upload.
+        // Without this, the picker hands back the raw asset URI — which on a
+        // modern iPhone is 1080p (or 4K if the camera is in 4K mode). A 60s
+        // 1080p clip is ~80 MB; the same clip at 720p is ~12 MB. The huge
+        // raw file was the primary reason stories took 5-15s to start
+        // playing on mobile data (story videos are short ephemeral content
+        // — 720p is more than enough quality for a phone-screen overlay).
+        // iOS-only — on Android the picker doesn't transcode; we live with
+        // the larger upload there. To compress on Android too we'd need a
+        // separate library like react-native-compressor.
+        videoExportPreset: ImagePicker.VideoExportPreset.H264_1280x720,
       };
       let result: ImagePicker.ImagePickerResult;
       if (source === 'camera') {

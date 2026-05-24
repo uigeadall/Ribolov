@@ -43,6 +43,7 @@ import { radius, spacing, typography } from '../theme/typography';
 import { shadowCard } from '../theme/shadows';
 import { useAuth, type DeleteAccountCredential } from '../services/authContext';
 import { buildInviteShareMessage } from '../services/referral';
+import { logEvent } from '../services/analytics';
 import { GoogleSignInSection } from '../components/GoogleSignInButton';
 import { AppleSignInSection } from '../components/AppleSignInSection';
 import { updateProfile } from 'firebase/auth';
@@ -1997,6 +1998,14 @@ export default function ProfileScreen() {
                       // own cancellation UI. Errors (rare — only thrown when
                       // the system can't open the sheet at all) we swallow.
                       void Share.share({ message: buildInviteShareMessage(user.uid) }).catch(() => undefined);
+                      // Fires when the user opens the OS share sheet — not
+                      // when they actually pick a recipient (Share.share's
+                      // result doesn't tell us reliably across platforms).
+                      // Combined with downstream `acceptPendingReferral`
+                      // in authContext we can compute the conversion funnel
+                      // (sends → installs → signups) without per-platform
+                      // share-result inspection.
+                      logEvent('referral_invite_sent');
                     }}
                     showDivider
                   />

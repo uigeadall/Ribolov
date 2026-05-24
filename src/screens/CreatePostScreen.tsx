@@ -19,6 +19,7 @@ import { useAppNavigation } from '../navigation/useAppNavigation';
 import AsyncStorage from '../storage/kv';
 import { createPost, getUserPublicSummary } from '../services/cloudSync';
 import { searchUsersByName, type SearchUserResult } from '../services/userProfile';
+import { logEvent } from '../services/analytics';
 import { handleError } from '../utils/handleError';
 import { notifyInfo } from '../utils/notify';
 import { checkImageSize } from '../utils/imageSize';
@@ -208,6 +209,11 @@ export default function CreatePostScreen() {
         onUploadProgress: (f) => setUploadProgress(f),
       });
       Toast.show({ type: 'success', text1: 'Публикувано', visibilityTime: 1800 });
+      logEvent('post_shared', {
+        has_photo: !!photoUri,
+        has_reshare: !!reshare,
+        text_length: text.length,
+      });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       navigation.goBack();
     } catch (e: unknown) {

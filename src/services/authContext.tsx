@@ -30,6 +30,7 @@ import { resetTournamentCaches } from './tournaments';
 import { resetRateLimits } from './socialRateLimit';
 import { pushUserProfilePublic, mirrorAuthDisplayNameIfMissing } from './userProfile';
 import { setObservabilityUser } from './observability';
+import { setAnalyticsUser } from './analytics';
 import { acceptPendingReferral } from './referral';
 
 export type AuthContextValue = {
@@ -122,6 +123,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // removed this is a no-op, but kept wired so future error-reporter
         // integrations pick up user identity automatically.
         setObservabilityUser(u?.uid ?? null, u?.displayName);
+        // Attribute Firebase Analytics events to the user. Mirrors the
+        // observability call above; same null-on-signout semantics so the
+        // next user on this device doesn't inherit the previous identity.
+        setAnalyticsUser(u?.uid ?? null);
         setUser(u);
         setLoading(false);
       })();

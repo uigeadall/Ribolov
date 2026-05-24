@@ -134,6 +134,19 @@ export function allowSaveToggle(uid: string): boolean {
   return allowBurst(`save:${uid}`, 90, 60_000);
 }
 
+/** Catch creation — local AsyncStorage write is fast, but each catch
+    triggers cloud sync (Firestore + Storage upload) which is real cost.
+    A real angler in the middle of an active session might log 4-5 catches
+    in 10 minutes; 30/hour is well above that and stops accidental bursts
+    (double-tap pre-savingRef-guard, scripted re-runs). 1500ms minimum
+    spacing makes a UI double-tap impossible to slip through even if
+    savingRef somehow misses (defense in depth — JS is single-threaded so
+    savingRef is the primary guard; this is the belt to its suspenders). */
+export function allowCatchSave(uid: string): boolean {
+  if (!enforceMinSpacing(`catchSave:${uid}`, 1500)) return false;
+  return allowBurst(`catchSave:${uid}`, 30, 3_600_000);
+}
+
 /** Search calls — UI already debounces but server-side hits can spike if
     a script drives the input directly. */
 export function allowSearch(uid: string): boolean {

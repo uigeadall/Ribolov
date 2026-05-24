@@ -103,9 +103,28 @@ function InnerPlayer({
   // conditionally-loop here since we don't know duration at setup time —
   // instead we set loop=true and rely on the viewer's progress bar to
   // advance to the next story on time.
-  const player = useVideoPlayer(uri, (p) => {
+  //
+  // Two playback-start optimisations:
+  //   1. useCaching: passes the video through expo-video's on-disk cache.
+  //      First view downloads normally; second+ view is instant because
+  //      the bytes already live in the cache. Stories are commonly re-
+  //      watched (tap-back, share, scroll back through) so the hit rate
+  //      is high.
+  //   2. bufferOptions: defaults are conservative — Android waits for
+  //      20 s of forward buffer, iOS sets waitsToMinimizeStalling=true.
+  //      Both make sense for long-form video; for ≤60 s stories they
+  //      add several seconds of wait before the first frame. We ask the
+  //      player to start as soon as it has 1 s buffered and accept the
+  //      occasional brief stall on bad connections — TikTok / Reels
+  //      behaviour, much better UX for short clips.
+  const player = useVideoPlayer({ uri, useCaching: true }, (p) => {
     p.loop = true;
     p.muted = false;
+    p.bufferOptions = {
+      preferredForwardBufferDuration: 1,
+      waitsToMinimizeStalling: false,
+      minBufferForPlayback: 1,
+    };
     p.play();
   });
 
@@ -153,7 +172,13 @@ function InnerPlayer({
         player={player}
         style={{ width, height }}
         contentFit="contain"
-        allowsFullscreen={false}
+        // Disable the player's chrome — story viewer renders its own progress
+        // bar at the top and reaction bar at the bottom; the built-in
+        // controls would overlap and confuse gesture handling.
+        // `allowsFullscreen` was deprecated in favour of `fullscreenOptions`;
+        // PiP keeps the old prop until expo-video adds a matching options
+        // object for it.
+        fullscreenOptions={{ enable: false }}
         allowsPictureInPicture={false}
         nativeControls={false}
       />
