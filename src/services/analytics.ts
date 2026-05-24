@@ -3,48 +3,53 @@ import { Platform } from 'react-native';
 /**
  * Firebase Analytics wrapper.
  *
- * Lazy + try-caught `require` of `@react-native-firebase/analytics` so the
- * app still boots when the native module isn't bundled — same pattern as
- * appIcon.ts / StoryVideoPlayer.tsx. Plain top-level import would crash
- * Expo Go and any dev client built before this dependency landed.
+ * Lazy + try-caught probe of `@react-native-firebase/analytics`. The earlier
+ * iteration wrapped only `require()` — which succeeds (Metro returns the JS
+ * module) — but the actual "Native module RNFBAppModule not found" error is
+ * thrown when the analytics() FACTORY is first invoked. That made the throw
+ * escape this file's try/catch and surface as an Uncaught Error at the call
+ * site. Calling the factory once inside loadAnalytics, while caching the
+ * resolved instance (not the module), keeps the failure path entirely
+ * inside the try/catch — any subsequent call returns the cached instance
+ * or the cached null sentinel.
  *
- * Why we're on @react-native-firebase/analytics, not firebase/analytics:
- * the web SDK's analytics module is gtag-based and silently no-ops on
- * React Native because it needs a DOM. The native module talks to the
- * underlying iOS/Android SDKs that ship with @react-native-firebase/app
- * (which we already use for App Check), so no extra plugin entry is
- * required in app.json.
+ * Same safe-load pattern as appIcon.ts / StoryVideoPlayer.tsx: missing
+ * native module → silent no-op, never a crash. Analytics is observability
+ * — losing events during a misconfigured dev session is fine; crashing
+ * the app to log one is not.
  *
- * All exports are best-effort: if the native module isn't loaded, calls
- * silently no-op. Analytics is observability — losing a few events during
- * a misconfigured dev session is fine; crashing the app to log an event
- * is not.
- *
- * Standard event names follow Firebase / GA4 conventions where applicable
- * (e.g. snake_case with leading verb). Custom params are flattened — GA4
- * supports up to 25 params per event but only the first ~10 are
- * meaningfully aggregatable in the dashboard.
+ * Why @react-native-firebase/analytics, not firebase/analytics: the web
+ * SDK's analytics is gtag-based and silently no-ops on React Native
+ * (needs a DOM). The native module talks to the underlying iOS/Android
+ * SDKs that ship with @react-native-firebase/app (already wired for App
+ * Check), so no extra plugin entry in app.json is required.
  */
 
-type AnalyticsModule = {
-  default: () => {
-    logEvent: (name: string, params?: Record<string, unknown>) => Promise<void>;
-    setUserId: (id: string | null) => Promise<void>;
-    setUserProperty: (name: string, value: string | null) => Promise<void>;
-    setAnalyticsCollectionEnabled: (enabled: boolean) => Promise<void>;
-  };
+type AnalyticsInstance = {
+  logEvent: (name: string, params?: Record<string, unknown>) => Promise<void>;
+  setUserId: (id: string | null) => Promise<void>;
+  setUserProperty: (name: string, value: string | null) => Promise<void>;
+  setAnalyticsCollectionEnabled: (enabled: boolean) => Promise<void>;
 };
 
-let cachedMod: AnalyticsModule | null | undefined = undefined;
-function loadAnalytics(): AnalyticsModule['default'] | null {
-  if (cachedMod === null) return null;
-  if (cachedMod !== undefined) return cachedMod.default;
+type AnalyticsModule = {
+  default: () => AnalyticsInstance;
+};
+
+// undefined = haven't probed, null = probed and unavailable, value = ready.
+let cachedInstance: AnalyticsInstance | null | undefined = undefined;
+
+function loadAnalytics(): AnalyticsInstance | null {
+  if (cachedInstance !== undefined) return cachedInstance;
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    cachedMod = require('@react-native-firebase/analytics') as AnalyticsModule;
-    return cachedMod.default;
+    const mod = require('@react-native-firebase/analytics') as AnalyticsModule;
+    // Call the factory NOW so any "native module not found" error happens
+    // inside this try/catch instead of escaping to a downstream call site.
+    cachedInstance = mod.default();
+    return cachedInstance;
   } catch {
-    cachedMod = null;
+    cachedInstance = null;
     return null;
   }
 }
@@ -59,13 +64,15 @@ function loadAnalytics(): AnalyticsModule['default'] | null {
  * Anything else is dropped silently to avoid serialisation errors.
  */
 export function logEvent(name: string, params?: Record<string, unknown>): void {
-  const get = loadAnalytics();
-  if (!get) return;
   try {
+    const a = loadAnalytics();
+    if (!a) return;
     const sanitized = sanitizeParams(params);
-    void get().logEvent(name, sanitized).catch(() => undefined);
+    void a.logEvent(name, sanitized).catch(() => undefined);
   } catch {
-    /* swallow — analytics must never crash the app */
+    /* swallow — analytics must never crash the app. Outer try/catch covers
+       a rare case where the cached instance becomes unusable mid-session
+       (rare, but cheaper than a recurring crash). */
   }
 }
 
@@ -79,10 +86,10 @@ export function logEvent(name: string, params?: Record<string, unknown>): void {
  * are well under that.
  */
 export function setAnalyticsUser(uid: string | null): void {
-  const get = loadAnalytics();
-  if (!get) return;
   try {
-    void get().setUserId(uid).catch(() => undefined);
+    const a = loadAnalytics();
+    if (!a) return;
+    void a.setUserId(uid).catch(() => undefined);
   } catch {
     /* swallow */
   }
