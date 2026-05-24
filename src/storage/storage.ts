@@ -209,7 +209,11 @@ export async function wipeAllLocalAppData(): Promise<void> {
     '@ribolov/onboardingChecklistDismissed',
     // Same reason: User A's first-catch celebration flag was sticking on
     // shared devices and silently suppressing the celebration for User B's
-    // first catch.
+    // first catch. Two keys are listed because we ran two parallel
+    // celebration codepaths historically — the older LogbookScreen modal
+    // has been removed, but legacy installs may still have the flag set
+    // and the cost of including it in the wipe is zero.
     '@ribolov/firstCatchCelebrated',
+    '@ribolov/firstCatchCelebrationShown',
   ]);
 }

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Modal,
-  TextInput, KeyboardAvoidingView, Platform, Linking,
+  TextInput, KeyboardAvoidingView, Platform,
   ActivityIndicator, Dimensions, Animated, PanResponder,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,8 +16,13 @@ import { useAddStory } from '../hooks/useAddStory';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 import { BlurView } from 'expo-blur';
 import { StoryComposer } from './StoryComposer';
+import { StoryVideoPlayer } from './StoryVideoPlayer';
 
 const STORY_DURATION = 8000;
+// Minimum progress-bar duration for a video. A 2-second clip with a 2-second
+// progress bar feels jarring (story flashes by); 3.5s gives the eye time to
+// register. Caps the lower bound; upper bound is the actual video length.
+const MIN_VIDEO_PROGRESS_MS = 3500;
 
 const { width: SW, height: SH } = Dimensions.get('window');
 
@@ -71,6 +76,15 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
   const viewing = viewingIndex >= 0 ? (stories[viewingIndex] ?? null) : null;
   const [addOpen, setAddOpen] = useState(false);
   const [imageError, setImageError] = useState(false);
+  // Video state. Lives on the row (not inside the player) because the
+  // progress timer is owned here and needs to know the actual clip length.
+  // Reset on every story change so a previous video's duration doesn't
+  // bleed into a fresh story.
+  const [videoDurationMs, setVideoDurationMs] = useState<number | null>(null);
+  // External pause gate the video player subscribes to. Mirrors the
+  // hold-to-pause AND comments-open conditions so the video freezes when
+  // either fires. Pure state (not ref) so the player's useEffect re-runs.
+  const [videoPaused, setVideoPaused] = useState(false);
 
   // Progress bar animation
   const progressAnim = useRef(new Animated.Value(0)).current;
@@ -130,10 +144,17 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
 
   // Helper to start (or resume from a given progress 0..1) the timing run.
   // Used by both the initial story-changed effect and the hold-to-pause logic.
+  // Uses the video's actual duration when known so a 30s clip doesn't get
+  // cut off after 8s (the photo default). Photos always use STORY_DURATION;
+  // videos use max(MIN_VIDEO_PROGRESS_MS, actualDuration) so very-short
+  // clips still get a readable progress bar.
   const startProgressFrom = useCallback((startValue: number) => {
     if (progressTimer.current) progressTimer.current.stop();
     progressAnim.setValue(startValue);
-    const remainingMs = STORY_DURATION * (1 - startValue);
+    const fullDuration = videoDurationMs != null
+      ? Math.max(MIN_VIDEO_PROGRESS_MS, videoDurationMs)
+      : STORY_DURATION;
+    const remainingMs = fullDuration * (1 - startValue);
     if (remainingMs <= 0) {
       goNextRef.current();
       return;
@@ -145,11 +166,16 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
     });
     progressTimer.current = anim;
     anim.start(({ finished }) => { if (finished) goNextRef.current(); });
-  }, [progressAnim]);
+  }, [progressAnim, videoDurationMs]);
 
   // Start/reset progress bar when viewing changes
   useEffect(() => {
     setImageError(false);
+    // Reset video state — a new story might be a photo (videoDurationMs=null
+    // → fall back to STORY_DURATION) and we don't want the previous video's
+    // duration to keep timing the next story.
+    setVideoDurationMs(null);
+    setVideoPaused(false);
     if (viewingIndex < 0) {
       if (progressTimer.current) progressTimer.current.stop();
       progressAnim.setValue(0);
@@ -159,7 +185,23 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
     return () => {
       if (progressTimer.current) progressTimer.current.stop();
     };
-  }, [viewingIndex, progressAnim, startProgressFrom]);
+    // intentionally exclude startProgressFrom — it changes when videoDurationMs
+    // changes (which we WANT to re-run progress on via the dedicated effect
+    // below), but we don't want it to re-fire on every viewingIndex render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewingIndex, progressAnim]);
+
+  // When a video reports its actual duration after the initial progress run
+  // already started, restart the timer with the correct length so the
+  // progress bar matches what the user is seeing. Without this the progress
+  // bar finishes at the 8s photo default while the video keeps playing.
+  useEffect(() => {
+    if (viewingIndex < 0 || videoDurationMs == null) return;
+    startProgressFrom(0);
+    // intentionally exclude startProgressFrom — already triggered via
+    // videoDurationMs (which is in its dep list).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoDurationMs]);
 
   // Hold-to-pause — Instagram-style. When user presses and holds the story
   // area, pause the progress animation; resume when they release. Also
@@ -173,8 +215,12 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
       // After stop(), progressAnim retains its current value internally.
       wasPausedRef.current = true;
     }
+    // Also pause the video so it stops mid-frame instead of running on while
+    // the progress bar is frozen.
+    setVideoPaused(true);
   }, []);
   const resumeProgress = useCallback(() => {
+    setVideoPaused(false);
     if (!wasPausedRef.current) return;
     wasPausedRef.current = false;
     // Read the paused position via stopAnimation's callback — that's the
@@ -186,6 +232,20 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
       startProgressFrom(current);
     });
   }, [progressAnim, startProgressFrom]);
+
+  // When comments panel opens over a video story, pause the playback (and the
+  // progress bar) so the video doesn't keep advancing while the user is
+  // composing a reply. Mirrors hold-to-pause behaviour. Resumes on close.
+  useEffect(() => {
+    if (viewer.commentsOpen) {
+      pauseProgress();
+    } else {
+      resumeProgress();
+    }
+    // intentionally not depending on pauseProgress/resumeProgress (they're
+    // stable callbacks whose identity-changes shouldn't re-fire this effect).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewer.commentsOpen]);
 
   // Swipe gesture — fix: use refs so closure is always fresh
   const panResponder = useRef(
@@ -337,12 +397,19 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
                     <Text style={{ fontSize: 72 }}>{viewing.emoji ?? '🎣'}</Text>
                   </View>
                 ) : viewing.mediaUrl && viewing.mediaType === 'video' ? (
-                  <View style={[styles.viewerMedia, { alignItems: 'center', justifyContent: 'center' }]}>
-                    <Ionicons name="videocam" size={64} color="rgba(255,255,255,0.4)" />
-                    <Pressable onPress={() => Linking.openURL(viewing.mediaUrl!).catch(() => {})} style={{ marginTop: spacing.lg, backgroundColor: colors.primary, paddingHorizontal: spacing.xl, paddingVertical: spacing.md, borderRadius: radius.pill }}>
-                      <Text style={{ ...typography.bodyBold, color: '#fff' }}>▶ Гледай видеото</Text>
-                    </Pressable>
-                  </View>
+                  // Real in-app video playback. The previous version showed a
+                  // videocam icon + a button that called Linking.openURL —
+                  // which handed the video off to an external browser and
+                  // never actually played it in-app. StoryVideoPlayer reports
+                  // its loaded duration back so the progress bar matches the
+                  // clip length (a 25s video no longer ends after 8s).
+                  <StoryVideoPlayer
+                    uri={viewing.mediaUrl}
+                    paused={videoPaused}
+                    onDurationLoaded={setVideoDurationMs}
+                    width={SW}
+                    height={SH}
+                  />
                 ) : (
                   <View style={[styles.viewerMedia, { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary }]}>
                     <Text style={{ fontSize: 80 }}>{viewing.emoji ?? '🎣'}</Text>

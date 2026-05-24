@@ -11,7 +11,6 @@ import {
   Switch,
   Platform,
   Modal,
-  Animated,
   Share,
 } from 'react-native';
 import AsyncStorage from '../storage/kv';
@@ -452,7 +451,19 @@ export default function LogbookScreen() {
       // wipeAllLocalAppData has already removed from storage.
       setItems([]);
       navigation.getParent()?.setOptions({ tabBarBadge: undefined });
-      celebrationShownRef.current = false;
+      // Cancel any in-flight undo-delete timer left over from the previous
+      // user. If we don't, the timer fires after signout and calls
+      // deleteCatchEverywhere(catchId, prevUserUid) while the NEXT user is
+      // signed in — Firestore denies the write (rules require
+      // request.auth.uid == ownerUid), so the doc orphans and we get a
+      // mystery cloud-only catch that no one can clean up. Same risk for
+      // the pending-delete state visible in the undo toast — it would
+      // briefly show across the signout boundary if we didn't clear it.
+      if (undoTimerRef.current) {
+        clearTimeout(undoTimerRef.current);
+        undoTimerRef.current = null;
+      }
+      setPendingDelete(null);
       return;
     }
     const unsynced = items.filter((c) => !c.syncedToCloud).length;
@@ -475,18 +486,11 @@ export default function LogbookScreen() {
   const [chipFilter, setChipFilter] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const [showCelebration, setShowCelebration] = useState(false);
-  const celebrationShownRef = useRef(false);
-  const celebrationScale = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (showCelebration) {
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Animated.spring(celebrationScale, { toValue: 1, useNativeDriver: true, friction: 5, tension: 80 }).start();
-    } else {
-      celebrationScale.setValue(0);
-    }
-  }, [showCelebration, celebrationScale]);
+  // The first-catch celebration that used to live here was removed in favor
+  // of the richer FirstCatchCelebration modal owned by AddCatchScreen
+  // (confetti + photo + share CTA). The previous setup fired BOTH modals
+  // back-to-back on the user's first save — they were keyed on different
+  // AsyncStorage flags so neither suppressed the other.
 
   useEffect(() => {
     const id = setTimeout(() => setDebouncedQuery(searchQuery), 250);
@@ -495,13 +499,25 @@ export default function LogbookScreen() {
 
   const load = useCallback(async (isRefresh = false) => {
     if (!isRefresh) setInitialLoading(true);
-    const list = await catchesStore.list();
-    setItems(list);
-    setInitialLoading(false);
-    if (list.length === 1 && !celebrationShownRef.current) {
-      AsyncStorage.getItem('@ribolov/firstCatchCelebrated').then((v) => {
-        if (!v) { setShowCelebration(true); celebrationShownRef.current = true; }
-      }).catch(() => {});
+    try {
+      const list = await catchesStore.list();
+      setItems(list);
+    } catch {
+      // AsyncStorage read failure leaves `items` at its previous value rather
+      // than clearing it — better to show slightly-stale data than blank the
+      // screen on a transient read error. The pull-to-refresh RefreshControl
+      // exists for the user to retry. Toast surfaces the failure so they
+      // know to retry instead of silently believing the empty/old state.
+      Toast.show({
+        type: 'error',
+        text1: 'Не успяхме да заредим уловите',
+        text2: 'Дръпни надолу за нов опит.',
+        visibilityTime: 2800,
+      });
+    } finally {
+      // Always clear the skeleton — without this, the spinner stays on
+      // screen forever after a failed read.
+      setInitialLoading(false);
     }
   }, []);
 
@@ -615,12 +631,22 @@ export default function LogbookScreen() {
     // full, quota hit). Without rollback, the user sees the row disappear
     // and a fresh focus reload silently restores it from disk — leaving them
     // confused. Surfacing the error + restoring keeps the UI honest.
+    //
+    // The rollback only fires when this specific catch is still the pending
+    // one — rapid sequential swipes can have the FIRST catch's rejection
+    // resolve after the SECOND swipe has already moved on, and mutating
+    // pendingDelete / undoTimerRef unconditionally would corrupt the
+    // second swipe's undo window. Always restore the row to items either
+    // way: a failed local-delete means the catch is still on disk, so it
+    // belongs back in the list regardless of what's currently pending.
     catchesStore.remove(catchItem.id).catch(() => {
       setItems((prev) => [...prev, catchItem].sort(byDateDesc));
-      setPendingDelete(null);
-      if (undoTimerRef.current) {
-        clearTimeout(undoTimerRef.current);
-        undoTimerRef.current = null;
+      if (pendingDeleteRef.current?.id === catchItem.id) {
+        setPendingDelete(null);
+        if (undoTimerRef.current) {
+          clearTimeout(undoTimerRef.current);
+          undoTimerRef.current = null;
+        }
       }
       Toast.show({
         type: 'error',
@@ -754,7 +780,14 @@ export default function LogbookScreen() {
   }, [user, items, refreshPendingCount]);
 
   const handleUndoDelete = useCallback(async () => {
-    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    if (undoTimerRef.current) {
+      clearTimeout(undoTimerRef.current);
+      // Null out the ref so a subsequent swipe's "is there a pending timer?"
+      // check doesn't see this stale handle and skip its commit-now branch.
+      // (Pre-fix: clearTimeout-then-leave-non-null meant the next swipe
+      // tried to commit a delete for an item that was already undone.)
+      undoTimerRef.current = null;
+    }
     if (!pendingDelete) return;
     await catchesStore.save(pendingDelete);
     setItems((prev) => [...prev, pendingDelete].sort(byDateDesc));
@@ -1224,25 +1257,6 @@ export default function LogbookScreen() {
                 <Text style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>Приложи</Text>
               </Pressable>
             </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ── First catch celebration ── */}
-      <Modal visible={showCelebration} animationType="fade" transparent onRequestClose={() => setShowCelebration(false)}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', alignItems: 'center', justifyContent: 'center' }}>
-          <View style={{ backgroundColor: colors.card, borderRadius: radius.xl, padding: spacing.xl, margin: spacing.lg, alignItems: 'center' }}>
-            <Animated.Text style={{ fontSize: 72, transform: [{ scale: celebrationScale }] }}>🎣</Animated.Text>
-            <Text style={{ ...typography.h1, color: colors.primary, marginTop: spacing.lg, textAlign: 'center' }}>Първи улов!</Text>
-            <Text style={{ ...typography.body, color: colors.textMuted, marginTop: spacing.md, textAlign: 'center', lineHeight: 22 }}>
-              Добре дошъл в дневника! Продължавай да записваш — всеки улов се счита.
-            </Text>
-            <Pressable
-              onPress={() => { setShowCelebration(false); AsyncStorage.setItem('@ribolov/firstCatchCelebrated', '1').catch(() => {}); }}
-              style={{ marginTop: spacing.xl, backgroundColor: colors.primary, paddingHorizontal: spacing.xl, paddingVertical: spacing.md, borderRadius: radius.pill }}
-            >
-              <Text style={{ ...typography.bodyBold, color: '#fff' }}>Страхотно! 🎉</Text>
-            </Pressable>
           </View>
         </View>
       </Modal>

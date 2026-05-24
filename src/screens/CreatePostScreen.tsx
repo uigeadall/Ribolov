@@ -179,13 +179,22 @@ export default function CreatePostScreen() {
       // empty when the user uploaded their photo through Profile, since that
       // flow writes to users/{uid}.photoUrl in Firestore (and data: URLs are
       // never written to Auth). Try Auth → cached AsyncStorage → Firestore.
-      let ownerPhotoUrl = user.photoURL?.trim() || '';
+      // Only accept https:// URLs so a stale data: URL on Auth or in the
+      // AsyncStorage cache doesn't get pinned onto the post doc — once on
+      // the post, that data: URL can't be re-resolved (the lazy avatar fetch
+      // skips re-fetching when ownerPhotoUrl is already set), so posts would
+      // either render a giant base64 image or break entirely for other users.
+      const isHttps = (u: string) => /^https?:\/\//i.test(u);
+      const fromAuth = user.photoURL?.trim() || '';
+      let ownerPhotoUrl = isHttps(fromAuth) ? fromAuth : '';
       if (!ownerPhotoUrl) {
-        ownerPhotoUrl = (await AsyncStorage.getItem(`@ribolov/profilePhoto/${user.uid}`).catch(() => null)) ?? '';
+        const cached = (await AsyncStorage.getItem(`@ribolov/profilePhoto/${user.uid}`).catch(() => null)) ?? '';
+        if (isHttps(cached)) ownerPhotoUrl = cached;
       }
       if (!ownerPhotoUrl) {
         const summary = await getUserPublicSummary(user.uid).catch(() => null);
-        ownerPhotoUrl = summary?.photoUrl?.trim() ?? '';
+        const fromFs = summary?.photoUrl?.trim() ?? '';
+        if (isHttps(fromFs)) ownerPhotoUrl = fromFs;
       }
 
       await createPost({

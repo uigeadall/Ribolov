@@ -331,36 +331,49 @@ function PostCardInner({
       fontSize: 13,
       maxHeight: 100,
     },
+    // Reshare card — previously rendered as a small inset card (24px avatar,
+    // 12pt name, 16:9 inset photo with rounded margins). Visually that
+    // signalled "this is a quote of someone else's content", but for a
+    // fishing app where most reshares are users boosting their OWN catch
+    // to the feed, the size disparity made the resulting feed item look
+    // like an unrelated, lower-priority blurb compared to the original
+    // catch's FeedPost render. Now sized to peer with FeedPost: full-bleed
+    // photo, 40px avatar, 14pt name, hairline divider instead of a card
+    // frame. The "quoted" semantic is preserved via the leading vertical
+    // primary-color bar at the start of the reshare header.
     reshareCard: {
-      marginHorizontal: spacing.lg,
-      marginBottom: spacing.sm,
-      borderRadius: radius.md,
-      borderWidth: 1,
-      borderColor: colors.border,
-      overflow: 'hidden',
-      backgroundColor: colors.background,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
+      marginTop: 4,
+    },
+    reshareQuoteBar: {
+      position: 'absolute',
+      left: 0, top: 8, bottom: 8,
+      width: 3,
+      borderRadius: 2,
+      backgroundColor: colors.primary,
     },
     reshareHeader: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 8,
-      paddingHorizontal: 10,
-      paddingTop: 8,
-      paddingBottom: 4,
+      gap: 10,
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.md,
+      paddingBottom: 8,
     },
     reshareAvatar: {
-      width: 24, height: 24, borderRadius: 12,
+      width: 40, height: 40, borderRadius: 20,
       backgroundColor: colors.primarySurface,
       alignItems: 'center', justifyContent: 'center',
       overflow: 'hidden',
     },
-    reshareAvatarText: { fontSize: 11, fontWeight: '800', color: colors.primary },
-    reshareName: { ...typography.bodyBold, color: colors.text, fontSize: 12 },
-    reshareBody: { paddingHorizontal: 10, paddingBottom: 8 },
-    reshareText: { ...typography.body, color: colors.text, fontSize: 13, lineHeight: 18 },
-    reshareCatchLine: { ...typography.bodyBold, color: colors.text, fontSize: 13 },
-    reshareCatchMeta: { ...typography.small, color: colors.textMuted, marginTop: 1 },
-    resharePhoto: { width: '100%', aspectRatio: 16 / 9, backgroundColor: colors.surfaceAlt },
+    reshareAvatarText: { ...typography.bodyBold, color: colors.primary },
+    reshareName: { ...typography.bodyBold, color: colors.text, fontSize: 14 },
+    reshareBody: { paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
+    reshareText: { ...typography.body, color: colors.text, fontSize: 14, lineHeight: 20 },
+    reshareCatchLine: { ...typography.bodyBold, color: colors.text, fontSize: 14 },
+    reshareCatchMeta: { ...typography.small, color: colors.textMuted, marginTop: 2 },
+    resharePhoto: { width: '100%', aspectRatio: 4 / 3, backgroundColor: colors.surfaceAlt },
   }), [colors]);
 
   return (
@@ -437,49 +450,34 @@ function PostCardInner({
         </Pressable>
       ) : null}
 
-      {/* Embedded reshared item */}
+      {/* Embedded reshared item — sized to peer with FeedPost so a reshare
+          of a catch reads as the same visual weight as the standalone
+          catch above it. The leading vertical primary-color bar preserves
+          the "quoted" semantic without shrinking the entire content. */}
       {post.reshareOf ? (
-        <Pressable
-          style={styles.reshareCard}
-          // Tap opens the original post/catch the quote is referencing, not
-          // the original author's profile. Fall back to opening the author
-          // if the parent didn't wire onPressReshareTarget (older callers).
+        <ReshareCard
+          reshareOf={post.reshareOf}
+          myUid={myUid}
+          styles={{
+            container: styles.reshareCard,
+            quoteBar: styles.reshareQuoteBar,
+            header: styles.reshareHeader,
+            avatar: styles.reshareAvatar,
+            avatarText: styles.reshareAvatarText,
+            name: styles.reshareName,
+            body: styles.reshareBody,
+            text: styles.reshareText,
+            catchLine: styles.reshareCatchLine,
+            catchMeta: styles.reshareCatchMeta,
+            photo: styles.resharePhoto,
+          }}
+          colors={colors}
           onPress={() => {
             const target = post.reshareOf!;
             if (onPressReshareTarget) onPressReshareTarget(target);
             else onPressAuthor(target.ownerUid, target.ownerName);
           }}
-        >
-          <View style={styles.reshareHeader}>
-            <View style={styles.reshareAvatar}>
-              {post.reshareOf.ownerPhotoUrl ? (
-                <Image source={{ uri: getImageVariant(post.reshareOf.ownerPhotoUrl, ImageSize.avatar) ?? post.reshareOf.ownerPhotoUrl }} style={{ width: 24, height: 24 }} contentFit="cover" />
-              ) : (
-                <Text style={styles.reshareAvatarText}>{post.reshareOf.ownerName.slice(0, 1).toUpperCase()}</Text>
-              )}
-            </View>
-            <Text style={styles.reshareName} numberOfLines={1}>{post.reshareOf.ownerName}</Text>
-            <Ionicons name={post.reshareOf.kind === 'catch' ? 'fish-outline' : 'document-text-outline'} size={12} color={colors.textMuted} />
-          </View>
-          <View style={styles.reshareBody}>
-            {post.reshareOf.kind === 'catch' ? (
-              <>
-                {post.reshareOf.speciesName ? (
-                  <Text style={styles.reshareCatchLine}>
-                    {post.reshareOf.speciesName}
-                    {post.reshareOf.weightKg != null ? ` · ${post.reshareOf.weightKg} кг` : ''}
-                  </Text>
-                ) : null}
-                {post.reshareOf.text ? <Text style={styles.reshareCatchMeta} numberOfLines={2}>{post.reshareOf.text}</Text> : null}
-              </>
-            ) : (
-              post.reshareOf.text ? <Text style={styles.reshareText} numberOfLines={4}>{post.reshareOf.text}</Text> : null
-            )}
-          </View>
-          {post.reshareOf.photoUri ? (
-            <Image source={{ uri: getImageVariant(post.reshareOf.photoUri, ImageSize.feed) ?? post.reshareOf.photoUri }} style={styles.resharePhoto} contentFit="cover" />
-          ) : null}
-        </Pressable>
+        />
       ) : null}
 
       {/* Reaction picker (glass pill) — mounts between content and actions */}
@@ -756,3 +754,86 @@ function PostCardInner({
 }
 
 export const PostCard = React.memo(PostCardInner);
+
+// ─── ReshareCard ─────────────────────────────────────────────────────────────
+// Pulled out of PostCard's render so it can call `useAvatarUrl` for the
+// reshare AUTHOR — not the post author. Previously the reshare displayed only
+// `reshareOf.ownerPhotoUrl` (a snapshot from the original publish time); if
+// that field was empty when the reshare was created, the avatar fell back to
+// the initial "M" forever, even after the original author uploaded a photo.
+// useAvatarUrl lazy-fetches the current users/{uid}.photoUrl with a 5-minute
+// cache, so the reshare picks up the author's latest avatar without us having
+// to re-fanout on every avatar change.
+type ReshareCardProps = {
+  reshareOf: import('../types').ResharedRef;
+  myUid?: string;
+  colors: ReturnType<typeof useTheme>['colors'];
+  styles: {
+    container: object;
+    quoteBar: object;
+    header: object;
+    avatar: object;
+    avatarText: object;
+    name: object;
+    body: object;
+    text: object;
+    catchLine: object;
+    catchMeta: object;
+    photo: object;
+  };
+  onPress: () => void;
+};
+
+function ReshareCard({ reshareOf, myUid, colors, styles, onPress }: ReshareCardProps) {
+  const avatarUrl = useAvatarUrl({
+    ownerUid: reshareOf.ownerUid,
+    isMine: reshareOf.ownerUid === myUid,
+    // myPhotoUrl is intentionally omitted — when MY post reshares MY OWN
+    // catch, the lazy Firestore fetch path catches it via getUserPublicSummary
+    // and we get the same image. Passing myPhotoUrl here would couple this
+    // helper to the outer component's prop wiring for no real gain.
+    ownerPhotoUrl: reshareOf.ownerPhotoUrl,
+  });
+  return (
+    <Pressable style={styles.container} onPress={onPress}>
+      <View style={styles.quoteBar} />
+      <View style={styles.header}>
+        <View style={styles.avatar}>
+          {avatarUrl ? (
+            <Image
+              source={{ uri: getImageVariant(avatarUrl, ImageSize.avatar) ?? avatarUrl }}
+              style={{ width: 40, height: 40 }}
+              contentFit="cover"
+            />
+          ) : (
+            <Text style={styles.avatarText as object}>{reshareOf.ownerName.slice(0, 1).toUpperCase()}</Text>
+          )}
+        </View>
+        <Text style={[styles.name as object, { flex: 1 }]} numberOfLines={1}>{reshareOf.ownerName}</Text>
+        <Ionicons name={reshareOf.kind === 'catch' ? 'fish-outline' : 'document-text-outline'} size={14} color={colors.textMuted} />
+      </View>
+      <View style={styles.body}>
+        {reshareOf.kind === 'catch' ? (
+          <>
+            {reshareOf.speciesName ? (
+              <Text style={styles.catchLine as object}>
+                {reshareOf.speciesName}
+                {reshareOf.weightKg != null ? ` · ${reshareOf.weightKg} кг` : ''}
+              </Text>
+            ) : null}
+            {reshareOf.text ? <Text style={styles.catchMeta as object} numberOfLines={2}>{reshareOf.text}</Text> : null}
+          </>
+        ) : (
+          reshareOf.text ? <Text style={styles.text as object} numberOfLines={4}>{reshareOf.text}</Text> : null
+        )}
+      </View>
+      {reshareOf.photoUri ? (
+        <Image
+          source={{ uri: getImageVariant(reshareOf.photoUri, ImageSize.feed) ?? reshareOf.photoUri }}
+          style={styles.photo}
+          contentFit="cover"
+        />
+      ) : null}
+    </Pressable>
+  );
+}

@@ -13,6 +13,7 @@ import {
   Animated,
   Modal,
   Clipboard,
+  Dimensions,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
@@ -31,6 +32,7 @@ import { Screen } from '../components/Screen';
 import { ThemedTextInput } from '../components/ThemedTextInput';
 import { ActionSheet } from '../components/ActionSheet';
 import { ImageViewer } from '../components/ImageViewer';
+import { StoryVideoPlayer } from '../components/StoryVideoPlayer';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 import type { ProfileStackParamList } from '../navigation/types';
@@ -205,6 +207,11 @@ export default function ChatDetailScreen() {
   const [typingUid, setTypingUid] = useState<string | null>(null);
   const [viewerUri, setViewerUri] = useState('');
   const [viewerVisible, setViewerVisible] = useState(false);
+  // Separate state for the video viewer — chat videos open a fullscreen
+  // player on tap instead of trying to fall through the photo viewer (which
+  // would render a blank black image since ImageViewer can't play video).
+  // null = closed, string = video uri being viewed.
+  const [videoViewerUri, setVideoViewerUri] = useState<string | null>(null);
   const [blockedByMe, setBlockedByMe] = useState(false);
   const [reactions, setReactions] = useState<Record<string, Record<string, string>>>({});
   const [editingMsg, setEditingMsg] = useState<DirectMessage | null>(null);
@@ -1312,10 +1319,25 @@ export default function ChatDetailScreen() {
                       />
                     </Pressable>
                   ) : item.mediaUrl && item.mediaType === 'video' ? (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Ionicons name="videocam" size={20} color={mine ? '#fff' : colors.text} />
-                      <Text style={mine ? styles.msgMine : styles.msgOther}>Видео</Text>
-                    </View>
+                    // Video tile — black thumbnail with a play overlay. We
+                    // don't have a frame-extracted poster (would need a
+                    // server-side or client-side thumbnailing pass), so the
+                    // black tile reads as "video, tap to play". The previous
+                    // version was a non-tappable inline "📹 Видео" label —
+                    // users couldn't actually open the video at all.
+                    <Pressable
+                      onPress={() => setVideoViewerUri(item.mediaUrl!)}
+                      style={{ width: 200, height: 150, borderRadius: 10, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Гледай видеото"
+                    >
+                      <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' }}>
+                        <Ionicons name="play" size={26} color="#fff" />
+                      </View>
+                      <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 11, marginTop: 8, fontWeight: '600' }}>
+                        Видео
+                      </Text>
+                    </Pressable>
                   ) : null}
                   {item.text && !isDeleted ? (
                     <Text style={mine ? styles.msgMine : styles.msgOther}>{item.text}</Text>
@@ -1508,6 +1530,48 @@ export default function ChatDetailScreen() {
         </View>
 
         <ImageViewer uri={viewerUri} visible={viewerVisible} onClose={() => setViewerVisible(false)} />
+
+        {/* Fullscreen video viewer for chat-sent videos. Reuses
+            StoryVideoPlayer for the actual playback (loop, mute toggle,
+            "needs rebuild" fallback when the native module is missing) so
+            video plumbing stays in one place. Tap close to dismiss; no
+            swipe-down because chat videos can be lengthy and an accidental
+            scroll-down shouldn't kill playback. */}
+        <Modal
+          visible={videoViewerUri !== null}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setVideoViewerUri(null)}
+          statusBarTranslucent
+        >
+          <View style={{ flex: 1, backgroundColor: '#000' }}>
+            {videoViewerUri ? (
+              <StoryVideoPlayer
+                uri={videoViewerUri}
+                paused={false}
+                width={Dimensions.get('window').width}
+                height={Dimensions.get('window').height}
+              />
+            ) : null}
+            <Pressable
+              onPress={() => setVideoViewerUri(null)}
+              hitSlop={12}
+              style={{
+                position: 'absolute',
+                top: 52,
+                right: 20,
+                zIndex: 10,
+                backgroundColor: 'rgba(0,0,0,0.55)',
+                borderRadius: 20,
+                padding: 6,
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Затвори видеото"
+            >
+              <Ionicons name="close" size={28} color="#fff" />
+            </Pressable>
+          </View>
+        </Modal>
 
         {/* Unified long-press popover — reaction palette on top, action list
             (Reply / Copy / Edit / Delete) below. Replaces both the previous

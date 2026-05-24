@@ -98,10 +98,22 @@
       [
         "expo-dynamic-app-icon",
         {
-          "Default": { "image": "./assets/icon.png",           "prerendered": true },
-          "Sharan":  { "image": "./assets/app-icons/Sharan.png", "prerendered": true },
-          "Shtuka":  { "image": "./assets/app-icons/Shtuka.png", "prerendered": true },
-          "Som":     { "image": "./assets/app-icons/Som.png",    "prerendered": true }
+          "Default": {
+            "image": "./assets/icon.png",
+            "prerendered": true
+          },
+          "Sharan": {
+            "image": "./assets/app-icons/Sharan.png",
+            "prerendered": true
+          },
+          "Shtuka": {
+            "image": "./assets/app-icons/Shtuka.png",
+            "prerendered": true
+          },
+          "Som": {
+            "image": "./assets/app-icons/Som.png",
+            "prerendered": true
+          }
         }
       ],
       "expo-sqlite",
@@ -111,7 +123,8 @@
           "icon": "./assets/icon.png",
           "color": "#0E4D64"
         }
-      ]
+      ],
+      "expo-video"
     ],
     "extra": {
       "eas": {

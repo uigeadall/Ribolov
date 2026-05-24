@@ -17,7 +17,10 @@ import { useCountUp } from '../hooks/useCountUp';
 
 function AnimatedStatNum({ value, decimals = 0, suffix = '', color }: { value: number; decimals?: number; suffix?: string; color?: string }) {
   const { colors } = useTheme();
-  const animated = useCountUp(value);
+  // Forward `decimals` as `precision` so the hook emits at the right
+  // granularity — without this the listener only fired on integer steps and
+  // a one-decimal display like "2.5 kg" would render as "2.0 kg".
+  const animated = useCountUp(value, 700, decimals);
   return (
     <Text style={{ ...typography.h2, color: color ?? colors.primary, fontSize: 24 }}>
       {decimals > 0 ? animated.toFixed(decimals) : Math.round(animated)}{suffix}

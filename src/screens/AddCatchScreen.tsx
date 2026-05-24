@@ -37,7 +37,7 @@ import { speciesList } from '../data/species';
 import { Achievement, Catch, GearItem, TripPlan } from '../types';
 import { useAuth } from '../services/authContext';
 import { doc, getDoc } from 'firebase/firestore';
-import { pushCatch, ensureCatchPhotoUploadedForCloud, deleteStoragePath } from '../services/cloudSync';
+import { pushCatch, ensureCatchPhotoUploadedForCloud, deleteStoragePath, deleteFirebaseStorageUrl } from '../services/cloudSync';
 import { ensureFirebase } from '../services/firebase';
 import { enqueueCatchSync } from '../services/catchSyncQueue';
 import { checkBanPeriod } from '../services/notifications';
@@ -255,13 +255,23 @@ export default function AddCatchScreen() {
   }, []);
 
   useEffect(() => {
-    if (editCatchId || saving) return;
+    // The previous version of this guard skipped edit mode entirely
+    // (`if (editCatchId || saving) return;`). That came from an earlier
+    // implementation where dirty-tracking was a per-field useEffect that
+    // didn't behave well during the LOAD_CATCH prefill of an edit. The
+    // dispatch wrapper above now flags dirty correctly for any user-driven
+    // action in either create OR edit mode (LOAD_CATCH is explicitly
+    // excluded), so the guard is safe to run in both — and edit users no
+    // longer lose changes silently when they tap back without saving.
+    if (saving) return;
     const unsub = navigation.addListener('beforeRemove', (e) => {
       if (!formDirtyRef.current) return;
       e.preventDefault();
       Alert.alert(
         'Несъхранени данни',
-        'Уловът не е записан. Сигурен ли си, че искаш да излезеш?',
+        editCatchId
+          ? 'Промените не са записани. Сигурен ли си, че искаш да излезеш?'
+          : 'Уловът не е записан. Сигурен ли си, че искаш да излезеш?',
         [
           { text: 'Остани', style: 'cancel' },
           { text: 'Излез', style: 'destructive', onPress: () => navigation.dispatch(e.data.action) },
@@ -510,14 +520,6 @@ export default function AddCatchScreen() {
       let toSync = catchItem;
       const newLocalUri =
         catchItem.photoUri?.trim() && !/^https?:\/\//i.test(catchItem.photoUri.trim());
-      // Capture the previous storage path BEFORE upload so we can clean it up after.
-      // Only delete if we're replacing with a new local photo OR the photo was cleared,
-      // and the new path will differ from the old one.
-      const oldStoragePath = initialCatch?.photoStoragePath;
-      const photoWasReplaced =
-        oldStoragePath &&
-        (newLocalUri || !catchItem.photoUri) &&
-        oldStoragePath !== catchItem.photoStoragePath;
 
       if (newLocalUri) {
         // Surface upload bytes as a thin progress bar at the top of the
@@ -529,14 +531,47 @@ export default function AddCatchScreen() {
       }
       await pushCatch(toSync, user.uid, user.displayName ?? user.email ?? 'Рибар', sharePublic);
       await catchesStore.save({ ...toSync, syncedToCloud: true });
-
-      // After successful sync, delete the orphaned previous photo from Storage.
-      if (photoWasReplaced && oldStoragePath && oldStoragePath !== toSync.photoStoragePath) {
-        void deleteStoragePath(oldStoragePath);
-      }
       return { ok: true };
     } catch (e: any) {
       return { ok: false, message: e?.message ?? String(e) };
+    }
+  };
+
+  /**
+   * Best-effort cleanup of Firebase Storage files orphaned by an edit. Runs
+   * outside `syncCatchToCloud` because the previous version gated cleanup on
+   * a successful cloud sync — which meant a user editing offline (or with a
+   * failing sync) left files in Storage forever, since the sync queue's
+   * later flush has no memory of the old paths.
+   *
+   * Covers two cases:
+   *   1. Main photo replaced or cleared → delete `initialCatch.photoStoragePath`
+   *   2. Extra photos removed mid-edit → delete each removed URL
+   *
+   * Both run AFTER the local save so a transient delete failure (offline,
+   * App Check refresh) doesn't block the user's catch from being saved.
+   * Worst case is the file lingers — same as before this fix, but with
+   * online users now covered.
+   */
+  const cleanupOrphanedPhotos = (savedItem: Catch) => {
+    if (!initialCatch) return;
+
+    // Main photo: deleted if the user cleared it OR replaced it with a
+    // different storage path. `savedItem.photoStoragePath` may be missing
+    // when the new photo is still a local file:// awaiting upload — treat
+    // that as "definitely replaced" so the old path gets cleaned.
+    const oldMainPath = initialCatch.photoStoragePath;
+    if (oldMainPath && oldMainPath !== savedItem.photoStoragePath) {
+      void deleteStoragePath(oldMainPath);
+    }
+
+    // Extras: anything that was in the initial set but isn't in the saved
+    // set was removed by the user. We only have the URL (not the storage
+    // path), so deleteFirebaseStorageUrl parses the path out of the URL.
+    const before = initialCatch.extraPhotoUris ?? [];
+    const after = new Set(savedItem.extraPhotoUris ?? []);
+    for (const url of before) {
+      if (!after.has(url)) void deleteFirebaseStorageUrl(url);
     }
   };
 
@@ -555,13 +590,24 @@ export default function AddCatchScreen() {
       ? initialCatch?.photoTakenWithAppCamera ?? false
       : form.cameraVerifiedPhoto;
 
+    // Clamp future-dated catches to "now". The date picker doesn't enforce
+    // a maximum, so a user fat-fingering year 2027 in the date sheet would
+    // otherwise persist a catch that sorts above all the real ones in the
+    // logbook and breaks "В този ден" memory lookups. Falling back to now
+    // when Date.parse fails covers the corrupted-string edge case too —
+    // better to display the wrong second than to drop the catch entirely.
+    const parsed = Date.parse(form.date);
+    const clampedDate = (Number.isFinite(parsed) && parsed <= Date.now())
+      ? form.date
+      : new Date().toISOString();
+
     const item: Catch = {
       id,
       speciesId: form.speciesId,
       speciesName: selectedSpecies.nameBg,
       weightKg: (() => { const v = parseFloat(form.weight.replace(',', '.')); return isNaN(v) ? undefined : v; })(),
       lengthCm: (() => { const v = parseFloat(form.length.replace(',', '.')); return isNaN(v) ? undefined : v; })(),
-      date: form.date,
+      date: clampedDate,
       bait: form.bait || undefined,
       notes: form.notes || undefined,
       ...(form.photoUri && trimmedPhotoTitle ? { photoTitle: trimmedPhotoTitle } : {}),
@@ -601,6 +647,11 @@ export default function AddCatchScreen() {
       // Save succeeded — the form is no longer dirty, so the beforeRemove guard won't trigger
       // when the achievement modal is dismissed.
       formDirtyRef.current = false;
+      // Clean up orphaned Storage files (replaced main photo, removed
+      // extras). Best-effort — runs regardless of cloud-sync outcome so
+      // offline-edit users don't leak files forever. See
+      // cleanupOrphanedPhotos JSDoc for the full rationale.
+      cleanupOrphanedPhotos(item);
 
       const allCatches = await catchesStore.list();
       const pb = checkNewPersonalBest(item, allCatches);

@@ -383,6 +383,26 @@ export async function deleteStoragePath(storagePath: string | undefined): Promis
 }
 
 /**
+ * Best-effort delete of a Firebase Storage file given its download URL.
+ * Used when we only have the URL (not the storage path) — e.g. extra-photo
+ * URLs stored on the catch doc. Skips non-Storage URLs (cloudinary, http
+ * URLs to external hosts) so we don't pointlessly try to delete the wrong
+ * thing. The URL→path inference mirrors the logic already used inside
+ * deleteCatchEverywhere for the same purpose.
+ */
+export async function deleteFirebaseStorageUrl(url: string | undefined): Promise<void> {
+  if (!url || !url.includes('firebasestorage.googleapis.com')) return;
+  const fb = requireFirebase();
+  try {
+    const m = decodeURIComponent(url).match(/\/o\/([^?]+)/);
+    if (m?.[1]) await deleteObject(ref(fb.storage, m[1])).catch(() => {});
+  } catch {
+    // URL doesn't match the expected pattern — give up silently. Orphan
+    // accumulation here is not worth a noisy failure mode.
+  }
+}
+
+/**
  * Permanently deletes a catch from everywhere: user's private doc, public feed doc,
  * and the photo file in Storage. Use when the user deletes a catch from their logbook.
  */

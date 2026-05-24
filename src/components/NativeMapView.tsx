@@ -7,7 +7,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Platform, StyleSheet, View, Text, ViewStyle } from 'react-native';
+import { Platform, StyleSheet, View, Text } from 'react-native';
 import MapView, { Circle, Marker, Polyline, type Region } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import type { LeafletMapHandle, LeafletMapProps, LeafletMapType, CatchMapMarker, LiveFishingMarker } from './LeafletMap';
@@ -79,24 +79,38 @@ function rnMapType(mt: LeafletMapType): 'standard' | 'satellite' | 'hybrid' {
   return 'standard';
 }
 
-// Extra padding around marker containers prevents bitmap clipping on Android.
-const MARKER_PAD = Platform.OS === 'android' ? 4 : 0;
-const markerPad: ViewStyle = MARKER_PAD > 0 ? { padding: MARKER_PAD } : {};
-
+// Marker tail triangles are drawn with the "0x0 view with borders" CSS trick:
+// the borders render OUTSIDE the layout box (which is 0x0). On iOS the marker
+// view paints itself directly and overflows are honoured. On Android,
+// react-native-maps rasterises each custom marker into a bitmap sized to the
+// View's REPORTED layout — so anything drawn outside the layout box gets
+// clipped on the way to the bitmap. The previous workaround was a uniform
+// `padding: 4` around the column, but it didn't fully cover the 9-10px tall
+// tail AND it shifted the geographic anchor away from the tail tip (the
+// `anchor={{x: 0.5, y: 1}}` puts the bottom of the bitmap at the geo coord,
+// so any padding below the tail pushed the tip up off the location).
+//
+// The fix: wrap each triangle in a parent sized exactly to the triangle's
+// visual bounds. The triangle's 0x0 child renders its borders INSIDE the
+// sized wrapper, which means the layout box now contains the full visual,
+// the Android bitmap captures it, and the tail tip continues to sit exactly
+// at the anchor coordinate.
 function SpotPin() {
   return (
-    <View style={[{ alignItems: 'center' }, markerPad]}>
+    <View style={{ alignItems: 'center' }}>
       <View style={styles.spotPlate}>
         <Ionicons name="fish-outline" size={20} color="#E8F8FF" />
       </View>
-      <View style={styles.spotTail} />
+      <View style={styles.spotTailWrap}>
+        <View style={styles.spotTail} />
+      </View>
     </View>
   );
 }
 
 function DamPin({ name, showLabel }: { name: string; showLabel: boolean }) {
   return (
-    <View style={[styles.markerCol, markerPad]} accessibilityLabel={name}>
+    <View style={styles.markerCol} accessibilityLabel={name}>
       {showLabel ? (
         <View style={[styles.labelBubble, styles.labelDam]}>
           <Text numberOfLines={1} style={styles.labelTextDam}>{name}</Text>
@@ -105,25 +119,29 @@ function DamPin({ name, showLabel }: { name: string; showLabel: boolean }) {
       <View style={[styles.iconPlate, styles.plateDam]}>
         <Ionicons name="layers-outline" size={20} color="#C8F0E8" />
       </View>
-      <View style={styles.damTail} />
+      <View style={styles.damTailWrap}>
+        <View style={styles.damTail} />
+      </View>
     </View>
   );
 }
 
 function LiveFishingPin() {
   return (
-    <View style={[{ alignItems: 'center' }, markerPad]}>
+    <View style={{ alignItems: 'center' }}>
       <View style={styles.livePlate}>
         <Ionicons name="flame" size={18} color="#FFF6D8" />
       </View>
-      <View style={styles.liveTail} />
+      <View style={styles.liveTailWrap}>
+        <View style={styles.liveTail} />
+      </View>
     </View>
   );
 }
 
 function RiverPin({ name, showLabel }: { name: string; showLabel: boolean }) {
   return (
-    <View style={[styles.markerCol, markerPad]} accessibilityLabel={name}>
+    <View style={styles.markerCol} accessibilityLabel={name}>
       {showLabel ? (
         <View style={[styles.labelBubble, styles.labelRiver]}>
           <Text numberOfLines={1} style={styles.labelTextRiver}>{name}</Text>
@@ -132,7 +150,9 @@ function RiverPin({ name, showLabel }: { name: string; showLabel: boolean }) {
       <View style={[styles.iconPlate, styles.plateRiver]}>
         <Ionicons name="water-outline" size={20} color="#E8FFF2" />
       </View>
-      <View style={styles.riverTail} />
+      <View style={styles.riverTailWrap}>
+        <View style={styles.riverTail} />
+      </View>
     </View>
   );
 }
@@ -411,7 +431,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 5,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 4,
+    // Android elevation paints a drop-shadow that extends past the layout box,
+    // which the marker rasteriser then clips — visible as a hard-edged shadow
+    // stub. The white border + thicker text outline already provide enough
+    // contrast against light/dark map tiles, so leave Android shadowless.
+    ...(Platform.OS === 'android' ? {} : { elevation: 4 }),
   },
   labelDam: { backgroundColor: 'rgba(255,255,255,0.96)', borderWidth: 2, borderColor: '#062D3D' },
   labelRiver: { backgroundColor: 'rgba(236,255,242,0.96)', borderWidth: 2, borderColor: '#1e6b3d' },
@@ -450,9 +474,18 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: Platform.OS === 'android' ? 0 : 5,
   },
+  // Each tail wrapper is sized to the triangle's visual bounds and overlaps
+  // the plate above by 1px (marginTop: -1) to hide the seam — same visual
+  // result as the previous direct marginTop: -1 on the 0x0 triangle, but
+  // with a layout box that actually contains the triangle so the Android
+  // marker bitmap doesn't clip it. The inner triangle stays 0x0 and renders
+  // via the border trick, now safely INSIDE the sized wrapper.
+  spotTailWrap: {
+    width: 14, height: 10, marginTop: -1,
+    alignItems: 'center',
+  },
   spotTail: {
-    width: 0,
-    height: 0,
+    width: 0, height: 0,
     borderLeftWidth: 7,
     borderRightWidth: 7,
     borderTopWidth: 10,
@@ -460,11 +493,13 @@ const styles = StyleSheet.create({
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
     borderTopColor: '#1A7A9C',
-    marginTop: -1,
+  },
+  damTailWrap: {
+    width: 12, height: 9, marginTop: -1,
+    alignItems: 'center',
   },
   damTail: {
-    width: 0,
-    height: 0,
+    width: 0, height: 0,
     borderLeftWidth: 6,
     borderRightWidth: 6,
     borderTopWidth: 9,
@@ -472,11 +507,13 @@ const styles = StyleSheet.create({
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
     borderTopColor: '#062D3D',
-    marginTop: -1,
+  },
+  riverTailWrap: {
+    width: 12, height: 9, marginTop: -1,
+    alignItems: 'center',
   },
   riverTail: {
-    width: 0,
-    height: 0,
+    width: 0, height: 0,
     borderLeftWidth: 6,
     borderRightWidth: 6,
     borderTopWidth: 9,
@@ -484,7 +521,6 @@ const styles = StyleSheet.create({
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
     borderTopColor: '#2E9B5A',
-    marginTop: -1,
   },
   livePlate: {
     width: 40,
@@ -501,9 +537,12 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: Platform.OS === 'android' ? 0 : 5,
   },
+  liveTailWrap: {
+    width: 12, height: 9, marginTop: -1,
+    alignItems: 'center',
+  },
   liveTail: {
-    width: 0,
-    height: 0,
+    width: 0, height: 0,
     borderLeftWidth: 6,
     borderRightWidth: 6,
     borderTopWidth: 9,
@@ -511,6 +550,5 @@ const styles = StyleSheet.create({
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
     borderTopColor: '#E85D04',
-    marginTop: -1,
   },
 });

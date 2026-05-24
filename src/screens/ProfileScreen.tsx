@@ -31,6 +31,7 @@ import { Button } from '../components/Button';
 import { MenuRow } from '../components/MenuRow';
 import { BadgeIcon } from '../components/BadgeIcon';
 import { FacebookProfileHero, FacebookHeroButton } from '../components/FacebookProfileHero';
+import { ImageViewer } from '../components/ImageViewer';
 import { getImageVariant, ImageSize } from '../utils/imageVariants';
 import { ProfileTabs, type ProfileTabKey } from '../components/ProfileTabs';
 import { TrophyShelf } from '../components/TrophyShelf';
@@ -60,6 +61,7 @@ import {
   uploadProfileAvatar,
   deleteProfileAvatar,
   refreshOwnerPhotoOnPublicCatches,
+  refreshOwnerDisplayName,
   fetchPublicCatchesByOwner,
   type CloudCatch,
 } from '../services/cloudSync';
@@ -238,6 +240,11 @@ export default function ProfileScreen() {
   // Resized base64 data URL — small enough for Firestore, used for save + persistent display
   const [pickedAvatarDataUrl, setPickedAvatarDataUrl] = useState<string | null>(null);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  // Photo-grid viewer state. Tapping a grid cell used to navigate to
+  // CatchDetail — that's still reachable via the Posts tab + Logbook — but
+  // for a photo-browsing surface the right gesture is "open big, swipe to
+  // next, pinch to zoom" which the multi-photo ImageViewer now supports.
+  const [photoViewerIndex, setPhotoViewerIndex] = useState<number | null>(null);
 
   const loadRemoteProfile = useCallback(async () => {
     if (!configured) {
@@ -421,12 +428,23 @@ export default function ProfileScreen() {
       // than passing the current remote URL) means Firestore leaves the field
       // untouched, which is the right behavior whether the avatar was just
       // updated, never set, or unchanged.
+      const newDisplayName = displayName.trim();
+      const previousDisplayName = (user.displayName ?? '').trim();
       const patch = {
-        displayName: displayName.trim(),
+        displayName: newDisplayName,
         city: city.trim(),
         bio: bio.trim(),
       };
       await pushUserProfilePublic(user.uid, patch);
+      // Display-name fanout — propagate the new name to every place that
+      // stored a snapshot at publish time. Skipped when nothing changed so
+      // a city/bio-only save doesn't trigger a (potentially) 500-row write.
+      // Runs in the background so the success toast can fire immediately;
+      // worst case a refresh-after-rename briefly shows the old name on
+      // older catches until the fanout finishes.
+      if (newDisplayName && newDisplayName !== previousDisplayName) {
+        void refreshOwnerDisplayName(user.uid, newDisplayName).catch(() => undefined);
+      }
       Toast.show({ type: 'success', text1: 'Готово', text2: 'Профилът е запазен.', visibilityTime: 2500 });
     } catch (e: unknown) {
       handleError(e);
@@ -1297,9 +1315,11 @@ export default function ProfileScreen() {
         avatarUrl={avatarUri ?? undefined}
         initials={initialLetter}
         metaItems={[
+          // Hero meta intentionally lean — catches + kg used to appear here
+          // AND in the Info tab's stats card, which was redundant and forced
+          // the eye to scan the same numbers twice. The Info tab now owns the
+          // detailed breakdown; the hero just carries city for identity.
           city.trim() || undefined,
-          `${catchStatsCount} ${catchStatsCount === 1 ? 'улов' : 'улова'}`,
-          `${catchStatsKg} кг`,
         ]}
         onPickAvatar={configured ? pickProfileAvatar : undefined}
         topLeft={
@@ -1462,16 +1482,46 @@ export default function ProfileScreen() {
             — critical for users with 50+ public catches. Only the
             empty-state branch stays in the header. */}
         {activeTab === 'posts' && publicPosts.length === 0 ? (
-          <View style={{ paddingHorizontal: spacing.xl, paddingVertical: spacing.xl, alignItems: 'center', gap: spacing.sm }}>
-            <Ionicons name="grid-outline" size={40} color={colors.textMuted} />
-            <Text style={{ ...typography.body, color: colors.textMuted, textAlign: 'center' }}>
-              Все още няма публични улови.
-            </Text>
+          // Warm-card empty state — mirrors the Logbook's first-catch screen
+          // so the entry point to AddCatch feels consistent across surfaces.
+          // The bare "icon + text + pill" version this replaced read as a
+          // dismissable system message; this version reads as an invitation.
+          <View style={{ paddingHorizontal: spacing.xl, paddingVertical: spacing.xxl, alignItems: 'center', gap: spacing.lg }}>
+            <View style={{
+              width: 80, height: 80, borderRadius: 40,
+              backgroundColor: colors.primarySurface,
+              alignItems: 'center', justifyContent: 'center',
+              borderWidth: 1, borderColor: colors.border,
+            }}>
+              <Ionicons name="fish" size={38} color={colors.primary} />
+            </View>
+            <View style={{ alignItems: 'center', gap: 6 }}>
+              <Text style={{ ...typography.h3, color: colors.text, textAlign: 'center' }}>
+                Започни да споделяш улови
+              </Text>
+              <Text style={{ ...typography.body, color: colors.textMuted, textAlign: 'center', paddingHorizontal: spacing.md, lineHeight: 22 }}>
+                Сподели любимите си улови с общността — ще се появяват тук и в лентата.
+              </Text>
+            </View>
             <Pressable
-              onPress={() => (navigation as any).navigate('LogbookTab', { screen: 'AddCatch' })}
-              style={{ marginTop: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: 10, borderRadius: radius.pill, backgroundColor: colors.primary }}
+              onPress={() => (navigation as any).navigate('LogbookTab', { screen: 'AddCatch', params: {} })}
+              style={({ pressed }) => ({
+                paddingHorizontal: spacing.xl,
+                paddingVertical: 14,
+                borderRadius: 16,
+                backgroundColor: pressed ? colors.primaryDark : colors.primary,
+                flexDirection: 'row', alignItems: 'center', gap: 8,
+                shadowColor: colors.primary,
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.3,
+                shadowRadius: 10,
+                elevation: 6,
+              })}
+              accessibilityRole="button"
+              accessibilityLabel="Запиши улов"
             >
-              <Text style={{ ...typography.bodyBold, color: '#fff', fontSize: 13 }}>Запиши улов</Text>
+              <Ionicons name="add-circle" size={20} color="#fff" />
+              <Text style={{ ...typography.bodyBold, color: '#fff', fontSize: 15 }}>Запиши улов</Text>
             </Pressable>
           </View>
         ) : null}
@@ -1527,13 +1577,15 @@ export default function ProfileScreen() {
                   </View>
                 </View>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2, marginHorizontal: spacing.xl }}>
-                  {catches.filter((c) => c.photoUri).map((c) => {
+                  {catches.filter((c) => c.photoUri).map((c, i) => {
                     const size = (screenWidth - spacing.xl * 2 - 4) / 3;
                     return (
                       <Pressable
                         key={c.id}
-                        onPress={() => (navigation as any).navigate('LogbookTab', { screen: 'CatchDetail', params: { id: c.id } })}
+                        onPress={() => setPhotoViewerIndex(i)}
                         style={{ width: size, height: size, backgroundColor: colors.surfaceAlt, borderRadius: 4, overflow: 'hidden' }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Виж снимка от улов на ${c.speciesName}`}
                       >
                         <Image source={{ uri: getImageVariant(c.photoUri!, ImageSize.gridThumb) ?? c.photoUri! }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
                       </Pressable>
@@ -2005,6 +2057,18 @@ export default function ProfileScreen() {
           onClose={closeDeleteModal}
           onSubmit={submitDeleteAccount}
           onSocialCredential={confirmAndDelete}
+        />
+      ) : null}
+
+      {/* ── Photo grid viewer ── Lazy-mount: building the URI list every
+          render is cheap, but the viewer's PanResponder + Animated values
+          aren't — only mount when the user actually opens a photo. */}
+      {photoViewerIndex !== null ? (
+        <ImageViewer
+          uris={catches.filter((c) => c.photoUri).map((c) => c.photoUri!)}
+          initialIndex={photoViewerIndex}
+          visible
+          onClose={() => setPhotoViewerIndex(null)}
         />
       ) : null}
     </Screen>

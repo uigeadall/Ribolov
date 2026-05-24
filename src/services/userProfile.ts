@@ -18,6 +18,7 @@ import {
   limit,
 } from 'firebase/firestore';
 import { ref, getDownloadURL, deleteObject } from 'firebase/storage';
+import { updateProfile } from 'firebase/auth';
 import { uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
 import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
@@ -175,6 +176,80 @@ export async function getUserPublicSummary(uid: string): Promise<UserPublicSumma
     bio,
     photoUrl,
   };
+}
+
+/**
+ * Propagates a display-name change everywhere the old name is denormalized.
+ *
+ * Background: when a user publishes a catch or post, the `ownerName` field is
+ * written as a snapshot of the displayName at publish time. The Firestore
+ * users/{uid} doc owns the canonical name, but every existing publicCatches /
+ * users/{uid}/catches / posts doc still carries the OLD snapshot — so the
+ * user's feed cards show the previous name even after they rename. Same for
+ * the Firebase Auth user.displayName, which is what the sync queue reads
+ * when uploading NEW catches in the background; without re-syncing it, the
+ * very next catch the user saves picks up the old name from Auth and the
+ * mismatch perpetuates.
+ *
+ * This function fans the new name out to:
+ *   1. Firebase Auth currentUser.displayName  → makes future catches correct
+ *   2. publicCatches where ownerUid == uid    → public feed
+ *   3. users/{uid}/catches subcollection      → owner's logbook view
+ *   4. posts where ownerUid == uid            → text/photo posts feed
+ *
+ * Out of scope (intentional):
+ *   - comments / replies: would need a collectionGroup scan across thousands
+ *     of catches; cost outweighs benefit since comment-author names update on
+ *     next render via lookup in most cases.
+ *   - notifications.actorName: ephemeral (24-48h life), low value.
+ *   - stories.userName: 24h TTL — natural decay.
+ *   - liveFishingPins.ownerName: 24h TTL.
+ *   - leaderboardCache: scheduled function rebuilds nightly with fresh names.
+ *
+ * All writes are best-effort and chunked. A failure on any single sub-fanout
+ * doesn't abort the others — the user's name change still lands in the
+ * canonical users/{uid} doc via pushUserProfilePublic regardless.
+ */
+export async function refreshOwnerDisplayName(uid: string, newName: string): Promise<void> {
+  const fb = requireFirebase();
+  const trimmed = newName.trim().slice(0, 120);
+  if (!trimmed) return;
+
+  // 1. Firebase Auth — must run on the current session. Wraps in try so a
+  //    transient auth error doesn't block the Firestore fanout below.
+  try {
+    const current = fb.auth.currentUser;
+    if (current && current.uid === uid && current.displayName !== trimmed) {
+      await updateProfile(current, { displayName: trimmed });
+    }
+  } catch { /* best-effort */ }
+
+  // Helper: read a snapshot, batch-update the `ownerName` field on each doc.
+  // Caps at 500 docs per source — a single user with 500+ catches is the
+  // long-tail; we'd rather not surprise-bill them on rename. Chunks at 400
+  // per batch (Firestore's 500-op limit minus margin).
+  const fanout = async (qSnapPromise: Promise<{ docs: { ref: import('firebase/firestore').DocumentReference }[] }>) => {
+    try {
+      const snap = await qSnapPromise;
+      if (snap.docs.length === 0) return;
+      const CHUNK = 400;
+      for (let i = 0; i < snap.docs.length; i += CHUNK) {
+        const b = writeBatch(fb.db);
+        snap.docs.slice(i, i + CHUNK).forEach((d) => {
+          b.update(d.ref, { ownerName: trimmed });
+        });
+        await b.commit();
+      }
+    } catch { /* best-effort per-source */ }
+  };
+
+  // Run the three Firestore fanouts in parallel — they touch disjoint
+  // collections so there's no contention to worry about.
+  await Promise.all([
+    fanout(getDocs(query(collection(fb.db, 'publicCatches'), where('ownerUid', '==', uid), limit(500)))),
+    fanout(getDocs(query(collection(fb.db, 'users', uid, 'catches'), limit(500)))),
+    fanout(getDocs(query(collection(fb.db, 'posts'), where('ownerUid', '==', uid), limit(500)))),
+  ]);
 }
 
 export async function uploadProfileAvatar(uid: string, localUri: string): Promise<string> {
