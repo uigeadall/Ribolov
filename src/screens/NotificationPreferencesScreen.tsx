@@ -22,14 +22,34 @@ type Prefs = {
 
 const DEFAULT_PREFS: Prefs = { likes: true, comments: true, follows: true, messages: true, storyReactions: true, mentions: true, tournamentReminders: true };
 
-const ROWS: { key: keyof Prefs; icon: string; label: string; sub: string }[] = [
-  { key: 'likes',               icon: 'heart-outline',          label: 'Харесвания',           sub: 'Когато някой хареса твой улов' },
-  { key: 'comments',            icon: 'chatbubble-outline',     label: 'Коментари',            sub: 'Нови коментари под твои публикации' },
-  { key: 'follows',             icon: 'person-add-outline',     label: 'Нови последователи',   sub: 'Когато някой те последва' },
-  { key: 'messages',            icon: 'mail-outline',           label: 'Съобщения',            sub: 'Лични съобщения' },
-  { key: 'mentions',            icon: 'at-outline',             label: 'Споменавания',         sub: 'Когато някой те спомене в публикация' },
-  { key: 'storyReactions',      icon: 'happy-outline',          label: 'Реакции на истории',   sub: 'Реакции към твоите истории' },
-  { key: 'tournamentReminders', icon: 'trophy-outline',         label: 'Напомняния за турнири', sub: 'Когато турнир, в който участваш, завършва утре' },
+type Row = { key: keyof Prefs; icon: string; label: string; sub: string };
+
+// Grouped by conceptual category so a 7-row list reads as 3 small,
+// scannable sections instead of a single flat scroll. Order within each
+// group follows expected frequency (most-common at top).
+const SECTIONS: { title: string; rows: Row[] }[] = [
+  {
+    title: 'Социални',
+    rows: [
+      { key: 'likes',         icon: 'heart-outline',      label: 'Харесвания',           sub: 'Когато някой хареса твой улов' },
+      { key: 'comments',      icon: 'chatbubble-outline', label: 'Коментари',            sub: 'Нови коментари под твои публикации' },
+      { key: 'follows',       icon: 'person-add-outline', label: 'Нови последователи',   sub: 'Когато някой те последва' },
+      { key: 'mentions',      icon: 'at-outline',         label: 'Споменавания',         sub: 'Когато някой те спомене в публикация' },
+    ],
+  },
+  {
+    title: 'Лични',
+    rows: [
+      { key: 'messages',       icon: 'mail-outline',  label: 'Съобщения',            sub: 'Лични съобщения' },
+      { key: 'storyReactions', icon: 'happy-outline', label: 'Реакции на истории',   sub: 'Реакции към твоите истории' },
+    ],
+  },
+  {
+    title: 'Събития',
+    rows: [
+      { key: 'tournamentReminders', icon: 'trophy-outline', label: 'Напомняния за турнири', sub: 'Когато турнир, в който участваш, завършва утре' },
+    ],
+  },
 ];
 
 export default function NotificationPreferencesScreen() {
@@ -94,34 +114,52 @@ export default function NotificationPreferencesScreen() {
         {saving && <ActivityIndicator size="small" color={colors.primary} />}
       </View>
 
-      <View style={{ marginHorizontal: spacing.xl, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: cardBorder, backgroundColor: cardBg }}>
-        {loading ? (
-          <View style={{ padding: spacing.xl, alignItems: 'center' }}>
-            <ActivityIndicator color={colors.primary} />
-          </View>
-        ) : (
-          ROWS.map((row, i) => (
-            <View key={row.key}>
-              {i > 0 && <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: cardBorder, marginLeft: 54 }} />}
-              <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: 14, gap: 12 }}>
-                <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: colors.primarySurface, alignItems: 'center', justifyContent: 'center' }}>
-                  <Ionicons name={row.icon as any} size={18} color={colors.primary} />
+      {loading ? (
+        <View style={{ padding: spacing.xl, alignItems: 'center' }}>
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      ) : (
+        SECTIONS.map((section) => (
+          <View key={section.title} style={{ marginBottom: spacing.lg }}>
+            {/* Section header — small uppercase label with letter-spacing,
+                same pattern Apple Settings uses for grouped lists. Reads
+                as "this is a subset" without taking much vertical space. */}
+            <Text style={{
+              fontSize: 11,
+              fontFamily: 'Nunito_700Bold',
+              letterSpacing: 0.8,
+              textTransform: 'uppercase',
+              color: colors.textMuted,
+              paddingHorizontal: spacing.xl + spacing.sm,
+              paddingBottom: 6,
+            }}>
+              {section.title}
+            </Text>
+            <View style={{ marginHorizontal: spacing.xl, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: cardBorder, backgroundColor: cardBg }}>
+              {section.rows.map((row, i) => (
+                <View key={row.key}>
+                  {i > 0 && <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: cardBorder, marginLeft: 54 }} />}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: 14, gap: 12 }}>
+                    <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: colors.primarySurface, alignItems: 'center', justifyContent: 'center' }}>
+                      <Ionicons name={row.icon as any} size={18} color={colors.primary} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 14, fontFamily: 'Nunito_700Bold', color: colors.text }}>{row.label}</Text>
+                      <Text style={{ fontSize: 11, fontFamily: 'Nunito_400Regular', color: colors.textMuted, marginTop: 1 }}>{row.sub}</Text>
+                    </View>
+                    <Switch
+                      value={prefs[row.key]}
+                      onValueChange={() => void toggle(row.key)}
+                      trackColor={{ false: mode === 'dark' ? '#1A3050' : '#E0E8F0', true: colors.primary + '88' }}
+                      thumbColor={prefs[row.key] ? colors.primary : (mode === 'dark' ? '#3A5070' : '#C0D0E0')}
+                    />
+                  </View>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontFamily: 'Nunito_700Bold', color: colors.text }}>{row.label}</Text>
-                  <Text style={{ fontSize: 11, fontFamily: 'Nunito_400Regular', color: colors.textMuted, marginTop: 1 }}>{row.sub}</Text>
-                </View>
-                <Switch
-                  value={prefs[row.key]}
-                  onValueChange={() => void toggle(row.key)}
-                  trackColor={{ false: mode === 'dark' ? '#1A3050' : '#E0E8F0', true: colors.primary + '88' }}
-                  thumbColor={prefs[row.key] ? colors.primary : (mode === 'dark' ? '#3A5070' : '#C0D0E0')}
-                />
-              </View>
+              ))}
             </View>
-          ))
-        )}
-      </View>
+          </View>
+        ))
+      )}
       <View style={{ height: spacing.xxl }} />
     </Screen>
   );

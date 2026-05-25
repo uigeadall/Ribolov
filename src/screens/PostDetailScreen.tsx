@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, ScrollView } from 'react-native';
 import { useRoute, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { PostCard } from '../components/PostCard';
+import { FishingRefreshControl } from '../components/FishingRefreshControl';
+import { Skeleton } from '../components/Skeleton';
 import { useTheme } from '../services/themeContext';
 import { useAuth } from '../services/authContext';
 import { spacing, typography } from '../theme/typography';
@@ -28,6 +30,7 @@ export default function PostDetailScreen() {
   const { user } = useAuth();
 
   const [post, setPost] = useState<Post | null | undefined>(undefined);
+  const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -41,6 +44,16 @@ export default function PostDetailScreen() {
   }, [route.params.id]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // Pull-to-refresh handler. Re-fetches the post + its likeCount snapshot
+  // so users coming back to a post they viewed earlier see fresh reaction
+  // counts and any edits the author made. Comments are loaded by PostCard
+  // via a live subscription, so they don't need a manual refresh.
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  }, [load]);
 
   const onPressAuthor = useCallback((uid: string, displayName: string) => {
     navigation.navigate('UserPublicProfile', { uid, displayName });
@@ -89,8 +102,31 @@ export default function PostDetailScreen() {
       </View>
 
       {post === undefined ? (
-        <View style={{ alignItems: 'center', padding: spacing.xl }}>
-          <ActivityIndicator color={colors.primary} />
+        // Content-shaped skeleton mirrors the PostCard layout (avatar +
+        // name + meta, body text lines, photo block, action row) so the
+        // load feels like the actual content is forming instead of a
+        // generic spinner. Local AsyncStorage cache hits land in <100ms
+        // so this is typically a quick flash; on a cold network fetch
+        // (~500ms-2s) the user sees the layout settle into real content.
+        <View style={{ padding: spacing.lg, gap: spacing.md }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+            <Skeleton width={40} height={40} borderRadius={20} />
+            <View style={{ flex: 1, gap: 6 }}>
+              <Skeleton height={14} width="50%" />
+              <Skeleton height={10} width="32%" />
+            </View>
+          </View>
+          <View style={{ gap: 6 }}>
+            <Skeleton height={14} width="100%" />
+            <Skeleton height={14} width="92%" />
+            <Skeleton height={14} width="76%" />
+          </View>
+          <Skeleton height={240} borderRadius={12} />
+          <View style={{ flexDirection: 'row', gap: spacing.lg }}>
+            <Skeleton width={48} height={20} />
+            <Skeleton width={48} height={20} />
+            <Skeleton width={48} height={20} />
+          </View>
         </View>
       ) : !post ? (
         <View style={{ alignItems: 'center', padding: spacing.xl, gap: spacing.sm }}>
@@ -100,7 +136,10 @@ export default function PostDetailScreen() {
           </Text>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={{ paddingBottom: spacing.xxl }}>
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: spacing.xxl }}
+          refreshControl={<FishingRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        >
           <PostCard
             post={post}
             myUid={user?.uid}

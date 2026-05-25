@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TextInput, KeyboardAvoidingView, Platform, Alert, Pressable, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TextInput, KeyboardAvoidingView, Platform, Alert, Pressable, ActivityIndicator, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -272,6 +272,16 @@ export default function AuthScreen() {
       Alert.alert('Забравена парола', 'Въведи имейл адреса си в полето по-горе, след което натисни тук.');
       return;
     }
+    // Same regex the submit handler uses — catches malformed addresses
+    // before they hit Firebase. Without this, an invalid email reaches
+    // sendPasswordResetEmail and throws auth/invalid-email, which then
+    // flows through handleError → captureException as a noisy error log.
+    // Cleaner UX: surface the validation message inline as an alert
+    // instead of treating user typo as an exception.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(target)) {
+      Alert.alert('Невалиден имейл', 'Провери имейл адреса и опитай отново.');
+      return;
+    }
     Alert.alert(
       'Нулиране на парола',
       `Ще изпратим линк за нулиране на ${target}.`,
@@ -317,6 +327,22 @@ export default function AuthScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
       >
+        {/* ScrollView with keyboardShouldPersistTaps="handled" gives two
+            wins at once: (1) tapping the background dismisses the keyboard,
+            (2) when the keyboard covers the bottom buttons (Apple/Google
+            sign-in, forgot password) the user can scroll to reach them.
+            Without this, the form was bigger than the visible area on
+            iPhone SE / older phones and the lower half was unreachable
+            with the keyboard up. `keyboardShouldPersistTaps="handled"`
+            keeps button taps working — only taps on non-interactive
+            background dismiss the keyboard. */}
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ flexGrow: 1 }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          showsVerticalScrollIndicator={false}
+        >
         <View style={{ flex: 1 }}>
           {/* Outdoorsy hero — matches the dawn-water gradient used across the
               redesigned profile / AddCatch screens. */}
@@ -544,6 +570,7 @@ export default function AuthScreen() {
             </View>
           </View>
         </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </Screen>
   );

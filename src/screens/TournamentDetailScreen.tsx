@@ -173,8 +173,23 @@ export default function TournamentDetailScreen() {
     modalTitle: { ...typography.h3, color: colors.text, paddingHorizontal: spacing.lg, marginBottom: spacing.sm },
   }), [colors, mode]);
 
+  // Tournament ended? Compared against today's YYYY-MM-DD in the user's
+  // local timezone — matches how endDate is stored when created (a date
+  // string, no time component). Used by join/submit guards below so users
+  // can't enter or score in a tournament whose window has closed.
+  const isEnded = !!t?.endDate && t.endDate < new Date().toISOString().slice(0, 10);
+
   const onJoin = async () => {
     if (!user || !t || isJoined || joiningRef.current) return;
+    if (isEnded) {
+      Toast.show({
+        type: 'info',
+        text1: 'Турнирът е приключил',
+        text2: 'Не можеш да се запишеш след крайната дата.',
+        visibilityTime: 2800,
+      });
+      return;
+    }
     joiningRef.current = true;
     setBusy(true);
     try {
@@ -296,6 +311,21 @@ export default function TournamentDetailScreen() {
 
   const submitCatch = async (c: Catch) => {
     if (!user || !c.photoUri) return;
+    // Reject submissions after the tournament window has closed. The
+    // server has no date check today (would need a Cloud Function or rule
+    // tweak), so a stale submit modal would silently accept catches past
+    // the deadline. Catching client-side keeps leaderboards honest in
+    // the common case; server-side enforcement is a separate hardening.
+    if (isEnded) {
+      Toast.show({
+        type: 'info',
+        text1: 'Турнирът е приключил',
+        text2: 'Не можеш да добавиш улов след крайната дата.',
+        visibilityTime: 2800,
+      });
+      setSubmitOpen(false);
+      return;
+    }
     // Reject catches that don't match a single-species tournament's species.
     // Without this, "Само шаран" tournaments quietly accepted any catch and
     // rule-breaking entries appeared on the leaderboard.

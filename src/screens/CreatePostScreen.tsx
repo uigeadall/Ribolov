@@ -64,6 +64,11 @@ export default function CreatePostScreen() {
   // Mention autocomplete state
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionResults, setMentionResults] = useState<SearchUserResult[]>([]);
+  // True from the moment the debounce timer fires until results arrive.
+  // Drives the spinner in the autocomplete hint so users refining a mention
+  // (typing more characters into an already-matched query) see "still
+  // searching" feedback instead of an apparently-stale result list.
+  const [mentionSearching, setMentionSearching] = useState(false);
   /** Resolved @mentions — handle (display name string) → uid */
   const [resolvedMentions, setResolvedMentions] = useState<Record<string, string>>({});
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -90,15 +95,25 @@ export default function CreatePostScreen() {
     const q = detectMentionAtCursor(next, cursor);
     if (q && q.length >= 2 && configured) {
       setMentionQuery(q);
+      setMentionSearching(true);
       if (searchTimer.current) clearTimeout(searchTimer.current);
       searchTimer.current = setTimeout(() => {
         searchUsersByName(q, { excludeUid: user?.uid, maxResults: 6 })
-          .then(setMentionResults)
-          .catch(() => setMentionResults([]));
+          .then((results) => {
+            // Drop stale results — the user may have typed further characters
+            // since this lookup started. Without this check, a slow network
+            // can cause an older query's results to land AFTER a newer
+            // query's results, briefly showing the wrong matches.
+            if (q !== detectMentionAtCursor(text, selectionRef.current.end)) return;
+            setMentionResults(results);
+          })
+          .catch(() => setMentionResults([]))
+          .finally(() => setMentionSearching(false));
       }, AUTOCOMPLETE_DEBOUNCE_MS);
     } else {
       setMentionQuery(null);
       setMentionResults([]);
+      setMentionSearching(false);
     }
   };
 
@@ -117,6 +132,7 @@ export default function CreatePostScreen() {
     setResolvedMentions((prev) => ({ ...prev, [cleanName]: u.uid }));
     setMentionQuery(null);
     setMentionResults([]);
+    setMentionSearching(false);
     void Haptics.selectionAsync();
   };
 
@@ -411,6 +427,16 @@ export default function CreatePostScreen() {
 
           {mentionResults.length > 0 ? (
             <View style={styles.autocompleteCard}>
+              {/* Searching hint persists ABOVE the results list while a
+                  refined query is in flight. Without this, users refining
+                  a mention (typing more chars after a match) see the old
+                  results with no signal that newer matches are coming. */}
+              {mentionSearching ? (
+                <View style={[styles.hintRow, { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }]}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                  <Text style={styles.hintText}>Търсене на „{mentionQuery}"…</Text>
+                </View>
+              ) : null}
               <FlatList
                 data={mentionResults}
                 keyExtractor={(u) => u.uid}
@@ -434,9 +460,21 @@ export default function CreatePostScreen() {
               />
             </View>
           ) : mentionQuery ? (
+            // No results yet (or none found). If we're mid-search, the
+            // spinner clarifies "still looking"; once searching flips to
+            // false and we still have no results, the same row reads as
+            // "we looked, nothing matched".
             <View style={styles.hintRow}>
-              <Ionicons name="search-outline" size={13} color={colors.textMuted} />
-              <Text style={styles.hintText}>Търсене на „{mentionQuery}"…</Text>
+              {mentionSearching ? (
+                <ActivityIndicator size="small" color={colors.textMuted} />
+              ) : (
+                <Ionicons name="search-outline" size={13} color={colors.textMuted} />
+              )}
+              <Text style={styles.hintText}>
+                {mentionSearching
+                  ? `Търсене на „${mentionQuery}"…`
+                  : `Няма съвпадения за „${mentionQuery}"`}
+              </Text>
             </View>
           ) : null}
 

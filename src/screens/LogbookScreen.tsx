@@ -449,7 +449,17 @@ export default function LogbookScreen() {
       // On sign-out: drop the prior user's catches from memory and clear
       // the tab badge so it doesn't keep counting "unsynced" entries that
       // wipeAllLocalAppData has already removed from storage.
-      setItems([]);
+      //
+      // EACH setState below is guarded against a no-op call. Without
+      // these guards, `setItems([])` creates a NEW empty array reference
+      // on every fire — since `items` is in the dep array, the effect
+      // re-fires immediately, calls setItems([]) again, and infinite-
+      // loops with "Maximum update depth exceeded". This was latent for
+      // signed-in users (the !user branch never ran for them) but
+      // immediately bit anyone using Logbook signed out — Logbook is
+      // designed to work locally with or without auth, so this path is
+      // common, not edge-case.
+      if (items.length > 0) setItems([]);
       navigation.getParent()?.setOptions({ tabBarBadge: undefined });
       // Cancel any in-flight undo-delete timer left over from the previous
       // user. If we don't, the timer fires after signout and calls
@@ -463,12 +473,12 @@ export default function LogbookScreen() {
         clearTimeout(undoTimerRef.current);
         undoTimerRef.current = null;
       }
-      setPendingDelete(null);
+      if (pendingDelete !== null) setPendingDelete(null);
       return;
     }
     const unsynced = items.filter((c) => !c.syncedToCloud).length;
     navigation.getParent()?.setOptions({ tabBarBadge: unsynced > 0 ? unsynced : undefined });
-  }, [items, user, navigation]);
+  }, [items, user, navigation, pendingDelete]);
 
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');

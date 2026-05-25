@@ -23,6 +23,7 @@ import {
 } from './types';
 import { useNotificationNavigation } from '../hooks/useNotificationNavigation';
 import { useUnreadNotifCount } from '../hooks/useUnreadNotifCount';
+import { useUnreadMessagesCount } from '../hooks/useUnreadMessagesCount';
 import { useAuth } from '../services/authContext';
 import AsyncStorage from '../storage/kv';
 import * as Location from 'expo-location';
@@ -195,6 +196,12 @@ function TabNavigator() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const unreadNotifs = useUnreadNotifCount(user?.uid);
+  const unreadMsgs = useUnreadMessagesCount(user?.uid);
+  // Combined Profile-tab badge — DMs + notifications. Both live behind
+  // ProfileTab so two separate badges on the same icon would clutter; the
+  // combined number tells the user "you have N things waiting in Profile"
+  // and the Profile hero already breaks down which is which.
+  const profileBadge = unreadNotifs + unreadMsgs;
   const [feedBadge, setFeedBadge] = React.useState<string | undefined>(undefined);
   const [mapBadge, setMapBadge] = React.useState<string | undefined>(undefined);
 
@@ -415,7 +422,7 @@ function TabNavigator() {
       <Tabs.Screen
         name="ProfileTab"
         component={ProfileNavigator}
-        options={{ title: 'Профил', tabBarBadge: unreadNotifs > 0 ? unreadNotifs : undefined }}
+        options={{ title: 'Профил', tabBarBadge: profileBadge > 0 ? profileBadge : undefined }}
         listeners={({ navigation }) => ({
           tabPress: (e) => { e.preventDefault(); navigation.navigate('ProfileTab', { screen: 'ProfileMain' }); },
         })}

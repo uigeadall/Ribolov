@@ -13,6 +13,8 @@ import type { DocumentSnapshot } from 'firebase/firestore';
 
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRoute, type RouteProp } from '@react-navigation/native';
+import Toast from 'react-native-toast-message';
 import AsyncStorage from '../storage/kv';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
@@ -24,6 +26,7 @@ import { ensureFirebase } from '../services/firebase';
 import { useAuth } from '../services/authContext';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 import { getBlockedUids } from '../services/blockUser';
+import type { RootStackParamList } from '../navigation/types';
 
 type Tab = 'users' | 'waters' | 'species';
 type UserResult = { uid: string; displayName: string; city?: string; photoUrl?: string };
@@ -34,12 +37,19 @@ const PAGE_SIZE = 20;
 
 export default function SearchScreen() {
   const navigation = useAppNavigation();
+  const route = useRoute<RouteProp<RootStackParamList, 'Search'>>();
   const { colors } = useTheme();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
 
   const [tab, setTab] = useState<Tab>('users');
-  const [query2, setQuery2] = useState('');
+  // Pre-seed the input from route.params.initialQuery. Callers like
+  // PostDetailScreen pass a tapped @handle here — previously the value was
+  // ignored, so users landed on a blank search with their handle as
+  // placeholder-only and had to retype it. The auto-search effect below
+  // fires the lookup immediately so the result list lands without a
+  // second tap.
+  const [query2, setQuery2] = useState(route.params?.initialQuery ?? '');
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [userResults, setUserResults] = useState<UserResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -60,6 +70,24 @@ export default function SearchScreen() {
       if (v) setRecentSearches(JSON.parse(v) as string[]);
     }).catch(() => {});
   }, []);
+
+  // Auto-search when the screen mounts with an initialQuery param. Fires
+  // once per route entry (re-navigating with a different param re-fires).
+  // Triggers only for the default 'users' tab — water + species are
+  // synchronous useMemo lookups that already pick up query2 on the
+  // first render without needing an explicit kick.
+  const autoSearchedForRef = useRef<string | null>(null);
+  useEffect(() => {
+    const initial = route.params?.initialQuery?.trim();
+    if (!initial || initial.length < 2) return;
+    if (autoSearchedForRef.current === initial) return;
+    autoSearchedForRef.current = initial;
+    void searchUsers(initial);
+    // intentionally omit searchUsers from deps — it's stable across renders
+    // and including it would re-run this effect every time `user.uid`
+    // changes (which would re-kick the auto-search on auth state flips).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.params?.initialQuery]);
 
   const saveSearch = useCallback((term: string) => {
     const trimmed = term.trim();
