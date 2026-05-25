@@ -62,6 +62,7 @@ import { handleError } from '../utils/handleError';
 import { notifyInfo, notifyError } from '../utils/notify';
 import { allowCatchSave } from '../services/socialRateLimit';
 import { logEvent } from '../services/analytics';
+import { maybePromptForReview } from '../services/storeReview';
 
 // Absolute ceilings used in addition to per-species `maxWeightKg`. Catch any
 // fat-finger entry (e.g. typing 2500 kg of carp) AND stop entirely-unrealistic
@@ -745,6 +746,11 @@ export default function AddCatchScreen() {
           has_photo: !!item.photoUri,
           shared_public: !!form.shareToFeed,
         });
+        // Once-ever in-app rating prompt at the 10th catch. Fire-and-forget;
+        // the helper handles "already shown" + "OS quota" + "missing native
+        // module" silently. Reading allCatches.length is cheap — we already
+        // have the list in scope from the PB / achievement check above.
+        void maybePromptForReview(allCatches.length);
       }
 
       // First-ever-catch celebration takes precedence over PB alert +

@@ -99,6 +99,18 @@ type NotifPrefs = {
   storyReactions: boolean;
   mentions: boolean;
   tournamentReminders: boolean;
+  // Quiet-hours block. Both null = feature off. When set, pushes between
+  // [startHour:00] and [endHour:00] in the user's local timezone are
+  // silently dropped (the Firestore notification doc is still written so
+  // the inbox stays accurate — just no buzz on the lock screen).
+  // Stored as 24h-format integers 0-23.
+  quietHoursEnabled?: boolean;
+  quietHoursStart?: number;
+  quietHoursEnd?: number;
+  // IANA timezone string the client picked (e.g. "Europe/Sofia"). Without
+  // this, quiet hours would be evaluated in UTC and a 22:00 Sofia rule
+  // would actually fire at 00:00 Sofia in winter / 01:00 in summer.
+  timezone?: string;
 };
 
 // Missing prefs default to true (opt-out, not opt-in) so existing users keep
@@ -114,6 +126,10 @@ async function getNotifPrefs(uid: string): Promise<NotifPrefs> {
     storyReactions: d.storyReactions !== false,
     mentions: d.mentions !== false,
     tournamentReminders: d.tournamentReminders !== false,
+    quietHoursEnabled: d.quietHoursEnabled === true,
+    quietHoursStart: typeof d.quietHoursStart === "number" ? d.quietHoursStart : 22,
+    quietHoursEnd: typeof d.quietHoursEnd === "number" ? d.quietHoursEnd : 7,
+    timezone: typeof d.timezone === "string" ? d.timezone : "Europe/Sofia",
   };
 }
 
@@ -128,6 +144,31 @@ function shouldNotify(type: string | undefined, prefs: NotifPrefs): boolean {
     case "storyComment": return prefs.storyReactions;
     default: return true;
   }
+}
+
+/** True when the current wall-clock time in the user's timezone falls
+    inside their quiet-hours window. Handles the cross-midnight case
+    (e.g. 22→07) — the natural one for sleep — by checking either
+    side. */
+function isInQuietHours(prefs: NotifPrefs): boolean {
+  if (!prefs.quietHoursEnabled) return false;
+  const start = prefs.quietHoursStart;
+  const end = prefs.quietHoursEnd;
+  if (typeof start !== "number" || typeof end !== "number") return false;
+  // Get the current hour in the user's local timezone. Intl is available
+  // in the Node 20 runtime functions ship on.
+  const hour = parseInt(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: prefs.timezone || "Europe/Sofia",
+      hour: "2-digit",
+      hour12: false,
+    }).format(new Date()),
+    10,
+  );
+  if (!Number.isFinite(hour)) return false;
+  if (start === end) return false; // empty window
+  // Same-day window (e.g. 13→18). Cross-midnight window (e.g. 22→7) wraps.
+  return start < end ? hour >= start && hour < end : hour >= start || hour < end;
 }
 
 // ---------------------------------------------------------------------------
@@ -151,6 +192,23 @@ export const onNotificationCreated = onDocumentCreated(
     // Honor the recipient's notification preferences.
     const prefs = await getNotifPrefs(userId);
     if (!shouldNotify(type, prefs)) return;
+    // Quiet hours — silently drop the push if the recipient is in their
+    // configured do-not-disturb window. The Firestore notification doc
+    // was already written by the originating action, so the inbox stays
+    // accurate; we just don't buzz the lock screen.
+    if (isInQuietHours(prefs)) return;
+    // Per-actor mute. If the recipient has explicitly muted this actor
+    // (long-press → "Mute" on a row in their Notifications inbox), drop
+    // the push silently. Same shape as quiet hours: the Firestore notif
+    // doc still writes so the inbox isn't lying about activity volume —
+    // we just don't surface to the OS. Self-actions are already filtered
+    // by every notifyX helper, so a missing actorUid here is a malformed
+    // call and we skip the check entirely.
+    const actorUid = typeof data.actorUid === "string" ? data.actorUid : "";
+    if (actorUid) {
+      const muteSnap = await db.doc(`users/${userId}/mutedActors/${actorUid}`).get();
+      if (muteSnap.exists) return;
+    }
 
     // Fetch the recipient's push token
     const tokenSnap = await db.doc(`users/${userId}/private/pushToken`).get();
@@ -386,6 +444,13 @@ export const onNewMessage = onDocumentCreated(
     // Push is also gated on mute — the OS notification is the noisiest part
     // of "muted means muted".
     if (isMuted) return;
+    // Quiet hours — same treatment as onNotificationCreated. The message
+    // is still claimed + unreadMessageCount bumped above, so the recipient
+    // sees it the moment they open the app; we just don't buzz the lock
+    // screen during their DND window.
+    const msgPrefs = await getNotifPrefs(recipientUid);
+    if (!msgPrefs.messages) return;
+    if (isInQuietHours(msgPrefs)) return;
     const tokenSnap = await db.doc(`users/${recipientUid}/private/pushToken`).get();
     const token: string = tokenSnap.data()?.expoPushToken ?? "";
     if (!token || !token.startsWith("ExponentPushToken[")) return;
@@ -629,6 +694,11 @@ export const tournamentEndingSoonReminder = onSchedule(
         try {
           const prefs = await getNotifPrefs(uid);
           if (!prefs.tournamentReminders) continue;
+          // Quiet hours — same treatment as the per-doc fanout. The reminder
+          // is scheduled daily at 09:00 Sofia, so quiet-hours conflicts are
+          // unusual but cheap to check; better to be consistent than to have
+          // one notification type bypass DND.
+          if (isInQuietHours(prefs)) continue;
           const tokenSnap = await db.doc(`users/${uid}/private/pushToken`).get();
           const token: string = tokenSnap.data()?.expoPushToken ?? "";
           if (!token || !token.startsWith("ExponentPushToken[")) continue;

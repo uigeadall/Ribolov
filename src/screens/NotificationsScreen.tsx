@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, SectionList, Pressable, Alert, Platform } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { Image } from 'expo-image';
@@ -16,6 +16,8 @@ import { radius, spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
 import { subscribeMyNotifications, markNotificationRead, markAllNotificationsRead, clearReadNotifications, type SocialNotification } from '../services/socialFeed';
 import { followUser, isFollowingUser } from '../services/social';
+import { muteActor } from '../services/mutedActors';
+import { ActionSheet } from '../components/ActionSheet';
 import { useFirestoreSubscription } from '../hooks/useFirestoreSubscription';
 import { useAvatarUrl } from '../hooks/useAvatarUrl';
 import { useAppNavigation } from '../navigation/useAppNavigation';
@@ -131,18 +133,49 @@ type NotifRowProps = {
   myUid: string;
   onOpen: (n: SocialNotification) => void;
   onDismiss: () => void;
+  /** Left-swipe action — flag this row's notification(s) as read without
+      archiving them. Lets users clear unread state on rows they want to
+      keep visible (e.g. archive of memorable interactions). */
+  onMarkRead: () => void;
   styles: ReturnType<typeof createStyles>;
   colors: AppColors;
 };
 
-function NotifRow({ item, myUid, onOpen, onDismiss, styles, colors }: NotifRowProps) {
+function NotifRow({ item, myUid, onOpen, onDismiss, onMarkRead, styles, colors }: NotifRowProps) {
+  // Used by the grouped-row actor chips to open each contributor's profile.
+  // Cheap to call again here — the parent NotificationsScreen also calls
+  // useAppNavigation; both return references to the same singleton.
+  const navigation = useAppNavigation();
   const avatarUrl = useAvatarUrl({
     ownerUid: item.actorUid,
     isMine: item.actorUid === myUid,
     resolvedAvatarUrl: undefined,
     ownerPhotoUrl: undefined,
   });
+  // Four states:
+  //   idle — not following yet; button reads "Последвай"
+  //   busy — request in flight
+  //   done — following (either set this session OR already following on mount)
+  // 'done' on mount comes from the isFollowingUser probe below — that way a
+  // mutual-follow notification shows the correct "✓ Последван" state from
+  // the start instead of flashing "Последвай" until the user taps.
   const [followState, setFollowState] = useState<'idle' | 'busy' | 'done'>('idle');
+
+  // Probe the live follow graph once per row mount so the button reflects
+  // reality. Only runs for follow notifications (the only row type that
+  // surfaces this button); cheap because getFollowing/isFollowingUser is
+  // server-cached for the duration of the session. Best-effort — a network
+  // miss leaves the button in the safe default 'idle' state.
+  useEffect(() => {
+    if (item.type !== 'follow' || !myUid) return;
+    let cancelled = false;
+    isFollowingUser(myUid, item.actorUid)
+      .then((already) => {
+        if (!cancelled && already) setFollowState('done');
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [item.type, item.actorUid, myUid]);
 
   const dotColor =
     item.type === 'like' ? colors.primary
@@ -174,9 +207,11 @@ function NotifRow({ item, myUid, onOpen, onDismiss, styles, colors }: NotifRowPr
     // Mentions are grouped per-target — multiple people mentioning you in the
     // same post is rare but possible (e.g. quote-share chains).
     displayLine = `${item.actorName} и ${groupCount} ${groupCount === 1 ? 'друг' : 'други'} те споменаха`;
-  } else if (isGrouped && item.type === 'follow') {
-    displayLine = `${groupCount + 1} риболовеца те последваха`;
   } else {
+    // Follow notifications are intentionally not grouped (see
+    // groupNotifications below) so this branch never fires for them; each
+    // follow is rendered as its own individual row with its own follow-back
+    // button via the verb path.
     displayLine = '';
   }
 
@@ -225,9 +260,69 @@ function NotifRow({ item, myUid, onOpen, onDismiss, styles, colors }: NotifRowPr
       <Text style={{ ...typography.small, color: '#fff', marginTop: 2, fontWeight: '700' }}>Скрий</Text>
     </View>
   );
+  // Left-swipe action — only meaningful for unread rows. When the row is
+  // already read, swipe-left is a no-op (the action panel still renders
+  // for gesture consistency but the parent handler skips the write).
+  const renderLeft = () => (
+    <View style={{ backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center', width: 72, borderRadius: radius.md, marginRight: spacing.sm }}>
+      <Ionicons name="checkmark-done-outline" size={22} color="#fff" />
+      <Text style={{ ...typography.small, color: '#fff', marginTop: 2, fontWeight: '700' }}>Прочети</Text>
+    </View>
+  );
+  // Swipe direction is detected via the Swipeable callbacks. Both share a
+  // single onSwipeableOpen so we have to look at the direction prop to
+  // route — right reveal = onDismiss (archive, danger), left reveal =
+  // onMarkRead (passive, primary color).
+  // Long-press opens an action sheet — currently one action ("Mute this
+  // person"), but the sheet shape lets future actions plug in (block,
+  // report, etc.) without touching the swipe layout.
+  const onLongPress = useCallback(() => {
+    if (!item.actorUid || item.actorUid === myUid) return;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    ActionSheet.show({
+      title: item.actorName,
+      options: [
+        {
+          label: `Заглуши известията от ${item.actorName}`,
+          icon: 'notifications-off-outline',
+          destructive: true,
+          onPress: async () => {
+            try {
+              await muteActor(myUid, item.actorUid, item.actorName);
+              Toast.show({
+                type: 'success',
+                text1: 'Заглушено',
+                text2: `Няма да получаваш push известия от ${item.actorName}.`,
+                visibilityTime: 2800,
+              });
+            } catch {
+              Toast.show({
+                type: 'error',
+                text1: 'Грешка',
+                text2: 'Не успяхме да заглушим. Опитай отново.',
+                visibilityTime: 2500,
+              });
+            }
+          },
+        },
+      ],
+    });
+  }, [item.actorUid, item.actorName, myUid]);
+
   return (
-    <Swipeable renderRightActions={renderRight} onSwipeableOpen={onDismiss} rightThreshold={60} overshootRight={false}>
-    <Pressable onPress={() => onOpen(item)}>
+    <Swipeable
+      renderRightActions={renderRight}
+      renderLeftActions={item.read ? undefined : renderLeft}
+      onSwipeableOpen={(direction) => {
+        if (direction === 'right') onDismiss();
+        else if (direction === 'left') onMarkRead();
+      }}
+      rightThreshold={60}
+      leftThreshold={60}
+      overshootRight={false}
+      overshootLeft={false}
+    >
+    <Pressable onPress={() => onOpen(item)} onLongPress={onLongPress} delayLongPress={400}>
       <Card style={[styles.row, !item.read && styles.rowUnread]}>
         {/* Type-colored leading stripe on unread rows — read rows lose it
             so the inbox visually quiets down as the user catches up. */}
@@ -248,6 +343,67 @@ function NotifRow({ item, myUid, onOpen, onDismiss, styles, colors }: NotifRowPr
               : <><Text style={{ fontWeight: '700' }}>{item.actorName}</Text> {verb}.</>
             }
           </Text>
+          {/* Grouped notifications carry hidden actors — render a small
+              horizontal stack of their initials underneath the line so
+              users can see WHO reacted without leaving the screen, and
+              tap any to open that user's profile. Previously the
+              representative was the only actionable actor; the other N-1
+              were buried in the count. Caps at 6 visible avatars; surplus
+              shown as "+N" pill so the row doesn't grow unbounded on
+              viral posts. */}
+          {isGrouped && (item.groupActorUids?.length ?? 0) > 0 ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+              {/* The representative actor also belongs in the stack so
+                  the count visually matches the displayLine ("X и N
+                  others"). Build the full list once. */}
+              {[
+                { uid: item.actorUid, name: item.actorName },
+                ...(item.groupActorUids ?? []).map((uid, i) => ({
+                  uid,
+                  name: item.groupActors?.[i] ?? 'Рибар',
+                })),
+              ].slice(0, 6).map((a) => (
+                <Pressable
+                  key={a.uid}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    void Haptics.selectionAsync();
+                    navigation.navigate('UserPublicProfile', { uid: a.uid, displayName: a.name });
+                  }}
+                  hitSlop={4}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 4,
+                    paddingVertical: 3, paddingHorizontal: 8,
+                    borderRadius: 12,
+                    backgroundColor: colors.primarySurface,
+                    borderWidth: StyleSheet.hairlineWidth,
+                    borderColor: colors.border,
+                  }}
+                  accessibilityLabel={`Виж профила на ${a.name}`}
+                >
+                  <View style={{
+                    width: 18, height: 18, borderRadius: 9,
+                    backgroundColor: colors.card,
+                    alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <Text style={{ ...typography.caption, fontWeight: '700', color: colors.primary, fontSize: 10 }}>
+                      {a.name.slice(0, 1).toUpperCase()}
+                    </Text>
+                  </View>
+                  <Text style={{ ...typography.caption, color: colors.text, fontSize: 11, maxWidth: 90 }} numberOfLines={1}>
+                    {a.name}
+                  </Text>
+                </Pressable>
+              ))}
+              {(item.groupActorUids?.length ?? 0) + 1 > 6 ? (
+                <View style={{ paddingVertical: 3, paddingHorizontal: 8, borderRadius: 12, backgroundColor: colors.surfaceAlt }}>
+                  <Text style={{ ...typography.caption, color: colors.textMuted, fontSize: 11 }}>
+                    +{(item.groupActorUids?.length ?? 0) + 1 - 6}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
           {item.preview ? <Text style={styles.preview} numberOfLines={3}>{item.preview}</Text> : null}
           {item.catchId ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 }}>
@@ -299,6 +455,9 @@ function NotifRow({ item, myUid, onOpen, onDismiss, styles, colors }: NotifRowPr
 type GroupedNotification = SocialNotification & {
   groupCount?: number;   // how many were collapsed into this row
   groupActors?: string[]; // names of actors beyond the first
+  groupActorUids?: string[]; // uids of actors beyond the first — parallel to groupActors,
+                              // used by the expand-on-tap actor list to deep-link to each
+                              // individual user's profile when avatars are tapped.
   groupIds?: string[];    // all notification ids in the group (including the representative)
 };
 
@@ -321,19 +480,14 @@ function groupNotifications(items: SocialNotification[]): GroupedNotification[] 
     (a, b) => getCreatedAtMs(b.createdAt) - getCreatedAtMs(a.createdAt),
   );
 
-  // ── Follow grouping: if 3+ follow notifications exist, collapse all into one ──
-  const follows = sorted.filter((n) => n.type === 'follow');
-  if (follows.length >= 3) {
-    const [representative, ...rest] = follows;
-    const grouped: GroupedNotification = {
-      ...representative,
-      groupCount: rest.length,
-      groupActors: rest.map((n) => n.actorName),
-      groupIds: follows.map((n) => n.id),
-    };
-    result.push(grouped);
-    follows.forEach((n) => consumed.add(n.id));
-  }
+  // Follow notifications are intentionally NOT grouped. The earlier version
+  // collapsed 3+ follows into "N риболовеца те последваха" for inbox
+  // compactness, but that hid every actor except the representative — the
+  // "Follow back" button could only act on the first user, and the other
+  // N-1 followers were unreachable from the notification. Since following
+  // back is the WHOLE POINT of seeing this notification, the grouping cost
+  // more than it saved. Each follow now gets its own row with its own
+  // actionable Follow button.
 
   // ── Per-target grouping ────────────────────────────────────────────────────
   // Groups any reaction-style notif (likes + comments + mentions + their
@@ -378,6 +532,10 @@ function groupNotifications(items: SocialNotification[]): GroupedNotification[] 
       ...representative,
       groupCount: rest.length,
       groupActors: rest.map((n) => n.actorName),
+      // Parallel uids array — lets the rendered avatar row deep-link to
+      // each contributor's profile. Names alone weren't enough since
+      // the avatar URL fetcher (useAvatarUrl) is keyed by uid.
+      groupActorUids: rest.map((n) => n.actorUid),
       // Always mark every underlying notif id read on tap — not just the
       // distinct-actor ones.
       groupIds: group.map((n) => n.id),
@@ -612,6 +770,25 @@ export default function NotificationsScreen() {
 
   const readCount = useMemo(() => (data ?? []).filter((n) => n.read).length, [data]);
 
+  // Left-swipe handler — mark the row's notification(s) as read WITHOUT
+  // removing them from the list. The optimistic update is identical to
+  // the tap-to-open path (setData → markNotificationRead per id); only
+  // the parent UX intent differs. Skips the writes entirely when the row
+  // is already read (defensive — Swipeable's leftThreshold combined with
+  // our renderLeft={undefined} on read rows already prevents this, but
+  // a no-op guard here keeps a future regression from spamming Firestore).
+  const onMarkRead = useCallback((ids: string[]) => {
+    if (!user?.uid || ids.length === 0) return;
+    void Haptics.selectionAsync();
+    const idSet = new Set(ids);
+    setData((prev) => {
+      if (!prev) return prev;
+      if (!prev.some((n) => idSet.has(n.id) && !n.read)) return prev;
+      return prev.map((n) => idSet.has(n.id) ? { ...n, read: true } : n);
+    });
+    for (const id of ids) markNotificationRead(user.uid, id).catch(() => {});
+  }, [user?.uid, setData]);
+
   const onDismiss = useCallback((ids: string[]) => {
     if (!user?.uid || ids.length === 0) return;
     const idSet = new Set(ids);
@@ -774,6 +951,7 @@ export default function NotificationsScreen() {
                 myUid={user.uid}
                 onOpen={onOpen}
                 onDismiss={() => onDismiss(item.groupIds ?? [item.id])}
+                onMarkRead={() => onMarkRead(item.groupIds ?? [item.id])}
                 styles={styles}
                 colors={colors}
               />

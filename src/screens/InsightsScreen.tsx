@@ -4,6 +4,7 @@ import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
+import { FishingRefreshControl } from '../components/FishingRefreshControl';
 
 import { catchesStore } from '../storage/storage';
 import type { Catch } from '../types';
@@ -36,10 +37,27 @@ function InsightRow({ icon, label, value, sub }: { icon: string; label: string; 
 export default function InsightsScreen() {
   const { colors } = useTheme();
   const [catches, setCatches] = useState<Catch[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
 
   useFocusEffect(useCallback(() => {
     catchesStore.list().then(setCatches).catch(() => {});
   }, []));
+
+  // Manual refresh — useful after the user adds a new catch via Logbook
+  // and returns here expecting the insights to update. The focus effect
+  // already re-runs on tab focus, but pull-to-refresh gives the explicit
+  // "I want this updated NOW" affordance every other list screen has.
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const list = await catchesStore.list();
+      setCatches(list);
+    } catch {
+      /* best-effort — keep showing stale data on read failure */
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
 
   const insights = useMemo(() => {
     if (catches.length < 3) return null;
@@ -166,7 +184,10 @@ export default function InsightsScreen() {
 
   return (
     <Screen padded={false}>
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}>
+      <ScrollView
+        contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}
+        refreshControl={<FishingRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
         <Text style={{ ...typography.h2, color: colors.text, marginBottom: spacing.lg }}>Инсайти</Text>
 
         <Text style={{ ...typography.caption, color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 1.2, fontFamily: 'Nunito_700Bold' }}>

@@ -82,6 +82,13 @@ service cloud.firestore {
         allow read, write: if isSelf(userId);
       }
 
+      /** Заглушени актьори — собственикът контролира кои потребители
+          могат да го известяват с push. Cloud Function чете това при
+          fan-out; никой друг няма достъп. */
+      match /mutedActors/{actorUid} {
+        allow read, write: if isSelf(userId);
+      }
+
       /** Private user data (push token, etc.) — only the owner can read or write. */
       match /private/{document} {
         allow read, write: if isSelf(userId);

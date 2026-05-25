@@ -2009,6 +2009,26 @@ export default function ProfileScreen() {
                     }}
                     showDivider
                   />
+                  {user ? (
+                    <MenuRow
+                      dense
+                      icon="eye-outline"
+                      title="Виж как ме виждат другите"
+                      onPress={() => {
+                        setSettingsOpen(false);
+                        // Opens THIS user's own public profile screen so they
+                        // can audit what strangers see (avatar, name, bio,
+                        // city, catches grid, follower count). Cheap trust
+                        // signal — eliminates the "wait, what's actually on
+                        // my profile?" question without making them sign out.
+                        (navigation as any).navigate('UserPublicProfile', {
+                          uid: user.uid,
+                          displayName: user.displayName ?? '',
+                        });
+                      }}
+                      showDivider
+                    />
+                  ) : null}
                   <MenuRow dense icon="people-outline" title="Приятели" onPress={() => { setSettingsOpen(false); navigation.navigate('Friends'); }} showDivider />
                   <MenuRow dense icon="people-circle-outline" title="Клубове" onPress={() => { setSettingsOpen(false); navigation.navigate('Groups'); }} showDivider />
                   <MenuRow dense icon="chatbubbles-outline" title="Съобщения" onPress={() => { setSettingsOpen(false); navigation.navigate('Chats'); }} showDivider />

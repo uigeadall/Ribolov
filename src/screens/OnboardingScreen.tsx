@@ -26,6 +26,12 @@ type Slide = {
   accent: string;
 };
 
+// Three slides instead of four — the previous "social" and "map" slides
+// described separate features but most users absorbed them as a single
+// "the rest of the app" concept. Merging them shaves ~5 seconds off the
+// onboarding flow without losing meaningful information. The social
+// preview (real public-catch cards) stays on the merged slide via the
+// `previewCatches` hook below; the map prose just appends to the body.
 const SLIDES: Slide[] = [
   {
     key: 'welcome',
@@ -44,16 +50,9 @@ const SLIDES: Slide[] = [
   {
     key: 'social',
     icon: 'newspaper',
-    title: 'Лента на общността',
-    body: 'Виж улови от истински рибари, харесвай, коментирай и участвай в класирания.',
+    title: 'Общност и карта',
+    body: 'Виж улови от истински рибари, харесвай и участвай в класирания. Над 300 язовира и реки с прогноза за 7 дни и фаза на луната.',
     accent: '#2E9B5A',
-  },
-  {
-    key: 'map',
-    icon: 'map',
-    title: 'Карта и прогноза',
-    body: 'Стотици язовири и реки с риболовен индекс, прогноза за 7 дни и фаза на луната.',
-    accent: '#093545',
   },
 ];
 

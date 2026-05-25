@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, Switch, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
+import { View, Text, Switch, StyleSheet, Pressable, ActivityIndicator, Platform } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import Toast from 'react-native-toast-message';
@@ -18,11 +19,39 @@ type Prefs = {
   storyReactions: boolean;
   mentions: boolean;
   tournamentReminders: boolean;
+  // Quiet hours — mirrors the server-side NotifPrefs shape in
+  // functions/src/index.ts. When enabled, push notifications between
+  // [start:00] and [end:00] in the user's timezone are silently dropped;
+  // the Firestore notification doc is still written so the inbox stays
+  // accurate.
+  quietHoursEnabled: boolean;
+  quietHoursStart: number; // 0-23
+  quietHoursEnd: number;   // 0-23
+  timezone: string;        // IANA, e.g. 'Europe/Sofia'
 };
 
-const DEFAULT_PREFS: Prefs = { likes: true, comments: true, follows: true, messages: true, storyReactions: true, mentions: true, tournamentReminders: true };
+const DEFAULT_PREFS: Prefs = {
+  likes: true,
+  comments: true,
+  follows: true,
+  messages: true,
+  storyReactions: true,
+  mentions: true,
+  tournamentReminders: true,
+  quietHoursEnabled: false,
+  quietHoursStart: 22,
+  quietHoursEnd: 7,
+  // Resolve the device's IANA timezone at load time. Without this the
+  // Cloud Function falls back to Europe/Sofia which is correct for ~95%
+  // of users but breaks for anglers abroad.
+  timezone: Intl?.DateTimeFormat?.()?.resolvedOptions?.()?.timeZone ?? 'Europe/Sofia',
+};
 
-type Row = { key: keyof Prefs; icon: string; label: string; sub: string };
+// Narrow the row key to ONLY the boolean prefs — the new non-boolean
+// quiet-hours fields (start/end/timezone) have their own dedicated UI
+// further down and shouldn't be rendered through the toggle template.
+type BoolPrefKey = 'likes' | 'comments' | 'follows' | 'messages' | 'storyReactions' | 'mentions' | 'tournamentReminders';
+type Row = { key: BoolPrefKey; icon: string; label: string; sub: string };
 
 // Grouped by conceptual category so a 7-row list reads as 3 small,
 // scannable sections instead of a single flat scroll. Order within each
@@ -70,16 +99,17 @@ export default function NotificationPreferencesScreen() {
       .finally(() => setLoading(false));
   }, [user]);
 
-  const toggle = async (key: keyof Prefs) => {
+  // Generic prefs writer — handles both boolean toggles and numeric quiet-
+  // hours fields with the same optimistic-update-then-write pattern.
+  // Rollback on failure so the UI doesn't lie. Captures the FULL previous
+  // prefs so rolling back is one assignment regardless of which field
+  // changed.
+  const updatePrefs = async (patch: Partial<Prefs>) => {
     if (!user) return;
     const firestore = ensureFirebase()?.db;
     if (!firestore) return;
-    // Capture previous state so a failed write can be rolled back. The old
-    // code swallowed errors and left the UI lying — toggle visually OFF
-    // while the server still held ON. Next mount would silently revert
-    // because the read-back from Firestore was the source of truth.
     const previous = prefs;
-    const next = { ...prefs, [key]: !prefs[key] };
+    const next = { ...prefs, ...patch };
     setPrefs(next);
     setSaving(true);
     try {
@@ -96,6 +126,14 @@ export default function NotificationPreferencesScreen() {
       setSaving(false);
     }
   };
+
+  const toggle = (key: 'likes' | 'comments' | 'follows' | 'messages' | 'storyReactions' | 'mentions' | 'tournamentReminders') =>
+    updatePrefs({ [key]: !prefs[key] } as Partial<Prefs>);
+
+  // Time-picker modal state — null when closed, 'start' / 'end' when open.
+  // iOS uses the inline spinner; Android pops the native dialog one-shot.
+  const [pickingHour, setPickingHour] = useState<'start' | 'end' | null>(null);
+  const formatHour = (h: number) => `${String(h).padStart(2, '0')}:00`;
 
   // Use theme tokens so a future accent palette change applies here too —
   // earlier these were hardcoded hex which drifted from the rest of the
@@ -119,7 +157,8 @@ export default function NotificationPreferencesScreen() {
           <ActivityIndicator color={colors.primary} />
         </View>
       ) : (
-        SECTIONS.map((section) => (
+        <>
+        {SECTIONS.map((section) => (
           <View key={section.title} style={{ marginBottom: spacing.lg }}>
             {/* Section header — small uppercase label with letter-spacing,
                 same pattern Apple Settings uses for grouped lists. Reads
@@ -158,7 +197,111 @@ export default function NotificationPreferencesScreen() {
               ))}
             </View>
           </View>
-        ))
+        ))}
+
+        {/* ── Quiet hours ──
+            Sits below the category list because it cuts ACROSS categories:
+            disables every push during the window, regardless of which
+            type is being sent. Visual treatment matches the section
+            headers above. */}
+        <View style={{ marginBottom: spacing.lg }}>
+          <Text style={{
+            fontSize: 11,
+            fontFamily: 'Nunito_700Bold',
+            letterSpacing: 0.8,
+            textTransform: 'uppercase',
+            color: colors.textMuted,
+            paddingHorizontal: spacing.xl + spacing.sm,
+            paddingBottom: 6,
+          }}>
+            Тихи часове
+          </Text>
+          <View style={{ marginHorizontal: spacing.xl, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: cardBorder, backgroundColor: cardBg }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: 14, gap: 12 }}>
+              <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: colors.primarySurface, alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="moon-outline" size={18} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontFamily: 'Nunito_700Bold', color: colors.text }}>Не ме безпокой</Text>
+                <Text style={{ fontSize: 11, fontFamily: 'Nunito_400Regular', color: colors.textMuted, marginTop: 1 }}>
+                  Известията остават в приложението, но няма да получаваш push.
+                </Text>
+              </View>
+              <Switch
+                value={prefs.quietHoursEnabled}
+                onValueChange={(v) => void updatePrefs({ quietHoursEnabled: v })}
+                trackColor={{ false: mode === 'dark' ? '#1A3050' : '#E0E8F0', true: colors.primary + '88' }}
+                thumbColor={prefs.quietHoursEnabled ? colors.primary : (mode === 'dark' ? '#3A5070' : '#C0D0E0')}
+              />
+            </View>
+            {prefs.quietHoursEnabled ? (
+              <>
+                <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: cardBorder, marginLeft: 54 }} />
+                <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: 14, gap: 12 }}>
+                  <View style={{ width: 34, height: 34 }} />
+                  <Text style={{ flex: 1, fontSize: 14, fontFamily: 'Nunito_600SemiBold', color: colors.text }}>Начало</Text>
+                  <Pressable
+                    onPress={() => setPickingHour('start')}
+                    hitSlop={8}
+                    style={{ paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: 8, backgroundColor: colors.primarySurface }}
+                  >
+                    <Text style={{ fontSize: 14, fontFamily: 'Nunito_700Bold', color: colors.primary }}>{formatHour(prefs.quietHoursStart)}</Text>
+                  </Pressable>
+                </View>
+                <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: cardBorder, marginLeft: 54 }} />
+                <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: 14, gap: 12 }}>
+                  <View style={{ width: 34, height: 34 }} />
+                  <Text style={{ flex: 1, fontSize: 14, fontFamily: 'Nunito_600SemiBold', color: colors.text }}>Край</Text>
+                  <Pressable
+                    onPress={() => setPickingHour('end')}
+                    hitSlop={8}
+                    style={{ paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: 8, backgroundColor: colors.primarySurface }}
+                  >
+                    <Text style={{ fontSize: 14, fontFamily: 'Nunito_700Bold', color: colors.primary }}>{formatHour(prefs.quietHoursEnd)}</Text>
+                  </Pressable>
+                </View>
+              </>
+            ) : null}
+          </View>
+        </View>
+
+        {/* Time-picker. Modal-style on Android (one-shot dialog), inline
+            on iOS where the spinner is the native pattern. We seed the
+            picker with a Date object whose hour matches the current value
+            and ignore minutes/seconds on the way back out — the stored
+            field is whole hours only. */}
+        {pickingHour ? (
+          <DateTimePicker
+            value={(() => {
+              const d = new Date();
+              d.setHours(pickingHour === 'start' ? prefs.quietHoursStart : prefs.quietHoursEnd, 0, 0, 0);
+              return d;
+            })()}
+            mode="time"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={(_, picked) => {
+              const closing = Platform.OS === 'android'; // Android picker dismisses itself
+              if (picked) {
+                const hour = picked.getHours();
+                void updatePrefs(
+                  pickingHour === 'start'
+                    ? { quietHoursStart: hour }
+                    : { quietHoursEnd: hour },
+                );
+              }
+              if (closing) setPickingHour(null);
+            }}
+          />
+        ) : null}
+        {pickingHour && Platform.OS === 'ios' ? (
+          <Pressable
+            onPress={() => setPickingHour(null)}
+            style={{ marginHorizontal: spacing.xl, marginTop: spacing.sm, paddingVertical: 12, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center' }}
+          >
+            <Text style={{ fontSize: 15, fontFamily: 'Nunito_700Bold', color: '#fff' }}>Готово</Text>
+          </Pressable>
+        ) : null}
+        </>
       )}
       <View style={{ height: spacing.xxl }} />
     </Screen>
