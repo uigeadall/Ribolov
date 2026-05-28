@@ -3,10 +3,6 @@
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
-  "storage": {
-    "rules": "storage.rules",
-    "bucket": "ribolov-4ef41.firebasestorage.app"
-  },
   "functions": [
     {
       "source": "functions",

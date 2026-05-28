@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   SectionList,
   Pressable,
   TextInput,
@@ -13,6 +12,7 @@ import {
   Modal,
   Share,
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import AsyncStorage from '../storage/kv';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -444,40 +444,43 @@ export default function LogbookScreen() {
   const [pendingDelete, setPendingDelete] = useState<Catch | null>(null);
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Track the previous signed-in uid so we can detect a TRUE sign-out
+  // (had a user → now don't) vs the "never signed in" state common on
+  // APK sideloads where the user opens Logbook before authenticating.
+  // Previous version wiped items whenever `!user`, which made the entire
+  // logbook appear empty on the APK because Logbook is designed to work
+  // locally with or without auth — most users on a fresh install have
+  // local catches but no Firebase account yet.
+  const prevUserUidRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!user) {
-      // On sign-out: drop the prior user's catches from memory and clear
-      // the tab badge so it doesn't keep counting "unsynced" entries that
-      // wipeAllLocalAppData has already removed from storage.
-      //
-      // EACH setState below is guarded against a no-op call. Without
-      // these guards, `setItems([])` creates a NEW empty array reference
-      // on every fire — since `items` is in the dep array, the effect
-      // re-fires immediately, calls setItems([]) again, and infinite-
-      // loops with "Maximum update depth exceeded". This was latent for
-      // signed-in users (the !user branch never ran for them) but
-      // immediately bit anyone using Logbook signed out — Logbook is
-      // designed to work locally with or without auth, so this path is
-      // common, not edge-case.
-      if (items.length > 0) setItems([]);
-      navigation.getParent()?.setOptions({ tabBarBadge: undefined });
-      // Cancel any in-flight undo-delete timer left over from the previous
-      // user. If we don't, the timer fires after signout and calls
-      // deleteCatchEverywhere(catchId, prevUserUid) while the NEXT user is
-      // signed in — Firestore denies the write (rules require
-      // request.auth.uid == ownerUid), so the doc orphans and we get a
-      // mystery cloud-only catch that no one can clean up. Same risk for
-      // the pending-delete state visible in the undo toast — it would
-      // briefly show across the signout boundary if we didn't clear it.
+    const currentUid = user?.uid ?? null;
+    const hadUser = prevUserUidRef.current !== null;
+    const isSignedOut = currentUid === null;
+
+    if (hadUser && isSignedOut) {
+      // Sign-out cleanup: drop transient UI state (pending undo, tab badge)
+      // but keep `items` — local catches survive sign-out now, and the same
+      // user signing back in expects to see their logbook intact. Wiping
+      // items here would create a flash of "no catches" before the next
+      // focus reload restores them.
+      if (pendingDelete !== null) setPendingDelete(null);
       if (undoTimerRef.current) {
         clearTimeout(undoTimerRef.current);
         undoTimerRef.current = null;
       }
-      if (pendingDelete !== null) setPendingDelete(null);
-      return;
+      navigation.getParent()?.setOptions({ tabBarBadge: undefined });
+    } else if (currentUid !== null) {
+      // Signed in — refresh the tab badge to show the count of unsynced
+      // catches (zero hides the badge).
+      const unsynced = items.filter((c) => !c.syncedToCloud).length;
+      navigation.getParent()?.setOptions({ tabBarBadge: unsynced > 0 ? unsynced : undefined });
     }
-    const unsynced = items.filter((c) => !c.syncedToCloud).length;
-    navigation.getParent()?.setOptions({ tabBarBadge: unsynced > 0 ? unsynced : undefined });
+    // The "never signed in" case (hadUser=false, isSignedOut=true) is a
+    // deliberate no-op — local catches stay on screen, no badge work
+    // needed since the parent navigator handles the unauthenticated
+    // tab badge state directly.
+
+    prevUserUidRef.current = currentUid;
   }, [items, user, navigation, pendingDelete]);
 
   const [refreshing, setRefreshing] = useState(false);
@@ -1132,18 +1135,14 @@ export default function LogbookScreen() {
             />
           </ScrollView>
         ) : gridView ? (
-          <FlatList
+          <FlashList
             key="grid"
             data={filtered}
             keyExtractor={(item) => item.id}
             numColumns={2}
-            removeClippedSubviews={Platform.OS === 'android'}
             contentContainerStyle={{ paddingHorizontal: spacing.sm, paddingBottom: bottomPad + 8 }}
             ListHeaderComponent={<View style={{ paddingHorizontal: spacing.sm, paddingTop: spacing.sm }}>{ResultsHeader}</View>}
             refreshControl={<FishingRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-            maxToRenderPerBatch={10}
-            windowSize={5}
-            initialNumToRender={10}
             {...keyboardAwareScrollProps}
             renderItem={renderCatchItem}
           />

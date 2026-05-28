@@ -29,6 +29,9 @@ import AsyncStorage from '../storage/kv';
 import * as Location from 'expo-location';
 import { catchesStore } from '../storage/storage';
 
+// Eagerly-loaded screens — first-paint path or hot navigation targets.
+// Everything else uses `getComponent` lower down for code-splitting via
+// Metro's lazy-require handling.
 import HomeScreen from '../screens/HomeScreen';
 import LogbookScreen from '../screens/LogbookScreen';
 import AddCatchScreen from '../screens/AddCatchScreen';
@@ -37,47 +40,19 @@ import PostDetailScreen from '../screens/PostDetailScreen';
 import MapScreen from '../screens/MapScreen';
 import SpeciesScreen from '../screens/SpeciesScreen';
 import SpeciesDetailScreen from '../screens/SpeciesDetailScreen';
-import RegulationsScreen from '../screens/RegulationsScreen';
 import GearScreen from '../screens/GearScreen';
 import ProfileScreen from '../screens/ProfileScreen';
-import StatsScreen from '../screens/StatsScreen';
 import AuthScreen from '../screens/AuthScreen';
 import FeedScreen from '../screens/FeedScreen';
 import FriendsScreen from '../screens/FriendsScreen';
-import TournamentsScreen from '../screens/TournamentsScreen';
-import TournamentDetailScreen from '../screens/TournamentDetailScreen';
-import CreateTournamentScreen from '../screens/CreateTournamentScreen';
-import AchievementsScreen from '../screens/AchievementsScreen';
-import KnotsScreen from '../screens/KnotsScreen';
-import KnotDetailScreen from '../screens/KnotDetailScreen';
-import WeightCalcScreen from '../screens/WeightCalcScreen';
-import TripsScreen from '../screens/TripsScreen';
-import TripDetailScreen from '../screens/TripDetailScreen';
-import InsightsScreen from '../screens/InsightsScreen';
 import ClassicsScreen from '../screens/ClassicsScreen';
 import ChatsScreen from '../screens/ChatsScreen';
 import ChatDetailScreen from '../screens/ChatDetailScreen';
-import LegalInfoScreen from '../screens/LegalInfoScreen';
 import LeaderboardScreen from '../screens/LeaderboardScreen';
 import UserPublicProfileScreen from '../screens/UserPublicProfileScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
 import SavedPostsScreen from '../screens/SavedPostsScreen';
 import { ErrorBoundary } from '../components/ErrorBoundary';
-import SearchScreen from '../screens/SearchScreen';
-import PersonalBestsScreen from '../screens/PersonalBestsScreen';
-import GroupsScreen from '../screens/GroupsScreen';
-import GroupDetailScreen from '../screens/GroupDetailScreen';
-import CreateGroupScreen from '../screens/CreateGroupScreen';
-import CreateGroupEventScreen from '../screens/CreateGroupEventScreen';
-import CreateGroupPollScreen from '../screens/CreateGroupPollScreen';
-import ExploreScreen from '../screens/ExploreScreen';
-import CreatePostScreen from '../screens/CreatePostScreen';
-import HashtagFeedScreen from '../screens/HashtagFeedScreen';
-import SpeciesTargetScreen from '../screens/SpeciesTargetScreen';
-import PhotoGalleryScreen from '../screens/PhotoGalleryScreen';
-import TripPlannerScreen from '../screens/TripPlannerScreen';
-import NotificationPreferencesScreen from '../screens/NotificationPreferencesScreen';
-import AppIconPickerScreen from '../screens/AppIconPickerScreen';
 
 const wrap = (label: string, Component: React.ComponentType<any>) => (props: any) =>
   (
@@ -111,7 +86,7 @@ function LogbookNavigator() {
         <LogbookStack.Screen name="LogbookList" component={LogbookScreen} />
         <LogbookStack.Screen name="AddCatch" component={AddCatchScreen} />
         <LogbookStack.Screen name="CatchDetail" component={CatchDetailScreen} />
-        <LogbookStack.Screen name="PhotoGallery" component={PhotoGalleryScreen} />
+        <LogbookStack.Screen name="PhotoGallery" getComponent={() => require('../screens/PhotoGalleryScreen').default} />
       </LogbookStack.Navigator>
     </ErrorBoundary>
   );
@@ -123,12 +98,12 @@ function SpeciesNavigator() {
       <SpeciesStack.Navigator screenOptions={{ headerShown: false }}>
         <SpeciesStack.Screen name="SpeciesList" component={SpeciesScreen} />
         <SpeciesStack.Screen name="SpeciesDetail" component={SpeciesDetailScreen} />
-        <SpeciesStack.Screen name="SpeciesTarget" component={SpeciesTargetScreen} />
-        <SpeciesStack.Screen name="Regulations" component={RegulationsScreen} />
+        <SpeciesStack.Screen name="SpeciesTarget" getComponent={() => require('../screens/SpeciesTargetScreen').default} />
+        <SpeciesStack.Screen name="Regulations" getComponent={() => require('../screens/RegulationsScreen').default} />
         <SpeciesStack.Screen name="Gear" component={GearScreen} />
-        <SpeciesStack.Screen name="Knots" component={KnotsScreen} />
-        <SpeciesStack.Screen name="KnotDetail" component={KnotDetailScreen} />
-        <SpeciesStack.Screen name="WeightCalc" component={WeightCalcScreen} />
+        <SpeciesStack.Screen name="Knots" getComponent={() => require('../screens/KnotsScreen').default} />
+        <SpeciesStack.Screen name="KnotDetail" getComponent={() => require('../screens/KnotDetailScreen').default} />
+        <SpeciesStack.Screen name="WeightCalc" getComponent={() => require('../screens/WeightCalcScreen').default} />
       </SpeciesStack.Navigator>
     </ErrorBoundary>
   );
@@ -145,9 +120,9 @@ function FeedNavigator() {
       <FeedStack.Screen name="Notifications" component={NotificationsWrapped} />
       <FeedStack.Screen name="Auth" component={AuthScreenWrapped} />
       <FeedStack.Screen name="Friends" component={FriendsScreenWrapped} />
-      <FeedStack.Screen name="Explore" component={ExploreScreen} />
-      <FeedStack.Screen name="CreatePost" component={CreatePostScreen} />
-      <FeedStack.Screen name="HashtagFeed" component={HashtagFeedScreen} />
+      <FeedStack.Screen name="Explore" getComponent={() => require('../screens/ExploreScreen').default} />
+      <FeedStack.Screen name="CreatePost" getComponent={() => require('../screens/CreatePostScreen').default} />
+      <FeedStack.Screen name="HashtagFeed" getComponent={() => require('../screens/HashtagFeedScreen').default} />
     </FeedStack.Navigator>
   );
 }
@@ -159,33 +134,33 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="ProfileMain" component={ProfileScreen} />
       <ProfileStack.Screen name="CatchDetail" component={CatchDetailScreen} />
       <ProfileStack.Screen name="Notifications" component={NotificationsWrapped} />
-      <ProfileStack.Screen name="Stats" component={StatsScreen} />
+      <ProfileStack.Screen name="Stats" getComponent={() => require('../screens/StatsScreen').default} />
       <ProfileStack.Screen name="Auth" component={AuthScreenWrapped} />
       <ProfileStack.Screen name="Feed" component={FeedScreenWrapped} />
       <ProfileStack.Screen name="SavedPosts" component={SavedPostsWrapped} />
       <ProfileStack.Screen name="Friends" component={FriendsScreenWrapped} />
-      <ProfileStack.Screen name="Tournaments" component={TournamentsScreen} />
-      <ProfileStack.Screen name="TournamentDetail" component={TournamentDetailScreen} />
-      <ProfileStack.Screen name="CreateTournament" component={CreateTournamentScreen} />
-      <ProfileStack.Screen name="Achievements" component={AchievementsScreen} />
-      <ProfileStack.Screen name="Trips" component={TripsScreen} />
-      <ProfileStack.Screen name="TripDetail" component={TripDetailScreen} />
-      <ProfileStack.Screen name="TripPlanner" component={TripPlannerScreen} />
-      <ProfileStack.Screen name="Insights" component={InsightsScreen} />
+      <ProfileStack.Screen name="Tournaments" getComponent={() => require('../screens/TournamentsScreen').default} />
+      <ProfileStack.Screen name="TournamentDetail" getComponent={() => require('../screens/TournamentDetailScreen').default} />
+      <ProfileStack.Screen name="CreateTournament" getComponent={() => require('../screens/CreateTournamentScreen').default} />
+      <ProfileStack.Screen name="Achievements" getComponent={() => require('../screens/AchievementsScreen').default} />
+      <ProfileStack.Screen name="Trips" getComponent={() => require('../screens/TripsScreen').default} />
+      <ProfileStack.Screen name="TripDetail" getComponent={() => require('../screens/TripDetailScreen').default} />
+      <ProfileStack.Screen name="TripPlanner" getComponent={() => require('../screens/TripPlannerScreen').default} />
+      <ProfileStack.Screen name="Insights" getComponent={() => require('../screens/InsightsScreen').default} />
       <ProfileStack.Screen name="Leaderboard" component={LeaderboardScreenWrapped} />
       <ProfileStack.Screen name="Classics" component={ClassicsScreenWrapped} />
       <ProfileStack.Screen name="Chats" component={ChatsScreen} />
       <ProfileStack.Screen name="ChatDetail" component={ChatDetailScreen} />
-      <ProfileStack.Screen name="LegalInfo" component={LegalInfoScreen} />
+      <ProfileStack.Screen name="LegalInfo" getComponent={() => require('../screens/LegalInfoScreen').default} />
       <ProfileStack.Screen name="Species" component={SpeciesNavigator} />
-      <ProfileStack.Screen name="PersonalBests" component={PersonalBestsScreen} />
-      <ProfileStack.Screen name="Groups" component={GroupsScreen} />
-      <ProfileStack.Screen name="GroupDetail" component={GroupDetailScreen} />
-      <ProfileStack.Screen name="CreateGroup" component={CreateGroupScreen} />
-      <ProfileStack.Screen name="CreateGroupEvent" component={CreateGroupEventScreen} />
-      <ProfileStack.Screen name="CreateGroupPoll" component={CreateGroupPollScreen} />
-      <ProfileStack.Screen name="NotificationPreferences" component={NotificationPreferencesScreen} />
-      <ProfileStack.Screen name="AppIconPicker" component={AppIconPickerScreen} />
+      <ProfileStack.Screen name="PersonalBests" getComponent={() => require('../screens/PersonalBestsScreen').default} />
+      <ProfileStack.Screen name="Groups" getComponent={() => require('../screens/GroupsScreen').default} />
+      <ProfileStack.Screen name="GroupDetail" getComponent={() => require('../screens/GroupDetailScreen').default} />
+      <ProfileStack.Screen name="CreateGroup" getComponent={() => require('../screens/CreateGroupScreen').default} />
+      <ProfileStack.Screen name="CreateGroupEvent" getComponent={() => require('../screens/CreateGroupEventScreen').default} />
+      <ProfileStack.Screen name="CreateGroupPoll" getComponent={() => require('../screens/CreateGroupPollScreen').default} />
+      <ProfileStack.Screen name="NotificationPreferences" getComponent={() => require('../screens/NotificationPreferencesScreen').default} />
+      <ProfileStack.Screen name="AppIconPicker" getComponent={() => require('../screens/AppIconPickerScreen').default} />
     </ProfileStack.Navigator>
     </ErrorBoundary>
   );
@@ -424,7 +399,25 @@ function TabNavigator() {
         component={ProfileNavigator}
         options={{ title: 'Профил', tabBarBadge: profileBadge > 0 ? profileBadge : undefined }}
         listeners={({ navigation }) => ({
-          tabPress: (e) => { e.preventDefault(); navigation.navigate('ProfileTab', { screen: 'ProfileMain' }); },
+          tabPress: (e) => {
+            e.preventDefault();
+            // Skip the intermediate "guest profile" screen when not signed in
+            // — it only ever rendered a "Вход / Регистрация" button, which is
+            // exactly what Auth itself is. Route there directly instead so
+            // tapping Профил from a signed-out state opens the form, not a
+            // useless splash. Signed-in users continue to land on ProfileMain.
+            //
+            // `Auth` is NOT on the root stack — it's registered inside both
+            // ProfileStack and FeedStack (see lines ~121 and ~138). From the
+            // tab-level navigator we have to drill into the nested ProfileTab
+            // stack to find it; a bare navigate('Auth') from this scope fails
+            // with "screen not handled by any navigator".
+            if (!user) {
+              navigation.navigate('ProfileTab', { screen: 'Auth' });
+              return;
+            }
+            navigation.navigate('ProfileTab', { screen: 'ProfileMain' });
+          },
         })}
       />
     </Tabs.Navigator>
@@ -491,8 +484,12 @@ export function RootNavigator() {
         <RootStack.Screen name="UserPublicProfile" component={UserPublicProfileWrapped} />
         <RootStack.Screen
           name="Search"
-          component={SearchScreen}
+          getComponent={() => require('../screens/SearchScreen').default}
           options={{ presentation: 'modal' }}
+        />
+        <RootStack.Screen
+          name="WaterDetail"
+          getComponent={() => require('../screens/WaterDetailScreen').default}
         />
       </RootStack.Navigator>
     </NavigationContainer>

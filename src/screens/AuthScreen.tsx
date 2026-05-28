@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TextInput, KeyboardAvoidingView, Platform, Alert, Pressable, ActivityIndicator, ScrollView } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -380,7 +381,10 @@ export default function AuthScreen() {
             <View style={styles.segmented}>
               <Pressable
                 style={[styles.segmentedItem, authMode === 'login' && styles.segmentedItemActive, busy && { opacity: 0.6 }]}
-                onPress={() => switchMode('login')}
+                onPress={() => {
+                  void Haptics.selectionAsync();
+                  switchMode('login');
+                }}
                 disabled={busy}
               >
                 <Text style={[styles.segmentedText, authMode === 'login' && styles.segmentedTextActive]}>
@@ -389,7 +393,10 @@ export default function AuthScreen() {
               </Pressable>
               <Pressable
                 style={[styles.segmentedItem, authMode === 'register' && styles.segmentedItemActive, busy && { opacity: 0.6 }]}
-                onPress={() => switchMode('register')}
+                onPress={() => {
+                  void Haptics.selectionAsync();
+                  switchMode('register');
+                }}
                 disabled={busy}
               >
                 <Text style={[styles.segmentedText, authMode === 'register' && styles.segmentedTextActive]}>
@@ -480,7 +487,10 @@ export default function AuthScreen() {
             </View>
 
             <Pressable
-              onPress={submit}
+              onPress={() => {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                submit();
+              }}
               disabled={busy}
               style={({ pressed }) => [styles.primaryBtn, (pressed || busy) && { opacity: 0.85 }]}
             >

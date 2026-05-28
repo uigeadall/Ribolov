@@ -36,6 +36,7 @@ import { formatTimeAgo } from '../utils/formatCatchDate';
 import { useAvatarUrl } from '../hooks/useAvatarUrl';
 import { ReactionPicker } from './ReactionPicker';
 import { useFeedPostSocial } from '../hooks/useFeedPostSocial';
+import { useFeedItemVisibility } from '../hooks/useFeedItemVisibility';
 import { ImageViewer } from './ImageViewer';
 import { SharePickerModal, buildCatchSharedRef } from './SharePickerModal';
 import { CommentLikeButton } from './CommentLikeButton';
@@ -165,7 +166,14 @@ type Props = {
   onPressMention?: (handle: string) => void;
 };
 
-function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarUrl, socialEnabled, isVisible = true, onPressAuthor, onPressCatch, onDeletePhoto, onRemovePost, onReshare, onPressHashtag, onPressMention }: Props) {
+function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarUrl, socialEnabled, isVisible: isVisibleProp, onPressAuthor, onPressCatch, onDeletePhoto, onRemovePost, onReshare, onPressHashtag, onPressMention }: Props) {
+  // Visibility resolution: when rendered inside FeedScreen the prop is
+  // undefined and we read live visibility from the pub-sub. When rendered
+  // outside the feed list (e.g. catch detail), the parent passes
+  // `isVisible={true}` explicitly so we don't subscribe to a pub-sub that
+  // has no entries for this id.
+  const pubSubVisible = useFeedItemVisibility(item.id);
+  const isVisible = isVisibleProp !== undefined ? isVisibleProp : pubSubVisible;
   const { colors, mode } = useTheme();
   const styles = useMemo(() => feedStyles(colors), [colors]);
   const { width: screenWidth } = useWindowDimensions();
@@ -212,7 +220,7 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
     resolvedAvatarUrl, ownerPhotoUrl: item.ownerPhotoUrl,
   });
 
-  const social = useFeedPostSocial({ item, myUid, myDisplayName, ownerName, socialEnabled, isVisible });
+  const social = useFeedPostSocial({ item, myUid, myDisplayName, ownerName, socialEnabled, isVisible, commentsOpen });
   const reactionScale = useRef(new Animated.Value(1)).current;
 
   // The shared ReactionPicker owns its own enter/exit animation now;
@@ -378,7 +386,14 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
               )}
               <View style={styles.avatar}>
                 {avatarUrl ? (
-                  <Image source={{ uri: getImageVariant(avatarUrl, ImageSize.avatar) ?? avatarUrl }} style={styles.avatarImg} contentFit="cover" cachePolicy="memory-disk" />
+                  <Image
+                    source={{ uri: getImageVariant(avatarUrl, ImageSize.avatar) ?? avatarUrl }}
+                    style={styles.avatarImg}
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                    transition={200}
+                    recyclingKey={avatarUrl}
+                  />
                 ) : (
                   <Text style={styles.avatarText}>{initials}</Text>
                 )}
@@ -435,6 +450,8 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                       style={StyleSheet.absoluteFillObject}
                       contentFit="cover"
                       cachePolicy="memory-disk"
+                      transition={250}
+                      recyclingKey={item.id}
                       onError={(e) => setImageError(e?.error ?? 'unknown')}
                     />
                     {/* Double-tap heart + bookmark — kept on the primary page only. */}
@@ -475,6 +492,8 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                       style={StyleSheet.absoluteFillObject}
                       contentFit="cover"
                       cachePolicy="memory-disk"
+                      transition={250}
+                      recyclingKey={`${item.id}-extra-${i}`}
                     />
                   </View>
                 </Pressable>
@@ -624,6 +643,8 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                   style={StyleSheet.absoluteFillObject}
                   contentFit="cover"
                   cachePolicy="memory-disk"
+                  transition={250}
+                  recyclingKey={item.id}
                   onError={(e) => {
                     const message = e?.error ?? 'unknown';
                     if (__DEV__) {
@@ -861,11 +882,15 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                 </Pressable>
               ) : null}
 
-              {/* View all comments tap */}
-              {social.allComments.length > 0 && !commentsOpen && (
+              {/* "View all comments" uses the denormalized commentCount —
+                  it's accurate without us subscribing to the comments
+                  subcollection on every visible card. The actual comment
+                  list only loads after the user taps to expand (commentsOpen
+                  toggles the subscription in useFeedPostSocial). */}
+              {social.commentCount > 0 && !commentsOpen && (
                 <Pressable style={styles.viewCommentsBtn} onPress={() => setCommentsOpen(true)}>
                   <Text style={styles.viewCommentsText}>
-                    Виж всички {social.allComments.length} {social.allComments.length === 1 ? 'коментар' : 'коментара'}
+                    Виж всички {social.commentCount} {social.commentCount === 1 ? 'коментар' : 'коментара'}
                   </Text>
                 </Pressable>
               )}

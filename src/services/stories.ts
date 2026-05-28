@@ -13,12 +13,10 @@ import {
   where,
   limit,
 } from 'firebase/firestore';
-import { ref, getDownloadURL, deleteObject } from 'firebase/storage';
-import { uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
 import { requireFirebase } from './firebase';
-import { getFirebaseWebConfig } from './firebaseConfig';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
 import { allowComment, allowStoryPost } from './socialRateLimit';
+import { uploadImageToR2, uploadVideoToR2, deleteFromR2 } from './r2Upload';
 
 const TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -57,45 +55,28 @@ export type StoryComment = {
   createdAt?: unknown;
 };
 
-/** Качва снимка или видео в Firebase Storage под stories/{uid}/.
-    Returns both the download URL and the storage path. The caller needs the
-    path so it can call `deleteStoryMedia` if the subsequent Firestore write
-    fails — otherwise the file is orphaned in Storage forever. */
+/** Качва снимка или видео в R2 под stories/{uid}/.
+    Returns both the public CDN URL and the R2 object key. The caller needs
+    the key so it can call `deleteStoryMedia` if the subsequent Firestore
+    write fails — otherwise the file is orphaned in R2 forever. */
 export async function uploadStoryMedia(
   localUri: string,
   uid: string,
   type: 'photo' | 'video'
 ): Promise<{ url: string; storagePath: string }> {
-  const fb = requireFirebase();
-  const ext = type === 'video' ? 'mp4' : 'jpg';
-  const contentType = type === 'video' ? 'video/mp4' : 'image/jpeg';
-  const storagePath = `stories/${uid}/${Date.now()}.${ext}`;
-
-  const token = await fb.auth.currentUser?.getIdToken();
-  if (!token) throw new Error('Не е влезено в акаунт.');
-  const { storageBucket } = getFirebaseWebConfig();
-  const result = await uploadAsync(
-    `https://firebasestorage.googleapis.com/v0/b/${storageBucket}/o?uploadType=media&name=${encodeURIComponent(storagePath)}`,
-    localUri,
-    {
-      httpMethod: 'POST',
-      uploadType: FileSystemUploadType.BINARY_CONTENT,
-      headers: { 'Content-Type': contentType, Authorization: `Bearer ${token}` },
-    },
-  );
-  if (result.status < 200 || result.status >= 300) {
-    throw new Error(`Upload failed (${result.status}): ${result.body.slice(0, 200)}`);
+  if (type === 'video') {
+    const path = `stories/${uid}/${Date.now()}.mp4`;
+    return uploadVideoToR2(localUri, path);
   }
-  const url = await getDownloadURL(ref(fb.storage, storagePath));
-  return { url, storagePath };
+  const path = `stories/${uid}/${Date.now()}.jpg`;
+  return uploadImageToR2(localUri, path);
 }
 
-/** Delete a previously-uploaded story media file from Storage. Used by the
+/** Delete a previously-uploaded story media file from R2. Used by the
     composer to clean up after a failed addStory write. Best-effort —
     swallows errors since orphan cleanup is non-critical. */
 export async function deleteStoryMedia(storagePath: string): Promise<void> {
-  const fb = requireFirebase();
-  await deleteObject(ref(fb.storage, storagePath)).catch(() => {});
+  await deleteFromR2(storagePath);
 }
 
 export async function addStory(s: Omit<Story, 'id' | 'createdAt' | 'expiresAt'>): Promise<void> {
@@ -184,20 +165,10 @@ export function subscribeStories(onNext: (stories: Story[]) => void): () => void
 
 export async function deleteStory(storyId: string): Promise<void> {
   const fb = requireFirebase();
-  const snap = await getDoc(doc(fb.db, 'stories', storyId));
-  const mediaUrl = snap.exists() ? (snap.data()?.mediaUrl as string | undefined) : undefined;
-  // Delete Storage object FIRST. If we deleted the doc first and the Storage
-  // delete then failed (caught silently), the file would orphan forever — no
-  // doc references it for any future cleanup pass. By doing Storage first
-  // and the doc second, a Storage failure leaves the doc intact so the user
-  // can retry deletion later; a doc failure after Storage succeeded just
-  // means a tombstone we can clean up via TTL.
-  if (mediaUrl && mediaUrl.includes('firebasestorage.googleapis.com')) {
-    try {
-      const match = decodeURIComponent(mediaUrl).match(/\/o\/([^?]+)/);
-      if (match?.[1]) await deleteObject(ref(fb.storage, match[1]));
-    } catch { /* file may already be gone */ }
-  }
+  // R2 media + reactions/comments cleanup is now done by the `onStoryDeleted`
+  // Cloud Function trigger, which fires for every deletion path (user delete,
+  // TTL sweep, account cascade). The client just nukes the parent doc — the
+  // server handles the rest, so user-delete and TTL-delete share one code path.
   await deleteDoc(doc(fb.db, 'stories', storyId));
 }
 

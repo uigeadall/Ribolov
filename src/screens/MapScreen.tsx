@@ -18,13 +18,11 @@ import {
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { Ionicons } from '@expo/vector-icons';
 import { useRoute, useFocusEffect } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Screen } from '../components/Screen';
 import { Button } from '../components/Button';
 import { LeafletMap, LeafletMapHandle, LeafletMapType } from '../components/LeafletMap';
 import { NativeMapView } from '../components/NativeMapView';
@@ -45,33 +43,18 @@ import {
   type LiveFishingPin,
 } from '../services/liveFishingPins';
 import { ensureDirectConversation } from '../services/cloudSync';
-import { DAMS, Dam } from '../data/dams';
-import { RIVERS, River } from '../data/rivers';
-import { fetchWeather, windDirectionLabel, WeatherSnapshot } from '../services/weather';
+import { DAMS } from '../data/dams';
+import { RIVERS } from '../data/rivers';
+import { fetchWeather, WeatherSnapshot } from '../services/weather';
 import { TabsParamList } from '../navigation/types';
 import { DamPicker } from '../components/DamPicker';
-import { ForecastStrip } from '../components/ForecastStrip';
-import { DamFeedSection } from '../components/DamFeedSection';
 import { useAuth } from '../services/authContext';
 import { WeatherIcon } from '../components/WeatherIcon';
 import { StarRatingBar } from '../components/StarRatingBar';
-import { fetchDrivingRoutePoints } from '../services/osrmRoute';
-import { openDrivingDirections } from '../utils/openDrivingDirections';
-import { BiteForecast } from '../components/BiteForecast';
-import {
-  getWaterReports,
-  addWaterReport,
-  CONDITION_LABELS,
-  type WaterCondition,
-  type WaterReport,
-} from '../services/fishingReports';
-import { getDamLevel, type DamLevel } from '../services/damLevels';
 import { handleError } from '../utils/handleError';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 import Toast from 'react-native-toast-message';
-import type { User } from 'firebase/auth';
 
-type SelectedWater = { kind: 'dam'; item: Dam } | { kind: 'river'; item: River };
 type WeatherCacheEntry = { data: WeatherSnapshot; fetchedAt: number };
 
 const WEATHER_TTL_MS = 30 * 60 * 1000;
@@ -146,20 +129,12 @@ export default function MapScreen() {
   // a fresh newId() so without this guard two taps create TWO duplicate
   // spots at the same coordinates.
   const spotSavingRef = useRef(false);
-  // Generation counter for in-app route fetches. Each openInAppRouteToWater
-  // call bumps it + captures the local value; when the OSRM fetch resolves
-  // we compare against the current ref. A user who tapped "Маршрут" for
-  // dam A, then closed that sheet and tapped dam B before A's fetch
-  // returned, would otherwise see A's route painted (and B's sheet closed)
-  // out from under them.
-  const routeRequestIdRef = useRef(0);
   // Same synchronous-guard pattern as spotSavingRef. The button-level
-  // `disabled` props use React state (reportSaving, liveSaving,
-  // togglingFavorite) which lags one render — a sub-frame double tap
-  // slips through and fires two writes. The favorite-toggle case is
-  // especially nasty: two rapid taps toggle the bit twice, ending in
-  // the same state the user started in (silent failure of intent).
-  const reportSavingRef = useRef(false);
+  // `disabled` props use React state (liveSaving, togglingFavorite) which
+  // lags one render — a sub-frame double tap slips through and fires two
+  // writes. The favorite-toggle case is especially nasty: two rapid taps
+  // toggle the bit twice, ending in the same state the user started in
+  // (silent failure of intent).
   const liveSavingRef = useRef(false);
   const favoriteTogglingRef = useRef(false);
   const [name, setName] = useState('');
@@ -171,22 +146,11 @@ export default function MapScreen() {
   const [showDams, setShowDams] = useState(true);
   const [showRivers, setShowRivers] = useState(true);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
-  const [selectedWater, setSelectedWater] = useState<SelectedWater | null>(null);
   const [routeLine, setRouteLine] = useState<{ latitude: number; longitude: number }[] | null>(null);
-  const [routeLoading, setRouteLoading] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [damWeather, setDamWeather] = useState<WeatherSnapshot | null>(null);
-  const [damWeatherStatus, setDamWeatherStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const weatherCacheRef = useRef<Record<string, WeatherCacheEntry>>({});
   const { user, configured } = useAuth();
   const [hintVisible, setHintVisible] = useState(true);
-  const [waterReports, setWaterReports] = useState<WaterReport[]>([]);
-  const [reportSheetOpen, setReportSheetOpen] = useState(false);
-  const [reportActivity, setReportActivity] = useState(3);
-  const [reportCondition, setReportCondition] = useState<WaterCondition>('clear');
-  const [reportNote, setReportNote] = useState('');
-  const [reportSaving, setReportSaving] = useState(false);
-  const [damLevel, setDamLevel] = useState<DamLevel | null>(null);
   const [spotWeather, setSpotWeather] = useState<WeatherSnapshot | null>(null);
   const [spotWeatherLoading, setSpotWeatherLoading] = useState(false);
   const [catchMarkers, setCatchMarkers] = useState<CatchMapMarker[]>([]);
@@ -210,10 +174,6 @@ export default function MapScreen() {
   // Spot DM-share — when set, SharePickerModal opens with this spot's SharedRef.
   // Cleared when the picker closes (regardless of whether the user actually sent).
   const [shareSpotRef, setShareSpotRef] = useState<Spot | null>(null);
-  // Same as above but for water bodies (dams / rivers). They share the modal
-  // but have a different source type, so we track them separately to keep
-  // the SharedRef builder calls type-safe.
-  const [shareWaterRef, setShareWaterRef] = useState<SelectedWater | null>(null);
 
   // Live "fishing here right now" pins
   const [livePins, setLivePins] = useState<LiveFishingPin[]>([]);
@@ -363,7 +323,6 @@ export default function MapScreen() {
     const t = setTimeout(() => {
       mapRef.current?.flyTo(d.latitude, d.longitude, 12);
       setRouteLine(null);
-      setSelectedWater({ kind: 'dam', item: d });
       navigation.setParams({ focusDamId: undefined });
     }, 400);
     return () => clearTimeout(t);
@@ -376,7 +335,6 @@ export default function MapScreen() {
     const t = setTimeout(() => {
       mapRef.current?.flyTo(r.latitude, r.longitude, 12);
       setRouteLine(null);
-      setSelectedWater({ kind: 'river', item: r });
       navigation.setParams({ focusRiverId: undefined });
     }, 400);
     return () => clearTimeout(t);
@@ -563,54 +521,6 @@ export default function MapScreen() {
   }, [myActivePin]);
 
   useEffect(() => {
-    if (!selectedWater) {
-      setWaterReports([]);
-      return;
-    }
-    getWaterReports(selectedWater.item.id)
-      .then(setWaterReports)
-      .catch(() => {});
-    if (selectedWater.kind === 'dam') {
-      getDamLevel(selectedWater.item.id)
-        .then(setDamLevel)
-        .catch(() => {});
-    } else {
-      setDamLevel(null);
-    }
-  }, [selectedWater]);
-
-  useEffect(() => {
-    if (!selectedWater) {
-      setDamWeather(null);
-      setDamWeatherStatus('idle');
-      return;
-    }
-    const { item } = selectedWater;
-    const cached = weatherCacheRef.current[item.id];
-    if (cached && Date.now() - cached.fetchedAt < WEATHER_TTL_MS) {
-      setDamWeather(cached.data);
-      setDamWeatherStatus('idle');
-      return;
-    }
-    let cancelled = false;
-    setDamWeather(null);
-    setDamWeatherStatus('loading');
-    fetchWeather(item.latitude, item.longitude)
-      .then((w) => {
-        if (cancelled) return;
-        weatherCacheRef.current[item.id] = { data: w, fetchedAt: Date.now() };
-        setDamWeather(w);
-        setDamWeatherStatus('idle');
-      })
-      .catch(() => {
-        if (!cancelled) setDamWeatherStatus('error');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedWater]);
-
-  useEffect(() => {
     if (!selected) {
       setSpotWeather(null);
       return;
@@ -691,18 +601,16 @@ export default function MapScreen() {
 
   const onDamPress = (id: string) => {
     const d = DAMS.find((x) => x.id === id);
-    if (d) {
-      setRouteLine(null);
-      setSelectedWater({ kind: 'dam', item: d });
-    }
+    if (!d) return;
+    setRouteLine(null);
+    navigation.navigate('WaterDetail', { kind: 'dam', id: d.id });
   };
 
   const onRiverPress = (id: string) => {
     const r = RIVERS.find((x) => x.id === id);
-    if (r) {
-      setRouteLine(null);
-      setSelectedWater({ kind: 'river', item: r });
-    }
+    if (!r) return;
+    setRouteLine(null);
+    navigation.navigate('WaterDetail', { kind: 'river', id: r.id });
   };
 
   const saveMapPos = useCallback((lat: number, lng: number, zoom: number) => {
@@ -714,52 +622,8 @@ export default function MapScreen() {
     saveMapPos(s.latitude, s.longitude, 13);
   };
 
-  const flyToWaterBody = useCallback(
-    (lat: number, lng: number) => {
-      mapRef.current?.flyTo(lat, lng, 12);
-      saveMapPos(lat, lng, 12);
-      setSelectedWater(null);
-    },
-    []
-  );
-
-  const saveWaterBodyAsFavorite = useCallback(
-    async (kind: 'dam' | 'river', item: Dam | River) => {
-      const existing = spots.find(
-        (s) =>
-          Math.abs(s.latitude - item.latitude) < 0.001 &&
-          Math.abs(s.longitude - item.longitude) < 0.001
-      );
-      if (existing) {
-        if (!existing.isFavorite) {
-          const updated = await spotsStore.toggleFavorite(existing.id);
-          setSpots(updated);
-        }
-      } else {
-        const spot: Spot = {
-          id: newId(),
-          name: item.name,
-          latitude: item.latitude,
-          longitude: item.longitude,
-          description: item.description,
-          waterType: kind === 'dam' ? 'dam' : 'river',
-          createdAt: new Date().toISOString(),
-          isFavorite: true,
-        };
-        const updated = await spotsStore.save(spot);
-        setSpots(updated);
-      }
-      setSelectedWater(null);
-      setShowFavoritesOnly(true);
-      mapRef.current?.flyTo(item.latitude, item.longitude, 12);
-      Toast.show({ type: 'success', text1: 'Запазен в любими', text2: `„${item.name}“ е добавен в любимите ти спотове.`, visibilityTime: 2500 });
-    },
-    [spots]
-  );
-
   const recordCatchAt = useCallback(
     (target: { latitude: number; longitude: number; name: string }) => {
-      setSelectedWater(null);
       setSelected(null);
       navigation.navigate('LogbookTab', {
         screen: 'AddCatch',
@@ -784,123 +648,6 @@ export default function MapScreen() {
       Alert.alert('Локация', 'Неуспешно засичане на текущата позиция. Опитай отново.');
     }
   };
-
-  const openInAppRouteToWater = useCallback(async () => {
-    if (!selectedWater) return;
-    // Capture the dam we're routing TO so we can verify the user is still on
-    // the same sheet when OSRM responds. Without this, a slow response can
-    // paint a stale route + close a sheet the user opened after switching
-    // dams.
-    const requestedWater = selectedWater;
-    const requestId = ++routeRequestIdRef.current;
-    setRouteLoading(true);
-    try {
-      let origin = userCoord;
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === 'granted') {
-          const loc = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
-          });
-          origin = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
-          setUserCoord(origin);
-        }
-      } catch {
-        /* Use last known position if GPS lookup fails */
-      }
-      if (!origin) {
-        Alert.alert(
-          'Локация',
-          'За маршрут в приложението е нужна текуща позиция. Натисни бутона за локация на картата или разреши GPS.'
-        );
-        return;
-      }
-      const pts = await fetchDrivingRoutePoints(origin, {
-        latitude: requestedWater.item.latitude,
-        longitude: requestedWater.item.longitude,
-      });
-      // Bail if the user has since fired a different route fetch OR closed
-      // the sheet for `requestedWater` (or moved to a different dam). Either
-      // condition means this response is stale.
-      if (requestId !== routeRequestIdRef.current) return;
-      setRouteLine(pts);
-      // Only auto-close the sheet if it's still showing the same dam we
-      // routed to — preserves UX when the user moved on.
-      setSelectedWater((curr) => (curr === requestedWater ? null : curr));
-    } catch {
-      // Don't show the error if a newer route request superseded this one;
-      // the newer one will handle its own outcome.
-      if (requestId === routeRequestIdRef.current) {
-        Alert.alert(
-          'Маршрут',
-          'Неуспешно изчисляване по пътища. Провери интернет или опитай навигация във външно приложение.'
-        );
-      }
-    } finally {
-      if (requestId === routeRequestIdRef.current) {
-        setRouteLoading(false);
-      }
-    }
-  }, [selectedWater, userCoord]);
-
-  const openExternalDrivingRouteToWater = useCallback(async () => {
-    if (!selectedWater) return;
-    let origin = userCoord;
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === 'granted') {
-        const loc = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-        origin = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
-        setUserCoord(origin);
-      }
-    } catch {
-      /* use last known position */
-    }
-    await openDrivingDirections(
-      { latitude: selectedWater.item.latitude, longitude: selectedWater.item.longitude },
-      { origin }
-    );
-  }, [selectedWater, userCoord]);
-
-  const handleOpenLeaderboard = useCallback(() => {
-    if (!selectedWater) return;
-    const kind = selectedWater.kind;
-    const id = selectedWater.item.id;
-    setSelectedWater(null);
-    navigation.navigate('ProfileTab', {
-      screen: 'Leaderboard',
-      params: kind === 'dam' ? { damId: id } : { riverId: id },
-    });
-  }, [selectedWater, navigation]);
-
-  const handleSubmitReport = useCallback(async () => {
-    if (!selectedWater || !user || reportSavingRef.current) return;
-    reportSavingRef.current = true;
-    setReportSaving(true);
-    try {
-      await addWaterReport({
-        waterBodyId: selectedWater.item.id,
-        waterBodyKind: selectedWater.kind,
-        waterBodyName: selectedWater.item.name,
-        reporterUid: user.uid,
-        reporterName: user.displayName ?? 'Рибар',
-        fishingActivity: reportActivity,
-        waterCondition: reportCondition,
-        note: reportNote.trim() || undefined,
-      });
-      const fresh = await getWaterReports(selectedWater.item.id);
-      setWaterReports(fresh);
-      setReportSheetOpen(false);
-      setReportNote('');
-    } catch (e) {
-      handleError(e);
-    } finally {
-      reportSavingRef.current = false;
-      setReportSaving(false);
-    }
-  }, [selectedWater, user, reportActivity, reportCondition, reportNote]);
 
   const handleToggleFavorite = useCallback(async () => {
     if (!selected || favoriteTogglingRef.current) return;
@@ -1155,8 +902,7 @@ export default function MapScreen() {
         onSelect={(pick) => {
           setPickerOpen(false);
           setRouteLine(null);
-          mapRef.current?.flyTo(pick.item.latitude, pick.item.longitude, 12);
-          setSelectedWater(pick);
+          navigation.navigate('WaterDetail', { kind: pick.kind, id: pick.item.id });
         }}
       />
 
@@ -1172,49 +918,6 @@ export default function MapScreen() {
         onChangeWaterType={setWaterType}
         onClose={() => setPendingCoord(null)}
         onSave={saveSpot}
-      />
-
-      <WaterBodySheet
-        selectedWater={selectedWater}
-        damWeather={damWeather}
-        damWeatherStatus={damWeatherStatus}
-        waterReports={waterReports}
-        reportSheetOpen={reportSheetOpen}
-        reportActivity={reportActivity}
-        reportCondition={reportCondition}
-        reportNote={reportNote}
-        reportSaving={reportSaving}
-        damLevel={damLevel}
-        routeLoading={routeLoading}
-        user={user}
-        firebaseConfigured={configured}
-        colors={colors}
-        onClose={() => setSelectedWater(null)}
-        onSaveAsFavorite={() =>
-          selectedWater && void saveWaterBodyAsFavorite(selectedWater.kind, selectedWater.item)
-        }
-        onShowOnMap={() =>
-          selectedWater &&
-          flyToWaterBody(selectedWater.item.latitude, selectedWater.item.longitude)
-        }
-        onRecordCatch={() =>
-          selectedWater &&
-          recordCatchAt({
-            latitude: selectedWater.item.latitude,
-            longitude: selectedWater.item.longitude,
-            name: selectedWater.item.name,
-          })
-        }
-        onOpenInAppRoute={() => void openInAppRouteToWater()}
-        onExternalRoute={() => void openExternalDrivingRouteToWater()}
-        onOpenLeaderboard={handleOpenLeaderboard}
-        onShareToFriend={() => { if (selectedWater) setShareWaterRef(selectedWater); }}
-        onOpenReportSheet={() => setReportSheetOpen(true)}
-        onCloseReportSheet={() => setReportSheetOpen(false)}
-        onReportActivityChange={setReportActivity}
-        onReportConditionChange={setReportCondition}
-        onReportNoteChange={setReportNote}
-        onSubmitReport={() => void handleSubmitReport()}
       />
 
       <SpotSheet
@@ -1239,23 +942,6 @@ export default function MapScreen() {
           visible
           onClose={() => setShareSpotRef(null)}
           sharedRef={buildSpotSharedRef(shareSpotRef)}
-        />
-      )}
-
-      {/* Same picker for water bodies — uses the spot SharedRef shape (id,
-          name, waterType, lat/lng) so the chat-side renderer doesn't need a
-          new kind. Subtitle becomes "Язовир" / "Река" for receiver context. */}
-      {shareWaterRef && (
-        <SharePickerModal
-          visible
-          onClose={() => setShareWaterRef(null)}
-          sharedRef={buildSpotSharedRef({
-            id: shareWaterRef.item.id,
-            name: shareWaterRef.item.name,
-            waterType: shareWaterRef.kind === 'dam' ? 'Язовир' : 'Река',
-            latitude: shareWaterRef.item.latitude,
-            longitude: shareWaterRef.item.longitude,
-          })}
         />
       )}
 
@@ -1825,626 +1511,6 @@ const NewSpotModal = React.memo(function NewSpotModal({
   );
 });
 
-type WaterBodySheetProps = {
-  selectedWater: SelectedWater | null;
-  damWeather: WeatherSnapshot | null;
-  damWeatherStatus: 'idle' | 'loading' | 'error';
-  waterReports: WaterReport[];
-  reportSheetOpen: boolean;
-  reportActivity: number;
-  reportCondition: WaterCondition;
-  reportNote: string;
-  reportSaving: boolean;
-  damLevel: DamLevel | null;
-  routeLoading: boolean;
-  user: User | null;
-  firebaseConfigured: boolean;
-  colors: AppColors;
-  onClose: () => void;
-  onSaveAsFavorite: () => void;
-  onShowOnMap: () => void;
-  onRecordCatch: () => void;
-  onOpenInAppRoute: () => void;
-  onExternalRoute: () => void;
-  onOpenLeaderboard: () => void;
-  onShareToFriend: () => void;
-  onOpenReportSheet: () => void;
-  onCloseReportSheet: () => void;
-  onReportActivityChange: (n: number) => void;
-  onReportConditionChange: (c: WaterCondition) => void;
-  onReportNoteChange: (s: string) => void;
-  onSubmitReport: () => void;
-};
-
-const WaterBodySheet = React.memo(function WaterBodySheet({
-  selectedWater,
-  damWeather,
-  damWeatherStatus,
-  waterReports,
-  reportSheetOpen,
-  reportActivity,
-  reportCondition,
-  reportNote,
-  reportSaving,
-  damLevel,
-  routeLoading,
-  user,
-  firebaseConfigured,
-  colors,
-  onClose,
-  onSaveAsFavorite,
-  onShowOnMap,
-  onRecordCatch,
-  onOpenInAppRoute,
-  onExternalRoute,
-  onOpenLeaderboard,
-  onShareToFriend,
-  onOpenReportSheet,
-  onCloseReportSheet,
-  onReportActivityChange,
-  onReportConditionChange,
-  onReportNoteChange,
-  onSubmitReport,
-}: WaterBodySheetProps) {
-  const styles = useMemo(() => createMapStyles(colors), [colors]);
-  const sheetPanY = useRef(new Animated.Value(0)).current;
-  // Section navigator — track each section header's Y position so the chip
-  // row at the top can scroll the user straight to e.g. "Рапорти" without
-  // them having to swipe past everything else first.
-  const scrollRef = useRef<ScrollView | null>(null);
-  const sectionYRef = useRef<Record<string, number>>({});
-  const onSectionLayout = useCallback((key: string) => (e: { nativeEvent: { layout: { y: number } } }) => {
-    sectionYRef.current[key] = e.nativeEvent.layout.y;
-  }, []);
-  const scrollToSection = useCallback((key: string) => {
-    const y = sectionYRef.current[key];
-    if (y == null) return;
-    // Subtract a little so the section title isn't pinned right to the top.
-    scrollRef.current?.scrollTo({ y: Math.max(0, y - 12), animated: true });
-  }, []);
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_, g) => g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx),
-      onPanResponderMove: (_, g) => { if (g.dy > 0) sheetPanY.setValue(g.dy); },
-      onPanResponderRelease: (_, g) => {
-        if (g.dy > 80 || g.vy > 0.5) {
-          Animated.timing(sheetPanY, { toValue: 700, duration: 200, useNativeDriver: true }).start(() => {
-            sheetPanY.setValue(0);
-            onClose();
-          });
-        } else {
-          Animated.spring(sheetPanY, { toValue: 0, useNativeDriver: true, speed: 30, bounciness: 0 }).start();
-        }
-      },
-    })
-  ).current;
-  const headerColor = selectedWater?.kind === 'river' ? '#2E9B5A' : '#0E4D64';
-  return (
-    <Modal
-      visible={!!selectedWater}
-      animationType="slide"
-      transparent
-      onRequestClose={onClose}
-    >
-      <View style={{ flex: 1 }}>
-        <Pressable
-          style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.overlay }]}
-          onPress={onClose}
-          accessibilityRole="button"
-          accessibilityLabel="Затвори панела за водоема"
-        />
-        <View style={styles.damModalWrap} pointerEvents="box-none">
-          <Animated.View style={[styles.modal, styles.damModal, { transform: [{ translateY: sheetPanY }] }]}>
-            <View {...panResponder.panHandlers} style={{ alignItems: 'center', paddingTop: spacing.sm, paddingBottom: spacing.sm }}>
-              <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border }} />
-            </View>
-            <ScrollView
-              ref={scrollRef}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: spacing.xxl + 24 }}
-            >
-              {selectedWater ? (
-                <>
-                  <LinearGradient
-                    colors={[headerColor, headerColor + '44']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={{ borderRadius: radius.md, padding: spacing.sm, marginBottom: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}
-                  >
-                    <Ionicons
-                      name={selectedWater?.kind === 'river' ? 'git-branch-outline' : 'layers-outline'}
-                      size={18}
-                      color={colors.white}
-                    />
-                    <Text style={{ ...typography.small, color: colors.white, fontWeight: '700', opacity: 0.9 }}>
-                      {selectedWater?.kind === 'river' ? 'Река' : 'Язовир'}
-                    </Text>
-                  </LinearGradient>
-                  <View style={styles.damHeader}>
-                    <View
-                      style={[
-                        styles.damBadge,
-                        selectedWater.kind === 'river' && { backgroundColor: '#2E9B5A' },
-                      ]}
-                    >
-                      <Ionicons
-                        name={
-                          selectedWater.kind === 'river' ? 'git-branch-outline' : 'layers-outline'
-                        }
-                        size={22}
-                        color={colors.white}
-                      />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.modalTitle}>{selectedWater.item.name}</Text>
-                      <Text style={styles.modalSub}>
-                        {selectedWater.kind === 'river' ? 'Река' : 'Язовир'} ·{' '}
-                        {selectedWater.item.region}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {selectedWater.item.description ? (
-                    <Text style={styles.modalDesc}>{selectedWater.item.description}</Text>
-                  ) : null}
-
-                  <View style={styles.damMetaRow}>
-                    {selectedWater.kind === 'dam' && selectedWater.item.area ? (
-                      <View style={[styles.damMetaChip, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}>
-                        <Ionicons name="resize-outline" size={14} color={colors.textMuted} />
-                        <Text style={styles.damMetaText}>{selectedWater.item.area}</Text>
-                      </View>
-                    ) : null}
-                    {selectedWater.kind === 'dam' && selectedWater.item.altitude ? (
-                      <View style={[styles.damMetaChip, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}>
-                        <Ionicons name="triangle-outline" size={14} color={colors.textMuted} />
-                        <Text style={styles.damMetaText}>{selectedWater.item.altitude} м</Text>
-                      </View>
-                    ) : null}
-                    {selectedWater.kind === 'river' && selectedWater.item.lengthKm ? (
-                      <View style={[styles.damMetaChip, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}>
-                        <Ionicons name="arrow-forward-outline" size={14} color={colors.textMuted} />
-                        <Text style={styles.damMetaText}>{selectedWater.item.lengthKm}</Text>
-                      </View>
-                    ) : null}
-                    {/* Dropped the raw "lat, lng" coordinate chip — it added no
-                        user value (the user is looking at the map; coords are
-                        already implicit) and crowded the row. */}
-                  </View>
-
-                  {/* Primary CTA, hoisted above the fold. The verb this screen
-                      exists to enable — was previously buried after ~1400pt of
-                      weather + reports + forecast + species + level scrolls. */}
-                  <Pressable
-                    onPress={onRecordCatch}
-                    style={({ pressed }) => [styles.primaryCta, pressed && { opacity: 0.85 }]}
-                  >
-                    <Ionicons name="fish" size={20} color="#fff" />
-                    <Text style={styles.primaryCtaText}>Запиши улов от тук</Text>
-                  </Pressable>
-
-                  {/* Secondary actions — compact icon pills, horizontal scroll. */}
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.pillRowContent}
-                  >
-                    <Pressable style={styles.iconPill} onPress={onSaveAsFavorite}>
-                      <Ionicons name="star-outline" size={18} color="#C49A00" />
-                      <Text style={styles.iconPillText}>Любими</Text>
-                    </Pressable>
-                    <Pressable style={styles.iconPill} onPress={onShowOnMap}>
-                      <Ionicons name="map-outline" size={18} color={colors.primary} />
-                      <Text style={styles.iconPillText}>На карта</Text>
-                    </Pressable>
-                    <Pressable
-                      style={[styles.iconPill, routeLoading && { opacity: 0.6 }]}
-                      onPress={onOpenInAppRoute}
-                      disabled={routeLoading}
-                    >
-                      {routeLoading
-                        ? <ActivityIndicator size="small" color={colors.primary} />
-                        : <Ionicons name="navigate-outline" size={18} color={colors.primary} />}
-                      <Text style={styles.iconPillText}>Маршрут</Text>
-                    </Pressable>
-                    <Pressable style={styles.iconPill} onPress={onExternalRoute}>
-                      <Ionicons name="open-outline" size={18} color={colors.primary} />
-                      <Text style={styles.iconPillText}>Навигация</Text>
-                    </Pressable>
-                    <Pressable style={styles.iconPill} onPress={onOpenLeaderboard}>
-                      <Ionicons name="trophy-outline" size={18} color="#C49A00" />
-                      <Text style={styles.iconPillText}>Класиране</Text>
-                    </Pressable>
-                    {/* DM the water body to a friend. Uses the existing spot
-                        SharedRef shape — receiver sees a 📍 card they can tap. */}
-                    <Pressable style={styles.iconPill} onPress={onShareToFriend}>
-                      <Ionicons name="paper-plane-outline" size={18} color={colors.primary} />
-                      <Text style={styles.iconPillText}>Сподели</Text>
-                    </Pressable>
-                  </ScrollView>
-
-                  {/* Section navigator — jumps to specific sections so users
-                      reading a long water body sheet (weather + photos +
-                      reports + forecast + species + level) don't have to swipe
-                      through everything they don't care about. */}
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingVertical: spacing.xs, gap: 6 }}
-                  >
-                    {[
-                      { key: 'weather', label: 'Време' },
-                      { key: 'photos', label: 'Снимки' },
-                      { key: 'reports', label: 'Рапорти' },
-                      { key: 'forecast', label: 'Прогноза' },
-                      ...(selectedWater.item.species.length > 0 ? [{ key: 'species', label: 'Видове' }] : []),
-                      ...(selectedWater.kind === 'dam' ? [{ key: 'level', label: 'Ниво' }] : []),
-                    ].map((s) => (
-                      <Pressable
-                        key={s.key}
-                        onPress={() => scrollToSection(s.key)}
-                        style={{
-                          paddingHorizontal: spacing.md,
-                          paddingVertical: 6,
-                          borderRadius: radius.pill,
-                          backgroundColor: colors.surfaceAlt,
-                          borderWidth: 1,
-                          borderColor: colors.border,
-                        }}
-                      >
-                        <Text style={{ ...typography.small, color: colors.text, fontWeight: '600' }}>{s.label}</Text>
-                      </Pressable>
-                    ))}
-                  </ScrollView>
-
-                  <Text style={styles.speciesTitle} onLayout={onSectionLayout('weather')}>Време сега</Text>
-                  {damWeatherStatus === 'loading' ? (
-                    <View style={[styles.weatherCard, styles.weatherCenter]}>
-                      <ActivityIndicator color={colors.primary} />
-                      <Text style={styles.weatherLoadingText}>Зарежда времето…</Text>
-                    </View>
-                  ) : damWeatherStatus === 'error' ? (
-                    <View style={[styles.weatherCard, styles.weatherCenter]}>
-                      <Text style={styles.weatherErrorText}>Няма връзка с прогнозата</Text>
-                    </View>
-                  ) : damWeather ? (
-                    <View style={styles.weatherCard}>
-                      <View style={styles.weatherTopRow}>
-                        <WeatherIcon weatherCode={damWeather.weatherCode} size={44} color={colors.primary} />
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.weatherTemp}>{damWeather.temperatureC}°C</Text>
-                          <Text style={styles.weatherDesc}>
-                            {damWeather.description} · усеща се {damWeather.feelsLikeC}°
-                          </Text>
-                        </View>
-                        <View style={styles.weatherRating}>
-                          <StarRatingBar
-                            rating={damWeather.fishingRating}
-                            color={colors.accent}
-                            emptyColor={colors.border}
-                            size={14}
-                          />
-                          <Text style={styles.weatherRatingLabel}>индекс</Text>
-                        </View>
-                      </View>
-                      <View style={styles.weatherDetailsRow}>
-                        <View style={styles.weatherDetail}>
-                          <Ionicons name="flag-outline" size={18} color={colors.textMuted} />
-                          <Text style={styles.weatherDetailValue}>
-                            {damWeather.windKmh} км/ч {windDirectionLabel(damWeather.windDirection)}
-                          </Text>
-                          <Text style={styles.weatherDetailLabel}>вятър</Text>
-                        </View>
-                        <View style={styles.weatherDetail}>
-                          <Ionicons name="speedometer-outline" size={18} color={colors.textMuted} />
-                          <Text style={styles.weatherDetailValue}>{damWeather.pressureHpa} hPa</Text>
-                          <Text style={styles.weatherDetailLabel}>налягане</Text>
-                        </View>
-                        <View style={styles.weatherDetail}>
-                          <Ionicons name="water-outline" size={18} color={colors.textMuted} />
-                          <Text style={styles.weatherDetailValue}>{damWeather.humidity}%</Text>
-                          <Text style={styles.weatherDetailLabel}>влажност</Text>
-                        </View>
-                      </View>
-                      <View style={[styles.weatherDetailsRow, { marginTop: spacing.sm, paddingTop: spacing.sm }]}>
-                        <View style={styles.weatherDetail}>
-                          <Ionicons name="rainy-outline" size={18} color={colors.textMuted} />
-                          <Text style={styles.weatherDetailValue}>
-                            {damWeather.precipitationProbability}%
-                          </Text>
-                          <Text style={styles.weatherDetailLabel}>дъжд</Text>
-                        </View>
-                        <View style={styles.weatherDetail}>
-                          <Ionicons name="sunny-outline" size={18} color={colors.textMuted} />
-                          <Text style={styles.weatherDetailValue}>UV {damWeather.uvIndex}</Text>
-                          <Text style={styles.weatherDetailLabel}>UV индекс</Text>
-                        </View>
-                        <View style={styles.weatherDetail}>
-                          <Ionicons name="cloud-outline" size={18} color={colors.textMuted} />
-                          <Text style={styles.weatherDetailValue}>{damWeather.cloudCover}%</Text>
-                          <Text style={styles.weatherDetailLabel}>облачност</Text>
-                        </View>
-                      </View>
-                      <View
-                        style={{
-                          marginTop: spacing.sm,
-                          paddingTop: spacing.sm,
-                          borderTopWidth: StyleSheet.hairlineWidth,
-                          borderTopColor: colors.border,
-                        }}
-                      >
-                        <Text style={{ ...typography.caption, color: colors.textMuted }}>
-                          {damWeather.moonPhaseName}
-                        </Text>
-                      </View>
-                    </View>
-                  ) : null}
-
-                  {damWeather ? <BiteForecast weather={damWeather} /> : null}
-
-                  {/* Community photos hoisted above reports/forecast/species —
-                      emotional content + social proof that anglers actually
-                      scroll for. Was buried at the bottom of the sheet.
-                      Wrapped in a View so the section navigator can scroll to it. */}
-                  <View onLayout={onSectionLayout('photos')}>
-                    <DamFeedSection
-                      damId={selectedWater.item.id}
-                      damName={selectedWater.item.name}
-                      user={user}
-                      firebaseConfigured={firebaseConfigured}
-                    />
-                  </View>
-
-                  <Text style={styles.speciesTitle} onLayout={onSectionLayout('reports')}>Рапорти от рибари</Text>
-                  {waterReports.length === 0 ? (
-                    <Text style={{ ...typography.caption, color: colors.textMuted, marginBottom: spacing.sm }}>
-                      Все още няма рапорти за последните 24 ч.
-                    </Text>
-                  ) : (
-                    waterReports.map((r) => (
-                      <View
-                        key={r.id}
-                        style={{
-                          backgroundColor: colors.surfaceAlt,
-                          borderRadius: radius.md,
-                          padding: spacing.sm,
-                          marginBottom: spacing.sm,
-                          borderWidth: 1,
-                          borderColor: colors.border,
-                        }}
-                      >
-                        <Text style={{ ...typography.bodyBold, color: colors.text, fontSize: 13 }}>
-                          {r.reporterName}
-                        </Text>
-                        <Text style={{ ...typography.small, color: colors.textMuted }}>
-                          {CONDITION_LABELS[r.waterCondition]} · {'⭐'.repeat(r.fishingActivity)}
-                        </Text>
-                        {r.note ? (
-                          <Text style={{ ...typography.small, color: colors.text, marginTop: 2 }}>
-                            {r.note}
-                          </Text>
-                        ) : null}
-                      </View>
-                    ))
-                  )}
-
-                  {user && firebaseConfigured ? (
-                    reportSheetOpen ? (
-                      <View
-                        style={{
-                          backgroundColor: colors.card,
-                          borderRadius: radius.md,
-                          padding: spacing.md,
-                          borderWidth: 1,
-                          borderColor: colors.border,
-                          marginBottom: spacing.sm,
-                        }}
-                      >
-                        <Text style={{ ...typography.bodyBold, color: colors.text, marginBottom: spacing.sm }}>
-                          Добави рапорт
-                        </Text>
-                        <Text style={{ ...typography.small, color: colors.textMuted, marginBottom: 4 }}>
-                          Активност (1-5)
-                        </Text>
-                        <View style={{ flexDirection: 'row', gap: spacing.xs, marginBottom: spacing.sm }}>
-                          {[1, 2, 3, 4, 5].map((n) => (
-                            <Pressable
-                              key={n}
-                              onPress={() => onReportActivityChange(n)}
-                              style={{
-                                width: 36,
-                                height: 36,
-                                borderRadius: 18,
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                backgroundColor:
-                                  n <= reportActivity ? colors.primary : colors.surfaceAlt,
-                                borderWidth: 1,
-                                borderColor: colors.border,
-                              }}
-                            >
-                              <Text
-                                style={{
-                                  color: n <= reportActivity ? colors.white : colors.text,
-                                  fontWeight: '700',
-                                }}
-                              >
-                                {n}
-                              </Text>
-                            </Pressable>
-                          ))}
-                        </View>
-                        <Text style={{ ...typography.small, color: colors.textMuted, marginBottom: 4 }}>
-                          Вода
-                        </Text>
-                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginBottom: spacing.sm }}>
-                          {(['crystal', 'clear', 'murky', 'muddy'] as WaterCondition[]).map((c) => (
-                            <Pressable
-                              key={c}
-                              onPress={() => onReportConditionChange(c)}
-                              style={{
-                                paddingHorizontal: spacing.sm,
-                                paddingVertical: 4,
-                                borderRadius: radius.pill,
-                                backgroundColor:
-                                  reportCondition === c ? colors.primary : colors.surfaceAlt,
-                                borderWidth: 1,
-                                borderColor: colors.border,
-                              }}
-                            >
-                              <Text
-                                style={{
-                                  ...typography.small,
-                                  color: reportCondition === c ? colors.white : colors.text,
-                                  fontWeight: '600',
-                                }}
-                              >
-                                {CONDITION_LABELS[c]}
-                              </Text>
-                            </Pressable>
-                          ))}
-                        </View>
-                        <TextInput
-                          placeholder="Бележка (по избор)"
-                          placeholderTextColor={colors.textMuted}
-                          value={reportNote}
-                          onChangeText={onReportNoteChange}
-                          style={{
-                            borderWidth: 1,
-                            borderColor: colors.border,
-                            borderRadius: radius.md,
-                            paddingHorizontal: spacing.md,
-                            paddingVertical: spacing.sm,
-                            color: colors.text,
-                            backgroundColor: colors.surfaceAlt,
-                            marginBottom: spacing.sm,
-                          }}
-                          maxLength={200}
-                        />
-                        <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-                          <Button
-                            title="Отказ"
-                            variant="ghost"
-                            compact
-                            onPress={onCloseReportSheet}
-                            style={{ flex: 1 }}
-                          />
-                          <Button
-                            title="Изпрати"
-                            compact
-                            loading={reportSaving}
-                            onPress={onSubmitReport}
-                            style={{ flex: 1 }}
-                          />
-                        </View>
-                      </View>
-                    ) : (
-                      <Pressable
-                        onPress={onOpenReportSheet}
-                        style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm }}
-                      >
-                        <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
-                        <Text style={{ ...typography.caption, color: colors.primary, fontWeight: '600' }}>
-                          Добави рапорт за{' '}
-                          {selectedWater.kind === 'dam' ? 'язовира' : 'реката'}
-                        </Text>
-                      </Pressable>
-                    )
-                  ) : null}
-
-                  <Text style={styles.speciesTitle} onLayout={onSectionLayout('forecast')}>Прогноза 7 дни</Text>
-                  <ForecastStrip
-                    latitude={selectedWater.item.latitude}
-                    longitude={selectedWater.item.longitude}
-                    cacheKey={selectedWater.item.id}
-                  />
-
-                  {selectedWater.item.species.length > 0 ? (
-                    <>
-                      <Text style={styles.speciesTitle} onLayout={onSectionLayout('species')}>Срещани видове</Text>
-                      <View style={styles.speciesRow}>
-                        {selectedWater.item.species.map((sp) => (
-                          <View key={sp} style={styles.speciesChip}>
-                            <Text style={styles.speciesText}>{sp}</Text>
-                          </View>
-                        ))}
-                      </View>
-                    </>
-                  ) : null}
-
-                  {damLevel ? (() => {
-                    // Tier the bar color by fill — low water dramatically
-                    // changes fishing, so the bar should communicate severity
-                    // at a glance rather than always being the primary accent.
-                    // <30% → danger, 30–60% → warning, 60+% → primary.
-                    const levelColor =
-                      damLevel.fillPercent < 30 ? '#E04A4A' :
-                      damLevel.fillPercent < 60 ? '#E8B923' :
-                      colors.primary;
-                    return (
-                    <>
-                      <Text style={styles.speciesTitle} onLayout={onSectionLayout('level')}>Ниво на язовира</Text>
-                      <View
-                        style={{
-                          backgroundColor: colors.primarySurface,
-                          borderRadius: radius.md,
-                          padding: spacing.md,
-                          borderWidth: 1,
-                          borderColor: colors.border,
-                          marginBottom: spacing.sm,
-                        }}
-                      >
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-                          <Ionicons name="water" size={22} color={levelColor} />
-                          <View style={{ flex: 1 }}>
-                            <Text style={{ ...typography.h2, color: levelColor }}>
-                              {damLevel.fillPercent}%
-                            </Text>
-                            <Text style={{ ...typography.caption, color: colors.textMuted }}>
-                              {damLevel.volumeMcm != null ? `${damLevel.volumeMcm} млн. м³ · ` : ''}
-                              актуализирано{' '}
-                              {new Date(damLevel.updatedAt).toLocaleDateString('bg-BG')}
-                            </Text>
-                          </View>
-                        </View>
-                        <View
-                          style={{
-                            height: 8,
-                            backgroundColor: colors.border,
-                            borderRadius: 4,
-                            marginTop: spacing.sm,
-                          }}
-                        >
-                          <View
-                            style={{
-                              height: 8,
-                              width: `${damLevel.fillPercent}%`,
-                              backgroundColor: levelColor,
-                              borderRadius: 4,
-                            }}
-                          />
-                        </View>
-                      </View>
-                    </>
-                    );
-                  })() : null}
-
-                  {/* Primary CTA + action pills moved up under the metadata
-                      row (line ~1953) so users hit the actions immediately
-                      instead of scrolling past weather/reports/forecast. */}
-                </>
-              ) : null}
-              {/* Standalone "Затвори" text removed — the drag handle is the
-                  affordance for closing the sheet. Removed both the visual
-                  noise and the overlap bug where the text collided with the
-                  last row of the old 3x2 action grid. */}
-            </ScrollView>
-          </Animated.View>
-        </View>
-      </View>
-    </Modal>
-  );
-});
 
 type SpotSheetProps = {
   spot: Spot | null;
@@ -2706,72 +1772,6 @@ function createMapStyles(colors: AppColors) {
     favToggleActive: { backgroundColor: '#C49A00', borderColor: '#C49A00' },
     damToggleText: { ...typography.small, color: colors.text, fontWeight: '600' },
     damToggleTextActive: { color: colors.white },
-    damHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.md,
-      marginBottom: spacing.md,
-    },
-    damBadge: {
-      width: 40,
-      height: 40,
-      borderRadius: 8,
-      backgroundColor: '#062D3D',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    damMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },
-    damMetaChip: {
-      backgroundColor: colors.card,
-      paddingHorizontal: spacing.md,
-      paddingVertical: 6,
-      borderRadius: radius.pill,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    damMetaText: { ...typography.caption, color: colors.text },
-    speciesTitle: {
-      ...typography.bodyBold,
-      color: colors.text,
-      marginTop: spacing.lg,
-      marginBottom: spacing.sm,
-    },
-    speciesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-    speciesChip: {
-      backgroundColor: colors.primarySurface,
-      paddingHorizontal: spacing.md,
-      paddingVertical: 6,
-      borderRadius: radius.pill,
-    },
-    speciesText: { ...typography.caption, color: colors.primary, fontWeight: '600' },
-    damModalWrap: { flex: 1, justifyContent: 'flex-end' },
-    damModal: { maxHeight: '85%' },
-    weatherCard: {
-      backgroundColor: colors.primarySurface,
-      borderRadius: radius.lg,
-      padding: spacing.md,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    weatherCenter: { alignItems: 'center', justifyContent: 'center', minHeight: 90 },
-    weatherLoadingText: { ...typography.caption, color: colors.textMuted, marginTop: spacing.sm },
-    weatherErrorText: { ...typography.body, color: colors.textMuted },
-    weatherTopRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-    weatherTemp: { ...typography.h1, color: colors.text },
-    weatherDesc: { ...typography.body, color: colors.textMuted },
-    weatherRating: { alignItems: 'flex-end' },
-    weatherRatingLabel: { ...typography.small, color: colors.textMuted },
-    weatherDetailsRow: {
-      flexDirection: 'row',
-      marginTop: spacing.md,
-      paddingTop: spacing.md,
-      borderTopWidth: 1,
-      borderTopColor: colors.border,
-      justifyContent: 'space-between',
-    },
-    weatherDetail: { alignItems: 'center', flex: 1 },
-    weatherDetailValue: { ...typography.bodyBold, color: colors.text, fontSize: 13 },
-    weatherDetailLabel: { ...typography.small, color: colors.textMuted, marginTop: 2 },
     fab: {
       position: 'absolute',
       right: spacing.lg,
@@ -2787,56 +1787,6 @@ function createMapStyles(colors: AppColors) {
       shadowRadius: 8,
       shadowOffset: { width: 0, height: 2 },
       elevation: 4,
-    },
-    searchFab: {
-      position: 'absolute',
-      right: spacing.lg,
-      bottom: 130 + 48 + spacing.md,
-      backgroundColor: '#062D3D',
-      paddingHorizontal: spacing.md,
-      height: 40,
-      borderRadius: 20,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 6,
-      shadowColor: '#000',
-      shadowOpacity: 0.18,
-      shadowRadius: 8,
-      shadowOffset: { width: 0, height: 2 },
-      elevation: 4,
-    },
-    searchFabText: { color: colors.white, ...typography.caption, fontWeight: '600' },
-    layersFab: {
-      position: 'absolute',
-      right: spacing.lg,
-      bottom: 130 + 48 + spacing.sm + 40 + spacing.sm,
-      backgroundColor: colors.white,
-      width: 48,
-      height: 48,
-      borderRadius: 24,
-      alignItems: 'center',
-      justifyContent: 'center',
-      shadowColor: '#000',
-      shadowOpacity: 0.15,
-      shadowRadius: 8,
-      shadowOffset: { width: 0, height: 2 },
-      elevation: 4,
-    },
-    layersPanel: {
-      position: 'absolute',
-      right: spacing.lg + 48 + spacing.sm,
-      bottom: 130 + 48 + spacing.sm + 40 + spacing.sm,
-      backgroundColor: colors.card,
-      borderRadius: radius.lg,
-      padding: spacing.sm,
-      gap: spacing.xs,
-      borderWidth: 1,
-      borderColor: colors.border,
-      shadowColor: '#000',
-      shadowOpacity: 0.15,
-      shadowRadius: 8,
-      shadowOffset: { width: 0, height: 2 },
-      elevation: 5,
     },
     routeClearFab: {
       position: 'absolute',
@@ -2869,7 +1819,6 @@ function createMapStyles(colors: AppColors) {
       shadowOffset: { width: 0, height: 2 },
       elevation: 3,
     },
-    spotDot: { width: 10, height: 10, borderRadius: 5 },
     spotName: { ...typography.bodyBold, color: colors.text },
     spotMeta: { ...typography.caption, color: colors.textMuted },
     modalOverlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end' },
@@ -2894,87 +1843,6 @@ function createMapStyles(colors: AppColors) {
       borderWidth: 1,
       borderColor: colors.border,
       marginTop: spacing.md,
-    },
-    types: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },
-    typeChip: {
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm,
-      borderRadius: radius.pill,
-      backgroundColor: colors.card,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    typeText: { ...typography.body, color: colors.text },
-    typeTextActive: { color: colors.white, fontWeight: '600' },
-    actionGrid: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: spacing.sm,
-      marginTop: spacing.lg,
-    },
-    actionBtn: {
-      flex: 1,
-      minWidth: '30%',
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingVertical: spacing.md,
-      paddingHorizontal: spacing.xs,
-      backgroundColor: colors.card,
-      borderRadius: radius.md,
-      borderWidth: 1,
-      borderColor: colors.border,
-      gap: 4,
-    },
-    actionBtnText: {
-      ...typography.small,
-      color: colors.text,
-      fontWeight: '600',
-      textAlign: 'center',
-    },
-    // New dam-sheet action styles — primary CTA + horizontal icon pill row
-    primaryCta: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: spacing.sm,
-      backgroundColor: colors.primary,
-      paddingVertical: 14,
-      paddingHorizontal: spacing.lg,
-      borderRadius: radius.pill,
-      marginTop: spacing.lg,
-      shadowColor: colors.primary,
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.18,
-      shadowRadius: 10,
-      elevation: 3,
-    },
-    primaryCtaText: {
-      ...typography.bodyBold,
-      color: '#fff',
-      fontSize: 16,
-      letterSpacing: 0.2,
-    },
-    pillRowContent: {
-      gap: spacing.sm,
-      paddingVertical: spacing.md,
-      paddingRight: spacing.lg,
-    },
-    iconPill: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 6,
-      paddingHorizontal: spacing.md,
-      paddingVertical: 8,
-      borderRadius: radius.pill,
-      backgroundColor: colors.card,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    iconPillText: {
-      ...typography.small,
-      color: colors.text,
-      fontWeight: '700',
-      fontSize: 13,
     },
   });
 }

@@ -9,14 +9,17 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { initializeAuth, getAuth, Auth, getReactNativePersistence } from 'firebase/auth';
 import { initializeFirestore, memoryLocalCache, Firestore } from 'firebase/firestore';
-import { getStorage, FirebaseStorage } from 'firebase/storage';
 import { getFirebaseWebConfig, isFirebaseConfigured } from './firebaseConfig';
 
+// `storage` was previously a `FirebaseStorage` instance held here so every
+// service could pull a shared client off the bundle. We've moved all media
+// to Cloudflare R2 (zero egress fees) — the upload flow now lives in
+// `src/services/r2Upload.ts` and routes through a Cloud Function for auth.
+// The `firebase/storage` import + bundle field are gone with it.
 export type FirebaseBundle = {
   app: FirebaseApp;
   auth: Auth;
   db: Firestore;
-  storage: FirebaseStorage;
 };
 
 function authForApp(app: FirebaseApp): Auth {
@@ -56,7 +59,6 @@ export function ensureFirebase(): FirebaseBundle | null {
       // For real offline persistence we'd need `@react-native-firebase/firestore`
       // (native bridge, different API). Not done yet.
       db: initializeFirestore(app, { localCache: memoryLocalCache() }),
-      storage: getStorage(app),
     };
   }
   return bundle;

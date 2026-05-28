@@ -440,7 +440,14 @@ function PostCardInner({
           style={styles.photoWrap}
           onPress={() => { setViewerOpen(true); }}
         >
-          <Image source={{ uri: getImageVariant(post.photoUri, ImageSize.feed) ?? post.photoUri }} style={styles.photo} contentFit="cover" cachePolicy="memory-disk" />
+          <Image
+            source={{ uri: getImageVariant(post.photoUri, ImageSize.feed) ?? post.photoUri }}
+            style={styles.photo}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            transition={250}
+            recyclingKey={post.id}
+          />
         </Pressable>
       ) : null}
 

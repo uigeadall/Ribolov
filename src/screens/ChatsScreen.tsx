@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, Pressable, Platform, TextInput, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Platform, TextInput, ScrollView, Alert } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import Toast from 'react-native-toast-message';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -795,10 +796,9 @@ export default function ChatsScreen() {
           <ChatSkeleton colors={colors} />
         ) : (
           <FadeIn>
-          <FlatList
+          <FlashList
             data={items}
             keyExtractor={(item) => item.convId}
-            removeClippedSubviews={Platform.OS === 'android'}
             // Search bar lives in ListHeader. Dismiss on drag so users can
             // get to lower rows without the keyboard covering them, matching
             // SearchScreen / ChatDetail input behavior.

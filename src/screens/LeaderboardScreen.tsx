@@ -5,11 +5,12 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  FlatList,
   Modal,
   TextInput,
   Animated,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
+import { FlashList } from '@shopify/flash-list';
 import { FishingRefreshControl } from '../components/FishingRefreshControl';
 import { useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
@@ -445,7 +446,10 @@ export default function LeaderboardScreen() {
             return (
               <Pressable
                 key={key}
-                onPress={() => setPeriod(key)}
+                onPress={() => {
+                  void Haptics.selectionAsync();
+                  setPeriod(key);
+                }}
                 style={[styles.chip, active && styles.chipActive]}
               >
                 <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
@@ -454,7 +458,12 @@ export default function LeaderboardScreen() {
           })}
         </ScrollView>
 
-        <Pressable onPress={() => setPickerOpen(true)}>
+        <Pressable
+          onPress={() => {
+            void Haptics.selectionAsync();
+            setPickerOpen(true);
+          }}
+        >
           <Card style={styles.scopeCard}>
             <View style={styles.scopePressInner}>
               <View style={styles.scopeTextBlock}>
@@ -503,7 +512,7 @@ export default function LeaderboardScreen() {
           />
         </View>
       ) : (
-        <FlatList
+        <FlashList
           data={rows}
           keyExtractor={(item) => item.ownerUid}
           contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl }}
@@ -511,9 +520,10 @@ export default function LeaderboardScreen() {
           refreshControl={<FishingRefreshControl refreshing={refreshing} onRefresh={() => reload(true)} />}
           renderItem={({ item }) => (
             <Pressable
-              onPress={() =>
-                navigation.navigate('UserPublicProfile', { uid: item.ownerUid, displayName: item.ownerName })
-              }
+              onPress={() => {
+                void Haptics.selectionAsync();
+                navigation.navigate('UserPublicProfile', { uid: item.ownerUid, displayName: item.ownerName });
+              }}
             >
               <Card style={styles.rowCard}>
                 <View style={styles.rowInner}>

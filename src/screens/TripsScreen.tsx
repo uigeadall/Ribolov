@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import Toast from 'react-native-toast-message';
+import * as Haptics from 'expo-haptics';
 import {
   View,
   Text,
@@ -259,7 +260,12 @@ export default function TripsScreen() {
             const tripDate = new Date(item.dateIso);
             const dateBadge = tripDate.toLocaleDateString('bg-BG', { day: 'numeric', month: 'short', year: 'numeric' });
             return (
-              <Pressable onPress={() => navigation.navigate('TripDetail', { id: item.id })}>
+              <Pressable
+                onPress={() => {
+                  void Haptics.selectionAsync();
+                  navigation.navigate('TripDetail', { id: item.id });
+                }}
+              >
                 <View style={{
                   borderRadius: radius.lg,
                   overflow: 'hidden',
@@ -300,7 +306,13 @@ export default function TripsScreen() {
 
                       <View style={{ flex: 1 }} />
 
-                      <Pressable hitSlop={8} onPress={() => confirmDelete(item)}>
+                      <Pressable
+                        hitSlop={8}
+                        onPress={() => {
+                          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                          confirmDelete(item);
+                        }}
+                      >
                         <Ionicons name="trash-outline" size={18} color={colors.danger} />
                       </Pressable>
                       <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />

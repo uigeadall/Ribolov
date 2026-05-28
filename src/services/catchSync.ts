@@ -17,13 +17,11 @@ import {
   runTransaction,
   type DocumentSnapshot,
 } from 'firebase/firestore';
-import { ref, getDownloadURL, deleteObject } from 'firebase/storage';
-import { getIdToken } from 'firebase/auth';
-import * as FileSystem from 'expo-file-system/legacy';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { requireFirebase } from './firebase';
-import { getFirebaseWebConfig } from './firebaseConfig';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
 import { getCloudinaryUploadConfig, uploadImageToCloudinary } from './cloudinaryConfig';
+import { uploadImageToR2, deleteFromR2, isR2Url, r2KeyFromUrl } from './r2Upload';
 import type { Catch } from '../types';
 
 export type CloudCatch = Catch & {
@@ -83,144 +81,7 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
   throw lastErr;
 }
 
-/** Poll for the Resize Images extension's webp variant of an uploaded file.
-    The extension typically completes in 1–3 seconds for normal-sized photos
-    but can take longer on cold-start. 15 seconds is forgiving without
-    blocking the save flow forever. Polls every 1.5s. */
-export async function waitForResizedUrl(
-  storage: ReturnType<typeof requireFirebase>['storage'],
-  originalPath: string,
-  suffix: string,
-  maxWaitMs = 15_000,
-): Promise<string | null> {
-  const resizedPath = originalPath.replace(/\.[^.]+$/, `${suffix}.webp`);
-  const deadline = Date.now() + maxWaitMs;
-  let attempt = 0;
-  while (Date.now() < deadline) {
-    attempt += 1;
-    try {
-      const url = await getDownloadURL(ref(storage, resizedPath));
-      if (__DEV__) {
-        // eslint-disable-next-line no-console
-        console.log('[catchSync] resize variant ready', { attempt, resizedPath });
-      }
-      return url;
-    } catch {
-      await new Promise((r) => setTimeout(r, 1500));
-    }
-  }
-  return null;
-}
-
 export type UploadProgressFn = (fraction: number) => void;
-
-export async function uploadLocalPhotoToStorage(
-  fb: ReturnType<typeof requireFirebase>,
-  uri: string,
-  storagePath: string,
-  onProgress?: UploadProgressFn,
-): Promise<string> {
-  const extMatch = uri.split('?')[0].match(/\.(jpg|jpeg|png|webp)$/i);
-  const ext = extMatch ? extMatch[1].toLowerCase() : 'jpg';
-  const contentType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-  return withRetry(async () => {
-    const currentUser = fb.auth.currentUser;
-    if (!currentUser) throw new Error('Не сте влезли в профила');
-    const token = await getIdToken(currentUser);
-    const { storageBucket } = getFirebaseWebConfig();
-
-    // Sanity-check the source file before uploading. If ImagePicker's temp
-    // file has been cleaned up (a known Expo Go quirk between camera capture
-    // and background sync), uploadAsync silently sends 0 bytes and the
-    // "upload" returns 200 with empty metadata — which is exactly what we've
-    // been seeing.
-    const info = await FileSystem.getInfoAsync(uri);
-    if (!info.exists) {
-      throw new Error(`Source file missing: ${uri}`);
-    }
-    const fileSize = 'size' in info && typeof info.size === 'number' ? info.size : 0;
-    if (fileSize === 0) {
-      throw new Error(`Source file is 0 bytes: ${uri}`);
-    }
-
-    if (__DEV__) {
-      // eslint-disable-next-line no-console
-      console.log('[catchSync] uploading', {
-        uri,
-        bytes: fileSize,
-        to: `${storageBucket}/${storagePath}`,
-      });
-    }
-
-    // createUploadTask + onProgress drives the visible top progress bar in
-    // AddCatchScreen / CreatePostScreen. With a no-op onProgress this behaves
-    // identically to the previous uploadAsync call.
-    const targetUrl =
-      `https://firebasestorage.googleapis.com/v0/b/${storageBucket}/o` +
-      `?uploadType=media&name=${encodeURIComponent(storagePath)}`;
-    const uploadTask = FileSystem.createUploadTask(
-      targetUrl,
-      uri,
-      {
-        httpMethod: 'POST',
-        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': contentType },
-      },
-      onProgress
-        ? (p) => {
-            const total = p.totalBytesExpectedToSend || fileSize || 1;
-            const sent = p.totalBytesSent || 0;
-            onProgress(Math.max(0, Math.min(1, sent / total)));
-          }
-        : undefined,
-    );
-    const result = await uploadTask.uploadAsync();
-    if (!result) {
-      throw new Error('Upload returned no result');
-    }
-
-    if (result.status < 200 || result.status >= 300) {
-      throw new Error(`Storage upload HTTP ${result.status}: ${result.body.slice(0, 200)}`);
-    }
-
-    // Verify the upload response — Firebase Storage returns JSON metadata
-    // including `size`. If `size` is missing or 0, the upload "succeeded"
-    // (HTTP 200) but didn't actually write the file body.
-    let uploadedSize = 0;
-    let uploadedName = '';
-    try {
-      const meta = JSON.parse(result.body) as { size?: string; name?: string };
-      uploadedSize = parseInt(meta.size ?? '0', 10);
-      uploadedName = meta.name ?? '';
-    } catch {
-      // Non-JSON response — log it so we can see what we got.
-    }
-
-    if (__DEV__) {
-      // eslint-disable-next-line no-console
-      console.log('[catchSync] upload response', {
-        status: result.status,
-        uploadedSize,
-        uploadedName,
-        bodyPreview: result.body.slice(0, 400),
-      });
-    }
-
-    if (uploadedSize === 0 || !uploadedName) {
-      throw new Error(
-        `Firebase Storage upload reported 0-byte file. Response: ${result.body.slice(0, 200)}`,
-      );
-    }
-
-    // Build the download URL using the actual bucket the upload response
-    // reported (firebaseStorageBucket from config) — uploads land in that
-    // bucket, downloads must use the same.
-    const url =
-      `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(storageBucket)}` +
-      `/o/${encodeURIComponent(uploadedName)}?alt=media`;
-    return url;
-  });
-}
 
 export async function ensureCatchPhotoUploadedForCloud(
   c: Catch,
@@ -249,59 +110,34 @@ export async function ensureCatchPhotoUploadedForCloud(
       uploadIdx += 1;
       reportProgress?.(0);
     } else {
-      const fb = requireFirebase();
-      const extMatch = uri.split('?')[0].match(/\.(jpg|jpeg|png|webp)$/i);
-      const ext = extMatch ? extMatch[1].toLowerCase() : 'jpg';
-      const path = `publicCatchPhotos/${ownerUid}/${c.id}/${Date.now()}.${ext}`;
-      const url = await uploadLocalPhotoToStorage(fb, uri, path, reportProgress);
+      // R2 path: client-side resize-to-JPEG inside uploadImageToR2, then
+      // direct PUT to a presigned URL. No resize-extension polling — the
+      // re-encode happens locally before upload, so by the time the upload
+      // returns the public CDN URL is immediately fetchable.
+      const path = `publicCatchPhotos/${ownerUid}/${c.id}/${Date.now()}.jpg`;
+      const { url, storagePath } = await uploadImageToR2(uri, path, reportProgress);
       uploadIdx += 1;
       reportProgress?.(0);
-      // This project has Firebase's "Resize Images" extension installed, which
-      // creates a `_1200x1200.webp` variant on every upload AND deletes the
-      // original by default. The variant is written via Admin SDK so it gets
-      // a proper `firebaseStorageDownloadTokens` metadata field — which means
-      // its `getDownloadURL` returns a tokenized URL that works for anonymous
-      // fetchers (the original URL we built does not, since raw POST uploads
-      // can't generate that token). Wait for the variant, use it as photoUri.
-      const resizedUrl = await waitForResizedUrl(fb.storage, path, '_1200x1200');
-      if (__DEV__) {
-        if (resizedUrl) {
-          // eslint-disable-next-line no-console
-          console.log('[catchSync] using resized variant', { resizedUrl: resizedUrl.slice(0, 120) });
-        } else {
-          // eslint-disable-next-line no-console
-          console.warn('[catchSync] resize variant not ready after 15s, falling back to original (may 404 if extension deletes originals)');
-        }
-      }
-      updated = { ...updated, photoUri: resizedUrl ?? url, photoStoragePath: path };
+      updated = { ...updated, photoUri: url, photoStoragePath: storagePath };
     }
   }
 
-  // Upload any extra photos that are still local file:// URIs.
-  // Mirror the primary-photo path: raw POST upload to Storage, then wait for
-  // the Resize Images extension's _1200x1200.webp variant and use its URL.
-  // The raw POST URL doesn't have the firebaseStorageDownloadTokens metadata
-  // that anonymous fetchers (expo-image in the feed) need, AND the extension
-  // deletes the original after resizing — so the previous code stored URLs
-  // that 404'd for everyone, making the 2nd/3rd/4th carousel slides appear
-  // blank.
+  // Upload any extra photos that are still local file:// URIs. Same path as
+  // the primary photo (R2 + client-side resize). Extras upload in parallel —
+  // per-extra progress is omitted intentionally because a single linear bar
+  // would interleave wildly across N concurrent uploads. We don't store
+  // per-extra storage paths; deletion derives the key back from the URL via
+  // `r2KeyFromUrl` (same trick the old code did with firebasestorage URLs).
   const extras = updated.extraPhotoUris;
   if (extras && extras.length > 0 && extras.some((u) => u && !isRemote(u))) {
-    const fb = requireFirebase();
-    // Per-extra progress is omitted intentionally — extras upload in parallel,
-    // so a single linear bar would interleave wildly. We just bump the
-    // overall index by 1 as each extra finishes so the bar still climbs.
     const uploadedExtras = await Promise.all(
       extras.map(async (extraUri, idx) => {
         if (!extraUri || isRemote(extraUri)) return extraUri;
-        const extMatch = extraUri.split('?')[0].match(/\.(jpg|jpeg|png|webp)$/i);
-        const ext = extMatch ? extMatch[1].toLowerCase() : 'jpg';
-        const path = `publicCatchPhotos/${ownerUid}/${c.id}/extra_${idx}_${Date.now()}.${ext}`;
-        const url = await uploadLocalPhotoToStorage(fb, extraUri, path);
-        const resizedUrl = await waitForResizedUrl(fb.storage, path, '_1200x1200');
+        const path = `publicCatchPhotos/${ownerUid}/${c.id}/extra_${idx}_${Date.now()}.jpg`;
+        const { url } = await uploadImageToR2(extraUri, path);
         uploadIdx += 1;
         reportProgress?.(0);
-        return resizedUrl ?? url;
+        return url;
       })
     );
     updated = { ...updated, extraPhotoUris: uploadedExtras };
@@ -371,40 +207,40 @@ export async function pushCatch(c: Catch, ownerUid: string, ownerName: string, i
       if (code !== 'not-found') throw e;
     }
   }
+
+  // The just-published catch (or its inverse — a catch flipped to private)
+  // changes the feed composition. Nuke the cached first page so the next
+  // FeedScreen mount doesn't flash a stale "no-new-post" version before the
+  // network fetch lands. Cheap (handful of AsyncStorage deletes); fire-and-
+  // forget so a slow cache wipe doesn't block the caller.
+  void invalidateAllFeedCaches();
 }
 
 /**
- * Best-effort delete of a Firebase Storage file. Skips Cloudinary paths.
+ * Best-effort delete of a stored media file. Skips Cloudinary paths
+ * (Cloudinary manages its own lifecycle). For R2 paths, routes through the
+ * `deleteR2Object` Cloud Function — the client can't delete directly because
+ * we don't ship R2 credentials to the client.
  */
 export async function deleteStoragePath(storagePath: string | undefined): Promise<void> {
   if (!storagePath || storagePath.startsWith(CLOUDINARY_PREFIX)) return;
-  const fb = requireFirebase();
-  await deleteObject(ref(fb.storage, storagePath)).catch(() => {});
+  await deleteFromR2(storagePath);
 }
 
 /**
- * Best-effort delete of a Firebase Storage file given its download URL.
- * Used when we only have the URL (not the storage path) — e.g. extra-photo
- * URLs stored on the catch doc. Skips non-Storage URLs (cloudinary, http
- * URLs to external hosts) so we don't pointlessly try to delete the wrong
- * thing. The URL→path inference mirrors the logic already used inside
- * deleteCatchEverywhere for the same purpose.
+ * Best-effort delete given a media URL — used when we only have the URL
+ * (not the storage path), e.g. extra-photo URLs on a catch doc. Recognises
+ * R2 public URLs and routes them through the Cloud Function; skips anything
+ * else silently.
  */
-export async function deleteFirebaseStorageUrl(url: string | undefined): Promise<void> {
-  if (!url || !url.includes('firebasestorage.googleapis.com')) return;
-  const fb = requireFirebase();
-  try {
-    const m = decodeURIComponent(url).match(/\/o\/([^?]+)/);
-    if (m?.[1]) await deleteObject(ref(fb.storage, m[1])).catch(() => {});
-  } catch {
-    // URL doesn't match the expected pattern — give up silently. Orphan
-    // accumulation here is not worth a noisy failure mode.
-  }
+export async function deleteMediaByUrl(url: string | undefined): Promise<void> {
+  const key = r2KeyFromUrl(url);
+  if (key) await deleteFromR2(key);
 }
 
 /**
  * Permanently deletes a catch from everywhere: user's private doc, public feed doc,
- * and the photo file in Storage. Use when the user deletes a catch from their logbook.
+ * and the photo file in R2. Use when the user deletes a catch from their logbook.
  */
 export async function deleteCatchEverywhere(catchId: string, ownerUid: string): Promise<void> {
   const fb = requireFirebase();
@@ -427,18 +263,20 @@ export async function deleteCatchEverywhere(catchId: string, ownerUid: string): 
   ]);
 
   if (storagePath && !storagePath.startsWith(CLOUDINARY_PREFIX)) {
-    await deleteObject(ref(fb.storage, storagePath)).catch(() => {});
+    await deleteFromR2(storagePath);
   }
   if (extraPhotoUris && extraPhotoUris.length > 0) {
-    // Extra photos may live in Storage under publicCatchPhotos — try to derive path from URL
+    // Extras live in R2 under publicCatchPhotos — derive the key from the URL.
     for (const url of extraPhotoUris) {
-      if (!url || !url.includes('firebasestorage.googleapis.com')) continue;
-      try {
-        const m = decodeURIComponent(url).match(/\/o\/([^?]+)/);
-        if (m?.[1]) await deleteObject(ref(fb.storage, m[1])).catch(() => {});
-      } catch { /* ignore */ }
+      if (!isR2Url(url)) continue;
+      const key = r2KeyFromUrl(url);
+      if (key) await deleteFromR2(key);
     }
   }
+  // A catch was deleted from publicCatches — the cached feed page may still
+  // contain it. Invalidate so the next mount doesn't briefly render a "ghost"
+  // entry that 404s on tap.
+  void invalidateAllFeedCaches();
 }
 
 export async function removeFromPublicFeed(catchId: string, ownerUid: string): Promise<void> {
@@ -474,9 +312,9 @@ export async function deletePhotoFromFeedPost(catchId: string, ownerUid: string)
     setDoc(doc(fb.db, 'users', ownerUid, 'catches', catchId), photoFields, { merge: true }),
   ]);
 
-  // Delete the actual file from Storage (skip Cloudinary — it manages its own lifecycle)
-  if (storagePath && !storagePath.startsWith('cloudinary:')) {
-    await deleteObject(ref(fb.storage, storagePath)).catch(() => {});
+  // Delete the actual file from R2 (skip Cloudinary — it manages its own lifecycle)
+  if (storagePath && !storagePath.startsWith(CLOUDINARY_PREFIX)) {
+    await deleteFromR2(storagePath);
   }
 }
 
@@ -494,13 +332,84 @@ export async function fetchPublicFeed(
   // "unhandled promise rejection" on every failed feed fetch.
   const p = (async () => {
     try {
-      return await _fetchPublicFeedImpl(maxItems, afterDoc, ownerUids);
+      const page = await _fetchPublicFeedImpl(maxItems, afterDoc, ownerUids);
+      // Cache only the first-page items. Pagination cursors (DocumentSnapshot)
+      // aren't serializable, and load-more pages aren't worth caching — the
+      // hit rate is near-zero (users rarely re-scroll the same later page).
+      if (!afterDoc) {
+        void writeFirstPageCache(maxItems, ownerUids, page.items);
+      }
+      return page;
     } finally {
       _feedInflight.delete(key);
     }
   })();
   _feedInflight.set(key, p);
   return p;
+}
+
+// ── First-page AsyncStorage cache ────────────────────────────────────────────
+// Stale-while-revalidate pattern: callers display `prefetchFirstPageItems()`
+// synchronously on mount for instant paint, then await `fetchPublicFeed()`
+// for the fresh page. The fresh fetch always runs and always overwrites the
+// rendered list; the cache only buys the user the first ~300ms of perceived
+// latency before the network result lands. At 10k DAU that's the difference
+// between "app is fast" and "app feels sluggish on every cold open".
+
+const FEED_CACHE_PREFIX = '@ribolov/feedCache:';
+// Hard expiry — older than this, the cache is treated as missing. 24h means
+// returning users always see SOMETHING, even after a day-long absence; longer
+// risks showing meaningfully stale content (feed turns over hourly).
+const FEED_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+function feedCacheKey(maxItems: number, ownerUids?: string[]): string {
+  return `${FEED_CACHE_PREFIX}${maxItems}:${(ownerUids ?? []).sort().join(',')}`;
+}
+
+async function writeFirstPageCache(
+  maxItems: number,
+  ownerUids: string[] | undefined,
+  items: CloudCatch[],
+): Promise<void> {
+  try {
+    const payload = JSON.stringify({ items, at: Date.now() });
+    await AsyncStorage.setItem(feedCacheKey(maxItems, ownerUids), payload);
+  } catch {
+    // Cache write failure is non-critical — next call just refills from network.
+  }
+}
+
+/** Nuke every cached feed page. Call after writes that change the feed
+    composition (new catch published, catch deleted, catch made private)
+    so the next mount fetches fresh instead of flashing the stale cache.
+    Iterates AsyncStorage keys — cheap because we only have a handful of
+    cache entries (one per scope × ownerUid combination). */
+export async function invalidateAllFeedCaches(): Promise<void> {
+  try {
+    const allKeys = await AsyncStorage.getAllKeys();
+    const feedKeys = allKeys.filter((k) => k.startsWith(FEED_CACHE_PREFIX));
+    if (feedKeys.length > 0) await AsyncStorage.multiRemove(feedKeys);
+  } catch {
+    // Cache wipe failure is non-critical — the stale paint will eventually
+    // expire on its own via FEED_CACHE_TTL_MS.
+  }
+}
+
+/** Synchronous-feeling prefetch: returns the last-cached first-page items if
+    fresh, or [] if missing/expired. Always resolves quickly — no network. */
+export async function prefetchFirstPageItems(
+  maxItems = 20,
+  ownerUids?: string[],
+): Promise<CloudCatch[]> {
+  try {
+    const raw = await AsyncStorage.getItem(feedCacheKey(maxItems, ownerUids));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as { items?: CloudCatch[]; at?: number };
+    if (!parsed.at || Date.now() - parsed.at > FEED_CACHE_TTL_MS) return [];
+    return parsed.items ?? [];
+  } catch {
+    return [];
+  }
 }
 
 async function _fetchPublicFeedImpl(
@@ -617,26 +526,19 @@ export async function fetchPublicCatchesByOwner(ownerUid: string, maxItems = 40)
 }
 
 // ─── Privacy-aware species heatmap ────────────────────────────────────────────
-// The map renders cells, never raw points. Two privacy invariants:
-//   1. Coordinates are bucketed to ~5km cells (0.05° lat/lon), so the displayed
-//      centroid is never a real catch location — it's a cell center.
-//   2. A cell only emits if it contains at least 3 *distinct* owner uids.
-//      A single angler logging 10 catches at one spot would never show up;
-//      neither would two anglers' personal-spot reveal. Both conditions can be
-//      tuned via HEATMAP_CELL_DEG and HEATMAP_MIN_DISTINCT_OWNERS.
-//
-// We aggregate client-side from publicCatches. A server-side Cloud Function
-// would be stronger (raw points never leave the backend) — that's left as a
-// follow-up. For now the guarantee is: this function NEVER returns a raw
-// CloudCatch, only HeatmapCell aggregates.
-const HEATMAP_CELL_DEG = 0.05;
-const HEATMAP_MIN_DISTINCT_OWNERS = 3;
+// The map renders cells, never raw points. Privacy invariants (enforced
+// server-side in the `getSpeciesHeatmap` Cloud Function):
+//   1. Coordinates are bucketed to ~5km cells; cell centers are never real
+//      catch coords.
+//   2. A cell only emits if it contains ≥3 distinct owner uids.
+// Raw catch points never leave the backend on this path — guarantee is now
+// architectural, not just convention.
 
 export type HeatmapCell = {
-  /** Cell-center coordinate (HEATMAP_CELL_DEG grid). Not a real catch location. */
+  /** Cell-center coordinate (5km grid). Not a real catch location. */
   latitude: number;
   longitude: number;
-  /** Number of distinct anglers contributing to this cell. ≥ HEATMAP_MIN_DISTINCT_OWNERS. */
+  /** Number of distinct anglers contributing to this cell. ≥3. */
   ownerCount: number;
   /** Total catches in this cell. Useful for intensity. */
   catchCount: number;
@@ -645,59 +547,22 @@ export type HeatmapCell = {
 export async function fetchSpeciesHeatmap(
   minDateIso: string,
   speciesName?: string,
-  maxCount = 2500,
 ): Promise<HeatmapCell[]> {
+  // Aggregation + k-anonymity enforcement is now done server-side by the
+  // `getSpeciesHeatmap` Cloud Function. Server caches results for 10min per
+  // (species, day) bucket — so a busy map screen costs 1 read per call
+  // instead of up to 2,500. The privacy invariants (5km cells, min 3
+  // distinct owners per cell) are enforced server-side, byte-identical to
+  // the previous client-side implementation.
   const fb = requireFirebase();
-  const constraints = [
-    where('date', '>=', minDateIso),
-    orderBy('date', 'desc'),
-    limit(maxCount),
-  ];
-  const snap = await getDocs(query(collection(fb.db, 'publicCatches'), ...constraints));
-
-  // Bucket each catch into a cell. Track distinct owner uids per cell to
-  // enforce the k-anonymity threshold below.
-  type Bucket = { lat: number; lng: number; owners: Set<string>; catches: number };
-  const buckets = new Map<string, Bucket>();
-
-  for (const d of snap.docs) {
-    const c = d.data() as CloudCatch;
-    if (!c.location?.latitude || !c.location?.longitude || !c.ownerUid) continue;
-    if (speciesName && c.speciesName !== speciesName) continue;
-
-    // Snap to grid. Math.floor on a signed-deg axis is fine — same sign on both ends.
-    const row = Math.floor(c.location.latitude / HEATMAP_CELL_DEG);
-    const col = Math.floor(c.location.longitude / HEATMAP_CELL_DEG);
-    const key = `${row}:${col}`;
-    let b = buckets.get(key);
-    if (!b) {
-      // Cell center (grid-snapped) — NOT the catch's real coords.
-      b = {
-        lat: (row + 0.5) * HEATMAP_CELL_DEG,
-        lng: (col + 0.5) * HEATMAP_CELL_DEG,
-        owners: new Set(),
-        catches: 0,
-      };
-      buckets.set(key, b);
-    }
-    b.owners.add(c.ownerUid);
-    b.catches += 1;
-  }
-
-  // Emit only cells that meet the distinct-owner threshold. This is the
-  // privacy guarantee: a single angler's spots can never leak through this
-  // path no matter how many catches they have there.
-  const cells: HeatmapCell[] = [];
-  for (const b of buckets.values()) {
-    if (b.owners.size < HEATMAP_MIN_DISTINCT_OWNERS) continue;
-    cells.push({
-      latitude: b.lat,
-      longitude: b.lng,
-      ownerCount: b.owners.size,
-      catchCount: b.catches,
-    });
-  }
-  return cells;
+  const { getFunctions, httpsCallable } = await import('firebase/functions');
+  const fns = getFunctions(fb.app);
+  const fn = httpsCallable<
+    { minDateIso: string; speciesName?: string },
+    { cells: HeatmapCell[] }
+  >(fns, 'getSpeciesHeatmap');
+  const res = await fn({ minDateIso, speciesName });
+  return res.data.cells ?? [];
 }
 
 export async function refreshOwnerPhotoOnPublicCatches(uid: string, photoUrl: string): Promise<void> {

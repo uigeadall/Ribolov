@@ -11,6 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import { Skeleton } from '../components/Skeleton';
+import * as Haptics from 'expo-haptics';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
@@ -254,7 +255,10 @@ export default function FriendsScreen() {
           variant={isFollowing ? 'secondary' : 'primary'}
           compact
           loading={busy}
-          onPress={() => toggleFollow(uid, displayName)}
+          onPress={() => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            toggleFollow(uid, displayName);
+          }}
         />
       </Pressable>
     );

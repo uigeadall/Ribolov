@@ -1114,7 +1114,7 @@ export default function HomeScreen() {
                 <ScalePressable
                   key={`${w.kind}-${w.id}`}
                   style={[S.nearbyRow, { backgroundColor: cardBg, borderColor: cardBorder }]}
-                  onPress={() => navigation.navigate('MapTab', w.kind === 'dam' ? { focusDamId: w.id } : { focusRiverId: w.id })}
+                  onPress={() => navigation.navigate('WaterDetail', { kind: w.kind, id: w.id })}
                 >
                   <View style={[S.nearbyIconWrap, { backgroundColor: colors.primarySurface }]}>
                     <Ionicons name={w.kind === 'dam' ? 'layers-outline' : 'git-branch-outline'} size={20} color={primary} />

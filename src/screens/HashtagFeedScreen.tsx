@@ -47,10 +47,15 @@ export default function HashtagFeedScreen() {
       .catch(() => {});
   }, [user?.uid]);
 
-  useEffect(() => {
-    if (!user || !configured) return;
-    return subscribeHashtagFollowed(user.uid, tag, setTagFollowed);
-  }, [user, configured, tag]);
+  // Tag-followed state is only displayed on this screen's follow button —
+  // detaching when the user navigates away saves continuous reads on a
+  // single-bit subscription whose value will be re-fetched on return.
+  useFocusEffect(
+    useCallback(() => {
+      if (!user || !configured) return;
+      return subscribeHashtagFollowed(user.uid, tag, setTagFollowed);
+    }, [user, configured, tag]),
+  );
 
   const onToggleTagFollow = useCallback(async () => {
     if (!user || tagFollowBusy) return;

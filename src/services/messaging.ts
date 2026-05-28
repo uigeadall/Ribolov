@@ -607,6 +607,16 @@ export async function muteConversation(myUid: string, convId: string): Promise<v
     stripUndefinedForFirestore({ convId, mutedAt: serverTimestamp() }),
     { merge: true },
   );
+  // Mirror the mute state into the conversation's denormalized
+  // `participantData` cache so the `onNewMessage` Cloud Function picks
+  // it up on the next message without a separate mutedConversations read.
+  // Best-effort: if the mirror write fails, the next onNewMessage call
+  // falls through its lazy-backfill path and rebuilds the cache anyway.
+  await setDoc(
+    doc(fb.db, 'conversations', convId),
+    stripUndefinedForFirestore({ participantData: { [myUid]: { muted: true } } }),
+    { merge: true },
+  ).catch(() => {});
   // Drop any orphan message notification doc for this conv. Without this,
   // muting a conv that has an unread message_{convId} notification leaves
   // the bell badge inflated until the user opens the chat or the 30-day
@@ -621,6 +631,12 @@ export async function unmuteConversation(myUid: string, convId: string): Promise
   if (!myUid || !convId) return;
   const fb = requireFirebase();
   await deleteDoc(doc(fb.db, 'users', myUid, 'mutedConversations', convId));
+  // Sync the participantData mirror — same reasoning as muteConversation.
+  await setDoc(
+    doc(fb.db, 'conversations', convId),
+    stripUndefinedForFirestore({ participantData: { [myUid]: { muted: false } } }),
+    { merge: true },
+  ).catch(() => {});
 }
 
 /** Subscribe to the set of conversation IDs I've muted. Tiny collection (one

@@ -1,10 +1,12 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { Text, View, StyleSheet, Pressable, ScrollView, RefreshControl } from 'react-native';
+import { Text, View, StyleSheet, Pressable, ScrollView } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { EmptyState } from '../components/EmptyState';
+import { FishingRefreshControl } from '../components/FishingRefreshControl';
 import { ListSkeleton } from '../components/ListSkeleton';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
@@ -258,17 +260,27 @@ export default function TournamentsScreen() {
 
   const onRefresh = () => { setRefreshing(true); load(); };
 
-  const openDetail = (id: string) => navigation.navigate('TournamentDetail', { id });
+  const openDetail = (id: string) => {
+    void Haptics.selectionAsync();
+    navigation.navigate('TournamentDetail', { id });
+  };
 
   return (
     <Screen padded={false}>
       <ScrollView
         contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl + 80 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+        refreshControl={<FishingRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         <View style={styles.header}>
           <Text style={styles.title}>Турнири</Text>
-          <Pressable onPress={() => navigation.navigate('CreateTournament')} hitSlop={8} accessibilityLabel="Нов турнир">
+          <Pressable
+            onPress={() => {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              navigation.navigate('CreateTournament');
+            }}
+            hitSlop={8}
+            accessibilityLabel="Нов турнир"
+          >
             <Ionicons name="add-circle-outline" size={32} color={colors.primary} />
           </Pressable>
         </View>
@@ -356,7 +368,10 @@ export default function TournamentsScreen() {
       </ScrollView>
 
       <Pressable
-        onPress={() => navigation.navigate('CreateTournament')}
+        onPress={() => {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          navigation.navigate('CreateTournament');
+        }}
         style={styles.fab}
         accessibilityLabel="Нов турнир"
       >

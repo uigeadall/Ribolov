@@ -13,7 +13,6 @@ import {
   Platform,
   Modal,
   Keyboard,
-  RefreshControl,
   Share,
   useWindowDimensions,
 } from 'react-native';
@@ -28,6 +27,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
+import { FishingRefreshControl } from '../components/FishingRefreshControl';
 import { MenuRow } from '../components/MenuRow';
 import { BadgeIcon } from '../components/BadgeIcon';
 import { FacebookProfileHero, FacebookHeroButton } from '../components/FacebookProfileHero';
@@ -146,21 +146,41 @@ export default function ProfileScreen() {
   const { colors, mode, toggleMode, accent, setAccent } = useTheme();
   const { user, configured, loading: authLoading, signOut, deleteAccount } = useAuth();
 
+  // Defensive redirect: if the user lands on Profile while signed out — most
+  // commonly because they signed out from within Profile itself — bounce
+  // them straight to Auth. The Profile tab's tabPress listener catches the
+  // tab-tap path, but a sign-out from inside this screen doesn't trigger
+  // a tab press; this effect covers that case so we never render the old
+  // "useless guest splash" again.
+  useEffect(() => {
+    if (configured && !authLoading && !user) {
+      (navigation as any).navigate('Auth');
+    }
+  }, [configured, authLoading, user, navigation]);
+
   const [catches, setCatches] = useState<Catch[]>([]);
   useFocusEffect(useCallback(() => {
-    catchesStore.list().then(setCatches).catch(() => {});
+    let cancelled = false;
+    catchesStore.list()
+      .then((list) => { if (!cancelled) setCatches(list); })
+      .catch(() => {});
+    return () => { cancelled = true; };
   }, []));
 
   const [nextTrip, setNextTrip] = useState<TripPlan | null>(null);
-  const loadNextTrip = useCallback(async () => {
-    const all = await tripsStore.list().catch(() => [] as TripPlan[]);
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const upcoming = all
-      .filter((t) => new Date(t.dateIso) >= today)
-      .sort((a, b) => new Date(a.dateIso).getTime() - new Date(b.dateIso).getTime());
-    setNextTrip(upcoming[0] ?? null);
-  }, []);
-  useFocusEffect(useCallback(() => { void loadNextTrip(); }, [loadNextTrip]));
+  useFocusEffect(useCallback(() => {
+    let cancelled = false;
+    void (async () => {
+      const all = await tripsStore.list().catch(() => [] as TripPlan[]);
+      if (cancelled) return;
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const upcoming = all
+        .filter((t) => new Date(t.dateIso) >= today)
+        .sort((a, b) => new Date(a.dateIso).getTime() - new Date(b.dateIso).getTime());
+      setNextTrip(upcoming[0] ?? null);
+    })();
+    return () => { cancelled = true; };
+  }, []));
 
   const [publicPosts, setPublicPosts] = useState<CloudCatch[]>([]);
   useFocusEffect(useCallback(() => {
@@ -168,16 +188,23 @@ export default function ProfileScreen() {
       setPublicPosts([]);
       return;
     }
-    fetchPublicCatchesByOwner(user.uid, 24).then(setPublicPosts).catch(() => {});
+    let cancelled = false;
+    const ownerUid = user.uid;
+    fetchPublicCatchesByOwner(ownerUid, 24)
+      .then((posts) => { if (!cancelled) setPublicPosts(posts); })
+      .catch(() => {});
+    return () => { cancelled = true; };
   }, [user?.uid, configured]));
 
   const [friends, setFriends] = useState<{ uid: string; displayName: string; photoUrl?: string }[]>([]);
   const [myGroups, setMyGroups] = useState<Group[]>([]);
 
-  const loadSocialData = useCallback(async () => {
+  const loadSocialData = useCallback(async (isCancelled: () => boolean = () => false) => {
     if (!user?.uid || !configured) {
-      setFriends([]);
-      setMyGroups([]);
+      if (!isCancelled()) {
+        setFriends([]);
+        setMyGroups([]);
+      }
       return;
     }
     try {
@@ -185,6 +212,7 @@ export default function ProfileScreen() {
         getFollowing(user.uid),
         fetchMyGroups(user.uid).catch(() => [] as Group[]),
       ]);
+      if (isCancelled()) return;
 
       // Compare current follow graph against cached one — if unchanged within TTL, reuse photos.
       const freshFriendUids = list.map((f) => f.uid).sort().join(',');
@@ -207,13 +235,18 @@ export default function ProfileScreen() {
           return { ...f, photoUrl: s?.photoUrl ?? undefined };
         })
       );
+      if (isCancelled()) return;
       setFriends(enriched);
       _socialDataCache = { uid: user.uid, friends: enriched, groups, at: Date.now(), friendUids: freshFriendUids };
     } catch {}
   }, [user?.uid, configured]);
 
   useFocusEffect(
-    useCallback(() => { void loadSocialData(); }, [loadSocialData])
+    useCallback(() => {
+      let cancelled = false;
+      void loadSocialData(() => cancelled);
+      return () => { cancelled = true; };
+    }, [loadSocialData])
   );
 
   const [displayName, setDisplayName] = useState('');
@@ -247,8 +280,15 @@ export default function ProfileScreen() {
   // next, pinch to zoom" which the multi-photo ImageViewer now supports.
   const [photoViewerIndex, setPhotoViewerIndex] = useState<number | null>(null);
 
-  const loadRemoteProfile = useCallback(async () => {
+  // `editingRef` mirrors `pubExpanded` so loadRemoteProfile can skip text-field
+  // writes mid-edit without making `pubExpanded` a dep of the callback (which
+  // would cause every editor open/close to re-trigger a Firestore fetch).
+  const editingRef = useRef(false);
+  useEffect(() => { editingRef.current = pubExpanded; }, [pubExpanded]);
+
+  const loadRemoteProfile = useCallback(async (isCancelled: () => boolean = () => false) => {
     if (!configured) {
+      if (isCancelled()) return;
       setDisplayName('');
       setCity('');
       setBio('');
@@ -258,6 +298,7 @@ export default function ProfileScreen() {
     }
     if (authLoading) return;
     if (!user?.uid) {
+      if (isCancelled()) return;
       setDisplayName('');
       setCity('');
       setBio('');
@@ -270,38 +311,51 @@ export default function ProfileScreen() {
     // Show locally-cached photo instantly while Firestore loads
     const cacheKey = `@ribolov/profilePhoto/${user.uid}`;
     const cached = await AsyncStorage.getItem(cacheKey).catch(() => null);
+    if (isCancelled()) return;
     if (cached) setRemotePhotoUrl(cached);
 
     try {
       const s = await getUserPublicSummary(user.uid);
+      if (isCancelled()) return;
       let photo = (s?.photoUrl?.trim() || user.photoURL?.trim() || '').trim();
       if (!photo) photo = (await tryGetStoredProfileAvatarUrl(user.uid))?.trim() || '';
+      if (isCancelled()) return;
       if (photo) {
         setRemotePhotoUrl(photo);
         // Keep cache in sync with latest Firestore value
         AsyncStorage.setItem(cacheKey, photo).catch(() => {});
       }
-      // getUserPublicSummary now returns empty string when missing, so this
-      // simplifies to "use Firestore value if present, else fall back to
-      // Auth user.displayName". The old "&& !== 'Рибар'" guard was a workaround
-      // for a placeholder that no longer leaks from the service layer.
-      const dn = s?.displayName?.trim() || user.displayName?.trim() || '';
-      setDisplayName(dn);
-      setCity(s?.city ?? '');
-      setBio(s?.bio ?? '');
+      // Skip text-field overwrites if the user is currently editing — otherwise
+      // a focus-refresh wipes the in-progress displayName/city/bio they typed.
+      // Photo is fine to refresh either way (it auto-saves, not user-editable
+      // as text). getUserPublicSummary now returns empty string when missing,
+      // so this simplifies to "use Firestore value if present, else fall back
+      // to Auth user.displayName".
+      if (!editingRef.current) {
+        const dn = s?.displayName?.trim() || user.displayName?.trim() || '';
+        setDisplayName(dn);
+        setCity(s?.city ?? '');
+        setBio(s?.bio ?? '');
+      }
     } catch {
-      setDisplayName(user.displayName?.trim() || '');
+      if (isCancelled()) return;
+      if (!editingRef.current) {
+        setDisplayName(user.displayName?.trim() || '');
+      }
       let photo = user.photoURL?.trim() || '';
       if (!photo) photo = cached || (await tryGetStoredProfileAvatarUrl(user.uid))?.trim() || '';
+      if (isCancelled()) return;
       if (photo) setRemotePhotoUrl(photo);
     } finally {
-      setProfileLoading(false);
+      if (!isCancelled()) setProfileLoading(false);
     }
   }, [user?.uid, configured, authLoading]);
 
   useFocusEffect(
     useCallback(() => {
-      void loadRemoteProfile();
+      let cancelled = false;
+      void loadRemoteProfile(() => cancelled);
+      return () => { cancelled = true; };
     }, [loadRemoteProfile])
   );
 
@@ -312,7 +366,10 @@ export default function ProfileScreen() {
       { text: 'Отказ', style: 'cancel' },
       {
         text: 'Изход', style: 'destructive', onPress: () => {
-          if (user?.uid) AsyncStorage.removeItem(`@ribolov/profilePhoto/${user.uid}`).catch(() => {});
+          // The avatar cache is keyed by uid (`@ribolov/profilePhoto/${uid}`)
+          // so it can't leak to a different user — removing it on sign-out
+          // just gives same-user re-sign-in a blank avatar until Firestore
+          // returns. Account-switch wiping is handled by onAuthStateChanged.
           _socialDataCache = null;
           signOut().catch(() => undefined);
         },
@@ -1255,47 +1312,9 @@ export default function ProfileScreen() {
   // EXCEPT the posts-tab list — that flows into FlatList data instead.
   const renderProfileHeader = () => (
     <>
-  {/* ════════════════════════════════════════
-      GUEST STATE — hero gradient screen
-  ════════════════════════════════════════ */}
-  {!user ? (
-    <View style={styles.guestHero}>
-      <LinearGradient
-        colors={heroGrad}
-        start={{ x: 0.3, y: 0 }}
-        end={{ x: 0.7, y: 1 }}
-        style={styles.guestHeroBg}
-        pointerEvents="none"
-      />
-      <View style={[styles.guestHeroInner, { paddingTop: insets.top + 48 }]}>
-        <View style={styles.guestIconOuter}>
-          <Ionicons name="fish-outline" size={44} color="rgba(255,255,255,0.9)" />
-        </View>
-        <Text style={styles.guestTitle}>Твоят риболовен профил</Text>
-        <Text style={styles.guestSub}>
-          Влез за синхронизация, лента и видимо име и снимка в профила.
-        </Text>
-        <Pressable
-          style={({ pressed }) => [styles.guestBtn, pressed && { opacity: 0.85 }]}
-          onPress={() => navigation.navigate('Auth')}
-          accessibilityRole="button"
-          accessibilityLabel="Вход / Регистрация"
-        >
-          <LinearGradient
-            colors={['#F5A020', '#E05E00']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={StyleSheet.absoluteFillObject}
-          />
-          <View style={styles.guestBtnInner}>
-            <Ionicons name="log-in-outline" size={20} color="#fff" />
-            <Text style={styles.guestBtnText}>Вход / Регистрация</Text>
-          </View>
-        </Pressable>
-      </View>
-    </View>
-
-  ) : profileLoading ? (
+  {/* Signed-out state renders nothing — the useEffect at the top redirects
+      to Auth, which removes the old guest "Вход / Регистрация" splash. */}
+  {!user ? null : profileLoading ? (
     /* ── Loading state ── */
     <View style={{ flex: 1, minHeight: 400, alignItems: 'center', justifyContent: 'center' }}>
       <ActivityIndicator color={colors.primary} size="large" />
@@ -1836,10 +1855,9 @@ export default function ProfileScreen() {
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
         refreshControl={
-          <RefreshControl
+          <FishingRefreshControl
             refreshing={refreshing}
             onRefresh={async () => { setRefreshing(true); await loadRemoteProfile().catch(() => {}); setRefreshing(false); }}
-            tintColor={colors.primary}
           />
         }
         // Virtualization knobs — render a small window around the viewport

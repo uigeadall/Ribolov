@@ -6,7 +6,10 @@ import {
   FlatList,
   Pressable,
   Dimensions,
+  type NativeSyntheticEvent,
+  type NativeScrollEvent,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -92,11 +95,37 @@ export default function OnboardingScreen({ onDone }: Props) {
 
   const goNext = () => {
     if (index < SLIDES.length - 1) {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       listRef.current?.scrollToIndex({ index: index + 1, animated: true });
       setIndex(index + 1);
     } else {
+      // Final slide → onboarding completes. Success haptic marks the
+      // meaningful state transition (entering the app for real). Matches
+      // the haptic pattern used on first-catch celebration + catch save.
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onDone();
     }
+  };
+
+  // Swipe-gesture support — keeps `index` in sync when the user manually
+  // pages between slides. Previously `scrollEnabled={false}` blocked swipes
+  // entirely, which surprised users who instinctively tried to flick
+  // sideways like every other onboarding flow they've ever seen.
+  const onMomentumScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const nextIndex = Math.round(e.nativeEvent.contentOffset.x / SCREEN_W);
+    if (nextIndex !== index && nextIndex >= 0 && nextIndex < SLIDES.length) {
+      void Haptics.selectionAsync();
+      setIndex(nextIndex);
+    }
+  };
+
+  // Tap a dot to jump to that slide. Small accessibility / power-user win —
+  // matches the pattern most paged onboarding flows use.
+  const goToSlide = (i: number) => {
+    if (i === index) return;
+    void Haptics.selectionAsync();
+    listRef.current?.scrollToIndex({ index: i, animated: true });
+    setIndex(i);
   };
 
   const isLast = index === SLIDES.length - 1;
@@ -109,8 +138,8 @@ export default function OnboardingScreen({ onDone }: Props) {
         keyExtractor={(s) => s.key}
         horizontal
         pagingEnabled
-        scrollEnabled={false}
         showsHorizontalScrollIndicator={false}
+        onMomentumScrollEnd={onMomentumScrollEnd}
         renderItem={({ item }) => {
           // Special render for the social slide when we managed to load real
           // public catches — shows three photo cards above the title so users
@@ -150,19 +179,29 @@ export default function OnboardingScreen({ onDone }: Props) {
         }}
       />
 
-      {/* Dots */}
+      {/* Dots — tappable to jump to a slide. The active dot stretches into a
+          pill (24×8) while inactive dots stay as 8×8 circles; the contrast
+          + width change reads as a progress bar on first glance. */}
       <View style={styles.dots}>
         {SLIDES.map((_, i) => (
-          <View
+          <Pressable
             key={i}
-            style={[
-              styles.dot,
-              {
-                backgroundColor: i === index ? colors.primary : colors.border,
-                width: i === index ? 24 : 8,
-              },
-            ]}
-          />
+            onPress={() => goToSlide(i)}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel={`Слайд ${i + 1} от ${SLIDES.length}`}
+            accessibilityState={{ selected: i === index }}
+          >
+            <View
+              style={[
+                styles.dot,
+                {
+                  backgroundColor: i === index ? colors.primary : colors.border,
+                  width: i === index ? 24 : 8,
+                },
+              ]}
+            />
+          </Pressable>
         ))}
       </View>
 
@@ -174,7 +213,14 @@ export default function OnboardingScreen({ onDone }: Props) {
           style={{ flex: 1 }}
         />
         {!isLast ? (
-          <Pressable onPress={onDone} style={styles.skip} hitSlop={8}>
+          <Pressable
+            onPress={() => {
+              void Haptics.selectionAsync();
+              onDone();
+            }}
+            style={styles.skip}
+            hitSlop={8}
+          >
             <Text style={[styles.skipText, { color: colors.textMuted }]}>Пропусни</Text>
           </Pressable>
         ) : null}

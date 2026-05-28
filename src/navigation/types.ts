@@ -85,4 +85,5 @@ export type RootStackParamList = {
   /** photoUrlHint — локален URI или последно известен remote URL за мигновен преглед, докато Firestore се синхронизира */
   UserPublicProfile: { uid: string; displayName?: string; photoUrlHint?: string };
   Search: { initialQuery?: string } | undefined;
+  WaterDetail: { kind: 'dam' | 'river'; id: string };
 };

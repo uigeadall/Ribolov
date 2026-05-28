@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import {
   View, Text, TextInput, StyleSheet, ScrollView, Pressable,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -133,7 +134,10 @@ export default function WeightCalcScreen() {
               <Pressable
                 key={sp.id}
                 style={[styles.speciesChip, selectedId === sp.id && styles.speciesChipActive]}
-                onPress={() => setSelectedId(sp.id)}
+                onPress={() => {
+                  void Haptics.selectionAsync();
+                  setSelectedId(sp.id);
+                }}
               >
                 <Text style={{ fontSize: 14 }}>{sp.emoji}</Text>
                 <Text style={[styles.speciesChipText, selectedId === sp.id && styles.speciesChipTextActive]}>
@@ -155,7 +159,11 @@ export default function WeightCalcScreen() {
               <Pressable
                 key={m.value}
                 style={[styles.modeItem, mode === m.value && styles.modeActive]}
-                onPress={() => { setMode(m.value); setInput(''); }}
+                onPress={() => {
+                  void Haptics.selectionAsync();
+                  setMode(m.value);
+                  setInput('');
+                }}
               >
                 <Text style={[styles.modeText, mode === m.value && styles.modeTextActive]}>{m.label}</Text>
               </Pressable>

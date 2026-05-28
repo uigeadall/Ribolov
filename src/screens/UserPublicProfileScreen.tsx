@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
+import { EmptyState } from '../components/EmptyState';
 import * as Haptics from 'expo-haptics';
 import { Skeleton } from '../components/Skeleton';
 import { FacebookProfileHero, FacebookHeroButton } from '../components/FacebookProfileHero';
@@ -582,8 +583,12 @@ export default function UserPublicProfileScreen() {
   // profile with 80+ catches scrollable without stalling on mount.
   const renderPostsEmpty = () => (
     <View style={styles.emptyFeed}>
-      <Ionicons name="fish-outline" size={40} color={colors.textMuted} />
-      <Text style={styles.emptyText}>Няма споделени улови все още.</Text>
+      <EmptyState
+        icon="fish-outline"
+        emoji="🎣"
+        title="Няма споделени улови"
+        subtitle="Когато сподели улов, ще се появи тук."
+      />
     </View>
   );
 
@@ -604,8 +609,11 @@ export default function UserPublicProfileScreen() {
         />
         {catches.length === 0 ? (
           <View style={styles.emptyFeed}>
-            <Ionicons name="images-outline" size={40} color={colors.textMuted} />
-            <Text style={styles.emptyText}>Все още няма качени снимки.</Text>
+            <EmptyState
+              icon="images-outline"
+              title="Все още няма снимки"
+              subtitle="Качените снимки от улови ще се появят тук."
+            />
           </View>
         ) : (
           <>
@@ -751,7 +759,11 @@ export default function UserPublicProfileScreen() {
           are no mutuals to avoid an empty row. */}
       {mutualFollowers.length > 0 && !isSelf ? (
         <Pressable
-          onPress={() => navigation.navigate('Friends')}
+          // UserPublicProfileScreen lives in the root stack (above tabs), but
+          // `Friends` only exists inside ProfileStack — calling navigate('Friends')
+          // directly from here doesn't resolve. Route through the tab entry
+          // point per the cross-stack rule in CLAUDE.md.
+          onPress={() => (navigation as any).navigate('ProfileTab', { screen: 'Friends' })}
           style={({ pressed }) => ({
             flexDirection: 'row',
             alignItems: 'center',

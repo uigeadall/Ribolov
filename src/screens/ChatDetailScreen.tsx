@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   TextInput,
   KeyboardAvoidingView,
   Platform,
@@ -25,8 +25,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
-import { uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
 import { Image } from 'expo-image';
+import { uploadImageToR2 } from '../services/r2Upload';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Screen } from '../components/Screen';
 import { ThemedTextInput } from '../components/ThemedTextInput';
@@ -57,7 +57,6 @@ import {
   unmuteConversation,
 } from '../services/messaging';
 import { enqueueMessage } from '../services/messageSyncQueue';
-import { ensureFirebase } from '../services/firebase';
 import { getBlockedUids, blockUser, unblockUser } from '../services/blockUser';
 import { handleError } from '../utils/handleError';
 import { notifyInfo } from '../utils/notify';
@@ -233,7 +232,7 @@ export default function ChatDetailScreen() {
   const [convMuted, setConvMuted] = useState(false);
   // Header info sheet visibility.
   const [infoOpen, setInfoOpen] = useState(false);
-  const flatRef = useRef<FlatList<ChatItem>>(null);
+  const flatRef = useRef<FlashListRef<ChatItem>>(null);
   // Per-row Swipeable refs so we can close the swipe after the user has
   // committed to replying. Keyed by message id; cleared on unmount.
   const swipeRefs = useRef<Map<string, Swipeable | null>>(new Map());
@@ -353,46 +352,55 @@ export default function ChatDetailScreen() {
     return result;
   }, [msgs, searchTerm, initialUnreadCount, user]);
 
-  useEffect(() => {
-    if (!configured || !user) return;
-    // Read the per-user unread count BEFORE clearing it so we know how many
-    // messages to flag with the "N нови" divider. We must await this — firing
-    // it concurrently with markConversationRead means the transaction may zero
-    // unreadCounts before the read sees it, and the divider never appears.
-    // Best-effort: if the read fails we just skip the divider.
-    let mounted = true;
-    (async () => {
-      const count = await fetchMyUnreadInConversation(convId, user.uid).catch(() => 0);
-      // Guard the setState in case the user backs out before this resolves;
-      // otherwise React logs a set-state-on-unmounted warning.
-      if (mounted && count > 0) setInitialUnreadCount(count);
-      markConversationRead(convId, user.uid).catch(() => {});
-    })();
-    const unsubMsgs = subscribeConversationMessages(convId, (next) => {
-      setTailMsgs(next);
-      // Drop any optimistic pendings that the server now has — match by id
-      // since the clientId is the doc id.
-      const confirmedIds = new Set(next.map((m) => m.id));
-      setPendingMsgs((prev) => prev.filter((p) => !confirmedIds.has(p.id)));
-      // A full 100-message tail signals there may be older history — enable the load-earlier
-      // button. We only flip this on the first full snapshot; pagination owns the flag after.
-      if (next.length >= 100) setHasMoreOlder((prev) => prev || true);
-      markConversationRead(convId, user.uid).catch(() => {});
-      // Stamp readAt on incoming unread messages so the sender sees the read tick.
-      markMessagesReadFromList(convId, user.uid, next).catch(() => {});
-    });
-    const unsubPresence = subscribeUserPresence(otherUid, setOtherPresence);
-    const unsubTyping = subscribeTyping(convId, user.uid, setTypingUid);
-    const unsubReactions = subscribeConversationReactions(convId, setReactions);
-    return () => {
-      mounted = false;
-      unsubMsgs();
-      unsubPresence();
-      unsubTyping();
-      unsubReactions();
-      void setTypingStatus(convId, user.uid, false);
-    };
-  }, [convId, otherUid, configured, user]);
+  // Chat detail subscriptions are scoped to this exact convId — useFocusEffect
+  // tears them down when the user navigates away (back to Chats, or to any
+  // other screen) and re-establishes on return. Without this, opening 5 chats
+  // in a session would leave 5×4 listeners alive in the background, each
+  // racking up reads on every new message in those convs. Inbox unread state
+  // is handled by separate listeners in HomeScreen / ChatsScreen, so pausing
+  // the per-chat listeners here doesn't affect the global badge.
+  useFocusEffect(
+    useCallback(() => {
+      if (!configured || !user) return;
+      // Read the per-user unread count BEFORE clearing it so we know how many
+      // messages to flag with the "N нови" divider. We must await this — firing
+      // it concurrently with markConversationRead means the transaction may zero
+      // unreadCounts before the read sees it, and the divider never appears.
+      // Best-effort: if the read fails we just skip the divider.
+      let mounted = true;
+      (async () => {
+        const count = await fetchMyUnreadInConversation(convId, user.uid).catch(() => 0);
+        // Guard the setState in case the user backs out before this resolves;
+        // otherwise React logs a set-state-on-unmounted warning.
+        if (mounted && count > 0) setInitialUnreadCount(count);
+        markConversationRead(convId, user.uid).catch(() => {});
+      })();
+      const unsubMsgs = subscribeConversationMessages(convId, (next) => {
+        setTailMsgs(next);
+        // Drop any optimistic pendings that the server now has — match by id
+        // since the clientId is the doc id.
+        const confirmedIds = new Set(next.map((m) => m.id));
+        setPendingMsgs((prev) => prev.filter((p) => !confirmedIds.has(p.id)));
+        // A full 100-message tail signals there may be older history — enable the load-earlier
+        // button. We only flip this on the first full snapshot; pagination owns the flag after.
+        if (next.length >= 100) setHasMoreOlder((prev) => prev || true);
+        markConversationRead(convId, user.uid).catch(() => {});
+        // Stamp readAt on incoming unread messages so the sender sees the read tick.
+        markMessagesReadFromList(convId, user.uid, next).catch(() => {});
+      });
+      const unsubPresence = subscribeUserPresence(otherUid, setOtherPresence);
+      const unsubTyping = subscribeTyping(convId, user.uid, setTypingUid);
+      const unsubReactions = subscribeConversationReactions(convId, setReactions);
+      return () => {
+        mounted = false;
+        unsubMsgs();
+        unsubPresence();
+        unsubTyping();
+        unsubReactions();
+        void setTypingStatus(convId, user.uid, false);
+      };
+    }, [convId, otherUid, configured, user]),
+  );
 
   // Load blocked status once. Refetched after block/unblock actions.
   const refreshBlockedStatus = useCallback(async () => {
@@ -486,27 +494,8 @@ export default function ChatDetailScreen() {
     setReplyingTo(null);
     setUploading(true);
     try {
-      const fb = ensureFirebase();
-      if (!fb) throw new Error('Firebase не е наличен.');
-      const token = await fb.auth.currentUser?.getIdToken(true);
-      if (!token) throw new Error('Не е влезено в акаунт.');
-      const bucket = fb.auth.app.options.storageBucket;
-      if (!bucket) throw new Error('Firebase Storage не е конфигуриран.');
-      const storagePath = `chatMedia/${convId}/${user.uid}_${Date.now()}.jpg`;
-      const uploadResult = await uploadAsync(
-        `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o?uploadType=media&name=${encodeURIComponent(storagePath)}`,
-        mediaUri,
-        {
-          httpMethod: 'POST',
-          uploadType: FileSystemUploadType.BINARY_CONTENT,
-          headers: { 'Content-Type': 'image/jpeg', Authorization: `Bearer ${token}` },
-        },
-      );
-      if (uploadResult.status < 200 || uploadResult.status >= 300) {
-        throw new Error(`Upload failed (${uploadResult.status}): ${uploadResult.body}`);
-      }
-      const meta = JSON.parse(uploadResult.body) as { name: string; downloadTokens: string };
-      const url = `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o/${encodeURIComponent(meta.name)}?alt=media&token=${meta.downloadTokens}`;
+      const requestedPath = `chatMedia/${convId}/${user.uid}_${Date.now()}.jpg`;
+      const { url } = await uploadImageToR2(mediaUri, requestedPath);
       const myName = user.displayName?.trim() || user.email?.trim() || 'Рибар';
       await sendConversationMessage(convId, user.uid, caption.trim(), otherUid, myName, url, 'photo', clientId, replyRef);
     } catch (e) {
@@ -1096,7 +1085,7 @@ export default function ChatDetailScreen() {
         )}
 
         {/* Messages */}
-        <FlatList
+        <FlashList
           ref={flatRef}
           data={chatItems}
           keyExtractor={(m) => ('_sep' in m ? m.id : m.id)}
@@ -1137,13 +1126,9 @@ export default function ChatDetailScreen() {
             }
             if (isAtBottomRef.current) flatRef.current?.scrollToEnd({ animated: false });
           }}
-          // scrollToIndex can throw INVALID_INDEX if the row isn't measured
-          // yet; this fallback lets RN estimate and finish the scroll.
-          onScrollToIndexFailed={(info) => {
-            setTimeout(() => {
-              flatRef.current?.scrollToIndex({ index: info.index, animated: false, viewPosition: 0.15 });
-            }, 80);
-          }}
+          // FlashList handles unmeasured-row scrolls internally — no
+          // onScrollToIndexFailed equivalent needed, and retrying via setTimeout
+          // would just race the recycler. Drop the old FlatList-only callback.
           onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
             const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
             const atBottom = contentOffset.y + layoutMeasurement.height >= contentSize.height - 80;

@@ -18,10 +18,10 @@ import {
   updateDoc,
   type DocumentSnapshot,
 } from 'firebase/firestore';
-import { ref, deleteObject } from 'firebase/storage';
 import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
-import { uploadLocalPhotoToStorage, waitForResizedUrl } from './catchSync';
+import { uploadImageToR2, deleteFromR2 } from './r2Upload';
+import { invalidateAllFeedCaches } from './catchSync';
 import { extractHashtags } from '../utils/textTokens';
 import { allowComment, allowPostCreate } from './socialRateLimit';
 import { notifyInteraction, notifyReshare, sendMentionNotifications } from './socialNotifications';
@@ -81,24 +81,15 @@ export async function createPost(input: CreatePostInput): Promise<string> {
   let photoUri: string | undefined;
   let photoStoragePath: string | undefined;
   if (input.localPhotoUri && !isRemote(input.localPhotoUri)) {
-    const extMatch = input.localPhotoUri.split('?')[0].match(/\.(jpg|jpeg|png|webp)$/i);
-    const ext = extMatch ? extMatch[1].toLowerCase() : 'jpg';
-    photoStoragePath = `publicCatchPhotos/${input.ownerUid}/posts/${id}_${Date.now()}.${ext}`;
-    const rawUrl = await uploadLocalPhotoToStorage(
-      fb,
+    const requestedPath = `posts/${input.ownerUid}/${id}_${Date.now()}.jpg`;
+    const uploaded = await uploadImageToR2(
       input.localPhotoUri,
-      photoStoragePath,
+      requestedPath,
       input.onUploadProgress,
     );
-    // Once Storage upload reports 100%, we still wait for the resize
-    // extension. Park the bar near 100 so it doesn't snap back.
+    photoUri = uploaded.url;
+    photoStoragePath = uploaded.storagePath;
     input.onUploadProgress?.(1);
-    // The "Resize Images" extension deletes the original after writing the
-    // `_1200x1200.webp` variant, so the raw upload URL 404s within seconds.
-    // Wait for the variant and use its tokenized download URL instead — same
-    // approach as catches in ensureCatchPhotoUploadedForCloud.
-    const resizedUrl = await waitForResizedUrl(fb.storage, photoStoragePath, '_1200x1200');
-    photoUri = resizedUrl ?? rawUrl;
   } else if (input.localPhotoUri && isRemote(input.localPhotoUri)) {
     photoUri = input.localPhotoUri;
   }
@@ -129,16 +120,18 @@ export async function createPost(input: CreatePostInput): Promise<string> {
     );
   } catch (e) {
     // If the Firestore write fails after we already uploaded the photo,
-    // clean up the orphan storage file. Otherwise the file sits in
-    // publicCatchPhotos/{uid}/posts/ forever — no doc references it, no
-    // cleanup function walks storage, and it counts against the user's
-    // bucket quota indefinitely. Same fix shape as the stories orphan
-    // cleanup in round 14 (deleteStoryMedia).
+    // clean up the orphan R2 object. Otherwise the file sits in
+    // posts/{uid}/ forever — no doc references it, no cleanup function
+    // walks R2, and it counts against the bucket quota indefinitely.
     if (photoStoragePath) {
-      void deleteObject(ref(fb.storage, photoStoragePath)).catch(() => {});
+      void deleteFromR2(photoStoragePath);
     }
     throw e;
   }
+
+  // The new post will be in the next feed fetch — invalidate the cached
+  // first page so FeedScreen doesn't flash the pre-post version on return.
+  void invalidateAllFeedCaches();
 
   // Fire-and-forget: notify every mentioned user. Self-mentions and dupes are
   // filtered inside sendMentionNotifications.
@@ -494,6 +487,7 @@ export async function deletePost(postId: string): Promise<void> {
   } catch { /* ignore */ }
   await deleteDoc(doc(fb.db, POSTS_COLLECTION, postId)).catch(() => {});
   if (storagePath) {
-    await deleteObject(ref(fb.storage, storagePath)).catch(() => {});
+    await deleteFromR2(storagePath);
   }
+  void invalidateAllFeedCaches();
 }

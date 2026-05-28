@@ -4,6 +4,7 @@
     "slug": "ribolov-app",
     "scheme": "ribolov-app",
     "version": "1.0.0",
+    "newArchEnabled": true,
     "orientation": "default",
     "runtimeVersion": {
       "policy": "appVersion"
@@ -124,7 +125,8 @@
       "googleAndroidClientId": "",
       "facebookAppId": "",
       "firebaseAppCheckEnabled": "true",
-      "firebaseAppCheckDebugToken": ""
+      "firebaseAppCheckDebugToken": "",
+      "sentryDsn": ""
     },
     "owner": "tonyjobs97"
   }

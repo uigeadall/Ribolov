@@ -1,9 +1,12 @@
 import * as admin from "firebase-admin";
-import { onDocumentCreated } from "firebase-functions/v2/firestore";
+import { onDocumentCreated, onDocumentUpdated, onDocumentDeleted } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { defineSecret } from "firebase-functions/params";
 import { logger } from "firebase-functions/v2";
-import { FieldValue } from "firebase-admin/firestore";
+import { FieldValue, Timestamp } from "firebase-admin/firestore";
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -146,10 +149,106 @@ function shouldNotify(type: string | undefined, prefs: NotifPrefs): boolean {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Denormalized chat metadata cache
+// ---------------------------------------------------------------------------
+// `onNewMessage` historically issued 3 separate reads per message (prefs,
+// muted-conv, pushToken). At 3M messages/month / 10k DAU that's 9M reads/mo
+// of Firestore-paid work for a relatively low-value lookup pattern.
+//
+// We now mirror the relevant fields onto `conversations/{convId}.participantData[uid]`
+// so the message handler reads only the conversation doc and pulls the
+// recipient's prefs/token/mute state from there. Lazy backfill on cache miss
+// keeps old conversations working without a migration step.
+
+type RecipientChatMeta = {
+  messagesPrefEnabled: boolean;
+  quietHoursEnabled: boolean;
+  quietHoursStart: number;
+  quietHoursEnd: number;
+  timezone: string;
+  muted: boolean;
+  pushToken: string;
+};
+
+async function loadRecipientChatMeta(
+  convId: string,
+  recipientUid: string,
+  participantData: Record<string, unknown> | undefined,
+): Promise<RecipientChatMeta> {
+  const cached = participantData?.[recipientUid] as Record<string, unknown> | undefined;
+  // A populated cache entry includes pushToken (even if empty string is
+  // valid for "user hasn't enabled notifications"). We treat the *presence*
+  // of pushToken key as the cache-warm signal.
+  if (cached && typeof cached.pushToken === 'string') {
+    return {
+      messagesPrefEnabled: cached.messagesPrefEnabled !== false,
+      quietHoursEnabled: !!cached.quietHoursEnabled,
+      quietHoursStart: typeof cached.quietHoursStart === 'number' ? cached.quietHoursStart : 22,
+      quietHoursEnd: typeof cached.quietHoursEnd === 'number' ? cached.quietHoursEnd : 7,
+      timezone: typeof cached.timezone === 'string' ? cached.timezone : 'Europe/Sofia',
+      muted: !!cached.muted,
+      pushToken: cached.pushToken,
+    };
+  }
+
+  // Cache miss — the slow path. 3 reads in parallel.
+  const [prefsSnap, mutedSnap, tokenSnap] = await Promise.all([
+    db.doc(`users/${recipientUid}/settings/notifications`).get(),
+    db.doc(`users/${recipientUid}/mutedConversations/${convId}`).get(),
+    db.doc(`users/${recipientUid}/private/pushToken`).get(),
+  ]);
+  const prefsData = (prefsSnap.data() ?? {}) as Partial<NotifPrefs>;
+  const tokenData = (tokenSnap.data() ?? {}) as { expoPushToken?: unknown };
+  const meta: RecipientChatMeta = {
+    messagesPrefEnabled: prefsData.messages !== false,
+    quietHoursEnabled: prefsData.quietHoursEnabled === true,
+    quietHoursStart: typeof prefsData.quietHoursStart === 'number' ? prefsData.quietHoursStart : 22,
+    quietHoursEnd: typeof prefsData.quietHoursEnd === 'number' ? prefsData.quietHoursEnd : 7,
+    timezone: typeof prefsData.timezone === 'string' ? prefsData.timezone : 'Europe/Sofia',
+    muted: mutedSnap.exists,
+    pushToken: typeof tokenData.expoPushToken === 'string' ? tokenData.expoPushToken : '',
+  };
+
+  // Backfill the cache. Fire-and-forget — a failed cache write just means
+  // the next call re-runs the slow path. Each backfill is one merge write
+  // amortized over all future messages in the conversation.
+  void db.doc(`conversations/${convId}`).set(
+    { participantData: { [recipientUid]: meta } },
+    { merge: true },
+  ).catch((e) => logger.warn(`[loadRecipientChatMeta] backfill failed for ${convId}/${recipientUid}`, e));
+
+  return meta;
+}
+
 /** True when the current wall-clock time in the user's timezone falls
     inside their quiet-hours window. Handles the cross-midnight case
     (e.g. 22→07) — the natural one for sleep — by checking either
-    side. */
+    side. Accepts the subset of fields actually needed so callers can
+    feed either a full `NotifPrefs` or a denormalized `RecipientChatMeta`. */
+function isQuietHoursActive(
+  args: { quietHoursEnabled: boolean; quietHoursStart?: number; quietHoursEnd?: number; timezone?: string },
+): boolean {
+  if (!args.quietHoursEnabled) return false;
+  const start = args.quietHoursStart;
+  const end = args.quietHoursEnd;
+  if (typeof start !== 'number' || typeof end !== 'number') return false;
+  const hour = parseInt(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: args.timezone || 'Europe/Sofia',
+      hour: '2-digit',
+      hour12: false,
+    }).format(new Date()),
+    10,
+  );
+  if (!Number.isFinite(hour)) return false;
+  if (start === end) return false;
+  return start < end ? hour >= start && hour < end : hour >= start || hour < end;
+}
+
+/** True when the current wall-clock time in the user's timezone falls
+    inside their quiet-hours window. Kept for the `onNotificationCreated`
+    caller that still passes a full NotifPrefs. */
 function isInQuietHours(prefs: NotifPrefs): boolean {
   if (!prefs.quietHoursEnabled) return false;
   const start = prefs.quietHoursStart;
@@ -369,19 +468,24 @@ export const onNewMessage = onDocumentCreated(
       }
     }
 
-    // Honor "messages" preference for both in-app notification AND push.
-    const prefs = await getNotifPrefs(recipientUid);
-    if (!prefs.messages) return;
+    // Single denormalized lookup replaces the previous 3 separate reads
+    // (prefs, mutedConversations, pushToken). On cache miss the helper
+    // falls back to those reads + writes the result back to participantData
+    // for future calls. Net cost per message after warmup: 1 conversation
+    // read instead of 4 reads — see the helper for details.
+    const meta = await loadRecipientChatMeta(
+      convId,
+      recipientUid,
+      convData.participantData as Record<string, unknown> | undefined,
+    );
+    if (!meta.messagesPrefEnabled) return;
 
     // Muted-conversation check. When the recipient has muted this specific
     // conv we suppress BOTH the in-app notification doc and the Expo push,
     // but still bump the unread aggregate so toggling unmute later + opening
     // the chat decrements correctly. The client-side bell-badge subscriber
     // already filters muted convs out of the visible count.
-    const mutedSnap = await db
-      .doc(`users/${recipientUid}/mutedConversations/${convId}`)
-      .get();
-    const isMuted = mutedSnap.exists;
+    const isMuted = meta.muted;
 
     const senderName: string = participantNames[senderUid] ?? "Рибар";
 
@@ -447,15 +551,12 @@ export const onNewMessage = onDocumentCreated(
     // Quiet hours — same treatment as onNotificationCreated. The message
     // is still claimed + unreadMessageCount bumped above, so the recipient
     // sees it the moment they open the app; we just don't buzz the lock
-    // screen during their DND window.
-    const msgPrefs = await getNotifPrefs(recipientUid);
-    if (!msgPrefs.messages) return;
-    if (isInQuietHours(msgPrefs)) return;
-    const tokenSnap = await db.doc(`users/${recipientUid}/private/pushToken`).get();
-    const token: string = tokenSnap.data()?.expoPushToken ?? "";
-    if (!token || !token.startsWith("ExponentPushToken[")) return;
+    // screen during their DND window. We use the meta we already loaded
+    // (cached or fresh) — no second prefs read.
+    if (isQuietHoursActive(meta)) return;
+    if (!meta.pushToken || !meta.pushToken.startsWith("ExponentPushToken[")) return;
 
-    await sendExpoPush(token, senderName, body, {
+    await sendExpoPush(meta.pushToken, senderName, body, {
       type: "message",
       convId,
       senderUid,
@@ -527,101 +628,25 @@ export const aggregateLeaderboards = onSchedule("every 10 minutes", async () => 
 });
 
 // ---------------------------------------------------------------------------
-// cleanupExpiredStories — runs every 1 hour
+// Ephemeral-doc TTL stamping — see Firestore native TTL block lower down.
 // ---------------------------------------------------------------------------
-// We delete by server-stamped `createdAt` age, NOT the client-stamped
-// `expiresAt` field on the doc. Reason: stories.ts addStory() computes
-// expiresAt = Date.now() + 24h from the device's wall-clock, which can be
-// wildly wrong on devices with skewed clocks or wrong timezones. If the
-// clock is 6 hours behind, the story stays in the feed 6 hours past its
-// intended expiry. Same fix pattern as cleanupExpiredWaterReports below.
-const STORY_TTL_MS = 24 * 60 * 60 * 1000;
-
-export const cleanupExpiredStories = onSchedule("every 1 hours", async () => {
-  const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - STORY_TTL_MS);
-
-  const snapshot = await db
-    .collection("stories")
-    .where("createdAt", "<", cutoff)
-    .limit(200)
-    .get();
-
-  for (const docRef of snapshot.docs) {
-    await db.recursiveDelete(docRef.ref);
-  }
-});
-
-// ---------------------------------------------------------------------------
-// cleanupExpiredLivePins — runs every 30 minutes
-// ---------------------------------------------------------------------------
-// Live "fishing here right now" pins have a 4h TTL. We delete by server
-// `createdAt` age, not the client-stamped `expiresAt` field. Same fix as
-// cleanupExpiredStories — `expiresAt = Date.now() + 4h` in liveFishingPins.ts
-// uses the device's wall-clock, which can be hours off on a misset phone.
-// A skewed clock would either leave pins lingering long past their intent
-// or evict them too early. The server-stamped createdAt + Cloud-Function
-// Date.now() comparison side-steps the device entirely.
-const LIVE_PIN_TTL_MS = 4 * 60 * 60 * 1000;
-
-export const cleanupExpiredLivePins = onSchedule("every 30 minutes", async () => {
-  const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - LIVE_PIN_TTL_MS);
-
-  const snapshot = await db
-    .collection("liveFishingPins")
-    .where("createdAt", "<", cutoff)
-    .limit(500)
-    .get();
-
-  if (snapshot.empty) return;
-
-  // Plain delete is fine — no subcollections under live pins.
-  const batch = db.batch();
-  for (const docRef of snapshot.docs) {
-    batch.delete(docRef.ref);
-  }
-  await batch.commit();
-});
-
-// ---------------------------------------------------------------------------
-// cleanupExpiredWaterReports — runs every 6 hours
-// ---------------------------------------------------------------------------
-// Water-condition reports (waterReports) have a 24h TTL. The client used to
-// stamp expiresAt with Date.now() + TTL, which depended on the device clock
-// and could be wildly off. We now rely on the server-stamped createdAt and
-// delete anything older than 24h here.
-
-export const cleanupExpiredWaterReports = onSchedule("every 6 hours", async () => {
-  const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - 24 * 60 * 60 * 1000);
-
-  const snapshot = await db
-    .collection("waterReports")
-    .where("createdAt", "<", cutoff)
-    .limit(500)
-    .get();
-
-  if (snapshot.empty) return;
-
-  const batch = db.batch();
-  for (const docRef of snapshot.docs) {
-    batch.delete(docRef.ref);
-  }
-  await batch.commit();
-});
-
-// ---------------------------------------------------------------------------
-// cleanupOldNotifications — runs daily
-// ---------------------------------------------------------------------------
-// Notification docs accumulate forever under users/{uid}/notifications. At
-// scale this dominates Firestore storage cost. Strategy: delete anything
-// that is BOTH read AND older than 30 days. Unread notifs stick around
-// forever — losing one to a sweep would be a bad UX call.
+// The previous design ran four scheduled functions (`cleanupExpiredStories`,
+// `cleanupExpiredLivePins`, `cleanupExpiredWaterReports`,
+// `cleanupOldNotifications`) every 30min–24h. Each invocation cost reads to
+// find expired docs + writes to delete them, plus the function exec time.
+// At any non-trivial scale those sweeps dominated Firestore ops cost.
 //
-// Runs daily at low-traffic hour. Per invocation we process at most
-// MAX_DOCS_PER_RUN deletes across a collectionGroup query to keep runtime
-// bounded; if a tenant accumulates more than that, the next run mops up.
-
-const NOTIFS_MAX_AGE_DAYS = 30;
-const NOTIFS_MAX_DOCS_PER_RUN = 4000;
+// Replaced by Firestore-native TTL: a server-stamped `ttlAt` Timestamp on
+// each ephemeral doc, and a TTL policy (set in the GCP Console) that deletes
+// the doc within ~24h of `ttlAt` passing. Cost: zero reads, zero writes,
+// zero function executions per cleanup. The stamping itself is one tiny
+// patch write per doc, done in an `onDocumentCreated` trigger so it can't
+// be tampered with from the client.
+//
+// Notifications are special: we only delete READ notifications older than
+// 30 days. Unread notifs must persist forever. So `ttlAt` is stamped on the
+// transition to read=true, not at create time — unread docs simply have no
+// `ttlAt`, which means TTL ignores them.
 
 // ---------------------------------------------------------------------------
 // tournamentEndingSoonReminder — daily at 09:00 Europe/Sofia
@@ -729,44 +754,8 @@ export const tournamentEndingSoonReminder = onSchedule(
   },
 );
 
-export const cleanupOldNotifications = onSchedule("every day 04:00", async () => {
-  const cutoff = admin.firestore.Timestamp.fromMillis(
-    Date.now() - NOTIFS_MAX_AGE_DAYS * 24 * 60 * 60 * 1000,
-  );
-
-  // collectionGroup spans every users/{uid}/notifications subcollection.
-  // Requires a collectionGroup index on (read ASC, createdAt ASC) — added
-  // to firestore.indexes.json alongside this function.
-  const snapshot = await db
-    .collectionGroup("notifications")
-    .where("read", "==", true)
-    .where("createdAt", "<", cutoff)
-    .limit(NOTIFS_MAX_DOCS_PER_RUN)
-    .get();
-
-  if (snapshot.empty) {
-    logger.info("[cleanupOldNotifications] no expired notifs to delete");
-    return;
-  }
-
-  // Batch in groups of 400 (Firestore caps batches at 500; leave headroom).
-  let processed = 0;
-  let batch = db.batch();
-  let inBatch = 0;
-  for (const docRef of snapshot.docs) {
-    batch.delete(docRef.ref);
-    inBatch += 1;
-    processed += 1;
-    if (inBatch >= 400) {
-      await batch.commit();
-      batch = db.batch();
-      inBatch = 0;
-    }
-  }
-  if (inBatch > 0) await batch.commit();
-
-  logger.info(`[cleanupOldNotifications] deleted ${processed} expired read notifications`);
-});
+// `cleanupOldNotifications` replaced by Firestore-native TTL — see the
+// `stampNotificationTtl` trigger at the bottom of this file.
 
 // ---------------------------------------------------------------------------
 // deleteMyAccount — callable function for "delete my account" flow
@@ -835,6 +824,13 @@ async function recursiveDelete(refs: admin.firestore.DocumentReference[]): Promi
   }
 }
 
+// NOTE: `enforceAppCheck: true` temporarily disabled. Re-enable on every
+// callable once you've (a) registered the iOS DeviceCheck + Android Play
+// Integrity providers in the Firebase Console under App Check → Apps, and
+// (b) generated debug tokens for dev builds. Without those, code-level
+// enforcement rejects dev calls before the function runs and the client
+// sees a confusing "unauthenticated" error. See memory:
+// `ribolov-app-check-enforcement` for the full re-enable checklist.
 export const deleteMyAccount = onCall(async (request) => {
   const uid = request.auth?.uid;
   if (!uid) {
@@ -1009,3 +1005,381 @@ export const deleteMyAccount = onCall(async (request) => {
 // the message AFTER the counter was already incremented, leaving the
 // recipient with a phantom unread. The inlined check makes both writes
 // happen together or neither.)
+
+// ---------------------------------------------------------------------------
+// Cloudflare R2 media upload — presigned-URL + server-side delete
+// ---------------------------------------------------------------------------
+// We moved photo / video storage off Firebase Storage onto Cloudflare R2
+// (zero egress fees). The flow is the standard S3-style presigned-URL pattern:
+//   1. Client calls `getR2UploadUrl({ path, contentType })` — we verify the
+//      caller's Firebase Auth identity and that the path lives in a namespace
+//      they own, then mint a 10-minute presigned PUT URL.
+//   2. Client PUTs the file bytes directly to R2 (no proxy hop through our
+//      function — uploads go phone → R2 over Cloudflare's edge).
+//   3. Client writes the resulting `https://pub-<id>.r2.dev/<path>` URL into
+//      Firestore alongside the catch/post/story/etc.
+// Deletes route through `deleteR2Object` so we can re-validate the path
+// against the caller's uid (presigned DELETE would let any path-holder nuke
+// arbitrary objects).
+//
+// Secrets are defined here and bound on each callable's options so they're
+// available via `.value()` at runtime.
+
+const R2_ACCOUNT_ID = defineSecret("R2_ACCOUNT_ID");
+const R2_BUCKET = defineSecret("R2_BUCKET");
+const R2_ACCESS_KEY_ID = defineSecret("R2_ACCESS_KEY_ID");
+const R2_SECRET_ACCESS_KEY = defineSecret("R2_SECRET_ACCESS_KEY");
+const R2_PUBLIC_BASE_URL = defineSecret("R2_PUBLIC_BASE_URL");
+
+function makeR2Client(): S3Client {
+  return new S3Client({
+    region: "auto",
+    endpoint: `https://${R2_ACCOUNT_ID.value()}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: R2_ACCESS_KEY_ID.value(),
+      secretAccessKey: R2_SECRET_ACCESS_KEY.value(),
+    },
+  });
+}
+
+/** Returns true iff `path` lives in a namespace the calling user owns. The
+    user's uid is embedded in every allowed path, so the server can authorize
+    by string-match alone — no Firestore reads on the hot path. */
+function isR2PathAllowedForUser(path: string, uid: string): boolean {
+  // Cheap defense against `..` traversal or anchored paths sneaking past the
+  // prefix checks below. R2 treats keys as opaque strings, but Firestore
+  // queries that join on storagePath would break if we let weird shapes in.
+  if (!path || path.startsWith("/") || path.includes("..") || path.length > 1024) {
+    return false;
+  }
+  // Per-user namespaces — uid must be the second path segment.
+  if (path.startsWith(`profilePhotos/${uid}/`)) return true;
+  if (path.startsWith(`publicCatchPhotos/${uid}/`)) return true;
+  if (path.startsWith(`stories/${uid}/`)) return true;
+  if (path.startsWith(`posts/${uid}/`)) return true;
+  // damFeeds/<damId>/<uid>/<postId>.<ext> — uid is the third segment.
+  const dam = path.match(/^damFeeds\/[^/]+\/([^/]+)\//);
+  if (dam && dam[1] === uid) return true;
+  // chatMedia/<convId>/<uid>_<timestamp>.<ext> — uid is the filename prefix.
+  const chat = path.match(/^chatMedia\/[^/]+\/([^_/]+)_/);
+  if (chat && chat[1] === uid) return true;
+  return false;
+}
+
+// Only these MIME types are accepted on upload. Whitelist > blacklist — a
+// caller can't smuggle an HTML payload past R2 and serve it from our public
+// hostname for phishing. Sized cap is enforced by Cloudflare on the bucket
+// side (max object size); we don't need to recheck here.
+const ALLOWED_CONTENT_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+  "video/mp4",
+  "video/quicktime",
+]);
+
+export const getR2UploadUrl = onCall(
+  {
+    // `enforceAppCheck` temporarily disabled — see deleteMyAccount comment.
+    secrets: [R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_PUBLIC_BASE_URL],
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+
+    const path = typeof request.data?.path === "string" ? request.data.path : "";
+    const contentType = typeof request.data?.contentType === "string" ? request.data.contentType : "";
+    if (!path) throw new HttpsError("invalid-argument", "path required");
+    if (!contentType) throw new HttpsError("invalid-argument", "contentType required");
+    if (!ALLOWED_CONTENT_TYPES.has(contentType)) {
+      throw new HttpsError("invalid-argument", `contentType "${contentType}" not allowed`);
+    }
+    if (!isR2PathAllowedForUser(path, uid)) {
+      throw new HttpsError("permission-denied", `path "${path}" not in user ${uid} namespace`);
+    }
+
+    const s3 = makeR2Client();
+    const cmd = new PutObjectCommand({
+      Bucket: R2_BUCKET.value(),
+      Key: path,
+      ContentType: contentType,
+    });
+    // 10-minute window: long enough that a slow upload over cellular still
+    // finishes on the original URL, short enough that a leaked URL isn't
+    // reusable for long. Client retries inside this window re-use the same
+    // signature — re-calling the function on every retry would be wasteful.
+    const uploadUrl = await getSignedUrl(s3, cmd, { expiresIn: 600 });
+    const publicUrl = `${R2_PUBLIC_BASE_URL.value().replace(/\/$/, "")}/${path}`;
+
+    return { uploadUrl, publicUrl, key: path };
+  },
+);
+
+export const deleteR2Object = onCall(
+  {
+    // `enforceAppCheck` temporarily disabled — see deleteMyAccount comment.
+    secrets: [R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY],
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+
+    const path = typeof request.data?.path === "string" ? request.data.path : "";
+    if (!path) throw new HttpsError("invalid-argument", "path required");
+    if (!isR2PathAllowedForUser(path, uid)) {
+      throw new HttpsError("permission-denied", `path "${path}" not in user ${uid} namespace`);
+    }
+
+    const s3 = makeR2Client();
+    try {
+      await s3.send(new DeleteObjectCommand({ Bucket: R2_BUCKET.value(), Key: path }));
+    } catch (e) {
+      // R2 returns 204 for both "deleted" and "didn't exist". An actual error
+      // here means a real outage / credential issue — log it but don't
+      // surface to the client, since orphan files aren't user-actionable.
+      logger.warn(`[deleteR2Object] failed for ${path}`, e);
+    }
+    return { ok: true };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// getSpeciesHeatmap — server-side aggregation for the map heatmap layer
+// ---------------------------------------------------------------------------
+// The client previously read up to 2,500 publicCatches docs per map open
+// and aggregated cells locally. At any non-trivial DAU that's the single
+// biggest read source in the app. Moved server-side here, with two wins:
+//   1. Response payload shrinks from ~2,500 catch docs to ~50–200 cells.
+//   2. A 10-minute Firestore-backed cache means N concurrent map opens in
+//      the same window cost 1 aggregation total, not N. Each cache hit is
+//      a single doc read (the cache doc itself).
+//
+// k-anonymity invariant is preserved on the server: cells with fewer than
+// HEATMAP_MIN_DISTINCT_OWNERS distinct angler uids are dropped before the
+// response leaves the function. Privacy guarantee matches the previous
+// client-side implementation byte-for-byte.
+
+const HEATMAP_CELL_DEG = 0.05;
+const HEATMAP_MIN_DISTINCT_OWNERS = 3;
+const HEATMAP_MAX_DOCS = 2500;
+const HEATMAP_CACHE_TTL_MS = 10 * 60 * 1000;
+
+type HeatmapCell = {
+  latitude: number;
+  longitude: number;
+  ownerCount: number;
+  catchCount: number;
+};
+
+export const getSpeciesHeatmap = onCall(async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError("unauthenticated", "Sign in required.");
+  }
+  const minDateIso = typeof request.data?.minDateIso === "string" ? request.data.minDateIso : "";
+  const speciesNameRaw = typeof request.data?.speciesName === "string" ? request.data.speciesName : "";
+  if (!minDateIso) throw new HttpsError("invalid-argument", "minDateIso required");
+  // Cap the species name so a malicious caller can't blow up the cache key
+  // namespace. Real Bulgarian species names are <40 chars.
+  const speciesName = speciesNameRaw.slice(0, 64);
+
+  // Cache key bucketed by (species, day) — the client already passes a
+  // YYYY-MM-DD prefix on minDateIso, so collisions across users on the same
+  // day are intentional and what we want.
+  const cacheKey = `${speciesName || "all"}_${minDateIso.slice(0, 10)}`
+    // Defensive: Firestore doc IDs can't contain '/' and shouldn't contain
+    // weird whitespace. Slugify aggressively.
+    .replace(/[^a-zA-Z0-9_\-:.]/g, "_");
+  const cacheRef = db.doc(`heatmapCache/${cacheKey}`);
+
+  const cacheSnap = await cacheRef.get().catch(() => null);
+  if (cacheSnap && cacheSnap.exists) {
+    const cached = cacheSnap.data() as { cells?: HeatmapCell[]; updatedAt?: Timestamp };
+    const updatedAt = cached.updatedAt;
+    if (updatedAt instanceof Timestamp &&
+        Date.now() - updatedAt.toMillis() < HEATMAP_CACHE_TTL_MS) {
+      return { cells: cached.cells ?? [] };
+    }
+  }
+
+  // Cache miss or stale — aggregate from publicCatches.
+  const snap = await db
+    .collection("publicCatches")
+    .where("date", ">=", minDateIso)
+    .orderBy("date", "desc")
+    .limit(HEATMAP_MAX_DOCS)
+    .get();
+
+  type Bucket = { lat: number; lng: number; owners: Set<string>; catches: number };
+  const buckets = new Map<string, Bucket>();
+
+  for (const d of snap.docs) {
+    const c = d.data() as {
+      location?: { latitude?: number; longitude?: number };
+      ownerUid?: string;
+      speciesName?: string;
+    };
+    const lat = c.location?.latitude;
+    const lng = c.location?.longitude;
+    if (typeof lat !== "number" || typeof lng !== "number" || !c.ownerUid) continue;
+    if (speciesName && c.speciesName !== speciesName) continue;
+
+    const row = Math.floor(lat / HEATMAP_CELL_DEG);
+    const col = Math.floor(lng / HEATMAP_CELL_DEG);
+    const key = `${row}:${col}`;
+    let b = buckets.get(key);
+    if (!b) {
+      b = {
+        lat: (row + 0.5) * HEATMAP_CELL_DEG,
+        lng: (col + 0.5) * HEATMAP_CELL_DEG,
+        owners: new Set(),
+        catches: 0,
+      };
+      buckets.set(key, b);
+    }
+    b.owners.add(c.ownerUid);
+    b.catches += 1;
+  }
+
+  const cells: HeatmapCell[] = [];
+  for (const b of buckets.values()) {
+    if (b.owners.size < HEATMAP_MIN_DISTINCT_OWNERS) continue;
+    cells.push({
+      latitude: b.lat,
+      longitude: b.lng,
+      ownerCount: b.owners.size,
+      catchCount: b.catches,
+    });
+  }
+
+  // Best-effort cache write. A failed cache write doesn't break the response —
+  // we just lose this aggregation's "memo" and the next call re-aggregates.
+  cacheRef
+    .set({ cells, updatedAt: FieldValue.serverTimestamp() })
+    .catch((e) => logger.warn(`[getSpeciesHeatmap] cache write failed for ${cacheKey}`, e));
+
+  return { cells };
+});
+
+// ---------------------------------------------------------------------------
+// Firestore-native TTL stampers
+// ---------------------------------------------------------------------------
+// Each onCreate trigger below stamps a `ttlAt` Timestamp field on the new
+// doc, computed server-side as `createdAt + TTL`. The matching Firestore
+// TTL policy (set in the GCP Console once per collection group) deletes the
+// doc within ~24h of `ttlAt` passing.
+//
+// This replaces the previous scheduled cleanup functions
+// (`cleanupExpiredStories`, `cleanupExpiredLivePins`,
+// `cleanupExpiredWaterReports`, `cleanupOldNotifications`). The advantage is
+// zero reads + zero writes per cleanup — Google's TTL infrastructure handles
+// the sweep at no charge. The cost is one tiny `update` write per doc at
+// creation time, which is negligible (<<1% of the docs' lifetime ops).
+//
+// Why server-side, not client-side: the client used to compute
+// `expiresAt = Date.now() + TTL_MS`, which depended on the device's
+// wall-clock. A misset phone (hours / days off) would either evict its own
+// stories early or keep them up past their intended window. Doing this in a
+// trigger is the only way to guarantee a clean wall-clock anchor.
+
+const STORY_TTL_MS = 24 * 60 * 60 * 1000;
+const LIVE_PIN_TTL_MS = 4 * 60 * 60 * 1000;
+const WATER_REPORT_TTL_MS = 24 * 60 * 60 * 1000;
+const READ_NOTIF_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Pulls the server-stamped `createdAt` Timestamp off the doc and returns
+    a Timestamp `ttlMs` later. Returns null when createdAt is missing — the
+    caller must skip the write in that case so we don't accidentally delete
+    a doc that has no anchor (e.g. a malformed write by a future client). */
+function ttlFromCreatedAt(data: Record<string, unknown> | undefined, ttlMs: number): Timestamp | null {
+  const createdAt = data?.createdAt;
+  if (!(createdAt instanceof Timestamp)) return null;
+  return Timestamp.fromMillis(createdAt.toMillis() + ttlMs);
+}
+
+export const stampStoryTtl = onDocumentCreated("stories/{storyId}", async (event) => {
+  const ttlAt = ttlFromCreatedAt(event.data?.data(), STORY_TTL_MS);
+  if (!ttlAt) return;
+  await event.data!.ref.update({ ttlAt });
+});
+
+export const stampLivePinTtl = onDocumentCreated("liveFishingPins/{pinId}", async (event) => {
+  const ttlAt = ttlFromCreatedAt(event.data?.data(), LIVE_PIN_TTL_MS);
+  if (!ttlAt) return;
+  await event.data!.ref.update({ ttlAt });
+});
+
+export const stampWaterReportTtl = onDocumentCreated("waterReports/{reportId}", async (event) => {
+  const ttlAt = ttlFromCreatedAt(event.data?.data(), WATER_REPORT_TTL_MS);
+  if (!ttlAt) return;
+  await event.data!.ref.update({ ttlAt });
+});
+
+/** Notifications are unique: we only want to TTL-delete docs that have been
+    marked read. Stamping `ttlAt` at creation would delete unread notifs too.
+    Instead we stamp on the read=false → read=true transition. Unread notifs
+    have no `ttlAt`, so TTL passes them over indefinitely. */
+export const stampNotificationTtl = onDocumentUpdated(
+  "users/{userId}/notifications/{notifId}",
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!before || !after) return;
+    if (before.read === true) return; // already read on a prior write — no-op
+    if (after.read !== true) return; // still unread — wait for the transition
+    if (after.ttlAt instanceof Timestamp) return; // already stamped — no-op
+    const ttlAt = Timestamp.fromMillis(Date.now() + READ_NOTIF_TTL_MS);
+    await event.data!.after.ref.update({ ttlAt });
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Story cascade-delete: cleans up subcollections + R2 media when a story doc
+// is deleted by any path (user action, TTL sweep, account delete).
+// ---------------------------------------------------------------------------
+// Firestore TTL only deletes the parent doc — `stories/{id}/reactions` and
+// `stories/{id}/comments` would be orphaned without this trigger. We also
+// best-effort the R2 video / photo file via the same path used by the
+// client-side `deleteFromR2` (presigned-URL flow not needed here because
+// we're already inside the trusted server boundary).
+
+export const onStoryDeleted = onDocumentDeleted(
+  {
+    document: "stories/{storyId}",
+    secrets: [R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY],
+  },
+  async (event) => {
+    const storyId = event.params.storyId;
+    const data = event.data?.data() as Record<string, unknown> | undefined;
+
+    // Cascade subcollections. recursiveDelete tolerates non-existence so
+    // this is safe even for stories that never accumulated reactions.
+    await Promise.all([
+      db.recursiveDelete(db.collection(`stories/${storyId}/reactions`)).catch((e) => {
+        logger.warn(`[onStoryDeleted] reactions cascade failed for ${storyId}`, e);
+      }),
+      db.recursiveDelete(db.collection(`stories/${storyId}/comments`)).catch((e) => {
+        logger.warn(`[onStoryDeleted] comments cascade failed for ${storyId}`, e);
+      }),
+    ]);
+
+    // R2 media cleanup — derive the key from the public URL and DELETE it.
+    // Best-effort: an orphan R2 object is invisible to clients (no story doc
+    // references it) but accumulates storage cost over time. The user-side
+    // delete path no longer touches R2 directly — it relies on this trigger
+    // to handle cleanup for any deletion path uniformly.
+    const mediaUrl = typeof data?.mediaUrl === "string" ? data.mediaUrl : "";
+    if (mediaUrl && /^https:\/\/[^/]+\.r2\.dev\//i.test(mediaUrl)) {
+      try {
+        const key = new URL(mediaUrl).pathname.replace(/^\//, "");
+        if (key) {
+          const s3 = makeR2Client();
+          await s3.send(new DeleteObjectCommand({ Bucket: R2_BUCKET.value(), Key: key }));
+        }
+      } catch (e) {
+        logger.warn(`[onStoryDeleted] R2 cleanup failed for ${storyId}`, e);
+      }
+    }
+  },
+);

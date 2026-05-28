@@ -14,6 +14,7 @@ import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { ActionSheet } from '../components/ActionSheet';
 import { Button } from '../components/Button';
+import { EmptyState } from '../components/EmptyState';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
@@ -521,22 +522,27 @@ export default function GroupDetailScreen() {
     );
   };
 
-  const emptyForTab = (
-    <View style={styles.emptyWrap}>
-      <Ionicons
-        name={tab === 'events' ? 'calendar-outline' : tab === 'polls' ? 'bar-chart-outline' : 'chatbubble-outline'}
-        size={40}
-        color={colors.border}
-      />
-      <Text style={styles.emptyText}>
-        {tab === 'events'
-          ? (joined ? 'Няма предстоящи събития. Създай първото!' : 'Няма събития все още.')
-          : tab === 'polls'
-          ? (joined ? 'Няма анкети. Стартирай първата!' : 'Няма анкети все още.')
-          : (joined || !user ? 'Няма публикации все още.' : 'Присъедини се, за да публикуваш.')}
-      </Text>
-    </View>
-  );
+  const emptyForTab = (() => {
+    const icon: 'calendar-outline' | 'bar-chart-outline' | 'chatbubble-outline' =
+      tab === 'events' ? 'calendar-outline' : tab === 'polls' ? 'bar-chart-outline' : 'chatbubble-outline';
+    const { title, subtitle } =
+      tab === 'events'
+        ? joined
+          ? { title: 'Няма предстоящи събития', subtitle: 'Създай първото и поканй членовете.' }
+          : { title: 'Няма събития все още', subtitle: 'Присъедини се, за да виждаш активността.' }
+        : tab === 'polls'
+        ? joined
+          ? { title: 'Няма анкети', subtitle: 'Стартирай първата и попитай групата.' }
+          : { title: 'Няма анкети все още', subtitle: 'Присъедини се, за да виждаш активността.' }
+        : joined || !user
+        ? { title: 'Няма публикации все още', subtitle: 'Бъди първи и сподели нещо.' }
+        : { title: 'Присъедини се, за да публикуваш', subtitle: 'След като се присъединиш, ще можеш да коментираш и публикуваш.' };
+    return (
+      <View style={styles.emptyWrap}>
+        <EmptyState icon={icon} title={title} subtitle={subtitle} />
+      </View>
+    );
+  })();
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>

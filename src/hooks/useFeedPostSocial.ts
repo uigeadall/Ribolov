@@ -8,6 +8,7 @@ import {
   fetchReactionSummary,
   toggleCatchReaction,
   subscribeCatchComments,
+  fetchCatchCommentCount,
   addCatchComment,
   editCatchComment,
   deleteCatchComment,
@@ -31,6 +32,12 @@ type Props = {
   ownerName: string;
   socialEnabled?: boolean;
   isVisible?: boolean;
+  /** Parent state — when true, this hook opens the comments subscription;
+      when false, comments stay closed and we serve only a count (1 read
+      via getCountFromServer instead of 80+ reads from the full subscription).
+      Most users never tap to view comments, so gating saves the bulk of
+      per-card Firestore reads. */
+  commentsOpen?: boolean;
 };
 
 export type FeedPostSocialState = {
@@ -40,6 +47,10 @@ export type FeedPostSocialState = {
   reactionSummary: ReactionSummaryItem[];
   likeBusy: boolean;
   likeCount: number;
+  /** Server-side `count()` of the comments subcollection — fetched once
+      per card mount, no live subscription. Use for the "View N comments"
+      label so callers don't have to subscribe just to display a number. */
+  commentCount: number;
   comments: FeedComment[];
   allComments: FeedComment[];
   draft: string;
@@ -73,6 +84,7 @@ export function useFeedPostSocial({
   ownerName,
   socialEnabled = false,
   isVisible = true,
+  commentsOpen = false,
 }: Props): FeedPostSocialState {
   const catchId = item.id;
 
@@ -81,6 +93,7 @@ export function useFeedPostSocial({
   const [reactionSummary, setReactionSummary] = useState<ReactionSummaryItem[]>([]);
   const [likeBusy, setLikeBusy] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
+  const [commentCount, setCommentCount] = useState(0);
   const [comments, setComments] = useState<FeedComment[]>([]);
   const [draft, setDraft] = useState('');
   const [replyingTo, setReplyingTo] = useState<{ id: string; name: string } | null>(null);
@@ -103,11 +116,20 @@ export function useFeedPostSocial({
     if (!socialEnabled || !myUid || !catchId || !isVisible) return;
     let cancelled = false;
     void (async () => {
-      const [lc, summary] = await Promise.all([
+      // `count()` aggregation calls are 1 read each on Firestore's billing —
+      // cheap, and they spare us mounting the per-card `subscribeCatchComments`
+      // listener (~80 reads each) just to show "View N comments". Subscribe
+      // only when the user opens comments (see effect below).
+      const [lc, summary, cc] = await Promise.all([
         fetchCatchLikeCount(catchId),
         fetchReactionSummary(catchId),
+        fetchCatchCommentCount(catchId),
       ]);
-      if (!cancelled) { setLikeCount(lc); setReactionSummary(summary); }
+      if (!cancelled) {
+        setLikeCount(lc);
+        setReactionSummary(summary);
+        setCommentCount(cc);
+      }
     })();
     return () => { cancelled = true; };
   }, [socialEnabled, myUid, catchId, isVisible]);
@@ -141,10 +163,14 @@ export function useFeedPostSocial({
   }, [myUid]);
 
   useEffect(() => {
-    if (!socialEnabled || !catchId || !isVisible) return;
-    // `blockedReady` in the deps so the subscription rebuilds with the
-    // filter active once we know who's blocked. If myUid is undefined
+    // Comments-list subscription is gated on `commentsOpen` — most users
+    // never tap to expand comments, and the full subscription cost 80+ reads
+    // per visible card. The static commentCount above keeps the "View N
+    // comments" label accurate without keeping a listener attached.
+    // `blockedReady` stays in the deps so the subscription rebuilds with
+    // the filter active once we know who's blocked. If myUid is undefined
     // (signed-out preview), pass through unfiltered.
+    if (!socialEnabled || !catchId || !isVisible || !commentsOpen) return;
     return subscribeCatchComments(catchId, (incoming) => {
       const blocked = blockedUidsRef.current;
       if (!myUid || blocked.size === 0) {
@@ -153,7 +179,7 @@ export function useFeedPostSocial({
       }
       setComments(incoming.filter((c) => !blocked.has(c.authorUid)));
     });
-  }, [socialEnabled, catchId, isVisible, myUid, blockedReady]);
+  }, [socialEnabled, catchId, isVisible, commentsOpen, myUid, blockedReady]);
 
   useEffect(() => {
     if (!socialEnabled || !myUid || !catchId || !isVisible) return;
@@ -373,7 +399,7 @@ export function useFeedPostSocial({
 
   return {
     myReaction, reactionPickerOpen, setReactionPickerOpen, reactionSummary,
-    likeBusy, likeCount, comments, allComments: [...comments, ...pendingComments],
+    likeBusy, likeCount, commentCount, comments, allComments: [...comments, ...pendingComments],
     draft, setDraft, replyingTo, setReplyingTo,
     sendBusy, editingComment, setEditingComment, editBusy,
     saved, saveBusy, likersOpen, setLikersOpen, likers, likersLoading,

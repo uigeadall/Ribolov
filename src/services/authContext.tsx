@@ -116,9 +116,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // user is already attributed — see referral.acceptPendingReferral
           // for the idempotency rules.
           acceptPendingReferral(u.uid).catch(() => undefined);
-        } else {
-          await AsyncStorage.removeItem(LAST_UID_KEY).catch(() => undefined);
         }
+        // LAST_UID_KEY is intentionally NOT cleared on the signed-out branch
+        // — keep the last-signed-in uid persisted so that if a different user
+        // signs in next, the mismatch check above triggers the data wipe.
+        // Clearing it here would let user B sign in after A and inherit A's
+        // local catches/spots/gear.
         // Tag observability events with the current user. After Sentry was
         // removed this is a no-op, but kept wired so future error-reporter
         // integrations pick up user identity automatically.
@@ -196,12 +199,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // account would buzz the new account's device.
       await clearPushToken(u.uid).catch(() => undefined);
     }
-    // Sign out FIRST, then wipe. The earlier order (wipe-then-sign-out) had a
-    // bad failure mode: if firebaseSignOut threw after the wipe, Firebase
-    // persistence would re-authenticate the user on next launch but their
-    // local-only data (spots, gear, trips) was already gone — permanent loss.
-    // Reversing the order keeps local data intact when sign-out fails; the
-    // user simply stays signed in and can retry.
     let signOutOk = true;
     try {
       if (fb) await firebaseSignOut(fb.auth);
@@ -210,12 +207,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     if (!signOutOk) {
       // Sign-out genuinely failed (offline, App Check refresh).
-      // Don't wipe; let the user retry from a known state.
+      // Let the user retry from a known state.
       throw new Error('Не успяхме да те отпишем. Опитай отново след малко.');
     }
-    await wipeAllLocalAppData().catch(() => undefined);
-    await clearCatchSyncQueue().catch(() => undefined);
-    await AsyncStorage.removeItem(LAST_UID_KEY).catch(() => undefined);
+    // Keep local data (catches, spots, gear, trips) on sign-out so the same
+    // user signing back in still sees their logbook. Different-user safety is
+    // enforced by the onAuthStateChanged effect above, which compares the new
+    // uid to LAST_UID_KEY and wipes on mismatch. Wiping here was unsafe — it
+    // also fired when the same user signed back in, losing all their catches.
+    // LAST_UID_KEY is preserved on sign-out so that the mismatch check still
+    // triggers when a different account signs in next.
     // Drop in-memory caches so the next account on this device doesn't see
     // the previous user's follow list, suggestions, rate-limit state, or
     // cached tournament standings.

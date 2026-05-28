@@ -7,6 +7,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 import { useAuth } from '../services/authContext';
@@ -102,10 +103,16 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
     return unsub;
   }, [configured, onStoriesLoaded]);
 
-  useEffect(() => {
-    const unsub = loadStories();
-    return unsub;
-  }, [loadStories]);
+  // StoriesRow only renders on the Feed tab. Detach the listener when the
+  // user navigates to a different tab so we're not paying for live story
+  // updates the user can't see. Stories are short-lived (24h TTL) so users
+  // expect a fresh fetch on return anyway.
+  useFocusEffect(
+    useCallback(() => {
+      const unsub = loadStories();
+      return unsub;
+    }, [loadStories]),
+  );
 
   const goNext = useCallback(() => {
     setViewingIndex((prev) => {

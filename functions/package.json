@@ -4,14 +4,18 @@
     "build": "tsc",
     "deploy": "npm run build && firebase deploy --only functions"
   },
-  "engines": { "node": "22" },
+  "engines": {
+    "node": "22"
+  },
   "main": "lib/index.js",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1054.0",
+    "@aws-sdk/s3-request-presigner": "^3.1054.0",
     "firebase-admin": "latest",
     "firebase-functions": "latest"
   },
   "devDependencies": {
-    "typescript": "^5.0.0",
-    "@types/node": "^20.0.0"
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
   }
 }

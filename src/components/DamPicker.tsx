@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
@@ -30,10 +31,6 @@ function normalize(s: string): string {
   return s.toLowerCase().trim();
 }
 
-const ALL_REGIONS = Array.from(new Set([...DAMS.map((d) => d.region), ...RIVERS.map((r) => r.region)])).sort((a, b) =>
-  a.localeCompare(b, 'bg')
-);
-
 function haversineKm(
   a: { latitude: number; longitude: number },
   b: { latitude: number; longitude: number }
@@ -46,18 +43,6 @@ function haversineKm(
   const x = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(x));
 }
-const POPULAR_SPECIES = [
-  'Шаран',
-  'Сом',
-  'Щука',
-  'Бяла риба',
-  'Костур',
-  'Балканска пъстърва',
-  'Дъгова пъстърва',
-  'Толстолоб',
-  'Амур',
-  'Каракуда',
-];
 
 function createDamPickerStyles(colors: AppColors) {
   return StyleSheet.create({
@@ -70,40 +55,51 @@ function createDamPickerStyles(colors: AppColors) {
       paddingTop: spacing.xxl + spacing.md,
       paddingBottom: spacing.md,
       backgroundColor: colors.card,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
     },
-    closeBtn: { padding: 4 },
-    title: { ...typography.h2, color: colors.text },
-    tabRow: {
-      flexDirection: 'row',
-      gap: spacing.sm,
-      paddingHorizontal: spacing.lg,
-      paddingBottom: spacing.sm,
-      backgroundColor: colors.card,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
-    },
-    tabChip: {
-      flex: 1,
-      paddingVertical: spacing.sm,
-      borderRadius: radius.md,
+    closeBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
       alignItems: 'center',
-      backgroundColor: colors.background,
+      justifyContent: 'center',
+      backgroundColor: colors.primarySurface,
+    },
+    title: { ...typography.h2, color: colors.text },
+    // Segmented control housing — single rounded pill with two halves. Active
+    // half gets the primary fill + white text; inactive stays transparent so
+    // the segment looks like one cohesive control rather than two buttons.
+    segmented: {
+      flexDirection: 'row',
+      marginHorizontal: spacing.lg,
+      marginTop: spacing.sm,
+      marginBottom: spacing.md,
+      padding: 4,
+      borderRadius: radius.pill,
+      backgroundColor: colors.surfaceAlt,
       borderWidth: 1,
       borderColor: colors.border,
     },
-    tabChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-    tabChipText: { ...typography.caption, fontWeight: '700', color: colors.text },
-    tabChipTextActive: { color: colors.white },
+    segmentedItem: {
+      flex: 1,
+      paddingVertical: 10,
+      borderRadius: radius.pill,
+      alignItems: 'center',
+      flexDirection: 'row',
+      justifyContent: 'center',
+      gap: 6,
+    },
+    segmentedItemActive: { backgroundColor: colors.primary },
+    segmentedText: { ...typography.caption, fontWeight: '700', color: colors.textMuted },
+    segmentedTextActive: { color: colors.white },
     searchBox: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.sm,
-      margin: spacing.lg,
+      marginHorizontal: spacing.lg,
+      marginBottom: spacing.md,
       paddingHorizontal: spacing.md,
       backgroundColor: colors.card,
-      borderRadius: radius.md,
+      borderRadius: radius.lg,
       borderWidth: 1,
       borderColor: colors.border,
     },
@@ -113,36 +109,15 @@ function createDamPickerStyles(colors: AppColors) {
       fontSize: 15,
       color: colors.text,
     },
-    filterSection: { marginBottom: spacing.sm },
-    filterLabel: {
-      ...typography.caption,
-      color: colors.textMuted,
-      paddingHorizontal: spacing.lg,
-      marginBottom: spacing.xs,
-      textTransform: 'uppercase',
-      letterSpacing: 1,
-    },
-    chip: {
-      paddingHorizontal: spacing.md,
-      paddingVertical: 6,
-      borderRadius: radius.pill,
-      backgroundColor: colors.card,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-    chipText: { ...typography.caption, color: colors.text, fontWeight: '600' },
-    chipTextActive: { color: colors.white },
-    resetBar: {
+    countBar: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
       paddingHorizontal: spacing.lg,
-      paddingTop: spacing.sm,
       paddingBottom: spacing.sm,
     },
-    resetText: { ...typography.caption, color: colors.textMuted },
-    resetBtn: { ...typography.caption, color: colors.primary, fontWeight: '600' },
+    countText: { ...typography.caption, color: colors.textMuted, fontWeight: '600' },
+    countTextStrong: { color: colors.text, fontWeight: '700' },
     row: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -150,24 +125,38 @@ function createDamPickerStyles(colors: AppColors) {
       paddingVertical: spacing.md,
       paddingHorizontal: spacing.md,
       backgroundColor: colors.card,
-      borderRadius: radius.md,
+      borderRadius: radius.lg,
       marginBottom: spacing.sm,
       borderWidth: 1,
       borderColor: colors.border,
+      // Subtle elevation pulls the card off the background; light enough that
+      // a list of 90+ rows doesn't look heavy. iOS only — Android picks it
+      // up via the elevation prop but at a lower visual cost.
+      shadowColor: '#000',
+      shadowOpacity: 0.05,
+      shadowRadius: 6,
+      shadowOffset: { width: 0, height: 2 },
+      elevation: 1,
     },
     rowIcon: {
-      width: 40,
-      height: 40,
-      borderRadius: 8,
+      width: 42,
+      height: 42,
+      borderRadius: radius.md,
       backgroundColor: '#062D3D',
       alignItems: 'center',
       justifyContent: 'center',
     },
-    rowName: { ...typography.bodyBold, color: colors.text },
+    rowName: { ...typography.bodyBold, color: colors.text, fontSize: 15 },
     rowMeta: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
     rowSpecies: { ...typography.small, color: colors.primary, marginTop: 4, fontWeight: '600' },
     rowRight: { alignItems: 'flex-end', gap: 4 },
-    distText: { ...typography.caption, color: colors.text, fontWeight: '600' },
+    distPill: {
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: radius.pill,
+      backgroundColor: colors.primarySurface,
+    },
+    distText: { ...typography.small, color: colors.primary, fontWeight: '700' },
     empty: { alignItems: 'center', padding: spacing.xxl },
     emptyText: { ...typography.h3, color: colors.text, marginTop: spacing.md },
     emptyHint: { ...typography.body, color: colors.textMuted, marginTop: spacing.xs, textAlign: 'center' },
@@ -178,8 +167,6 @@ export function DamPicker({ visible, userCoord, onClose, onSelect }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createDamPickerStyles(colors), [colors]);
   const [query, setQuery] = useState('');
-  const [region, setRegion] = useState<string | null>(null);
-  const [species, setSpecies] = useState<string | null>(null);
   const [listTab, setListTab] = useState<'dams' | 'rivers'>('dams');
 
   const filtered = useMemo((): WaterPick[] => {
@@ -192,8 +179,6 @@ export function DamPicker({ visible, userCoord, onClose, onSelect }: Props) {
     let list = base.filter((row) => {
       const it = row.item;
       if (q && !normalize(it.name).includes(q) && !normalize(it.region).includes(q)) return false;
-      if (region && it.region !== region) return false;
-      if (species && !it.species.includes(species)) return false;
       return true;
     });
 
@@ -207,7 +192,7 @@ export function DamPicker({ visible, userCoord, onClose, onSelect }: Props) {
       list = [...list].sort((a, b) => a.item.name.localeCompare(b.item.name, 'bg'));
     }
     return list;
-  }, [query, region, species, userCoord, listTab]);
+  }, [query, userCoord, listTab]);
 
   const distanceLabel = (row: WaterPick): string | null => {
     if (!userCoord) return null;
@@ -215,16 +200,11 @@ export function DamPicker({ visible, userCoord, onClose, onSelect }: Props) {
     return km < 1 ? `${Math.round(km * 1000)} м` : `${km.toFixed(0)} км`;
   };
 
-  const reset = () => {
-    setQuery('');
-    setRegion(null);
-    setSpecies(null);
+  const switchTab = (next: 'dams' | 'rivers') => {
+    if (next === listTab) return;
+    void Haptics.selectionAsync();
+    setListTab(next);
   };
-
-  const hasFilters = !!query || !!region || !!species;
-
-  const countLabel =
-    listTab === 'dams' ? `Язовири: ${filtered.length}` : `Реки: ${filtered.length}`;
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
@@ -234,39 +214,46 @@ export function DamPicker({ visible, userCoord, onClose, onSelect }: Props) {
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
           <View style={styles.header}>
-            <Pressable onPress={onClose} hitSlop={8} style={styles.closeBtn}>
-              <Ionicons name="close" size={26} color={colors.text} />
+            <Pressable onPress={onClose} hitSlop={8} style={styles.closeBtn} accessibilityLabel="Затвори">
+              <Ionicons name="close" size={22} color={colors.primary} />
             </Pressable>
             <Text style={styles.title}>Водоеми</Text>
-            <View style={{ width: 26 }} />
+            <View style={{ width: 36 }} />
           </View>
 
-          <View style={styles.tabRow}>
+          {/* Segmented control — Язовири / Реки. Single pill housing with two
+              halves so the control reads as one cohesive switcher rather than
+              two separate buttons. */}
+          <View style={styles.segmented}>
             <Pressable
-              onPress={() => setListTab('dams')}
-              style={[styles.tabChip, listTab === 'dams' && styles.tabChipActive]}
+              onPress={() => switchTab('dams')}
+              style={[styles.segmentedItem, listTab === 'dams' && styles.segmentedItemActive]}
+              accessibilityRole="button"
+              accessibilityState={{ selected: listTab === 'dams' }}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Ionicons
-                  name="water-outline"
-                  size={16}
-                  color={listTab === 'dams' ? colors.white : colors.text}
-                />
-                <Text style={[styles.tabChipText, listTab === 'dams' && styles.tabChipTextActive]}>Язовири</Text>
-              </View>
+              <Ionicons
+                name="water-outline"
+                size={16}
+                color={listTab === 'dams' ? colors.white : colors.textMuted}
+              />
+              <Text style={[styles.segmentedText, listTab === 'dams' && styles.segmentedTextActive]}>
+                Язовири
+              </Text>
             </Pressable>
             <Pressable
-              onPress={() => setListTab('rivers')}
-              style={[styles.tabChip, listTab === 'rivers' && styles.tabChipActive]}
+              onPress={() => switchTab('rivers')}
+              style={[styles.segmentedItem, listTab === 'rivers' && styles.segmentedItemActive]}
+              accessibilityRole="button"
+              accessibilityState={{ selected: listTab === 'rivers' }}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Ionicons
-                  name="trail-sign-outline"
-                  size={16}
-                  color={listTab === 'rivers' ? colors.white : colors.text}
-                />
-                <Text style={[styles.tabChipText, listTab === 'rivers' && styles.tabChipTextActive]}>Реки</Text>
-              </View>
+              <Ionicons
+                name="trail-sign-outline"
+                size={16}
+                color={listTab === 'rivers' ? colors.white : colors.textMuted}
+              />
+              <Text style={[styles.segmentedText, listTab === 'rivers' && styles.segmentedTextActive]}>
+                Реки
+              </Text>
             </Pressable>
           </View>
 
@@ -288,57 +275,16 @@ export function DamPicker({ visible, userCoord, onClose, onSelect }: Props) {
             ) : null}
           </View>
 
-          <View style={styles.filterSection}>
-            <Text style={styles.filterLabel}>Регион</Text>
-            <FlatList
-              data={ALL_REGIONS}
-              keyExtractor={(r) => r}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.sm }}
-              renderItem={({ item }) => (
-                <Pressable
-                  onPress={() => setRegion((r) => (r === item ? null : item))}
-                  style={[styles.chip, region === item && styles.chipActive]}
-                >
-                  <Text style={[styles.chipText, region === item && styles.chipTextActive]}>{item}</Text>
-                </Pressable>
-              )}
-            />
+          <View style={styles.countBar}>
+            <Text style={styles.countText}>
+              <Text style={styles.countTextStrong}>{filtered.length}</Text>
+              {' '}
+              {listTab === 'dams' ? 'язовира' : 'реки'}
+            </Text>
+            {userCoord ? (
+              <Text style={styles.countText}>сортирани по разстояние</Text>
+            ) : null}
           </View>
-
-          <View style={styles.filterSection}>
-            <Text style={styles.filterLabel}>Риба</Text>
-            <FlatList
-              data={POPULAR_SPECIES}
-              keyExtractor={(s) => s}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.sm }}
-              renderItem={({ item }) => (
-                <Pressable
-                  onPress={() => setSpecies((s) => (s === item ? null : item))}
-                  style={[styles.chip, species === item && styles.chipActive]}
-                >
-                  <Text style={[styles.chipText, species === item && styles.chipTextActive]}>{item}</Text>
-                </Pressable>
-              )}
-            />
-          </View>
-
-          {hasFilters ? (
-            <View style={styles.resetBar}>
-              <Text style={styles.resetText}>{filtered.length} резултата</Text>
-              <Pressable onPress={reset}>
-                <Text style={styles.resetBtn}>Изчисти филтрите</Text>
-              </Pressable>
-            </View>
-          ) : (
-            <View style={styles.resetBar}>
-              <Text style={styles.resetText}>{countLabel}</Text>
-              {userCoord ? <Text style={styles.resetText}>сортирани по разстояние</Text> : null}
-            </View>
-          )}
 
           <FlatList
             data={filtered}
@@ -348,10 +294,10 @@ export function DamPicker({ visible, userCoord, onClose, onSelect }: Props) {
               <View style={styles.empty}>
                 <Ionicons name="search-outline" size={48} color={colors.textMuted} />
                 <Text style={styles.emptyText}>Няма съвпадения</Text>
-                <Text style={styles.emptyHint}>Опитай с друго име или премахни филтрите.</Text>
+                <Text style={styles.emptyHint}>Опитай с друго име.</Text>
               </View>
             }
-            contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}
+            contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl }}
             renderItem={({ item }) => {
               const dist = distanceLabel(item);
               const it = item.item;
@@ -360,11 +306,14 @@ export function DamPicker({ visible, userCoord, onClose, onSelect }: Props) {
               const metaRiver = !isDam ? (it as River) : null;
               return (
                 <Pressable
-                  onPress={() => onSelect(item)}
+                  onPress={() => {
+                    void Haptics.selectionAsync();
+                    onSelect(item);
+                  }}
                   style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
                 >
                   <View style={[styles.rowIcon, !isDam && { backgroundColor: '#2E9B5A' }]}>
-                    <Ionicons name={isDam ? 'water-outline' : 'trail-sign-outline'} size={18} color={colors.white} />
+                    <Ionicons name={isDam ? 'water-outline' : 'trail-sign-outline'} size={20} color={colors.white} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.rowName}>{it.name}</Text>
@@ -380,7 +329,11 @@ export function DamPicker({ visible, userCoord, onClose, onSelect }: Props) {
                     </Text>
                   </View>
                   <View style={styles.rowRight}>
-                    {dist ? <Text style={styles.distText}>{dist}</Text> : null}
+                    {dist ? (
+                      <View style={styles.distPill}>
+                        <Text style={styles.distText}>{dist}</Text>
+                      </View>
+                    ) : null}
                     <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
                   </View>
                 </Pressable>

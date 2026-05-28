@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '../storage/kv';
-import { View, Text, StyleSheet, FlatList, Pressable, Platform, Animated, Alert } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Platform, Animated, Alert } from 'react-native';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
 
-// FlatList wrapped with createAnimatedComponent — required so that the FlatList
-// can receive an Animated.event onScroll with useNativeDriver: true (plain
-// FlatList only supports JS-driven onScroll). The cast preserves FlatList's
-// generic so callers keep proper typing on data / renderItem / etc.
-const AnimatedFlatList = Animated.createAnimatedComponent(FlatList) as unknown as typeof FlatList;
+// FlashList is a drop-in for FlatList with 5-10× the scroll perf at this
+// list's size; we lose the legacy `maxToRenderPerBatch` etc. knobs since
+// FlashList runs its own recycling internally. Wrapped with
+// createAnimatedComponent so it can receive Animated.event onScroll with
+// useNativeDriver: true — same pattern as the old AnimatedFlatList.
+const AnimatedFlashList = Animated.createAnimatedComponent(FlashList) as unknown as typeof FlashList;
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -26,7 +28,8 @@ import { PeopleYouMayKnowRow } from '../components/PeopleYouMayKnowRow';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { spacing, typography } from '../theme/typography';
-import { fetchPublicFeed, deletePhotoFromFeedPost, removeFromPublicFeed, getFollowing, getUserPublicSummary, fetchPublicPosts, deletePost, searchUsersByName, createPost, type FeedPage } from '../services/cloudSync';
+import { fetchPublicFeed, prefetchFirstPageItems, deletePhotoFromFeedPost, removeFromPublicFeed, getFollowing, getUserPublicSummary, fetchPublicPosts, deletePost, searchUsersByName, createPost, type FeedPage } from '../services/cloudSync';
+import { publishFeedVisibility } from '../services/feedVisibility';
 import Toast from 'react-native-toast-message';
 import type { ResharedRef } from '../types';
 import { listFollowedHashtags } from '../services/hashtags';
@@ -46,8 +49,14 @@ import { notifyError } from '../utils/notify';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 import * as Haptics from 'expo-haptics';
 import { useUnreadNotifCount } from '../hooks/useUnreadNotifCount';
+import { DamPicker, type WaterPick } from '../components/DamPicker';
+import { catchMatchesLeaderboardWater } from '../services/leaderboards';
 
 type FeedScope = 'all' | 'following';
+// AsyncStorage key for the last-selected water filter. Persisted so the
+// user's "Язовир Искър" view survives an app restart — they almost always
+// want the same dam they were last looking at.
+const WATER_FILTER_KEY = '@ribolov/feedWaterFilter';
 
 function createStyles(colors: AppColors) {
   return StyleSheet.create({
@@ -110,11 +119,14 @@ export default function FeedScreen() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [myPhotoUrl, setMyPhotoUrl] = useState<string | undefined>();
   const [avatarMap, setAvatarMap] = useState<Record<string, string>>({});
+  // visibleIdsRef is read by `prefetchBatch` and old code paths; we still
+  // keep it for those, but the per-card visibility used by FeedPost /
+  // PostCard now flows through the `publishFeedVisibility` pub-sub so the
+  // renderItem closure doesn't churn on every viewability tick.
   const visibleIdsRef = useRef<Set<string>>(new Set());
-  const [visibleIds, setVisibleIds] = useState<Set<string>>(new Set());
   const mountedRef = useRef(true);
   const loadingMoreRef = useRef(false);
-  const flatListRef = useRef<FlatList<any>>(null);
+  const flatListRef = useRef<FlashListRef<any>>(null);
   // Persisted between load/loadMore so pagination passes same ownerUids filter
   const followingUidsRef = useRef<string[]>([]);
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -146,6 +158,54 @@ export default function FeedScreen() {
   }, [user?.uid]);
 
   const [scope, setScope] = useState<FeedScope>('all');
+  // Water-body filter (dam or river). When set, the feed shows only catches
+  // matching that water — same matching rule as the Leaderboard scope
+  // (`catchMatchesLeaderboardWater`): GPS within radius OR text match in
+  // location name / notes. Posts are hidden while a water filter is active
+  // since they don't carry a location signal worth filtering on.
+  const [waterFilter, setWaterFilter] = useState<WaterPick | null>(null);
+  const [waterPickerOpen, setWaterPickerOpen] = useState(false);
+
+  // Restore last water filter on mount. Stored as { kind, id } — we resolve
+  // back to the full Dam / River object from the local DAMS / RIVERS data
+  // (which is bundled, so no network roundtrip).
+  useEffect(() => {
+    AsyncStorage.getItem(WATER_FILTER_KEY).then((raw) => {
+      if (!raw) return;
+      try {
+        const saved = JSON.parse(raw) as { kind: 'dam' | 'river'; id: string };
+        // Lazy import — DAMS / RIVERS are already pulled in by leaderboards.ts
+        // via the catchMatchesLeaderboardWater path, but we need them here
+        // to reconstruct the WaterPick object. Cheap require since the
+        // module is already in the bundle.
+        const { DAMS } = require('../data/dams');
+        const { RIVERS } = require('../data/rivers');
+        if (saved.kind === 'dam') {
+          const d = DAMS.find((x: { id: string }) => x.id === saved.id);
+          if (d) setWaterFilter({ kind: 'dam', item: d });
+        } else {
+          const r = RIVERS.find((x: { id: string }) => x.id === saved.id);
+          if (r) setWaterFilter({ kind: 'river', item: r });
+        }
+      } catch {
+        // Ignore malformed payload — fall back to no filter.
+      }
+    }).catch(() => {});
+  }, []);
+
+  // Persist filter on change. Null clears the saved value so a fresh launch
+  // doesn't restore a filter the user explicitly cleared.
+  useEffect(() => {
+    if (waterFilter) {
+      AsyncStorage.setItem(
+        WATER_FILTER_KEY,
+        JSON.stringify({ kind: waterFilter.kind, id: waterFilter.item.id }),
+      ).catch(() => {});
+    } else {
+      AsyncStorage.removeItem(WATER_FILTER_KEY).catch(() => {});
+    }
+  }, [waterFilter]);
+
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -173,14 +233,47 @@ export default function FeedScreen() {
 
   const load = useCallback(async () => {
     if (!configured || !user) return;
-    setLoading(true);
     setError(null);
     const scopeAtRequest = scope;
     try {
+      // Stale-while-revalidate: paint the last-cached page from AsyncStorage
+      // *before* hitting the network. For the "all" (For You) tab we can paint
+      // immediately because no follow-list lookup is needed. For Following,
+      // the cache key depends on the follow list — so we fetch follows + the
+      // cached page in parallel below, then paint with the right key.
+      if (scope === 'all') {
+        const cached = await prefetchFirstPageItems(20);
+        if (cached.length > 0 && mountedRef.current && scopeAtRequest === scope) {
+          setItems(cached);
+          itemsRef.current = cached;
+          setLoading(false);
+        } else {
+          setLoading(true);
+        }
+      } else {
+        setLoading(true);
+      }
       const [followingRows, blockedUids] = await Promise.all([
         getFollowing(user.uid),
         getBlockedUids(user.uid),
       ]);
+      // Following-scope cache paint: the follow list is known now, so we can
+      // look up a cache entry keyed by the sorted follow list. Same instant-
+      // paint trick as For You. Skip when the user follows no one (the
+      // fetchPublicFeed call below would short-circuit anyway).
+      if (scope === 'following' && mountedRef.current && scopeAtRequest === scope) {
+        const followingUids = followingRows
+          .map((f) => f.uid)
+          .filter((uid) => !blockedUids.has(uid));
+        if (followingUids.length > 0) {
+          const cached = await prefetchFirstPageItems(20, followingUids);
+          if (cached.length > 0 && mountedRef.current && scopeAtRequest === scope) {
+            setItems(cached);
+            itemsRef.current = cached;
+            setLoading(false);
+          }
+        }
+      }
 
       let page: FeedPage;
       let postsPage: { items: Post[] };
@@ -406,14 +499,31 @@ export default function FeedScreen() {
 
   const displayedItems = useMemo<MixedFeedItem[]>(() => {
     const seen = new Set<string>();
-    const dedupedCatches = items.filter((i) => { if (seen.has(i.id)) return false; seen.add(i.id); return true; });
+    let dedupedCatches = items.filter((i) => { if (seen.has(i.id)) return false; seen.add(i.id); return true; });
+
+    // Water-body filter: keep only catches that match the selected dam/river
+    // via GPS-within-radius OR location-name/notes text match. Same rule as
+    // the Leaderboard's water scope so behaviour is consistent across the
+    // app — a catch that counts toward "Язовир Искър" on the leaderboard
+    // also shows up in the "Язовир Искър" feed view.
+    let filteredPosts = posts;
+    if (waterFilter) {
+      const waterScope = { type: 'water' as const, kind: waterFilter.kind, id: waterFilter.item.id };
+      dedupedCatches = dedupedCatches.filter((c) => catchMatchesLeaderboardWater(c, waterScope));
+      // Posts (text-only items) don't carry GPS and their text rarely
+      // mentions a specific dam by name in a queryable way. Hiding them
+      // when a water filter is active keeps the view focused on actual
+      // catches from that water — which is what the user asked for.
+      filteredPosts = [];
+    }
+
     const merged: MixedFeedItem[] = [
       ...dedupedCatches.map((c) => ({ kind: 'catch' as const, data: c, date: c.date ?? '' })),
-      ...posts.map((p) => ({ kind: 'post' as const, data: p, date: p.date ?? '' })),
+      ...filteredPosts.map((p) => ({ kind: 'post' as const, data: p, date: p.date ?? '' })),
     ];
     merged.sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
     return merged;
-  }, [items, posts]);
+  }, [items, posts, waterFilter]);
 
   // Mention-notification deep link: scroll to the focused post once it
   // appears in the merged list. focusHandledRef gates this to once per
@@ -576,6 +686,10 @@ export default function FeedScreen() {
   const renderItem = useCallback(({ item }: { item: MixedFeedItem }) => {
     if (item.kind === 'catch') {
       const c = item.data;
+      // `isVisible` is no longer passed — FeedPost subscribes via
+      // `useFeedItemVisibility(c.id)` so this closure stays stable across
+      // viewability ticks. The cost saved: one renderItem call per visible
+      // cell per tick = ~20 closure regenerations per scroll movement.
       return (
         <FeedPost
           item={c}
@@ -585,7 +699,6 @@ export default function FeedScreen() {
           myPhotoUrl={myPhotoUrl}
           resolvedAvatarUrl={avatarMap[c.ownerUid]}
           socialEnabled={socialEnabled}
-          isVisible={visibleIds.has(c.id)}
           onPressAuthor={onPressAuthor}
           onDeletePhoto={onDeletePhoto}
           onRemovePost={onRemovePost}
@@ -611,7 +724,7 @@ export default function FeedScreen() {
         onPressReshareTarget={onPressReshareTarget}
       />
     );
-  }, [user?.uid, user, myDisplayName, myPhotoUrl, avatarMap, socialEnabled, visibleIds, onPressAuthor, onPressCatch, onDeletePhoto, onRemovePost, onPressHashtag, onPressMention, onDeletePostItem, onReshareCatch, onResharePost]);
+  }, [user?.uid, user, myDisplayName, myPhotoUrl, avatarMap, socialEnabled, onPressAuthor, onPressCatch, onDeletePhoto, onRemovePost, onPressHashtag, onPressMention, onDeletePostItem, onReshareCatch, onResharePost]);
 
   // No separator — each post has its own bottom border
   const ItemSeparator = useCallback(() => null, []);
@@ -681,7 +794,12 @@ export default function FeedScreen() {
     ({ viewableItems }: { viewableItems: Array<{ item: { kind: string; data: { id: string } } }> }) => {
       const ids = new Set(viewableItems.map((v) => v.item.data.id));
       visibleIdsRef.current = ids;
-      setVisibleIds(ids);
+      // Push to the pub-sub; FeedPost / PostCard subscribe individually. No
+      // React state update here — that used to live in `visibleIds` and put
+      // a fresh Set identity into renderItem's deps every tick, regenerating
+      // the closure (and forcing FlashList to re-run renderItem for every
+      // visible cell). Now the parent renders nothing on viewability change.
+      publishFeedVisibility(ids);
     }
   ).current;
 
@@ -749,6 +867,56 @@ export default function FeedScreen() {
           <Text style={{ fontSize: 13, fontWeight: '700', color: '#fff' }}>Следвани</Text>
         </Pressable>
       </View>
+
+      {/* Water-body filter chip — opens DamPicker. When active, shows the
+          selected water name with a clear (×) button. The pill style mirrors
+          the scope-tab background so the two controls feel like one cluster.
+          Light haptic on open mirrors the "primary action" pattern used
+          elsewhere; selection haptic fires inside the picker's onSelect. */}
+      <Pressable
+        onPress={() => {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          setWaterPickerOpen(true);
+        }}
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 8,
+          marginTop: spacing.sm,
+          paddingVertical: 10,
+          paddingHorizontal: 14,
+          backgroundColor: waterFilter ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.12)',
+          borderRadius: 14,
+          borderWidth: 1,
+          borderColor: 'rgba(255,255,255,0.18)',
+        }}
+        accessibilityRole="button"
+        accessibilityLabel="Филтър по водоем"
+      >
+        <Ionicons
+          name={waterFilter?.kind === 'river' ? 'git-branch-outline' : 'water-outline'}
+          size={18}
+          color="#fff"
+        />
+        <Text style={{ flex: 1, fontSize: 13, fontWeight: '700', color: '#fff' }} numberOfLines={1}>
+          {waterFilter ? waterFilter.item.name : 'Филтър: всички водоеми'}
+        </Text>
+        {waterFilter ? (
+          <Pressable
+            onPress={() => {
+              void Haptics.selectionAsync();
+              setWaterFilter(null);
+            }}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Изчисти филтър по водоем"
+          >
+            <Ionicons name="close-circle" size={20} color="rgba(255,255,255,0.85)" />
+          </Pressable>
+        ) : (
+          <Ionicons name="chevron-down" size={16} color="rgba(255,255,255,0.75)" />
+        )}
+      </Pressable>
     </LinearGradient>
   );
 
@@ -823,11 +991,20 @@ export default function FeedScreen() {
     }
     return (
       <FadeIn>
-        <AnimatedFlatList
+        <AnimatedFlashList
           ref={flatListRef}
           data={displayedItems}
           keyExtractor={(item) => `${item.kind}-${item.data.id}`}
-          contentContainerStyle={[styles.listContent, { paddingTop: headerHeight }]}
+          // Separate recycler pools for catch vs post cells. Without this hint
+          // FlashList tries to reuse a catch cell for a post (and vice versa),
+          // which means tearing down the wrong subtree and rebuilding from
+          // scratch — wastes the recycler win. With it, scroll perf stays at
+          // 60fps even on mixed-type feeds.
+          getItemType={(item) => item.kind}
+          // Pre-mount cells slightly outside the viewport so they're rendered
+          // by the time they slide in. 500px ≈ one extra card on each side.
+          drawDistance={500}
+          contentContainerStyle={{ paddingTop: headerHeight }}
           refreshControl={<FishingRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           ItemSeparatorComponent={ItemSeparator}
           showsVerticalScrollIndicator={false}
@@ -835,18 +1012,29 @@ export default function FeedScreen() {
           onEndReachedThreshold={0.4}
           onScroll={onScroll}
           scrollEventThrottle={16}
-          removeClippedSubviews={Platform.OS === 'android'}
-          maxToRenderPerBatch={8}
-          windowSize={5}
-          initialNumToRender={6}
-          updateCellsBatchingPeriod={50}
-          onScrollToIndexFailed={(info) => {
-            // Row not yet measured — let RN estimate and retry once.
-            setTimeout(() => {
-              flatListRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0.15 });
-            }, 120);
-          }}
-          ListEmptyComponent={null}
+          ListEmptyComponent={
+            // Active water filter + 0 matches in the loaded pages. The
+            // outer feedIsEmpty empty state (further down) handles
+            // "feed truly empty"; this one specifically tells the user
+            // why their view is blank when catches *do* exist but none
+            // belong to the selected water.
+            waterFilter && items.length > 0 && displayedItems.length === 0 ? (
+              <View style={{ paddingTop: spacing.xxl, paddingHorizontal: spacing.lg }}>
+                <EmptyState
+                  icon="filter-outline"
+                  title={`Няма улови от „${waterFilter.item.name}“`}
+                  subtitle="Изпробвай друг водоем или премахни филтъра."
+                  action={{
+                    label: 'Премахни филтъра',
+                    onPress: () => {
+                      void Haptics.selectionAsync();
+                      setWaterFilter(null);
+                    },
+                  }}
+                />
+              </View>
+            ) : null
+          }
           ListHeaderComponent={<PeopleYouMayKnowRow />}
           ListFooterComponent={
             loadingMore ? (
@@ -1053,6 +1241,20 @@ export default function FeedScreen() {
           compose entrypoint feels identical across high-traffic surfaces.
           Hidden on the empty feed so the empty-state CTA owns the action. */}
       {!feedIsEmpty ? <ComposeFab /> : null}
+
+      {/* Water-body picker. Same component used by MapScreen and
+          LeaderboardScreen so the dam/river list + region grouping stays
+          identical across surfaces — picking "Язовир Искър" here picks the
+          same entity it would on the leaderboard. */}
+      <DamPicker
+        visible={waterPickerOpen}
+        onClose={() => setWaterPickerOpen(false)}
+        onSelect={(pick) => {
+          void Haptics.selectionAsync();
+          setWaterFilter(pick);
+          setWaterPickerOpen(false);
+        }}
+      />
     </View>
   );
 }

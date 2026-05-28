@@ -17,13 +17,12 @@ import {
   endAt,
   limit,
 } from 'firebase/firestore';
-import { ref, getDownloadURL, deleteObject } from 'firebase/storage';
 import { updateProfile } from 'firebase/auth';
-import { uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
 import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
 import { deleteAllUserDamFeedPosts } from './damFeed';
 import { allowSearch } from './socialRateLimit';
+import { uploadImageToR2, deleteFromR2 } from './r2Upload';
 
 export type UserPublicSummary = {
   displayName: string;
@@ -253,49 +252,45 @@ export async function refreshOwnerDisplayName(uid: string, newName: string): Pro
 }
 
 export async function uploadProfileAvatar(uid: string, localUri: string): Promise<string> {
-  const fb = requireFirebase();
-  const token = await fb.auth.currentUser?.getIdToken(true);
-  if (!token) throw new Error('Не е влезено в акаунт.');
-
-  const bucket = 'ribolov-4ef41.firebasestorage.app';
-  const storagePath = `profilePhotos/${uid}/avatar.jpg`;
-
-  // FileSystem.uploadAsync sends raw binary natively — no Blob/ArrayBuffer in JS.
-  const result = await uploadAsync(
-    `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o?uploadType=media&name=${encodeURIComponent(storagePath)}`,
-    localUri,
-    {
-      httpMethod: 'POST',
-      uploadType: FileSystemUploadType.BINARY_CONTENT,
-      headers: {
-        'Content-Type': 'image/jpeg',
-        Authorization: `Bearer ${token}`,
-      },
-    },
-  );
-
-  if (result.status < 200 || result.status >= 300) {
-    throw new Error(`Качването не бе успешно (${result.status}): ${result.body}`);
-  }
-
-  const meta = JSON.parse(result.body) as { name: string; downloadTokens: string };
-  return `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o/${encodeURIComponent(meta.name)}?alt=media&token=${meta.downloadTokens}`;
+  // Cache-bust the filename so the new avatar replaces the old one in any
+  // image cache (CDN, expo-image, React Native's bitmap cache). The previous
+  // shape used a fixed `avatar.jpg` key — fine on Firebase Storage because
+  // the download URL carried a token that changed on each upload, but on
+  // R2 the public URL is the bare path. Without a varying segment, viewers
+  // would see the stale image until cache TTL expired.
+  const storagePath = `profilePhotos/${uid}/avatar_${Date.now()}.jpg`;
+  const { url } = await uploadImageToR2(localUri, storagePath, undefined, {
+    // Avatars render at small sizes — 800px is more than enough for a
+    // 2× retina display, and the smaller file uploads + serves faster.
+    maxDimension: 800,
+  });
+  return url;
 }
 
-export async function deleteProfileAvatar(uid: string): Promise<void> {
-  const fb = requireFirebase();
-  try {
-    await deleteObject(ref(fb.storage, `profilePhotos/${uid}/avatar.jpg`));
-  } catch {
-    // Ignore — file may not exist
-  }
+export async function deleteProfileAvatar(uid: string, storagePath?: string): Promise<void> {
+  // Caller passes the path if they have it (e.g. from the user doc). Without
+  // it we can't enumerate R2 to find prior avatars — but the most recent
+  // upload's path lives on `users/{uid}.photoStoragePath`, so callers should
+  // read that and pass it. Falling back to a guess would silently delete the
+  // wrong object on the timestamp-suffixed scheme.
+  if (!storagePath) return;
+  await deleteFromR2(storagePath);
 }
 
+/**
+ * Returns the avatar URL stored on the user's Firestore doc, if any. We no
+ * longer probe R2 directly — the canonical URL lives at `users/{uid}.photoUrl`
+ * (kept in sync by `pushUserProfilePublic`). Trying to derive the URL from
+ * R2 directly was a workaround for Firebase Storage's tokenized URLs, which
+ * R2 doesn't have.
+ */
 export async function tryGetStoredProfileAvatarUrl(uid: string): Promise<string | undefined> {
   const fb = requireFirebase();
   try {
-    const storageRef = ref(fb.storage, `profilePhotos/${uid}/avatar.jpg`);
-    const url = await getDownloadURL(storageRef);
+    const snap = await getDoc(doc(fb.db, 'users', uid));
+    if (!snap.exists()) return undefined;
+    const url = (snap.data() as { photoUrl?: unknown })?.photoUrl;
+    if (typeof url !== 'string') return undefined;
     const trimmed = url.trim();
     return trimmed || undefined;
   } catch {

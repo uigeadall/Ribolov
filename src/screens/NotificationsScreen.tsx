@@ -649,7 +649,10 @@ export default function NotificationsScreen() {
       return subscribeMyNotifications(user.uid, cb);
     },
     [configured, user?.uid],
-    { pauseInBackground: true },
+    // Cross-screen badge for unreads is powered by `subscribeMyNotifications`
+    // in HomeScreen, not by this listener — so we can safely tear this one
+    // down whenever the user is on a different screen.
+    { pauseInBackground: true, pauseWhenUnfocused: true },
   );
   const items = data ?? [];
   const unreadCount = items.filter((n) => !n.read).length;

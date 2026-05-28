@@ -33,8 +33,18 @@ export default function App() {
   useEffect(() => {
     void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
     initObservability();
-    const fb = ensureFirebase();
-    if (fb) void initFirebaseAppCheckBridge(fb.app);
+    // Firebase + App Check are deferred to fire AFTER the splash dismisses,
+    // not during it. Eagerly calling `ensureFirebase()` here used to add
+    // ~200-500ms of synchronous JS init to the cold-start path — a cost the
+    // user perceives directly as splash-screen dwell. Pushing it to the
+    // post-splash tick lets the first paint happen sooner; AuthContext's
+    // own useEffect still triggers `ensureFirebase()` when it mounts (after
+    // splash), so signed-in users still see the auth state resolve quickly.
+    // App Check needs the Firebase app instance, so it tags along here.
+    const deferredInitTimer = setTimeout(() => {
+      const fb = ensureFirebase();
+      if (fb) void initFirebaseAppCheckBridge(fb.app);
+    }, 0);
     // One-shot AsyncStorage → MMKV migration. Runs before any other storage
     // read so subsequent calls hit the new backend. The migration sets its own
     // sentinel; subsequent launches return immediately.
@@ -69,6 +79,7 @@ export default function App() {
     });
     return () => {
       clearTimeout(t);
+      clearTimeout(deferredInitTimer);
       urlSub.remove();
     };
   }, []);

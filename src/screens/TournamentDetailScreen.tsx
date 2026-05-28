@@ -12,6 +12,7 @@ import Toast from 'react-native-toast-message';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
+import { EmptyState } from '../components/EmptyState';
 import { Skeleton } from '../components/Skeleton';
 import { ensureFirebase } from '../services/firebase';
 import type { ProfileStackParamList } from '../navigation/types';
@@ -469,12 +470,12 @@ export default function TournamentDetailScreen() {
         }
         ListEmptyComponent={
           !entriesLoading ? (
-            <View style={{ alignItems: 'center', padding: spacing.xl, gap: spacing.sm }}>
-              <Ionicons name="images-outline" size={40} color={colors.textMuted} />
-              <Text style={{ ...typography.body, color: colors.textMuted, textAlign: 'center' }}>
-                Все още няма снимки.{'\n'}Бъди първият участник!
-              </Text>
-            </View>
+            <EmptyState
+              icon="images-outline"
+              emoji="🎣"
+              title="Все още няма снимки"
+              subtitle="Бъди първият участник в този турнир."
+            />
           ) : null
         }
         renderItem={({ item }) => (

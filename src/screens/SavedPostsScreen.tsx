@@ -56,6 +56,8 @@ export default function SavedPostsScreen() {
       return subscribeSavedCatchIdsOrdered(user.uid, cb);
     },
     [configured, user?.uid],
+    // Saved-IDs only render here; pause when the user navigates away.
+    { pauseInBackground: true, pauseWhenUnfocused: true },
   );
 
   const { data: items, loading: postsLoading, refreshing, error, reload } = useAsync<FeedItem[]>(

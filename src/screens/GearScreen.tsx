@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useReducer, useRef, useState } from 'react';
 import Toast from 'react-native-toast-message';
 import { View, Text, FlatList, TextInput, StyleSheet, Pressable, Alert } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
@@ -95,6 +96,7 @@ export default function GearScreen() {
     try {
       await gearStore.save({ id: newId(), name: n, notes: notes.trim() || undefined });
       dispatch({ type: 'RESET_ADD' });
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Toast.show({ type: 'success', text1: 'Предметът е добавен', visibilityTime: 2000 });
       load();
     } finally {
@@ -104,6 +106,7 @@ export default function GearScreen() {
   };
 
   const startEdit = (item: GearItem) => {
+    void Haptics.selectionAsync();
     dispatch({ type: 'START_EDIT', id: item.id, name: item.name, notes: item.notes ?? '' });
   };
 
@@ -115,6 +118,7 @@ export default function GearScreen() {
     try {
       await gearStore.save({ id: editingId, name: editName.trim(), notes: editNotes.trim() || undefined });
       dispatch({ type: 'CANCEL_EDIT' });
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Toast.show({ type: 'success', text1: 'Запазено', visibilityTime: 2000 });
       load();
     } finally {
@@ -126,6 +130,7 @@ export default function GearScreen() {
   const cancelEdit = () => dispatch({ type: 'CANCEL_EDIT' });
 
   const confirmDelete = (item: GearItem) => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Alert.alert('Изтриване', `Изтриване на „${item.name}“?`, [
       { text: 'Отказ', style: 'cancel' },
       {
@@ -133,6 +138,7 @@ export default function GearScreen() {
         style: 'destructive',
         onPress: async () => {
           await gearStore.remove(item.id);
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
           load();
         },
       },

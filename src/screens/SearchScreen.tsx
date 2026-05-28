@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import * as Haptics from 'expo-haptics';
 import {
   View,
   Text,
@@ -18,6 +19,7 @@ import Toast from 'react-native-toast-message';
 import AsyncStorage from '../storage/kv';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
+import { EmptyState } from '../components/EmptyState';
 import { DAMS } from '../data/dams';
 import { RIVERS } from '../data/rivers';
 import { speciesList } from '../data/species';
@@ -307,7 +309,14 @@ export default function SearchScreen() {
           const label = t === 'users' ? 'Рибари' : t === 'waters' ? 'Водоеми' : 'Видове';
           const active = tab === t;
           return (
-            <Pressable key={t} style={[styles.tabBtn, active && styles.tabBtnActive]} onPress={() => handleTabChange(t)}>
+            <Pressable
+              key={t}
+              style={[styles.tabBtn, active && styles.tabBtnActive]}
+              onPress={() => {
+                void Haptics.selectionAsync();
+                handleTabChange(t);
+              }}
+            >
               <Text style={[styles.tabText, active && styles.tabTextActive]}>{label}</Text>
             </Pressable>
           );
@@ -341,9 +350,22 @@ export default function SearchScreen() {
           onEndReached={loadMoreUsers}
           onEndReachedThreshold={0.3}
           ListEmptyComponent={
-            <Text style={styles.empty}>
-              {query2.length < 2 ? 'Въведи поне 2 букви за търсене на рибари' : searching ? '' : 'Няма намерени рибари'}
-            </Text>
+            // Suppress while a search is in flight so the empty state
+            // doesn't flicker between "loading" and "no results" before
+            // the request resolves.
+            query2.length < 2 ? (
+              <EmptyState
+                icon="people-outline"
+                title="Намери рибари"
+                subtitle="Въведи поне 2 букви от името."
+              />
+            ) : searching ? null : (
+              <EmptyState
+                icon="search-outline"
+                title="Няма намерени рибари"
+                subtitle="Опитай с друго или по-пълно име."
+              />
+            )
           }
           ListFooterComponent={
             loadingMore ? (
@@ -359,7 +381,10 @@ export default function SearchScreen() {
           renderItem={({ item }) => (
             <Pressable
               style={styles.row}
-              onPress={() => navigation.navigate('UserPublicProfile', { uid: item.uid, displayName: item.displayName, photoUrlHint: item.photoUrl })}
+              onPress={() => {
+                void Haptics.selectionAsync();
+                navigation.navigate('UserPublicProfile', { uid: item.uid, displayName: item.displayName, photoUrlHint: item.photoUrl });
+              }}
             >
               <View style={styles.iconWrap}>
                 <Ionicons name="person-outline" size={20} color={colors.primary} />
@@ -380,17 +405,27 @@ export default function SearchScreen() {
           keyExtractor={(w) => w.id}
           keyboardShouldPersistTaps="handled"
           ListEmptyComponent={
-            <Text style={styles.empty}>
-              {query2.trim().length === 0 ? 'Въведи название на язовир или река' : 'Няма намерени водоеми'}
-            </Text>
+            query2.trim().length === 0 ? (
+              <EmptyState
+                icon="water-outline"
+                title="Намери водоем"
+                subtitle="Въведи название на язовир или река."
+              />
+            ) : (
+              <EmptyState
+                icon="search-outline"
+                title="Няма намерени водоеми"
+                subtitle="Провери правописа или опитай с друго название."
+              />
+            )
           }
           renderItem={({ item }) => (
             <Pressable
               style={styles.row}
-              onPress={() => navigation.navigate('Main', {
-                screen: 'MapTab',
-                params: item.kind === 'dam' ? { focusDamId: item.id } : { focusRiverId: item.id },
-              })}
+              onPress={() => {
+                void Haptics.selectionAsync();
+                navigation.navigate('WaterDetail', { kind: item.kind, id: item.id });
+              }}
             >
               <View style={styles.iconWrap}>
                 <Ionicons name={item.kind === 'dam' ? 'layers-outline' : 'git-branch-outline'} size={20} color={item.kind === 'dam' ? colors.primary : '#2E9B5A'} />
@@ -411,17 +446,31 @@ export default function SearchScreen() {
           keyExtractor={(s) => s.id}
           keyboardShouldPersistTaps="handled"
           ListEmptyComponent={
-            <Text style={styles.empty}>
-              {query2.trim().length === 0 ? 'Въведи вид риба на български или латински' : 'Няма намерени видове'}
-            </Text>
+            query2.trim().length === 0 ? (
+              <EmptyState
+                icon="fish-outline"
+                emoji="🐟"
+                title="Намери вид риба"
+                subtitle="Въведи вид на български или латински."
+              />
+            ) : (
+              <EmptyState
+                icon="search-outline"
+                title="Няма намерени видове"
+                subtitle="Опитай с друго название."
+              />
+            )
           }
           renderItem={({ item }) => (
             <Pressable
               style={styles.row}
-              onPress={() => navigation.navigate('Main', {
-                screen: 'ProfileTab',
-                params: { screen: 'Species', params: { screen: 'SpeciesDetail', params: { id: item.id } } },
-              })}
+              onPress={() => {
+                void Haptics.selectionAsync();
+                navigation.navigate('Main', {
+                  screen: 'ProfileTab',
+                  params: { screen: 'Species', params: { screen: 'SpeciesDetail', params: { id: item.id } } },
+                });
+              }}
             >
               <View style={styles.iconWrap}>
                 <Ionicons name="fish-outline" size={20} color={colors.primary} />

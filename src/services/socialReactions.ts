@@ -6,7 +6,6 @@ import {
   getCountFromServer,
   increment,
   limit,
-  onSnapshot,
   query,
   runTransaction,
   serverTimestamp,
@@ -19,18 +18,73 @@ import { captureException } from './observability';
 import type { ReactionType, ReactionSummaryItem, CatchLiker } from './socialTypes';
 import { REACTIONS } from './socialTypes';
 
-/** Subscribe to the current user's reaction on a catch (null = no reaction). */
+// ─── My-reaction in-memory cache ─────────────────────────────────────────────
+// The old per-card `onSnapshot` listener cost one persistent listener per
+// visible card — 20 cards in a feed = 20 open listeners that re-fired on every
+// reaction change anywhere on those catches (even other users' reactions, via
+// downstream metadata churn). We replace it with a one-shot getDoc plus an
+// in-memory cache:
+//
+//   - First read for a (catchId, myUid) pair fires a single getDoc.
+//   - Subsequent reads within MY_REACTION_TTL_MS return the cached value
+//     without a network call — covers the common case of re-mounting a card
+//     during a scroll-through-and-back.
+//   - `toggleCatchReaction` / `togglePostReaction` write through to the cache
+//     so the optimistic update is the source of truth — no second roundtrip.
+//
+// Multi-device sync (same user logged in on phone + tablet) is the one thing
+// this loses; the user's reaction made on device A won't auto-appear on
+// device B until they re-enter the feed (cache miss, fresh fetch). That's
+// an acceptable trade for shedding 20+ active listeners per feed view.
+
+type ReactionCacheEntry = { reaction: ReactionType | null; at: number };
+const _myReactionCacheCatch = new Map<string, ReactionCacheEntry>();
+const _myReactionCachePost = new Map<string, ReactionCacheEntry>();
+const MY_REACTION_TTL_MS = 5 * 60 * 1000;
+
+function reactionCacheKey(targetId: string, myUid: string): string {
+  return `${targetId}:${myUid}`;
+}
+
+/** Test-only / future-feature seam: lets a "refresh on focus" handler nuke
+    the cache and force a re-fetch. Not exported until something needs it. */
+function invalidateMyReactionCache(): void {
+  _myReactionCacheCatch.clear();
+  _myReactionCachePost.clear();
+}
+// Referenced from the module to keep the symbol from being tree-shaken away
+// in case a future caller wants it. The `void` cast keeps the lint silent
+// for "unused" without actually doing anything at runtime.
+void invalidateMyReactionCache;
+
+/** Subscribe-shape API kept for source compatibility, but backed by a one-shot
+    fetch + memory cache. Returns a no-op unsubscribe (nothing to detach). */
 export function subscribeMyReactionOnCatch(
   catchId: string,
   myUid: string,
   cb: (reaction: ReactionType | null) => void
 ): () => void {
-  const fb = requireFirebase();
-  return onSnapshot(doc(fb.db, 'publicCatches', catchId, 'likes', myUid), (snap) => {
-    if (!snap.exists()) { cb(null); return; }
-    const r = snap.data()?.reaction as ReactionType | undefined;
-    cb(r ?? 'heart');
-  });
+  const key = reactionCacheKey(catchId, myUid);
+  const cached = _myReactionCacheCatch.get(key);
+  if (cached && Date.now() - cached.at < MY_REACTION_TTL_MS) {
+    cb(cached.reaction);
+    return () => {};
+  }
+  let cancelled = false;
+  void (async () => {
+    try {
+      const fb = requireFirebase();
+      const snap = await getDoc(doc(fb.db, 'publicCatches', catchId, 'likes', myUid));
+      const r: ReactionType | null = snap.exists()
+        ? ((snap.data()?.reaction as ReactionType | undefined) ?? 'heart')
+        : null;
+      _myReactionCacheCatch.set(key, { reaction: r, at: Date.now() });
+      if (!cancelled) cb(r);
+    } catch {
+      if (!cancelled) cb(null);
+    }
+  })();
+  return () => { cancelled = true; };
 }
 
 /** @deprecated use subscribeMyReactionOnCatch */
@@ -104,6 +158,13 @@ export async function toggleCatchReaction(
     return { removed: false, isNew: existing === null };
   });
 
+  // Keep the my-reaction cache consistent so the next `subscribeMyReactionOnCatch`
+  // call sees the just-written state without a second roundtrip.
+  _myReactionCacheCatch.set(reactionCacheKey(catchId, myUid), {
+    reaction: removed ? null : reaction,
+    at: Date.now(),
+  });
+
   if (removed) return null;
 
   if (isNew) {
@@ -172,18 +233,34 @@ export async function fetchCatchLikers(catchId: string): Promise<CatchLiker[]> {
 // separate collections, so a single `togglePostReaction` cannot accidentally
 // touch a catch and vice versa.
 
-/** Subscribe to the current user's reaction on a post (null = no reaction). */
+/** One-shot fetch + memory cache for post reactions. Mirrors the catch
+    version above — same cache TTL, same trade-off on multi-device sync. */
 export function subscribeMyReactionOnPost(
   postId: string,
   myUid: string,
   cb: (reaction: ReactionType | null) => void,
 ): () => void {
-  const fb = requireFirebase();
-  return onSnapshot(doc(fb.db, 'posts', postId, 'likes', myUid), (snap) => {
-    if (!snap.exists()) { cb(null); return; }
-    const r = snap.data()?.reaction as ReactionType | undefined;
-    cb(r ?? 'heart');
-  });
+  const key = reactionCacheKey(postId, myUid);
+  const cached = _myReactionCachePost.get(key);
+  if (cached && Date.now() - cached.at < MY_REACTION_TTL_MS) {
+    cb(cached.reaction);
+    return () => {};
+  }
+  let cancelled = false;
+  void (async () => {
+    try {
+      const fb = requireFirebase();
+      const snap = await getDoc(doc(fb.db, 'posts', postId, 'likes', myUid));
+      const r: ReactionType | null = snap.exists()
+        ? ((snap.data()?.reaction as ReactionType | undefined) ?? 'heart')
+        : null;
+      _myReactionCachePost.set(key, { reaction: r, at: Date.now() });
+      if (!cancelled) cb(r);
+    } catch {
+      if (!cancelled) cb(null);
+    }
+  })();
+  return () => { cancelled = true; };
 }
 
 /** Returns top reactions on a post with counts, sorted desc. */
@@ -240,6 +317,13 @@ export async function togglePostReaction(
       txn.update(postRef, { likeCount: increment(1) });
     }
     return { removed: false, isNew: existing === null };
+  });
+
+  // Mirror update to the my-reaction cache so the next subscribe sees the
+  // just-written state without a roundtrip.
+  _myReactionCachePost.set(reactionCacheKey(postId, myUid), {
+    reaction: removed ? null : reaction,
+    at: Date.now(),
   });
 
   if (removed) return null;

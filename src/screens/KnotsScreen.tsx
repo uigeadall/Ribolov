@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, Pressable, TextInput } from 'react-native';
+import * as Haptics from 'expo-haptics';
 
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
@@ -132,7 +133,13 @@ export default function KnotsScreen() {
           style={{ marginTop: spacing.md, marginHorizontal: -spacing.lg }}
           contentContainerStyle={{ paddingHorizontal: spacing.lg }}
           renderItem={({ item }) => (
-            <Pressable style={[styles.chip, filter === item.id && styles.chipActive]} onPress={() => setFilter(item.id)}>
+            <Pressable
+              style={[styles.chip, filter === item.id && styles.chipActive]}
+              onPress={() => {
+                void Haptics.selectionAsync();
+                setFilter(item.id);
+              }}
+            >
               <Text style={[styles.chipText, filter === item.id && styles.chipTextActive]}>{item.label}</Text>
             </Pressable>
           )}
@@ -146,7 +153,10 @@ export default function KnotsScreen() {
         {...keyboardAwareScrollProps}
         renderItem={({ item }) => (
           <Pressable
-            onPress={() => navigation.navigate('KnotDetail', { id: item.id })}
+            onPress={() => {
+              void Haptics.selectionAsync();
+              navigation.navigate('KnotDetail', { id: item.id });
+            }}
             style={({ pressed }) => [{ opacity: pressed ? 0.85 : 1 }]}
           >
             <Card style={{ marginBottom: spacing.md }}>

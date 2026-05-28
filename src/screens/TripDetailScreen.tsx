@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
+import { EmptyState } from '../components/EmptyState';
 import { Button } from '../components/Button';
 import { tripsStore, catchesStore } from '../storage/storage';
 import type { ProfileStackParamList } from '../navigation/types';
@@ -225,9 +226,11 @@ export default function TripDetailScreen() {
               Улови ({tripCatches.length})
             </Text>
             {tripCatches.length === 0 ? (
-              <Text style={{ ...typography.body, color: colors.textMuted }}>
-                Няма улови, свързани с този излет.
-              </Text>
+              <EmptyState
+                icon="fish-outline"
+                title="Няма свързани улови"
+                subtitle="Когато запишеш улов от този излет, ще се появи тук."
+              />
             ) : (
               tripCatches.map((c) => (
                 <Pressable

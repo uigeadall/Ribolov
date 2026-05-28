@@ -37,7 +37,7 @@ import { speciesList } from '../data/species';
 import { Achievement, Catch, GearItem, TripPlan } from '../types';
 import { useAuth } from '../services/authContext';
 import { doc, getDoc } from 'firebase/firestore';
-import { pushCatch, ensureCatchPhotoUploadedForCloud, deleteStoragePath, deleteFirebaseStorageUrl } from '../services/cloudSync';
+import { pushCatch, ensureCatchPhotoUploadedForCloud, deleteStoragePath, deleteMediaByUrl } from '../services/cloudSync';
 import { ensureFirebase } from '../services/firebase';
 import { enqueueCatchSync } from '../services/catchSyncQueue';
 import { checkBanPeriod } from '../services/notifications';
@@ -309,6 +309,20 @@ export default function AddCatchScreen() {
         );
         setLastCatch(sorted[0]);
 
+        // Default species to the most-recent catch's species on fresh open.
+        // Repeat fishermen typically target the same species across sessions,
+        // so seeding the picker with lastCatch saves the "Промени" tap for
+        // the common case. LOAD_CATCH skips dirty-tracking — this is a
+        // prefill, not a user interaction, and shouldn't trip the unsaved-
+        // changes warning if the user backs out without doing anything.
+        if (
+          !editCatchId
+          && !duplicateCatchId
+          && speciesList.some((s) => s.id === sorted[0].speciesId)
+        ) {
+          dispatch({ type: 'LOAD_CATCH', payload: { speciesId: sorted[0].speciesId } });
+        }
+
         // Suggested species — most-frequent species name, gated at ≥2 catches.
         // Only meaningful for fresh-open (not edit/duplicate flows).
         if (!editCatchId && !duplicateCatchId) {
@@ -418,6 +432,69 @@ export default function AddCatchScreen() {
       cancelled = true;
     };
   }, [editCatchId, configured, user]);
+
+  // Auto-prefetch GPS on mount when location permission is already granted
+  // and the form is a fresh-open (no prefill / edit / duplicate). Saves
+  // users a trip into "Повече детайли" → "Маркирай" for the common case
+  // of logging a catch at the spot they're currently at. We use
+  // `getForegroundPermissionsAsync` (status-only) rather than `request*`
+  // — we never want to prompt for permission from a silent background
+  // effect; the explicit "Маркирай" button is the only place we ask.
+  // LOAD_CATCH on success keeps the dirty-tracker quiet so the user can
+  // back out without an unsaved-changes alert if they didn't actually do
+  // anything.
+  useEffect(() => {
+    if (editCatchId || duplicateCatchId || prefill) return;
+    if (form.locationCoords) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const perm = await Location.getForegroundPermissionsAsync();
+        if (!perm.granted || cancelled) return;
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        if (cancelled) return;
+        const lat = loc.coords.latitude;
+        const lon = loc.coords.longitude;
+        let name = '';
+        try {
+          const places = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lon });
+          if (places[0]) {
+            const p = places[0];
+            name = [p.name, p.city ?? p.region].filter(Boolean).join(', ');
+          }
+        } catch {}
+        // Prefer the actual water body name if within range — same rule as
+        // the explicit grabLocation flow.
+        const nearestDam = DAMS
+          .map((d) => ({ name: d.name, km: haversineKm(lat, lon, d.latitude, d.longitude) }))
+          .filter((d) => d.km <= 5)
+          .sort((a, b) => a.km - b.km)[0];
+        const nearestRiver = RIVERS
+          .map((r) => ({ name: r.name, km: haversineKm(lat, lon, r.latitude, r.longitude) }))
+          .filter((r) => r.km <= 3)
+          .sort((a, b) => a.km - b.km)[0];
+        const waterBody = nearestDam ?? nearestRiver;
+        if (waterBody) name = waterBody.name;
+        if (cancelled) return;
+        dispatch({
+          type: 'LOAD_CATCH',
+          payload: {
+            locationCoords: { lat, lon },
+            locationName: name,
+          },
+        });
+      } catch {
+        // Silent — auto-prefetch is best-effort. Failures fall back to the
+        // user tapping "Маркирай" themselves.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const pickPhoto = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -578,11 +655,11 @@ export default function AddCatchScreen() {
 
     // Extras: anything that was in the initial set but isn't in the saved
     // set was removed by the user. We only have the URL (not the storage
-    // path), so deleteFirebaseStorageUrl parses the path out of the URL.
+    // path), so deleteMediaByUrl parses the R2 key out of the URL.
     const before = initialCatch.extraPhotoUris ?? [];
     const after = new Set(savedItem.extraPhotoUris ?? []);
     for (const url of before) {
-      if (!after.has(url)) void deleteFirebaseStorageUrl(url);
+      if (!after.has(url)) void deleteMediaByUrl(url);
     }
   };
 
@@ -970,18 +1047,21 @@ export default function AddCatchScreen() {
           ) : null}
 
           {/* Suggested-species chip. Shows only when (a) we have a suggestion,
-              (b) the user hasn't manually picked a different species (still on
-              the default placeholder), (c) we're not editing an existing catch,
-              and (d) the suggestion isn't the SAME as the current default — the
-              earlier check missed (d) and showed the chip as noise whenever the
-              default species happened to also be the user's most-frequent. */}
+              (b) we're not editing an existing catch, and (c) the suggestion
+              isn't the SAME as the currently-selected species — so we never
+              suggest what's already picked. Note: we used to also gate on
+              `form.speciesId === speciesList[0].id` to suppress the chip
+              after a user-pick, but the species default now seeds from
+              lastCatch rather than speciesList[0], so that condition would
+              hide the chip even when the most-frequent species differs from
+              lastCatch (e.g. lastCatch=perch but user mostly catches carp). */}
           {suggestedSpecies
-            && form.speciesId === speciesList[0].id
             && !editCatchId
             && selectedSpecies?.nameBg.trim().toLowerCase() !== suggestedSpecies.trim().toLowerCase()
           ? (
             <Pressable
               onPress={() => {
+                void Haptics.selectionAsync();
                 const matched = speciesList.find((s) => s.nameBg === suggestedSpecies);
                 if (matched) dispatch({ type: 'SET_SPECIES', payload: matched.id });
                 setSuggestedSpecies(null);
