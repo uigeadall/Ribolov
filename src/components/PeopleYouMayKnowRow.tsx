@@ -208,7 +208,9 @@ export function PeopleYouMayKnowRow({ collapseWhenEmpty = true }: Props) {
                 </View>
                 <Text style={styles.name} numberOfLines={1}>{u.displayName}</Text>
                 <Text style={styles.mutual} numberOfLines={1}>
-                  {u.mutualCount} {u.mutualCount === 1 ? 'общ' : 'общи'}
+                  {u.reason === 'mutuals'
+                    ? `${u.mutualCount} ${u.mutualCount === 1 ? 'общ' : 'общи'}`
+                    : 'Активен рибар'}
                 </Text>
               </Pressable>
               <Pressable

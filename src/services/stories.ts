@@ -58,18 +58,24 @@ export type StoryComment = {
 /** Качва снимка или видео в R2 под stories/{uid}/.
     Returns both the public CDN URL and the R2 object key. The caller needs
     the key so it can call `deleteStoryMedia` if the subsequent Firestore
-    write fails — otherwise the file is orphaned in R2 forever. */
+    write fails — otherwise the file is orphaned in R2 forever.
+
+    `onProgress` is called with a value in [0, 1] as the upload progresses —
+    useful for showing a determinate progress bar on slow video uploads where
+    a bare spinner could spin for 10–20s on patchy LTE with no signal that
+    anything is happening. */
 export async function uploadStoryMedia(
   localUri: string,
   uid: string,
-  type: 'photo' | 'video'
+  type: 'photo' | 'video',
+  onProgress?: (p: number) => void,
 ): Promise<{ url: string; storagePath: string }> {
   if (type === 'video') {
     const path = `stories/${uid}/${Date.now()}.mp4`;
-    return uploadVideoToR2(localUri, path);
+    return uploadVideoToR2(localUri, path, onProgress);
   }
   const path = `stories/${uid}/${Date.now()}.jpg`;
-  return uploadImageToR2(localUri, path);
+  return uploadImageToR2(localUri, path, onProgress);
 }
 
 /** Delete a previously-uploaded story media file from R2. Used by the

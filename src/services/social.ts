@@ -11,6 +11,7 @@ import {
   limit,
   serverTimestamp,
   getCountFromServer,
+  documentId,
 } from 'firebase/firestore';
 import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
@@ -152,8 +153,14 @@ export type SuggestedUser = {
   uid: string;
   displayName: string;
   photoUrl?: string;
-  /** Number of mutual follows (friends-of-friends count). */
+  /** Number of friends-of-friends overlap. Zero for candidates that came from
+      the fallback (recent active posters) — UI should show a different label
+      in that case based on `reason`. */
   mutualCount: number;
+  /** Why this user was suggested. `mutuals` = friends-of-friends graph match,
+      `active` = fallback (recent public posters) used when the graph yields
+      too few candidates. New users with zero follows see only `active`. */
+  reason: 'mutuals' | 'active';
 };
 
 const SUGGESTIONS_TTL_MS = 10 * 60 * 1000;
@@ -163,10 +170,37 @@ export function invalidatePeopleSuggestions(myUid: string): void {
   suggestionsCache.delete(myUid);
 }
 
+/** Batched profile read — one Firestore `in` query for up to 30 uids replaces
+    N parallel `getDoc` calls. Used by `suggestPeopleToFollow` hydration. */
+async function fetchProfilesBatch(uids: string[]): Promise<Map<string, { displayName?: string; photoUrl?: string }>> {
+  const out = new Map<string, { displayName?: string; photoUrl?: string }>();
+  if (uids.length === 0) return out;
+  const fb = requireFirebase();
+  // Firestore `in` query caps at 30 values. Our caller passes at most
+  // `maxResults` (default 8) so this is a single round-trip in practice.
+  // If a future caller needs more we'd chunk here.
+  const capped = uids.slice(0, 30);
+  try {
+    const snap = await getDocs(
+      query(collection(fb.db, 'users'), where(documentId(), 'in', capped)),
+    );
+    for (const d of snap.docs) {
+      const data = d.data() as { displayName?: string; photoUrl?: string };
+      out.set(d.id, {
+        displayName: typeof data.displayName === 'string' ? data.displayName.trim() : undefined,
+        photoUrl: typeof data.photoUrl === 'string' ? data.photoUrl.trim() : undefined,
+      });
+    }
+  } catch { /* network/permission failure — caller falls back to graph-side names */ }
+  return out;
+}
+
 /**
- * "People you may know" — friends-of-friends. Looks at who the user's existing
- * follows are following, ranks by overlap count, filters out self / already-following / blocked.
- * Cached per-user for 10 minutes.
+ * "People you may know" — friends-of-friends graph walk with a fallback to
+ * recent active public posters when the graph yields fewer than `maxResults`
+ * candidates. New users (zero follows) get an all-fallback result so the row
+ * isn't empty on first launch; users with a thin graph get a mix; heavy users
+ * get pure graph results. Cached per-user for 10 minutes.
  */
 export async function suggestPeopleToFollow(myUid: string, maxResults = 8): Promise<SuggestedUser[]> {
   if (!myUid) return [];
@@ -180,7 +214,7 @@ export async function suggestPeopleToFollow(myUid: string, maxResults = 8): Prom
   ]);
   const myFollowingSet = new Set(myFollowing.map((f) => f.uid));
 
-  // Walk a sample of my follows — chunked so we don't fan out too aggressively.
+  // ── Graph pass: friends-of-friends overlap ────────────────────────────────
   const SAMPLE_LIMIT = 12;
   const sample = myFollowing.slice(0, SAMPLE_LIMIT);
 
@@ -205,22 +239,76 @@ export async function suggestPeopleToFollow(myUid: string, maxResults = 8): Prom
     }),
   );
 
-  // Rank by overlap, then hydrate photo from /users/{uid}.
-  const ranked = [...mutualMap.entries()]
+  const graphRanked = [...mutualMap.entries()]
     .sort((a, b) => b[1].count - a[1].count)
     .slice(0, maxResults);
 
-  const hydrated = await Promise.all(
-    ranked.map(async ([uid, info]) => {
-      const summary = await getUserPublicSummary(uid).catch(() => null);
+  // ── Fallback pass: top public-catch posters from the last 30 days ─────────
+  // Fires when the graph alone doesn't fill `maxResults` — most importantly
+  // for brand-new users who have nobody followed yet. Same data source as
+  // `getFeaturedAnglerOfWeek` so we're not adding a new collection scan
+  // pattern, just a longer window and a top-N instead of top-1.
+  const remaining = maxResults - graphRanked.length;
+  const fallbackEntries: { uid: string; count: number; displayName: string }[] = [];
+  if (remaining > 0) {
+    try {
+      const sinceIso = new Date(Date.now() - 30 * 86_400_000).toISOString();
+      const snap = await getDocs(
+        query(
+          collection(fb.db, 'publicCatches'),
+          where('date', '>=', sinceIso),
+          orderBy('date', 'desc'),
+          limit(200),
+        ),
+      );
+      const counts = new Map<string, { count: number; name: string }>();
+      for (const d of snap.docs) {
+        const data = d.data() as { ownerUid?: string; ownerName?: string };
+        const uid = data.ownerUid;
+        if (!uid) continue;
+        if (uid === myUid) continue;
+        if (myFollowingSet.has(uid)) continue;
+        if (blockedUids.has(uid)) continue;
+        if (mutualMap.has(uid)) continue; // already in graph result
+        const prev = counts.get(uid);
+        if (prev) prev.count++;
+        else counts.set(uid, { count: 1, name: data.ownerName ?? 'Рибар' });
+      }
+      const topFallback = [...counts.entries()]
+        .sort((a, b) => b[1].count - a[1].count)
+        .slice(0, remaining);
+      for (const [uid, info] of topFallback) {
+        fallbackEntries.push({ uid, count: info.count, displayName: info.name });
+      }
+    } catch { /* publicCatches scan failed — return graph-only result */ }
+  }
+
+  // ── Single batched hydration for graph + fallback together ────────────────
+  const allUids = [...graphRanked.map(([uid]) => uid), ...fallbackEntries.map((e) => e.uid)];
+  const profiles = await fetchProfilesBatch(allUids);
+
+  const hydrated: SuggestedUser[] = [
+    ...graphRanked.map(([uid, info]) => {
+      const p = profiles.get(uid);
       return {
         uid,
-        displayName: summary?.displayName?.trim() || info.displayName || 'Рибар',
-        photoUrl: summary?.photoUrl?.trim() || undefined,
+        displayName: p?.displayName || info.displayName || 'Рибар',
+        photoUrl: p?.photoUrl || undefined,
         mutualCount: info.count,
+        reason: 'mutuals' as const,
       } satisfies SuggestedUser;
     }),
-  );
+    ...fallbackEntries.map((e) => {
+      const p = profiles.get(e.uid);
+      return {
+        uid: e.uid,
+        displayName: p?.displayName || e.displayName || 'Рибар',
+        photoUrl: p?.photoUrl || undefined,
+        mutualCount: 0,
+        reason: 'active' as const,
+      } satisfies SuggestedUser;
+    }),
+  ];
 
   suggestionsCache.set(myUid, { data: hydrated, at: Date.now() });
   return hydrated;
