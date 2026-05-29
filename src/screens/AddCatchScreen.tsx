@@ -248,9 +248,13 @@ export default function AddCatchScreen() {
   );
 
   useEffect(() => {
-    tripsStore.list().then(setTrips);
-    recentBaitsStore.get().then(setRecentBaits);
-    gearStore.list().then(setGearList).catch(() => setGearList([]));
+    let cancelled = false;
+    tripsStore.list().then((t) => { if (!cancelled) setTrips(t); });
+    recentBaitsStore.get().then((b) => { if (!cancelled) setRecentBaits(b); });
+    gearStore.list()
+      .then((g) => { if (!cancelled) setGearList(g); })
+      .catch(() => { if (!cancelled) setGearList([]); });
+    return () => { cancelled = true; };
   }, []);
 
   // Every user-driven dispatch trips the dirty flag — covers species
@@ -497,6 +501,22 @@ export default function AddCatchScreen() {
   }, []);
 
   const pickPhoto = async () => {
+    // Mirror takePhoto's permission UX: detect "denied + can't ask again"
+    // and offer to open settings, instead of leaving the user with a toast
+    // that has no recoverable action. The two pickers were previously
+    // inconsistent — same denial state, very different help.
+    const current = await ImagePicker.getMediaLibraryPermissionsAsync();
+    if (current.status === 'denied' && !current.canAskAgain) {
+      Alert.alert(
+        'Достъп до галерията',
+        'Ribolov няма достъп до галерията. Отвори настройките на телефона и разреши достъп.',
+        [
+          { text: 'Отказ', style: 'cancel' },
+          { text: 'Отвори настройките', onPress: () => Linking.openSettings() },
+        ]
+      );
+      return;
+    }
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       notifyInfo('Нужно е разрешение', 'Разреши достъп до галерията, за да добавиш снимка.');
@@ -753,8 +773,8 @@ export default function AddCatchScreen() {
       weightKg: (() => { const v = parseFloat(form.weight.replace(',', '.')); return isNaN(v) ? undefined : v; })(),
       lengthCm: (() => { const v = parseFloat(form.length.replace(',', '.')); return isNaN(v) ? undefined : v; })(),
       date: clampedDate,
-      bait: form.bait || undefined,
-      notes: form.notes || undefined,
+      bait: form.bait.trim() || undefined,
+      notes: form.notes.trim() || undefined,
       ...(form.photoUri && trimmedPhotoTitle ? { photoTitle: trimmedPhotoTitle } : {}),
       released: form.released,
       enterLeaderboard: form.shareToFeed ? form.enterLeaderboard : undefined,
@@ -798,13 +818,49 @@ export default function AddCatchScreen() {
       // cleanupOrphanedPhotos JSDoc for the full rationale.
       cleanupOrphanedPhotos(item);
 
+      // Upload photo BEFORE the goBack/alert chain so the user sees the
+      // progress bar that's wired up at the top of the screen. The previous
+      // version fired the cloud sync fire-and-forget after navigation —
+      // which meant the progress bar's containing component was unmounted
+      // before any progress was reported, and `setUploadProgress` fired on
+      // a defunct screen (setState-on-unmounted warnings). For catches
+      // without a local photo OR for offline users, we skip the await and
+      // fall back to the background-sync path below; those flows never
+      // needed the progress bar in the first place.
+      const hasLocalPhoto = !!(uri && !/^https?:\/\//i.test(uri));
+      let cloudSynced = false;
+      if (user && hasLocalPhoto) {
+        const sync = await syncCatchToCloud(item, form.shareToFeed);
+        if (sync.ok) {
+          cloudSynced = true;
+        } else {
+          if (__DEV__) {
+            // eslint-disable-next-line no-console
+            console.error('[CatchSync] failed:', sync.message);
+          }
+          await enqueueCatchSync(item.id, form.shareToFeed).catch(() => {});
+          Toast.show({
+            type: 'info',
+            text1: 'Записан локално',
+            text2: 'Ще се синхронизира щом имаш мрежа.',
+            position: 'bottom',
+            visibilityTime: 3000,
+          });
+        }
+      }
+
       const allCatches = await catchesStore.list();
       const pb = checkNewPersonalBest(item, allCatches);
       const achCtx = { firebaseConfigured: configured, userLoggedIn: !!user, uid: user?.uid };
       const newUnlocks = await checkForNewUnlocks(allCatches, achCtx);
 
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      if (form.bait.trim()) void recentBaitsStore.push(form.bait).then(() => recentBaitsStore.get().then(setRecentBaits));
+      // Trim before storing — untrimmed bait leaks whitespace into both the
+      // saved catch (already trimmed via `item.bait` below) AND the recent-
+      // baits suggestions list. Without trim, "  Boilies  " dedupes as a
+      // distinct entry from "Boilies".
+      const trimmedBait = form.bait.trim();
+      if (trimmedBait) void recentBaitsStore.push(trimmedBait).then(() => recentBaitsStore.get().then(setRecentBaits));
       void recentSpeciesStore.push(form.speciesId);
 
       Toast.show({
@@ -913,8 +969,13 @@ export default function AddCatchScreen() {
         navigation.goBack();
       }
 
-      // Cloud sync runs in the background — does not block navigation
-      if (user) {
+      // No-photo / already-remote-photo / edit-without-photo-change path:
+      // we skipped the awaited upload above because there's nothing to
+      // progress-bar against. Fire the Firestore-only sync in the
+      // background so the catch still lands in the cloud without blocking
+      // navigation. `cloudSynced` skips this if the awaited path already
+      // pushed (we don't want to re-push the same doc).
+      if (user && !cloudSynced) {
         void (async () => {
           const sync = await syncCatchToCloud(item, form.shareToFeed);
           if (!sync.ok) {
@@ -923,11 +984,6 @@ export default function AddCatchScreen() {
               console.error('[CatchSync] failed:', sync.message);
             }
             await enqueueCatchSync(item.id, form.shareToFeed).catch(() => {});
-            // Tell the user the local save succeeded but the cloud push didn't
-            // land yet. Without this, an offline save looked identical to an
-            // online one and users wouldn't realise their photo wasn't yet
-            // visible to followers — they'd assume sharing was broken when in
-            // reality the queue was just waiting on network.
             Toast.show({
               type: 'info',
               text1: 'Записан локално',
@@ -937,7 +993,7 @@ export default function AddCatchScreen() {
             });
           }
         })();
-      } else if (form.shareToFeed) {
+      } else if (!user && form.shareToFeed) {
         notifyInfo('Нужен е акаунт', 'За да споделиш публично, влез/регистрирай се в Профил.');
       }
     } catch (e: unknown) {

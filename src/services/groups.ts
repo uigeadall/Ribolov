@@ -6,6 +6,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  increment,
   limit,
   orderBy,
   query,
@@ -13,7 +14,6 @@ import {
   setDoc,
   updateDoc,
   where,
-  increment,
   writeBatch,
 } from 'firebase/firestore';
 import { requireFirebase } from './firebase';
@@ -130,11 +130,20 @@ export async function fetchMyGroups(uid: string): Promise<Group[]> {
     } catch { /* index missing — fall through */ }
   }
 
-  // Last-resort fallback: scan all groups and check each for our membership doc.
-  // Slow on large /groups collections but correct.
+  // Last-resort fallback: bounded scan of the most recent groups. Was an
+  // unbounded `getDocs(collection('groups'))` — at a few hundred groups
+  // already a 200-read miss per affected user load. Cap at 50 and order
+  // by memberCount so we're more likely to find the user's actual groups
+  // in the slice. A user who joined an old, small group BEFORE both the
+  // membership-mirror and the collectionGroup index existed (the only
+  // two faster paths above) won't be covered — but that's a vanishing
+  // edge case: re-joining surfaces the group instantly, and any new join
+  // since the mirror was added is already covered by the primary path.
   if (groupIds.size === 0) {
     try {
-      const allSnap = await getDocs(collection(fb.db, 'groups'));
+      const allSnap = await getDocs(
+        query(collection(fb.db, 'groups'), orderBy('memberCount', 'desc'), limit(50))
+      );
       const checks = await Promise.all(
         allSnap.docs.map((d) => getDoc(doc(fb.db, 'groups', d.id, 'members', uid)).catch(() => null))
       );

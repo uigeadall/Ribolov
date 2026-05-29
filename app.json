@@ -95,6 +95,7 @@
       ],
       "expo-screen-orientation",
       "expo-font",
+      "@maplibre/maplibre-react-native",
       "expo-web-browser",
       "expo-apple-authentication",
       "expo-sqlite",

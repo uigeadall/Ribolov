@@ -71,6 +71,22 @@
         { "fieldPath": "hostUid", "order": "ASCENDING" },
         { "fieldPath": "endDate", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "leaderboardRollup",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "bucket", "order": "ASCENDING" },
+        { "fieldPath": "totalKg", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "publicCatches",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "date", "order": "ASCENDING" },
+        { "fieldPath": "likeCount", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [

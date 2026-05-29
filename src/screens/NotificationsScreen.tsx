@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, SectionList, Pressable, Alert, Platform } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { Image } from 'expo-image';
@@ -70,6 +70,13 @@ const TYPE_COLORS: Record<string, string> = {
   mention: '#FB8C00',
   follow: '#2E9B5A',
   message: '#8E24AA',
+  // The two below were missing — they fell back to the default green stripe
+  // (same as `follow`), making it hard to scan reshare/PB from across the
+  // screen and confusingly identical to a follow at a glance. Distinct
+  // accents now: warm amber for PB (trophy energy), lavender-blue for
+  // reshare (echo of the "share" verb).
+  reshare: '#5B6CBE',
+  personalBest: '#C49A00',
 };
 
 function createStyles(colors: AppColors) {
@@ -215,6 +222,10 @@ function NotifRow({ item, myUid, onOpen, onDismiss, onMarkRead, styles, colors }
     displayLine = '';
   }
 
+  // Wording per type. Every type the subscription can return needs a verb
+  // here — otherwise the row reads ".. те последва" (the default fall-through)
+  // for personalBest / reshare which is wrong wording. The verb table is
+  // also the single source of truth for icon assignment below.
   const verb =
     item.type === 'like'
       ? `реагира ${item.reactionEmoji ?? '❤️'} на твой улов`
@@ -228,7 +239,11 @@ function NotifRow({ item, myUid, onOpen, onDismiss, onMarkRead, styles, colors }
               ? 'те спомена в публикация'
               : item.type === 'message'
                 ? 'ти изпрати съобщение'
-                : 'те последва';
+                : item.type === 'reshare'
+                  ? 'сподели твой пост'
+                  : item.type === 'personalBest'
+                    ? 'счупи личен рекорд 🏆'
+                    : 'те последва';
   const icon =
     item.type === 'like' || item.type === 'storyLike'
       ? 'heart'
@@ -238,15 +253,28 @@ function NotifRow({ item, myUid, onOpen, onDismiss, onMarkRead, styles, colors }
           ? 'at-outline'
           : item.type === 'message'
             ? 'mail-outline'
-            : 'person-add-outline';
+            : item.type === 'reshare'
+              ? 'arrow-redo-outline'
+              : item.type === 'personalBest'
+                ? 'trophy-outline'
+                : 'person-add-outline';
   const initials = item.actorName.slice(0, 1).toUpperCase();
 
   const onFollowBack = useCallback(async () => {
     if (followState !== 'idle') return;
     setFollowState('busy');
     try {
-      const already = await isFollowingUser(myUid, item.actorUid);
-      if (!already) await followUser(myUid, item.actorUid, item.actorName);
+      // No pre-probe: the mount-time effect at the top of the row already
+      // ran `isFollowingUser` and flipped state to 'done' if we were already
+      // following. So reaching this code path implies one of:
+      //   (a) we genuinely aren't following yet (the common case), or
+      //   (b) the mount probe failed (network blip) — in which case we
+      //       should still attempt the follow and let the server resolve
+      //       the duplicate gracefully (followUser is idempotent — a
+      //       duplicate set is a no-op on the doc level).
+      // Either way, calling followUser directly is correct and saves a
+      // round-trip per tap on follow-back.
+      await followUser(myUid, item.actorUid, item.actorName);
       setFollowState('done');
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch {
@@ -715,8 +743,19 @@ export default function NotificationsScreen() {
     [navigation, user?.uid, setData]
   );
 
+  // Synchronous guard for the two destructive bulk actions. Without it, a
+  // user double-tapping "Прочети" or "Изтрий" while the Firestore call is
+  // in flight fires a second invocation that captures the post-optimistic
+  // state — so the second `previousUnreadIds` snapshot is the already-empty
+  // unread list. If either call then fails, the rollback restores the wrong
+  // snapshot and silently loses notifications that arrived between the
+  // two taps. Same shape as the savingRef guards in AddCatch / Story.
+  const bulkActionRef = useRef(false);
+
   const onMarkAll = useCallback(() => {
     if (!user?.uid || unreadCount === 0) return;
+    if (bulkActionRef.current) return;
+    bulkActionRef.current = true;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     // Capture previous state so we can roll back if the write fails.
     let previousUnreadIds: string[] = [];
@@ -725,15 +764,23 @@ export default function NotificationsScreen() {
       previousUnreadIds = prev.filter((n) => !n.read).map((n) => n.id);
       return prev.map((n) => ({ ...n, read: true }));
     });
-    markAllNotificationsRead(user.uid).catch(() => {
-      // Roll back optimistic update — restore the unread state.
-      setData((prev) => {
-        if (!prev) return prev;
-        const ids = new Set(previousUnreadIds);
-        return prev.map((n) => ids.has(n.id) ? { ...n, read: false } : n);
+    markAllNotificationsRead(user.uid)
+      .catch(() => {
+        // Roll back optimistic update — restore the unread state. Only
+        // the ids we captured pre-call are flipped, so any new notifications
+        // that arrived from the subscription during the in-flight call
+        // (which are unread by definition) keep their read=false state.
+        setData((prev) => {
+          if (!prev) return prev;
+          const ids = new Set(previousUnreadIds);
+          return prev.map((n) => ids.has(n.id) ? { ...n, read: false } : n);
+        });
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        Toast.show({ type: 'error', text1: 'Грешка', text2: 'Неуспешно маркиране.', visibilityTime: 2500 });
+      })
+      .finally(() => {
+        bulkActionRef.current = false;
       });
-      Toast.show({ type: 'error', text1: 'Грешка', text2: 'Неуспешно маркиране.', visibilityTime: 2500 });
-    });
   }, [user?.uid, unreadCount, setData]);
 
   // "Clear read" — delete every notification the user has already read.
@@ -742,6 +789,7 @@ export default function NotificationsScreen() {
   // the unread state above, that means the header can show 0/1/2 actions.
   const onClearRead = useCallback(() => {
     if (!user?.uid) return;
+    if (bulkActionRef.current) return;
     const readCount = (data ?? []).filter((n) => n.read).length;
     if (readCount === 0) return;
     Alert.alert(
@@ -753,18 +801,40 @@ export default function NotificationsScreen() {
           text: 'Изтрий',
           style: 'destructive',
           onPress: () => {
+            // Re-check the guard at OK-press time — the Alert sits open for
+            // arbitrary user time, during which the other bulk action may
+            // have started. Without this re-check, two destructive ops can
+            // serialize through the alert UI and end with the wrong rollback
+            // snapshot.
+            if (bulkActionRef.current) return;
+            bulkActionRef.current = true;
             void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            // Optimistic drop from local state.
-            let previous: SocialNotification[] = [];
+            // Capture only the read items we're about to drop. Storing the
+            // full `prev` array used to be the rollback strategy, but it
+            // also captured unread items that may have changed during the
+            // in-flight call — restoring them would clobber concurrent
+            // updates. Restoring only the dropped read items is safe.
+            let droppedReads: SocialNotification[] = [];
             setData((prev) => {
               if (!prev) return prev;
-              previous = prev;
+              droppedReads = prev.filter((n) => n.read);
               return prev.filter((n) => !n.read);
             });
-            clearReadNotifications(user.uid).catch(() => {
-              setData(() => previous);
-              Toast.show({ type: 'error', text1: 'Грешка', text2: 'Неуспешно изтриване.', visibilityTime: 2500 });
-            });
+            clearReadNotifications(user.uid)
+              .catch(() => {
+                setData((prev) => {
+                  if (!prev) return droppedReads;
+                  // Merge dropped reads back, dedupe by id, sort by createdAt.
+                  const ids = new Set(prev.map((n) => n.id));
+                  const merged = [...prev, ...droppedReads.filter((n) => !ids.has(n.id))];
+                  return merged.sort((a, b) => getCreatedAtMs(b.createdAt) - getCreatedAtMs(a.createdAt));
+                });
+                void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                Toast.show({ type: 'error', text1: 'Грешка', text2: 'Неуспешно изтриване.', visibilityTime: 2500 });
+              })
+              .finally(() => {
+                bulkActionRef.current = false;
+              });
           },
         },
       ],

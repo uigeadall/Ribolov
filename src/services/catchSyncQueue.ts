@@ -3,6 +3,7 @@ import { catchesStore } from '../storage/storage';
 import { ensureCatchPhotoUploadedForCloud, pushCatch } from './cloudSync';
 import { addBreadcrumb, captureException } from './observability';
 import { calcBackoffMs, readSyncQueue, writeSyncQueue } from './syncQueue';
+import { makePromiseChain } from '../utils/promiseChain';
 
 const QUEUE_KEY = 'ribolov:catch-sync-queue';
 
@@ -90,25 +91,17 @@ export async function forceRetryCatchSync(
   await flushPendingCatchSync(ctx);
 }
 
-// Module-level mutex for flushPendingCatchSync. Concurrent flushes (e.g. a
-// forceRetryCatchSync from a user tap firing while an ambient AppState
-// resume flush is mid-run) would otherwise both read the same queue
-// snapshot and both write disjoint `remaining` lists — the second writer
-// clobbers the first, leaking already-flushed entries back into the queue
-// (or vice-versa, dropping entries that failed). Serialising flushes via
-// a chained promise mutex makes the queue read+write atomic per flush.
-let _flushChain: Promise<unknown> = Promise.resolve();
+// Serialise flushes — a forceRetryCatchSync from a user tap firing while an
+// ambient AppState resume flush is mid-run would otherwise read the same
+// queue snapshot and write disjoint `remaining` lists, with the second
+// writer clobbering the first.
+const withFlushMutex = makePromiseChain();
 
 /** Изпраща чакащите улови към Firebase с експоненциален backoff. */
 export async function flushPendingCatchSync(ctx: {
   user: { uid: string; displayName: string | null; email: string | null };
 }): Promise<void> {
-  const next = _flushChain.then(() => runFlush(ctx), () => runFlush(ctx));
-  // Swallow rejections on the chain so a single flush failure doesn't
-  // poison subsequent calls. Callers can still await `next` directly to
-  // observe their own flush's outcome.
-  _flushChain = next.then(() => {}, () => {});
-  return next;
+  return withFlushMutex(() => runFlush(ctx));
 }
 
 async function runFlush(ctx: {

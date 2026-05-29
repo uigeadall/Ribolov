@@ -660,6 +660,36 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    /** Per-user, per-bucket leaderboard rollup docs maintained by the
+        `onPublicCatchForRollup` trigger + `weeklyLeaderboardDriftFix`.
+        The client reads the pre-consolidated `leaderboardCache` instead,
+        but `read` is allowed here so a future fallback path (direct
+        rollup query when the cache doc is empty) can work without a
+        rules change. All writes are server-side via admin SDK. */
+    match /leaderboardRollup/{docId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    /** Per-callable rate-limit token buckets maintained by the
+        `checkAndConsumeRateBucket` helper in functions/src/index.ts.
+        Client-side reads would let an attacker probe their remaining
+        budget (low risk but pointless to allow) and writes would let
+        them reset their own bucket (bypass the limit entirely).
+        Admin SDK in Cloud Functions bypasses these rules anyway. */
+    match /rateLimits/{docId} {
+      allow read, write: if false;
+    }
+
+    /** Pre-ranked weekly/monthly classics photos — written hourly by
+        the `consolidateClassicsCache` Cloud Function, read by all
+        signed-in users via fetchRankedClassicPhotos. Same shape rule
+        as leaderboardCache. */
+    match /classicsCache/{docId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
     /** Директни съобщения — само двамата участници. */
     match /conversations/{convId} {
       allow read: if signedIn() && (resource == null || request.auth.uid in resource.data.participantIds);

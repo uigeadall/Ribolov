@@ -24,9 +24,8 @@ import { useRoute, useFocusEffect } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '../components/Button';
-import { LeafletMap, LeafletMapHandle, LeafletMapType } from '../components/LeafletMap';
-import { NativeMapView } from '../components/NativeMapView';
-import { USE_REACT_NATIVE_MAPS } from '../config/mapEngine';
+import type { LeafletMapHandle, LeafletMapType } from '../components/LeafletMap';
+import { MapEngineComponent } from '../components/mapEngineComponent';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
@@ -673,55 +672,30 @@ export default function MapScreen() {
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       {/* ── Map (full screen base layer) ── */}
       <View style={StyleSheet.absoluteFill}>
-        {USE_REACT_NATIVE_MAPS ? (
-          <NativeMapView
-            ref={mapRef}
-            spots={sortedSpots}
-            dams={!showFavoritesOnly && showDams ? DAMS : []}
-            rivers={!showFavoritesOnly && showRivers ? RIVERS : []}
-            catchMarkers={showCatchMarkers ? filteredCatchMarkers : []}
-            heatmapCells={showHeatmap ? heatmapCells : []}
-            pendingCoord={pendingCoord}
-            userCoord={userCoord}
-            routeLine={routeLine}
-            mapType={mapType}
-            onLongPress={(lat, lng) => {
-              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-              setPendingCoord({ latitude: lat, longitude: lng });
-              setName('');
-              setDescription('');
-            }}
-            onMarkerPress={onMarkerPress}
-            onDamPress={onDamPress}
-            onRiverPress={onRiverPress}
-            onLivePinPress={onLivePinPress}
-            liveFishingMarkers={liveMarkers}
-            onMapMove={saveMapPos}
-          />
-        ) : (
-          <LeafletMap
-            ref={mapRef}
-            spots={sortedSpots}
-            dams={!showFavoritesOnly && showDams ? DAMS : []}
-            rivers={!showFavoritesOnly && showRivers ? RIVERS : []}
-            catchMarkers={showCatchMarkers ? filteredCatchMarkers : []}
-            heatmapCells={showHeatmap ? heatmapCells : []}
-            pendingCoord={pendingCoord}
-            userCoord={userCoord}
-            routeLine={routeLine}
-            mapType={mapType}
-            onLongPress={(lat, lng) => {
-              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-              setPendingCoord({ latitude: lat, longitude: lng });
-              setName('');
-              setDescription('');
-            }}
-            onMarkerPress={onMarkerPress}
-            onDamPress={onDamPress}
-            onRiverPress={onRiverPress}
-            onMapMove={saveMapPos}
-          />
-        )}
+        <MapEngineComponent
+          ref={mapRef}
+          spots={sortedSpots}
+          dams={!showFavoritesOnly && showDams ? DAMS : []}
+          rivers={!showFavoritesOnly && showRivers ? RIVERS : []}
+          catchMarkers={showCatchMarkers ? filteredCatchMarkers : []}
+          heatmapCells={showHeatmap ? heatmapCells : []}
+          pendingCoord={pendingCoord}
+          userCoord={userCoord}
+          routeLine={routeLine}
+          mapType={mapType}
+          onLongPress={(lat, lng) => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+            setPendingCoord({ latitude: lat, longitude: lng });
+            setName('');
+            setDescription('');
+          }}
+          onMarkerPress={onMarkerPress}
+          onDamPress={onDamPress}
+          onRiverPress={onRiverPress}
+          onLivePinPress={onLivePinPress}
+          liveFishingMarkers={liveMarkers}
+          onMapMove={saveMapPos}
+        />
 
         {sortedSpots.length > 1 && spotCenter ? (
           <Pressable

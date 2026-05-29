@@ -8,6 +8,7 @@ import {
   Pressable,
   ScrollView,
   InteractionManager,
+  Linking,
 } from 'react-native';
 import { FishingRefreshControl } from '../components/FishingRefreshControl';
 import * as Haptics from 'expo-haptics';
@@ -35,8 +36,8 @@ import { fetchPublicFeed, type CloudCatch } from '../services/catchSync';
 import { fetchMyActiveTournaments } from '../services/tournaments';
 import type { Tournament } from '../types';
 import { scheduleForecastNotificationIfGood } from '../services/pushNotifications';
-import { subscribeUnreadMessagesCount } from '../services/cloudSync';
-import { subscribeMyNotifications } from '../services/socialFeed';
+import { useUnreadMessagesCount } from '../hooks/useUnreadMessagesCount';
+import { useUnreadNotifCount } from '../hooks/useUnreadNotifCount';
 import { BadgeIcon } from '../components/BadgeIcon';
 import { Skeleton } from '../components/Skeleton';
 import { Image } from 'expo-image';
@@ -156,9 +157,17 @@ const S = StyleSheet.create({
     fontFamily: 'Nunito_800ExtraBold', letterSpacing: -2,
     lineHeight: 52,
   },
-  heroFishingLabel: {
-    fontSize: 10, fontFamily: 'Nunito_700Bold',
-    marginTop: 4, textAlign: 'right',
+  heroFishingChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: 14,
+    marginTop: 6,
+    borderWidth: 1,
+  },
+  heroFishingChipDot: { width: 8, height: 8, borderRadius: 4 },
+  heroFishingChipText: {
+    fontSize: 12, fontFamily: 'Nunito_700Bold',
+    letterSpacing: -0.1,
   },
 
   // Meta row (wind / humidity / moon) as glass pills
@@ -219,6 +228,23 @@ const S = StyleSheet.create({
   ctaCardSub: {
     color: 'rgba(255,255,255,0.72)', fontSize: 12,
     fontFamily: 'Nunito_600SemiBold', marginTop: 2,
+  },
+
+  // ─── Empty section hint ──────────────────────────────────────────
+  emptyHint: {
+    marginHorizontal: spacing.xl, marginBottom: spacing.xl,
+    paddingVertical: spacing.md, paddingHorizontal: spacing.lg,
+    borderRadius: radius.lg,
+    borderWidth: 1, borderStyle: 'dashed',
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+  },
+  emptyHintIcon: {
+    width: 36, height: 36, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  emptyHintText: {
+    flex: 1, fontSize: 12,
+    fontFamily: 'Nunito_600SemiBold',
   },
 
   // Small pill shortcut buttons
@@ -426,8 +452,14 @@ export default function HomeScreen() {
   const [topClassic, setTopClassic]     = useState<RankedClassicPhoto | null>(null);
   const [forecast, setForecast]         = useState<ForecastDay[]>([]);
   const [refreshing, setRefreshing]     = useState(false);
-  const [unreadMsgs, setUnreadMsgs]     = useState(0);
-  const [unreadNotifs, setUnreadNotifs] = useState(0);
+  // Badge counts via the ref-counted hooks — these share a single Firestore
+  // listener per uid with RootNavigator's tab-bar badge (which uses the same
+  // hooks). The previous version of this screen ran its own
+  // `subscribeMyNotifications` + `subscribeUnreadMessagesCount` effects,
+  // duplicating both listeners (4 active listeners just for badge state when
+  // Home was visible). See useUnreadNotifCount.ts for the cache rationale.
+  const unreadMsgs = useUnreadMessagesCount(user?.uid);
+  const unreadNotifs = useUnreadNotifCount(user?.uid);
   const [recentCatches, setRecentCatches] = useState<Catch[]>([]);
   // Catches from the same month/day in prior years — powers the
   // "В този ден" memory section. Empty until the user has at least one
@@ -441,8 +473,9 @@ export default function HomeScreen() {
   const [activeTournaments, setActiveTournaments] = useState<Tournament[]>([]);
   // ── Data loading ────────────────────────────────────────────────
 
-  const loadStats = useCallback(async () => {
+  const loadStats = useCallback(async (isCancelled: () => boolean = () => false) => {
     const list = await catchesStore.list();
+    if (isCancelled()) return;
     setCatchCount(list.length);
 
     const now = new Date();
@@ -475,46 +508,53 @@ export default function HomeScreen() {
     setThisDayCatches(sameDay.slice(0, 8));
 
     fetchRankedClassicPhotos(periodStartIso('week'), { maxCandidates: 20, resultLimit: 1 })
-      .then((r) => setTopClassic(r[0] ?? null))
+      .then((r) => { if (!isCancelled()) setTopClassic(r[0] ?? null); })
       .catch(() => {});
 
     if (user && configured) {
-      getFollowingCount(user.uid).then(setFollowingCount).catch(() => setFollowingCount(0));
+      getFollowingCount(user.uid)
+        .then((n) => { if (!isCancelled()) setFollowingCount(n); })
+        .catch(() => { if (!isCancelled()) setFollowingCount(0); });
     } else {
-      setFollowingCount(0);
+      if (!isCancelled()) setFollowingCount(0);
     }
   }, [user, configured]);
 
   /** Loads the "Today" hub data — catches from people the user follows + their
       active tournament countdowns. Both are best-effort and silently empty out
       on failure (Firestore unavailable, no follows, no joined tournaments). */
-  const loadTodayHub = useCallback(async () => {
+  const loadTodayHub = useCallback(async (isCancelled: () => boolean = () => false) => {
     if (!user || !configured) {
-      setFollowingCatches([]);
-      setActiveTournaments([]);
+      if (!isCancelled()) {
+        setFollowingCatches([]);
+        setActiveTournaments([]);
+      }
       return;
     }
     try {
       const following = await getFollowing(user.uid);
+      if (isCancelled()) return;
       const followingUids = following.map((f) => f.uid).filter(Boolean);
       if (followingUids.length === 0) {
         setFollowingCatches([]);
       } else {
         const page = await fetchPublicFeed(12, undefined, followingUids).catch(() => null);
+        if (isCancelled()) return;
         setFollowingCatches(page?.items ?? []);
       }
     } catch {
-      setFollowingCatches([]);
+      if (!isCancelled()) setFollowingCatches([]);
     }
     try {
       const tours = await fetchMyActiveTournaments(user.uid);
-      setActiveTournaments(tours);
+      if (!isCancelled()) setActiveTournaments(tours);
     } catch {
-      setActiveTournaments([]);
+      if (!isCancelled()) setActiveTournaments([]);
     }
   }, [user, configured]);
 
-  const loadWeather = useCallback(async () => {
+  const loadWeather = useCallback(async (isCancelled: () => boolean = () => false) => {
+    if (isCancelled()) return;
     setWeatherStatus('loading');
     let lat = FALLBACK_COORD.latitude, lng = FALLBACK_COORD.longitude, label = 'София (примерно)';
     let granted = false;
@@ -527,12 +567,15 @@ export default function HomeScreen() {
     // upgrades to live coords the moment the user grants permission elsewhere.
     try {
       const { status } = await Location.getForegroundPermissionsAsync();
+      if (isCancelled()) return;
       if (status === 'granted') {
         const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        if (isCancelled()) return;
         lat = pos.coords.latitude; lng = pos.coords.longitude; label = 'Твоето местоположение';
         granted = true;
       }
     } catch { /* use fallback */ }
+    if (isCancelled()) return;
     setLocLabel(label);
     setUserCoord(granted ? { latitude: lat, longitude: lng } : { latitude: FALLBACK_COORD.latitude, longitude: FALLBACK_COORD.longitude });
     try {
@@ -540,8 +583,10 @@ export default function HomeScreen() {
         fetchWeather(lat, lng),
         fetchForecast(lat, lng).catch(() => [] as ForecastDay[]),
       ]);
+      if (isCancelled()) return;
       setWeather(w); setForecast(days); setWeatherStatus('idle');
       AsyncStorage.getItem('@ribolov/lastPressure').then((v) => {
+        if (isCancelled()) return;
         const last = v ? parseFloat(v) : null;
         if (last !== null) {
           const diff = w.pressureHpa - last;
@@ -549,39 +594,57 @@ export default function HomeScreen() {
         }
         AsyncStorage.setItem('@ribolov/lastPressure', String(w.pressureHpa)).catch(() => {});
       }).catch(() => {});
-      scheduleForecastNotificationIfGood(days).catch(() => {});
-    } catch { setWeather(null); setWeatherStatus('error'); }
+      // Gate the forecast push notification too — if the user navigated away
+      // before the fetch returned, they don't want a "good weather coming!"
+      // notification fired on their behalf from a stale loader. The function
+      // is idempotent (it dedupes itself) but skipping it entirely when
+      // cancelled is cleaner.
+      if (!isCancelled()) scheduleForecastNotificationIfGood(days).catch(() => {});
+    } catch {
+      if (!isCancelled()) { setWeather(null); setWeatherStatus('error'); }
+    }
   }, []);
 
   useFocusEffect(useCallback(() => {
     const STALE = 5 * 60 * 1000;
+    let cancelled = false;
+    const isCancelled = () => cancelled;
     const task = InteractionManager.runAfterInteractions(() => {
+      if (cancelled) return;
       const now = Date.now();
       if (now - lastFetchRef.current < STALE) return;
       lastFetchRef.current = now;
-      loadStats(); loadWeather(); loadTodayHub();
+      void loadStats(isCancelled);
+      void loadWeather(isCancelled);
+      void loadTodayHub(isCancelled);
     });
-    return () => task.cancel();
+    return () => {
+      cancelled = true;
+      task.cancel();
+    };
   }, [loadStats, loadWeather, loadTodayHub]));
 
-  useEffect(() => {
-    if (!user || !configured) {
-      setUnreadMsgs(0);
-      setUnreadNotifs(0);
-      return;
-    }
-    const unsubMsgs   = subscribeUnreadMessagesCount(user.uid, setUnreadMsgs);
-    const unsubNotifs  = subscribeMyNotifications(user.uid, (items) =>
-      setUnreadNotifs(items.filter((n) => !n.read).length)
-    );
-    return () => { unsubMsgs(); unsubNotifs(); };
-  }, [user, configured]);
-
-  // Reset the focus-effect throttle when auth identity changes so the next
-  // focus re-fetches stats/follows for the new user instead of skipping under
-  // the 5-minute STALE window.
+  // Reset session-scoped state whenever the active user changes so user A's
+  // catches/weather/PB/recent feed don't briefly render for user B between
+  // sign-in and the next useFocusEffect fetch. Also clears the 5-minute
+  // STALE throttle so the next focus actually re-fetches instead of
+  // falling through and showing the cleared empty state for ~5 minutes.
   useEffect(() => {
     lastFetchRef.current = 0;
+    setWeather(null);
+    setWeatherStatus('idle');
+    setForecast([]);
+    setRecentCatches([]);
+    setBestThisMonth(null);
+    setThisDayCatches([]);
+    setFollowingCount(0);
+    setCatchCount(0);
+    setFollowingCatches([]);
+    setActiveTournaments([]);
+    setTopClassic(null);
+    setUserCoord(null);
+    setPressureTrend('stable');
+    setLocLabel('София (примерно)');
   }, [user?.uid]);
 
   const onRefresh = async () => {
@@ -682,9 +745,17 @@ export default function HomeScreen() {
                   <WeatherIcon weatherCode={weather.weatherCode} size={36} color="rgba(255,255,255,0.9)" />
                   <Text style={S.heroTempNum}>{weather.temperatureC}°</Text>
                   {fLabel && (
-                    <Text style={[S.heroFishingLabel, { color: fLabel.color }]} numberOfLines={2}>
-                      {fLabel.text}
-                    </Text>
+                    <View
+                      style={[
+                        S.heroFishingChip,
+                        { backgroundColor: fLabel.color + '26', borderColor: fLabel.color + '66' },
+                      ]}
+                    >
+                      <View style={[S.heroFishingChipDot, { backgroundColor: fLabel.color }]} />
+                      <Text style={[S.heroFishingChipText, { color: '#fff' }]} numberOfLines={1}>
+                        {fLabel.text}
+                      </Text>
+                    </View>
                   )}
                 </>
               ) : weatherStatus === 'error' ? (
@@ -719,8 +790,8 @@ export default function HomeScreen() {
               </View>
               <View style={S.heroMetaDivider} />
               <View style={S.heroMetaItem}>
-                <Ionicons name="water-outline" size={13} color="rgba(255,255,255,0.75)" />
-                <Text style={S.heroMetaText}>{weather.humidity}%</Text>
+                <Ionicons name="rainy-outline" size={13} color="rgba(255,255,255,0.75)" />
+                <Text style={S.heroMetaText}>{weather.precipitationProbability}%</Text>
               </View>
               <View style={S.heroMetaDivider} />
               <View style={S.heroMetaItem}>
@@ -1043,141 +1114,198 @@ export default function HomeScreen() {
         )}
 
         {/* ── Following catches — fresh activity from anglers you follow ── */}
-        {followingCatches.length > 0 && (
-          <>
-            <View style={S.sectionRow}>
-              <View style={S.sectionLeft}>
-                <View style={[S.sectionAccent, { backgroundColor: primary }]} />
-                <Text style={[S.sectionLabel, { color: mutedColor }]}>От твоите приятели</Text>
-              </View>
-              <Pressable onPress={() => (navigation as any).navigate('FeedTab')} hitSlop={8}>
-                <Text style={[S.sectionLink, { color: primary }]}>Към лентата →</Text>
-              </Pressable>
-            </View>
-            <ScrollView
-              horizontal showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: spacing.xl, gap: spacing.sm, paddingBottom: spacing.xl }}
-            >
-              {followingCatches.map((c) => (
-                <Pressable
-                  key={c.id}
-                  style={[S.catchCard, { backgroundColor: c.photoUri ? 'transparent' : (mode === 'dark' ? '#0E1E35' : colors.primarySurface) }]}
-                  onPress={() => (navigation as any).navigate('LogbookTab', { screen: 'CatchDetail', params: { id: c.id } })}
-                >
-                  {c.photoUri ? (
-                    <>
-                      <Image source={{ uri: c.photoUri }} contentFit="cover" style={StyleSheet.absoluteFillObject} />
-                      <LinearGradient
-                        colors={['transparent', 'rgba(0,0,0,0.78)']}
-                        start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
-                        style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 92, justifyContent: 'flex-end', padding: 10 }}
-                      >
-                        <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 10, fontFamily: 'Nunito_600SemiBold' }} numberOfLines={1}>
-                          {c.ownerName ?? 'Рибар'}
-                        </Text>
-                        <Text style={{ color: '#fff', fontSize: 11, fontFamily: 'Nunito_700Bold', marginTop: 1 }} numberOfLines={1}>
-                          {c.speciesName}
-                        </Text>
-                        {c.weightKg != null ? (
-                          <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 10 }}>{c.weightKg} кг</Text>
-                        ) : null}
-                      </LinearGradient>
-                    </>
-                  ) : (
-                    <View style={S.catchEmpty}>
-                      <Text style={{ fontSize: 28 }}>🐟</Text>
-                      <Text style={{ fontSize: 10, color: textColor, fontFamily: 'Nunito_600SemiBold', textAlign: 'center', marginTop: 4 }} numberOfLines={2}>
+        <View style={S.sectionRow}>
+          <View style={S.sectionLeft}>
+            <View style={[S.sectionAccent, { backgroundColor: primary }]} />
+            <Text style={[S.sectionLabel, { color: mutedColor }]}>От твоите приятели</Text>
+          </View>
+          {followingCatches.length > 0 ? (
+            <Pressable onPress={() => (navigation as any).navigate('FeedTab')} hitSlop={8}>
+              <Text style={[S.sectionLink, { color: primary }]}>Към лентата →</Text>
+            </Pressable>
+          ) : null}
+        </View>
+        {followingCatches.length > 0 ? (
+          <ScrollView
+            horizontal showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: spacing.xl, gap: spacing.sm, paddingBottom: spacing.xl }}
+          >
+            {followingCatches.map((c) => (
+              <Pressable
+                key={c.id}
+                style={[S.catchCard, { backgroundColor: c.photoUri ? 'transparent' : (mode === 'dark' ? '#0E1E35' : colors.primarySurface) }]}
+                onPress={() => (navigation as any).navigate('LogbookTab', { screen: 'CatchDetail', params: { id: c.id } })}
+              >
+                {c.photoUri ? (
+                  <>
+                    <Image source={{ uri: c.photoUri }} contentFit="cover" style={StyleSheet.absoluteFillObject} />
+                    <LinearGradient
+                      colors={['transparent', 'rgba(0,0,0,0.78)']}
+                      start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+                      style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 92, justifyContent: 'flex-end', padding: 10 }}
+                    >
+                      <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 10, fontFamily: 'Nunito_600SemiBold' }} numberOfLines={1}>
+                        {c.ownerName ?? 'Рибар'}
+                      </Text>
+                      <Text style={{ color: '#fff', fontSize: 11, fontFamily: 'Nunito_700Bold', marginTop: 1 }} numberOfLines={1}>
                         {c.speciesName}
                       </Text>
-                    </View>
-                  )}
-                </Pressable>
-              ))}
-            </ScrollView>
-          </>
+                      {c.weightKg != null ? (
+                        <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 10 }}>{c.weightKg} кг</Text>
+                      ) : null}
+                    </LinearGradient>
+                  </>
+                ) : (
+                  <View style={S.catchEmpty}>
+                    <Text style={{ fontSize: 28 }}>🐟</Text>
+                    <Text style={{ fontSize: 10, color: textColor, fontFamily: 'Nunito_600SemiBold', textAlign: 'center', marginTop: 4 }} numberOfLines={2}>
+                      {c.speciesName}
+                    </Text>
+                  </View>
+                )}
+              </Pressable>
+            ))}
+          </ScrollView>
+        ) : (
+          <Pressable
+            onPress={() => (navigation as any).navigate('ProfileTab', { screen: 'Friends' })}
+            style={[S.emptyHint, { backgroundColor: cardBg, borderColor: cardBorder }]}
+          >
+            <View style={[S.emptyHintIcon, { backgroundColor: primary + '18' }]}>
+              <Ionicons name="people-outline" size={20} color={primary} />
+            </View>
+            <Text style={[S.emptyHintText, { color: mutedColor }]}>
+              Намери приятели, за да виждаш техните улови
+            </Text>
+            <Ionicons name="chevron-forward" size={16} color={mutedColor} />
+          </Pressable>
         )}
 
         {/* ── Nearest water bodies ── */}
-        {nearestWaters.length > 0 && (
-          <>
-            <View style={S.sectionRow}>
-              <View style={S.sectionLeft}>
-                <View style={[S.sectionAccent, { backgroundColor: primary }]} />
-                <Text style={[S.sectionLabel, { color: mutedColor }]}>Най-близки водоеми</Text>
-              </View>
-              <Pressable onPress={() => navigation.navigate('MapTab')} hitSlop={8}>
-                <Text style={[S.sectionLink, { color: primary }]}>Виж карта →</Text>
-              </Pressable>
+        <View style={S.sectionRow}>
+          <View style={S.sectionLeft}>
+            <View style={[S.sectionAccent, { backgroundColor: primary }]} />
+            <Text style={[S.sectionLabel, { color: mutedColor }]}>Най-близки водоеми</Text>
+          </View>
+          {nearestWaters.length > 0 ? (
+            <Pressable onPress={() => navigation.navigate('MapTab')} hitSlop={8}>
+              <Text style={[S.sectionLink, { color: primary }]}>Виж карта →</Text>
+            </Pressable>
+          ) : null}
+        </View>
+        {nearestWaters.length > 0 ? (
+          <View style={S.nearbyList}>
+            {nearestWaters.map((w) => (
+              <ScalePressable
+                key={`${w.kind}-${w.id}`}
+                style={[S.nearbyRow, { backgroundColor: cardBg, borderColor: cardBorder }]}
+                onPress={() => navigation.navigate('WaterDetail', { kind: w.kind, id: w.id })}
+              >
+                <View style={[S.nearbyIconWrap, { backgroundColor: colors.primarySurface }]}>
+                  <Ionicons name={w.kind === 'dam' ? 'layers-outline' : 'git-branch-outline'} size={20} color={primary} />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={[S.nearbyName, { color: textColor }]} numberOfLines={1}>{w.name}</Text>
+                  <Text style={[S.nearbyMeta, { color: mutedColor }]} numberOfLines={1}>
+                    {w.kind === 'dam' ? 'Язовир' : 'Река'} · {w.region}
+                  </Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={[S.nearbyDistance, { color: primary }]}>{Math.round(w.km)} км</Text>
+                </View>
+              </ScalePressable>
+            ))}
+          </View>
+        ) : (
+          // Tap requests Location permission. If the user has already chosen
+          // "never ask" we route them to Settings instead — without that
+          // branch the card would silently do nothing and look broken. On
+          // grant, reset the focus-effect throttle and trigger an immediate
+          // weather/location reload so the nearby-waters list populates
+          // without a focus bounce.
+          <Pressable
+            onPress={async () => {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              const current = await Location.getForegroundPermissionsAsync();
+              if (current.status === 'denied' && !current.canAskAgain) {
+                void Linking.openSettings();
+                return;
+              }
+              const req = await Location.requestForegroundPermissionsAsync();
+              if (req.status === 'granted') {
+                lastFetchRef.current = 0;
+                void loadWeather();
+              }
+            }}
+            style={[S.emptyHint, { backgroundColor: cardBg, borderColor: cardBorder }]}
+          >
+            <View style={[S.emptyHintIcon, { backgroundColor: primary + '18' }]}>
+              <Ionicons name="location-outline" size={20} color={primary} />
             </View>
-            <View style={S.nearbyList}>
-              {nearestWaters.map((w) => (
-                <ScalePressable
-                  key={`${w.kind}-${w.id}`}
-                  style={[S.nearbyRow, { backgroundColor: cardBg, borderColor: cardBorder }]}
-                  onPress={() => navigation.navigate('WaterDetail', { kind: w.kind, id: w.id })}
-                >
-                  <View style={[S.nearbyIconWrap, { backgroundColor: colors.primarySurface }]}>
-                    <Ionicons name={w.kind === 'dam' ? 'layers-outline' : 'git-branch-outline'} size={20} color={primary} />
-                  </View>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={[S.nearbyName, { color: textColor }]} numberOfLines={1}>{w.name}</Text>
-                    <Text style={[S.nearbyMeta, { color: mutedColor }]} numberOfLines={1}>
-                      {w.kind === 'dam' ? 'Язовир' : 'Река'} · {w.region}
-                    </Text>
-                  </View>
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={[S.nearbyDistance, { color: primary }]}>{Math.round(w.km)} км</Text>
-                  </View>
-                </ScalePressable>
-              ))}
-            </View>
-          </>
+            <Text style={[S.emptyHintText, { color: mutedColor }]}>
+              Разреши локация, за да видиш близки язовири и реки
+            </Text>
+            <Ionicons name="chevron-forward" size={16} color={mutedColor} />
+          </Pressable>
         )}
 
         {/* ── Recent catches ── */}
-        {recentCatches.length > 0 && (
-          <>
-            <View style={S.sectionRow}>
-              <View style={S.sectionLeft}>
-                <View style={[S.sectionAccent, { backgroundColor: primary }]} />
-                <Text style={[S.sectionLabel, { color: mutedColor }]}>Недавни улови</Text>
-              </View>
-              <Pressable onPress={() => navigation.navigate('LogbookTab', { screen: 'LogbookList' })} hitSlop={8}>
-                <Text style={[S.sectionLink, { color: primary }]}>Виж всички →</Text>
+        <View style={S.sectionRow}>
+          <View style={S.sectionLeft}>
+            <View style={[S.sectionAccent, { backgroundColor: primary }]} />
+            <Text style={[S.sectionLabel, { color: mutedColor }]}>Недавни улови</Text>
+          </View>
+          {recentCatches.length > 0 ? (
+            <Pressable onPress={() => navigation.navigate('LogbookTab', { screen: 'LogbookList' })} hitSlop={8}>
+              <Text style={[S.sectionLink, { color: primary }]}>Виж всички →</Text>
+            </Pressable>
+          ) : null}
+        </View>
+        {recentCatches.length > 0 ? (
+          <ScrollView
+            horizontal showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: spacing.xl, gap: spacing.sm, paddingBottom: spacing.xl }}
+          >
+            {recentCatches.map((c) => (
+              <Pressable
+                key={c.id}
+                style={[S.catchCard, { backgroundColor: c.photoUri ? 'transparent' : (mode === 'dark' ? '#0E1E35' : colors.primarySurface) }]}
+                onPress={() => navigation.navigate('LogbookTab', { screen: 'CatchDetail', params: { id: c.id } })}
+              >
+                {c.photoUri ? (
+                  <>
+                    <Image source={{ uri: c.photoUri }} contentFit="cover" style={StyleSheet.absoluteFillObject} />
+                    <LinearGradient
+                      colors={['transparent', 'rgba(0,0,0,0.75)']}
+                      start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+                      style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 80, justifyContent: 'flex-end', padding: 10 }}
+                    >
+                      <Text style={{ color: '#fff', fontSize: 11, fontFamily: 'Nunito_700Bold' }} numberOfLines={1}>{c.speciesName}</Text>
+                      {c.weightKg != null && <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 10 }}>{c.weightKg} кг</Text>}
+                    </LinearGradient>
+                  </>
+                ) : (
+                  <View style={S.catchEmpty}>
+                    <Text style={{ fontSize: 28 }}>🐟</Text>
+                    <Text style={{ fontSize: 10, color: textColor, fontFamily: 'Nunito_600SemiBold', textAlign: 'center', marginTop: 4 }} numberOfLines={2}>{c.speciesName}</Text>
+                  </View>
+                )}
               </Pressable>
+            ))}
+          </ScrollView>
+        ) : (
+          <Pressable
+            onPress={() => navigation.navigate('LogbookTab', { screen: 'AddCatch', params: {} })}
+            style={[S.emptyHint, { backgroundColor: cardBg, borderColor: cardBorder }]}
+          >
+            <View style={[S.emptyHintIcon, { backgroundColor: primary + '18' }]}>
+              <Ionicons name="add-circle-outline" size={22} color={primary} />
             </View>
-            <ScrollView
-              horizontal showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: spacing.xl, gap: spacing.sm, paddingBottom: spacing.xl }}
-            >
-              {recentCatches.map((c) => (
-                <Pressable
-                  key={c.id}
-                  style={[S.catchCard, { backgroundColor: c.photoUri ? 'transparent' : (mode === 'dark' ? '#0E1E35' : colors.primarySurface) }]}
-                  onPress={() => navigation.navigate('LogbookTab', { screen: 'CatchDetail', params: { id: c.id } })}
-                >
-                  {c.photoUri ? (
-                    <>
-                      <Image source={{ uri: c.photoUri }} contentFit="cover" style={StyleSheet.absoluteFillObject} />
-                      <LinearGradient
-                        colors={['transparent', 'rgba(0,0,0,0.75)']}
-                        start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
-                        style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 80, justifyContent: 'flex-end', padding: 10 }}
-                      >
-                        <Text style={{ color: '#fff', fontSize: 11, fontFamily: 'Nunito_700Bold' }} numberOfLines={1}>{c.speciesName}</Text>
-                        {c.weightKg != null && <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 10 }}>{c.weightKg} кг</Text>}
-                      </LinearGradient>
-                    </>
-                  ) : (
-                    <View style={S.catchEmpty}>
-                      <Text style={{ fontSize: 28 }}>🐟</Text>
-                      <Text style={{ fontSize: 10, color: textColor, fontFamily: 'Nunito_600SemiBold', textAlign: 'center', marginTop: 4 }} numberOfLines={2}>{c.speciesName}</Text>
-                    </View>
-                  )}
-                </Pressable>
-              ))}
-            </ScrollView>
-          </>
+            <Text style={[S.emptyHintText, { color: mutedColor }]}>
+              Запиши първия си улов — ще го виждаш тук
+            </Text>
+            <Ionicons name="chevron-forward" size={16} color={mutedColor} />
+          </Pressable>
         )}
 
         {/* ── Featured angler of the week ── */}

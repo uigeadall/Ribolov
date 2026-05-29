@@ -1,5 +1,5 @@
 import * as admin from "firebase-admin";
-import { onDocumentCreated, onDocumentUpdated, onDocumentDeleted } from "firebase-functions/v2/firestore";
+import { onDocumentCreated, onDocumentUpdated, onDocumentDeleted, onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
@@ -53,6 +53,71 @@ function periodMinIso(period: Period): string {
   }
 
   return d.toISOString();
+}
+
+// ---------------------------------------------------------------------------
+// Per-callable rate limiting — Firestore-backed token bucket.
+// ---------------------------------------------------------------------------
+// Why this exists:
+//   Cloud Function callables auth-gate the caller but don't bound how many
+//   times an authenticated user can invoke them. For functions whose side
+//   effects scale up storage (`getR2UploadUrl` → R2 storage), reads
+//   (`getSpeciesHeatmap` on a cache miss → 2,500 publicCatches reads), or
+//   compute (`deleteMyAccount` → recursive delete walk), an authenticated
+//   bad actor can hammer the endpoint and rack up cost or DoS the function.
+//
+// Token bucket per (uid, key):
+//   - One Firestore doc per limiter, at `rateLimits/{uid}_{key}`.
+//   - Stores: `tokens` (current count), `refilledAt` (epoch ms of last refill).
+//   - On each call: read doc, compute refill based on elapsed time, check
+//     >= 1 token, decrement, write back.
+//   - Two reads + one write per call. At a 60/hr limit that's negligible
+//     cost vs. the protection.
+//
+// Trade-off: this serializes rate-limit checks through Firestore, so a
+// burst of N concurrent calls from the same uid can race and let through
+// up to N requests even when tokens were near depletion. Acceptable —
+// we're protecting against sustained abuse, not concurrent burst.
+// For hard guarantees you'd need a transaction; we deliberately skip that
+// to keep the per-call overhead low.
+
+async function checkAndConsumeRateBucket(
+  uid: string,
+  key: string,
+  capacity: number,
+  refillPerHour: number,
+): Promise<void> {
+  const ref = db.doc(`rateLimits/${uid}_${key}`);
+  const now = Date.now();
+  let snap: admin.firestore.DocumentSnapshot;
+  try {
+    snap = await ref.get();
+  } catch (e) {
+    // If we can't read the limiter doc (transient Firestore outage) we let
+    // the call through. The limiter is a defense-in-depth tool — failing
+    // open keeps the app working when Firestore itself is degraded; the
+    // real abuse window during such an outage is brief.
+    logger.warn(`[rateLimit] read failed for ${key}/${uid}`, e);
+    return;
+  }
+  const data = snap.exists ? (snap.data() as { tokens?: number; refilledAt?: number }) : null;
+  const prevTokens = typeof data?.tokens === "number" ? data.tokens : capacity;
+  const prevAt = typeof data?.refilledAt === "number" ? data.refilledAt : now;
+  // Refill at refillPerHour tokens/hour, capped at capacity.
+  const elapsedMs = Math.max(0, now - prevAt);
+  const refilled = Math.min(capacity, prevTokens + elapsedMs * refillPerHour / 3_600_000);
+  if (refilled < 1) {
+    // Re-stamp `refilledAt` so the next allowed call's elapsed-time math
+    // is still accurate (otherwise repeated rejections compound the
+    // virtual "elapsed" window and bypass the cap entirely after a long
+    // pause). Set tokens to the partial refill so progress isn't lost.
+    await ref.set({ tokens: refilled, refilledAt: now }, { merge: true }).catch(() => {});
+    throw new HttpsError(
+      "resource-exhausted",
+      `Too many requests for "${key}". Wait and try again.`,
+    );
+  }
+  await ref.set({ tokens: refilled - 1, refilledAt: now }, { merge: true });
 }
 
 // Caps for outbound Expo push payload fields. Expo's API itself accepts
@@ -569,7 +634,13 @@ export const onNewMessage = onDocumentCreated(
 // aggregateLeaderboards — runs every 10 minutes
 // ---------------------------------------------------------------------------
 
-export const aggregateLeaderboards = onSchedule("every 10 minutes", async () => {
+// PARALLEL-RUN: the legacy aggregator is kept temporarily as a safety net
+// while the new trigger-based rollup system (`onPublicCatchForRollup` +
+// `consolidateLeaderboards` + `weeklyLeaderboardDriftFix` below) proves
+// itself. Cadence dropped from every-10-min to once-daily — still validates
+// the new system's output against a full-scan recompute, but at ~1/144 the
+// read cost during the overlap. Remove after 7 days of confirmed agreement.
+export const aggregateLeaderboards = onSchedule("every 24 hours", async () => {
   const periods: Period[] = ["day", "week", "month", "year"];
 
   for (const period of periods) {
@@ -625,6 +696,558 @@ export const aggregateLeaderboards = onSchedule("every 10 minutes", async () => 
       updatedAt: FieldValue.serverTimestamp(),
     });
   }
+});
+
+// ---------------------------------------------------------------------------
+// Trigger-based leaderboard rollups (replaces the full-scan aggregator).
+// ---------------------------------------------------------------------------
+// Why this exists:
+//   The old `aggregateLeaderboards` above does a full collection scan of
+//   `publicCatches` every 10 minutes, for each of 4 periods. At 10k DAU
+//   with a year of accumulated catches that's ~76M reads/day = ~$1,300/mo
+//   just from this one function. The pattern below replaces that with:
+//
+//     - per-public-catch-write trigger that increments a per-user, per-
+//       bucket rollup doc (4 small writes per catch write, no reads),
+//     - a much smaller consolidator that reads top-N rollup docs per
+//       current bucket and writes the existing `leaderboardCache/global_*`
+//       doc the client already consumes (no client changes),
+//     - a once-a-week drift correction that rebuilds rollups from the
+//       source `publicCatches` data to catch any missed trigger writes
+//       (Firestore triggers are at-least-once but not at-most-once, and
+//       network errors during the trigger can drop writes — drift sweeps
+//       reconcile those).
+//
+// Bucket keys are deterministic ISO strings — day_YYYY-MM-DD, week_YYYY-Www,
+// month_YYYY-MM, year_YYYY. Doc IDs use composite `${bucket}_${ownerUid}` so
+// writes are idempotent under at-least-once delivery: re-running the same
+// trigger event lands on the same doc and `FieldValue.increment(0)` is a
+// no-op for the totals (catchCount may double-count on duplicate delivery,
+// but the weekly drift fix corrects it).
+
+// `bestKg` is intentionally NOT maintained by the trigger. Doing so requires
+// a read-then-write transaction per write (4× extra reads) AND a separate
+// recompute on every delete to handle the case where the deleted catch was
+// the biggest. We leave bestKg stale-but-bounded: the weekly drift fix
+// recomputes it correctly from publicCatches. The leaderboard sorts by
+// totalKg anyway — bestKg is a sort-tiebreak / display value only.
+
+function dayBucketKey(d: Date): string {
+  return `day_${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+function isoWeekBucketKey(d: Date): string {
+  // ISO-8601 week: weeks start Monday, week 1 contains the first Thursday
+  // of the year. Reused for both bucket keying and consistency with the
+  // periodMinIso() above (which also treats Monday as week start).
+  const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  t.setUTCDate(t.getUTCDate() + 3 - ((t.getUTCDay() + 6) % 7));
+  const firstThu = new Date(Date.UTC(t.getUTCFullYear(), 0, 4));
+  const diff = (t.getTime() - firstThu.getTime()) / 86400000;
+  const week = 1 + Math.round((diff - 3 + ((firstThu.getUTCDay() + 6) % 7)) / 7);
+  return `week_${t.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+}
+
+function monthBucketKey(d: Date): string {
+  return `month_${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function yearBucketKey(d: Date): string {
+  return `year_${d.getUTCFullYear()}`;
+}
+
+function bucketsForDate(date: Date): Array<{ period: Period; bucket: string }> {
+  return [
+    { period: "day", bucket: dayBucketKey(date) },
+    { period: "week", bucket: isoWeekBucketKey(date) },
+    { period: "month", bucket: monthBucketKey(date) },
+    { period: "year", bucket: yearBucketKey(date) },
+  ];
+}
+
+// TTL durations per bucket period. Day buckets become irrelevant the moment
+// the day rolls over; we keep them ~5 weeks just to allow late drift fixes
+// to inspect them. Week ~2mo, month ~13mo, year never (year buckets need
+// to live for at least a year to be queryable as "current year").
+const TTL_DAYS: Record<Period, number | null> = {
+  day: 35,
+  week: 60,
+  month: 400,
+  year: null,
+};
+
+function ttlForBucket(period: Period, date: Date): Timestamp | null {
+  const days = TTL_DAYS[period];
+  if (days == null) return null;
+  const t = new Date(date);
+  t.setUTCDate(t.getUTCDate() + days);
+  return Timestamp.fromDate(t);
+}
+
+function rollupDocId(bucket: string, ownerUid: string): string {
+  return `${bucket}_${ownerUid}`;
+}
+
+// onPublicCatchForRollup ------------------------------------------------------
+// Fires on every create/update/delete of `publicCatches/{id}`. Computes the
+// "before" and "after" bucket sets and writes the delta to each affected
+// rollup doc. For an unchanged-date update, the bucket set is the same and
+// we just shift totalKg by (afterKg - beforeKg). For a date change, we
+// decrement old buckets and increment new ones in a single batch.
+export const onPublicCatchForRollup = onDocumentWritten(
+  "publicCatches/{catchId}",
+  async (event) => {
+    const before = event.data?.before?.data() as Record<string, unknown> | undefined;
+    const after = event.data?.after?.data() as Record<string, unknown> | undefined;
+
+    // Snapshot helpers — coerce to safe primitives, guarding against
+    // partial / malformed source docs (a Firestore write can leave fields
+    // undefined; we don't want NaN propagating into rollups).
+    const beforeUid = typeof before?.ownerUid === "string" ? before.ownerUid : "";
+    const afterUid = typeof after?.ownerUid === "string" ? after.ownerUid : "";
+    const beforeKg = typeof before?.weightKg === "number" && Number.isFinite(before.weightKg) ? (before.weightKg as number) : 0;
+    const afterKg = typeof after?.weightKg === "number" && Number.isFinite(after.weightKg) ? (after.weightKg as number) : 0;
+    const beforeDateStr = typeof before?.date === "string" ? before.date : "";
+    const afterDateStr = typeof after?.date === "string" ? after.date : "";
+    const ownerName = (typeof after?.ownerName === "string" && after.ownerName)
+      || (typeof before?.ownerName === "string" && before.ownerName)
+      || "Рибар";
+
+    const beforeDate = beforeDateStr ? new Date(beforeDateStr) : null;
+    const afterDate = afterDateStr ? new Date(afterDateStr) : null;
+    // Reject invalid dates — a NaN-valued Date would silently produce
+    // nonsense bucket keys like `day_NaN-NaN-NaN` and pollute the
+    // collection. Better to log and bail.
+    if (beforeDate && isNaN(beforeDate.getTime())) {
+      logger.warn(`[onPublicCatchForRollup] invalid before.date: ${beforeDateStr}`);
+      return;
+    }
+    if (afterDate && isNaN(afterDate.getTime())) {
+      logger.warn(`[onPublicCatchForRollup] invalid after.date: ${afterDateStr}`);
+      return;
+    }
+
+    // Compute per-rollup-doc deltas. Same uid for the same catch is the
+    // only sensible interpretation — if ownerUid changed mid-edit (which
+    // shouldn't happen), treat it as a delete from the old uid and a
+    // create for the new uid.
+    type Delta = {
+      bucket: string;
+      period: Period;
+      ownerUid: string;
+      deltaKg: number;
+      deltaCount: number;
+      // Carry through enough doc metadata to bootstrap a new rollup doc
+      // when this is the first write to it.
+      ttlAt: Timestamp | null;
+    };
+    const deltas: Delta[] = [];
+
+    if (beforeDate && beforeUid) {
+      for (const { period, bucket } of bucketsForDate(beforeDate)) {
+        deltas.push({
+          bucket, period, ownerUid: beforeUid,
+          deltaKg: -beforeKg, deltaCount: -1,
+          ttlAt: ttlForBucket(period, beforeDate),
+        });
+      }
+    }
+    if (afterDate && afterUid) {
+      for (const { period, bucket } of bucketsForDate(afterDate)) {
+        deltas.push({
+          bucket, period, ownerUid: afterUid,
+          deltaKg: afterKg, deltaCount: 1,
+          ttlAt: ttlForBucket(period, afterDate),
+        });
+      }
+    }
+
+    if (deltas.length === 0) return;
+
+    // Coalesce by doc ID — if a doc edit kept the same bucket but changed
+    // weight, we get a -beforeKg and +afterKg delta for the SAME rollup
+    // doc, which should net to (afterKg - beforeKg). Without coalescing
+    // we'd issue two separate increments (correct, but doubles the write
+    // count for what should be a single op).
+    const byDoc = new Map<string, Delta>();
+    for (const d of deltas) {
+      const id = rollupDocId(d.bucket, d.ownerUid);
+      const existing = byDoc.get(id);
+      if (existing) {
+        existing.deltaKg += d.deltaKg;
+        existing.deltaCount += d.deltaCount;
+      } else {
+        byDoc.set(id, { ...d });
+      }
+    }
+
+    const batch = db.batch();
+    for (const [docId, d] of byDoc.entries()) {
+      // Skip pure-zero deltas (can happen if beforeKg == afterKg AND the
+      // same bucket appears on both sides — e.g. a non-substantive edit
+      // touching neither weight nor date). A zero-delta merge would still
+      // count as a billable write; skipping saves a few % of writes on
+      // bulk edits.
+      if (d.deltaKg === 0 && d.deltaCount === 0) continue;
+
+      const ref = db.collection("leaderboardRollup").doc(docId);
+      const payload: Record<string, unknown> = {
+        bucket: d.bucket,
+        period: d.period,
+        ownerUid: d.ownerUid,
+        ownerName,
+        totalKg: FieldValue.increment(d.deltaKg),
+        catchCount: FieldValue.increment(d.deltaCount),
+      };
+      if (d.ttlAt) payload.ttlAt = d.ttlAt;
+      batch.set(ref, payload, { merge: true });
+    }
+    await batch.commit();
+  },
+);
+
+// consolidateLeaderboards -----------------------------------------------------
+// Reads top-N rollup docs for each current bucket and writes them to the
+// existing `leaderboardCache/global_{period}` doc that the client already
+// consumes. Cadence is every 10 min (matches the legacy aggregator) but
+// the cost shape is radically different — ~200 reads × 4 periods per run.
+//
+// Top-200 is chosen so the client's leaderboard UI (which shows top ~50
+// + the user's own rank) has comfortable headroom. If a leaderboard ever
+// needs to show >200 ranks the client falls back to direct rollup queries
+// or live aggregation — same as it does today when the cache doc is empty.
+
+const LEADERBOARD_TOP_N = 200;
+
+export const consolidateLeaderboards = onSchedule("every 10 minutes", async () => {
+  const now = new Date();
+  const periods: Period[] = ["day", "week", "month", "year"];
+
+  for (const period of periods) {
+    const currentBucket =
+      period === "day" ? dayBucketKey(now)
+        : period === "week" ? isoWeekBucketKey(now)
+          : period === "month" ? monthBucketKey(now)
+            : yearBucketKey(now);
+
+    const snap = await db
+      .collection("leaderboardRollup")
+      .where("bucket", "==", currentBucket)
+      .orderBy("totalKg", "desc")
+      .limit(LEADERBOARD_TOP_N)
+      .get();
+
+    const rows: LeaderboardRow[] = snap.docs.map((d, i) => {
+      const data = d.data();
+      const totalKg = typeof data.totalKg === "number" && Number.isFinite(data.totalKg) ? data.totalKg : 0;
+      const catchCount = typeof data.catchCount === "number" && Number.isFinite(data.catchCount) ? data.catchCount : 0;
+      const bestKg = typeof data.bestKg === "number" && Number.isFinite(data.bestKg) ? data.bestKg : 0;
+      return {
+        rank: i + 1,
+        ownerUid: typeof data.ownerUid === "string" ? data.ownerUid : "",
+        ownerName: typeof data.ownerName === "string" ? data.ownerName : "Рибар",
+        totalKg,
+        catchCount,
+        bestKg,
+      };
+    }).filter((r) => r.ownerUid && r.totalKg > 0);
+    // Filter zero-or-negative totals — a user who reshared then deleted
+    // their catches lands at totalKg=0 from the increment math, but should
+    // not appear on the board.
+
+    await db.collection("leaderboardCache").doc(`global_${period}`).set({
+      rows,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  }
+});
+
+// weeklyLeaderboardDriftFix ---------------------------------------------------
+// Runs once a week to reconcile rollup state with the source-of-truth
+// publicCatches collection. Catches three classes of drift:
+//   1) Trigger writes lost to network errors or function timeouts.
+//   2) `bestKg` staleness from deletes (which the trigger intentionally
+//      ignores — see comment at the top of this block).
+//   3) `ownerName` updates (a user renaming themselves doesn't fan out a
+//      backfill — drift picks it up).
+//
+// Cost: one full scan of publicCatches per period per run. Same magnitude
+// as a single run of the old aggregator — but only once a week instead of
+// 144 times a day, so ~99.3% cheaper. At 10k DAU this is roughly $5/month.
+
+export const weeklyLeaderboardDriftFix = onSchedule(
+  { schedule: "0 3 * * 0", timeZone: "Europe/Sofia" },
+  async () => {
+    const now = new Date();
+    const periods: Period[] = ["day", "week", "month", "year"];
+
+    for (const period of periods) {
+      const minIso = periodMinIso(period);
+      const currentBucket =
+        period === "day" ? dayBucketKey(now)
+          : period === "week" ? isoWeekBucketKey(now)
+            : period === "month" ? monthBucketKey(now)
+              : yearBucketKey(now);
+
+      const snapshot = await db
+        .collection("publicCatches")
+        .where("date", ">=", minIso)
+        .get();
+
+      // Aggregate from source. Same shape as the old aggregator's inner
+      // loop — minus the sort, since we write per-user rollups rather
+      // than a ranked rows array.
+      type Agg = { ownerName: string; totalKg: number; catchCount: number; bestKg: number };
+      const map = new Map<string, Agg>();
+      for (const doc of snapshot.docs) {
+        const d = doc.data();
+        const uid: string = d.ownerUid ?? "";
+        if (!uid) continue;
+        const kg: number = typeof d.weightKg === "number" && Number.isFinite(d.weightKg) ? d.weightKg : 0;
+        const name: string = typeof d.ownerName === "string" ? d.ownerName : "Рибар";
+        const existing = map.get(uid);
+        if (existing) {
+          existing.totalKg += kg;
+          existing.catchCount += 1;
+          if (kg > existing.bestKg) existing.bestKg = kg;
+          // Keep the most recent name we saw (publicCatches docs aren't
+          // guaranteed ordered, but the difference between any two recent
+          // copies of a user's name is negligible).
+          existing.ownerName = name || existing.ownerName;
+        } else {
+          map.set(uid, { ownerName: name, totalKg: kg, catchCount: 1, bestKg: kg });
+        }
+      }
+
+      // Write each authoritative rollup. We use `set` (not merge) for the
+      // numeric fields so any drift in the existing doc is corrected
+      // outright. ttlAt is preserved if the bucket has one.
+      const ttlAt = period === "year" ? null : ttlForBucket(period, now);
+
+      // Chunk writes — Firestore batches cap at 500 ops. Most weekly fixes
+      // will be well under this, but the year-bucket recompute on a large
+      // user base could exceed it.
+      const entries = Array.from(map.entries());
+      for (let i = 0; i < entries.length; i += 400) {
+        const batch = db.batch();
+        for (const [uid, agg] of entries.slice(i, i + 400)) {
+          const ref = db.collection("leaderboardRollup").doc(rollupDocId(currentBucket, uid));
+          const payload: Record<string, unknown> = {
+            bucket: currentBucket,
+            period,
+            ownerUid: uid,
+            ownerName: agg.ownerName,
+            totalKg: agg.totalKg,
+            catchCount: agg.catchCount,
+            bestKg: agg.bestKg,
+          };
+          if (ttlAt) payload.ttlAt = ttlAt;
+          batch.set(ref, payload, { merge: true });
+        }
+        await batch.commit();
+      }
+
+      logger.info(`[weeklyLeaderboardDriftFix] period=${period} bucket=${currentBucket} users=${map.size}`);
+    }
+  },
+);
+
+// consolidateClassicsCache --------------------------------------------------
+// Maintains `classicsCache/week` and `classicsCache/month` — pre-ranked
+// top-50 photos by likeCount within each period. Replaces the previous
+// client-side pattern where each HomeScreen / ClassicsScreen open ran a
+// `where('date' >= periodStart) orderBy('date' desc) limit(N)` against
+// publicCatches and sorted by likeCount client-side, reading 60–420 docs
+// per session.
+//
+// Cost shape: this function reads top 100 per period × 2 periods × hourly =
+// ~5k reads/day = pennies. The client reads exactly one doc per open
+// (`classicsCache/{period}`).
+//
+// Composite index required: (date asc, likeCount desc) on publicCatches —
+// added in firestore.indexes.json. Without the index the function throws
+// a one-time setup error on first run that includes the create-index link.
+
+function startOfIsoWeekUtc(now: Date): Date {
+  const day = now.getUTCDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + mondayOffset, 0, 0, 0, 0));
+}
+
+function startOfMonthUtc(now: Date): Date {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
+}
+
+const CLASSICS_TOP_N = 50;
+const CLASSICS_CANDIDATE_SCAN = 100;
+
+export const consolidateClassicsCache = onSchedule("every 60 minutes", async () => {
+  const now = new Date();
+  const periods: Array<{ key: "week" | "month"; sinceIso: string }> = [
+    { key: "week", sinceIso: startOfIsoWeekUtc(now).toISOString() },
+    { key: "month", sinceIso: startOfMonthUtc(now).toISOString() },
+  ];
+
+  for (const { key, sinceIso } of periods) {
+    // Pull top-CANDIDATE by likeCount within the period. We over-fetch a
+    // bit because we still need to filter to docs that actually have a
+    // photoUri (Firestore can't combine the date range, the likeCount
+    // sort, and a "photoUri non-empty" filter into one query without
+    // multiple composite indexes — easier to filter in code).
+    // Single orderBy(likeCount, desc) plus the date range gives Firestore a
+    // single composite index to satisfy: (date asc, likeCount desc). We
+    // re-sort in code anyway, so adding orderBy(date) here would just cost
+    // an extra index for no shipping behavior change.
+    const snap = await db
+      .collection("publicCatches")
+      .where("date", ">=", sinceIso)
+      .orderBy("date", "asc")
+      .orderBy("likeCount", "desc")
+      .limit(CLASSICS_CANDIDATE_SCAN)
+      .get();
+
+    // ClassicEntry mirrors the subset of CloudCatch fields the client needs
+    // to render the leaderboard rows + podium. Using `id` (not `catchId`) so
+    // the entry slots directly into a FeedItem shape on the client.
+    type ClassicEntry = {
+      id: string;
+      ownerUid: string;
+      ownerName: string;
+      photoUri: string;
+      photoTitle: string | null;
+      likeCount: number;
+      date: string;
+      speciesName: string;
+      weightKg: number | null;
+    };
+    const entries: ClassicEntry[] = [];
+    for (const doc of snap.docs) {
+      const d = doc.data() as Record<string, unknown>;
+      const photoUri = typeof d.photoUri === "string" ? d.photoUri.trim() : "";
+      if (!photoUri) continue;
+      const likeCount = typeof d.likeCount === "number" && Number.isFinite(d.likeCount) ? d.likeCount : 0;
+      entries.push({
+        id: doc.id,
+        ownerUid: typeof d.ownerUid === "string" ? d.ownerUid : "",
+        ownerName: typeof d.ownerName === "string" ? d.ownerName : "Рибар",
+        photoUri,
+        photoTitle: typeof d.photoTitle === "string" ? d.photoTitle : null,
+        likeCount,
+        date: typeof d.date === "string" ? d.date : "",
+        speciesName: typeof d.speciesName === "string" ? d.speciesName : "",
+        weightKg: typeof d.weightKg === "number" && Number.isFinite(d.weightKg) ? d.weightKg : null,
+      });
+    }
+
+    // Final ranking: by likeCount desc, tiebreak by date desc (newer wins).
+    entries.sort((a, b) => {
+      if (b.likeCount !== a.likeCount) return b.likeCount - a.likeCount;
+      return Date.parse(b.date) - Date.parse(a.date);
+    });
+
+    const items = entries.slice(0, CLASSICS_TOP_N);
+
+    await db.collection("classicsCache").doc(key).set({
+      items,
+      sinceIso,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    logger.info(`[consolidateClassicsCache] period=${key} candidates=${snap.size} ranked=${items.length}`);
+  }
+});
+
+// backfillLeaderboardRollup ---------------------------------------------------
+// One-time callable used to populate the rollup collection from existing
+// publicCatches data after deploying the new system. Without this, the
+// rollup collection starts empty and the consolidator writes empty
+// leaderboardCache docs until users start logging new catches.
+//
+// Safety: gated to the App's owner uid via a hardcoded admin list. Reading
+// every publicCatches doc is expensive; we don't want a random client
+// invoking this. After successful one-time use, this function can be
+// removed in a subsequent deploy.
+
+const BACKFILL_ADMIN_UIDS: string[] = [
+  // Add your own uid(s) here before deploying.
+];
+
+export const backfillLeaderboardRollup = onCall(async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid || !BACKFILL_ADMIN_UIDS.includes(uid)) {
+    throw new HttpsError("permission-denied", "Admin-only.");
+  }
+  // Rate limit: 2/hour. Backfill is a one-time op; the cap stops an
+  // accidental rapid retry from re-scanning publicCatches multiple times
+  // in succession (each run reads every public catch in the period).
+  await checkAndConsumeRateBucket(uid, "backfillLeaderboardRollup", 2, 2);
+
+  const periods: Period[] = ["day", "week", "month", "year"];
+  let totalProcessed = 0;
+  let totalRollupsWritten = 0;
+
+  for (const period of periods) {
+    const minIso = periodMinIso(period);
+    const snap = await db
+      .collection("publicCatches")
+      .where("date", ">=", minIso)
+      .get();
+
+    type Agg = { ownerName: string; totalKg: number; catchCount: number; bestKg: number };
+    const map = new Map<string, Agg>();
+    for (const doc of snap.docs) {
+      const d = doc.data();
+      const cuid: string = d.ownerUid ?? "";
+      if (!cuid) continue;
+      const kg: number = typeof d.weightKg === "number" && Number.isFinite(d.weightKg) ? d.weightKg : 0;
+      const name: string = typeof d.ownerName === "string" ? d.ownerName : "Рибар";
+      const ex = map.get(cuid);
+      if (ex) {
+        ex.totalKg += kg;
+        ex.catchCount += 1;
+        if (kg > ex.bestKg) ex.bestKg = kg;
+        ex.ownerName = name || ex.ownerName;
+      } else {
+        map.set(cuid, { ownerName: name, totalKg: kg, catchCount: 1, bestKg: kg });
+      }
+    }
+    totalProcessed += snap.size;
+
+    const now = new Date();
+    const currentBucket =
+      period === "day" ? dayBucketKey(now)
+        : period === "week" ? isoWeekBucketKey(now)
+          : period === "month" ? monthBucketKey(now)
+            : yearBucketKey(now);
+    const ttlAt = period === "year" ? null : ttlForBucket(period, now);
+
+    const entries = Array.from(map.entries());
+    for (let i = 0; i < entries.length; i += 400) {
+      const batch = db.batch();
+      for (const [cuid, agg] of entries.slice(i, i + 400)) {
+        const ref = db.collection("leaderboardRollup").doc(rollupDocId(currentBucket, cuid));
+        const payload: Record<string, unknown> = {
+          bucket: currentBucket,
+          period,
+          ownerUid: cuid,
+          ownerName: agg.ownerName,
+          totalKg: agg.totalKg,
+          catchCount: agg.catchCount,
+          bestKg: agg.bestKg,
+        };
+        if (ttlAt) payload.ttlAt = ttlAt;
+        batch.set(ref, payload, { merge: true });
+        totalRollupsWritten++;
+      }
+      await batch.commit();
+    }
+  }
+
+  return {
+    ok: true,
+    catchesProcessed: totalProcessed,
+    rollupsWritten: totalRollupsWritten,
+  };
 });
 
 // ---------------------------------------------------------------------------
@@ -836,6 +1459,11 @@ export const deleteMyAccount = onCall(async (request) => {
   if (!uid) {
     throw new HttpsError("unauthenticated", "Sign in required.");
   }
+  // Rate limit: 1/hour. There is exactly one legitimate delete ever per
+  // account; the limit's job is to prevent a stuck retry loop from
+  // re-running the recursive-delete walk (which scans many subcollections
+  // and burns compute on each invocation).
+  await checkAndConsumeRateBucket(uid, "deleteMyAccount", 1, 1);
 
   // ── Phase 1: top-level docs the user owns (recursive — includes subcols)
   const ownedQueries: Array<[admin.firestore.Query, string]> = [
@@ -1088,6 +1716,10 @@ export const getR2UploadUrl = onCall(
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+    // Rate limit: 60 signed-URL requests per hour per uid. Legit usage
+    // (multi-photo posts, story bursts) stays well under this; prevents
+    // a scripted bad actor from spamming R2 with garbage uploads.
+    await checkAndConsumeRateBucket(uid, "r2UploadUrl", 60, 60);
 
     const path = typeof request.data?.path === "string" ? request.data.path : "";
     const contentType = typeof request.data?.contentType === "string" ? request.data.contentType : "";
@@ -1125,6 +1757,10 @@ export const deleteR2Object = onCall(
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+    // Rate limit: same 60/hr as upload. Even though deletes only target the
+    // caller's own namespace (so abuse can't hit anyone else), unbounded
+    // delete spam burns S3 API calls + function compute.
+    await checkAndConsumeRateBucket(uid, "r2DeleteObject", 60, 60);
 
     const path = typeof request.data?.path === "string" ? request.data.path : "";
     if (!path) throw new HttpsError("invalid-argument", "path required");
@@ -1177,6 +1813,11 @@ export const getSpeciesHeatmap = onCall(async (request) => {
   if (!request.auth?.uid) {
     throw new HttpsError("unauthenticated", "Sign in required.");
   }
+  // Rate limit: 30/hour. The function has a 10-min cache so legitimate
+  // map opens almost always hit the cache; this guards against cache-miss
+  // spam (a script alternating species names to force a full publicCatches
+  // scan on each call).
+  await checkAndConsumeRateBucket(request.auth.uid, "speciesHeatmap", 30, 30);
   const minDateIso = typeof request.data?.minDateIso === "string" ? request.data.minDateIso : "";
   const speciesNameRaw = typeof request.data?.speciesName === "string" ? request.data.speciesName : "";
   if (!minDateIso) throw new HttpsError("invalid-argument", "minDateIso required");

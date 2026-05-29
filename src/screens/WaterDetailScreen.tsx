@@ -20,9 +20,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 
 import { Button } from '../components/Button';
-import { LeafletMap, LeafletMapHandle } from '../components/LeafletMap';
-import { NativeMapView } from '../components/NativeMapView';
-import { USE_REACT_NATIVE_MAPS } from '../config/mapEngine';
+import type { LeafletMapHandle } from '../components/LeafletMap';
+import { MapEngineComponent } from '../components/mapEngineComponent';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
@@ -397,41 +396,22 @@ export default function WaterDetailScreen() {
         {/* ── HERO MINI-MAP ── */}
         <View style={styles.heroWrap}>
           <View style={styles.heroMap}>
-            {USE_REACT_NATIVE_MAPS ? (
-              <NativeMapView
-                ref={mapRef}
-                spots={[]}
-                dams={water.kind === 'dam' ? [water.item as Dam] : []}
-                rivers={water.kind === 'river' ? [water.item as River] : []}
-                catchMarkers={[]}
-                heatmapCells={[]}
-                pendingCoord={null}
-                userCoord={userCoord}
-                routeLine={null}
-                mapType="hybrid"
-                onLongPress={() => {}}
-                onMarkerPress={() => {}}
-                onDamPress={() => {}}
-                onRiverPress={() => {}}
-              />
-            ) : (
-              <LeafletMap
-                ref={mapRef}
-                spots={[]}
-                dams={water.kind === 'dam' ? [water.item as Dam] : []}
-                rivers={water.kind === 'river' ? [water.item as River] : []}
-                catchMarkers={[]}
-                heatmapCells={[]}
-                pendingCoord={null}
-                userCoord={userCoord}
-                routeLine={null}
-                mapType="hybrid"
-                onLongPress={() => {}}
-                onMarkerPress={() => {}}
-                onDamPress={() => {}}
-                onRiverPress={() => {}}
-              />
-            )}
+            <MapEngineComponent
+              ref={mapRef}
+              spots={[]}
+              dams={water.kind === 'dam' ? [water.item as Dam] : []}
+              rivers={water.kind === 'river' ? [water.item as River] : []}
+              catchMarkers={[]}
+              heatmapCells={[]}
+              pendingCoord={null}
+              userCoord={userCoord}
+              routeLine={null}
+              mapType="hybrid"
+              onLongPress={() => {}}
+              onMarkerPress={() => {}}
+              onDamPress={() => {}}
+              onRiverPress={() => {}}
+            />
           </View>
 
           <LinearGradient

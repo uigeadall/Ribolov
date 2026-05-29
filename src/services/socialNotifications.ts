@@ -140,10 +140,16 @@ export function subscribeMyNotifications(myUid: string, onNext: (items: SocialNo
   return onSnapshot(q, (snap) => {
     onNext(
       snap.docs.map((d) => {
+        // Must match SocialNotification.type in socialTypes.ts — any new
+        // notification type added there has to be added here too, otherwise
+        // the subscription silently drops the type discriminator and the
+        // inbox loses any branch logic that depends on it (reshare and
+        // personalBest fell through to the "tap takes you to your own
+        // profile" default when this union was stale).
         const data = d.data() as {
           actorUid: string;
           actorName: string;
-          type: 'like' | 'comment' | 'follow' | 'storyLike' | 'storyComment' | 'mention' | 'message';
+          type: 'like' | 'comment' | 'follow' | 'storyLike' | 'storyComment' | 'mention' | 'message' | 'reshare' | 'personalBest';
           catchId?: string;
           postId?: string;
           storyId?: string;

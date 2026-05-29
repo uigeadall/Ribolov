@@ -12,17 +12,18 @@ import {
   ActivityIndicator,
   Animated,
   Modal,
-  Clipboard,
   Dimensions,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
@@ -248,6 +249,16 @@ export default function ChatDetailScreen() {
   // messages with identical content. This ref blocks the second entry
   // synchronously before the closure can copy `text` for a second time.
   const sendingRef = useRef(false);
+  // Track screen-mounted status so the optimistic-send fire-and-forget
+  // error path (which can resolve after the user has backed out of the
+  // screen) doesn't fire setState on an unmounted component. Same idea
+  // as a cancellation flag, but mounted-tracking is the right shape here
+  // because the fire-and-forget closure doesn't get a cleanup hook.
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
   const insets = useSafeAreaInsets();
 
   // Hide the floating tab bar so it doesn't cover the input
@@ -403,17 +414,30 @@ export default function ChatDetailScreen() {
   );
 
   // Load blocked status once. Refetched after block/unblock actions.
-  const refreshBlockedStatus = useCallback(async () => {
-    if (!user?.uid) return;
-    try {
-      const set = await getBlockedUids(user.uid);
-      setBlockedByMe(set.has(otherUid));
-    } catch {
-      setBlockedByMe(false);
-    }
-  }, [user?.uid, otherUid]);
+  // The callback accepts an optional `isCancelled` predicate so the
+  // useEffect below can stop setState when the screen unmounts mid-fetch.
+  // The block/unblock handlers call it without a predicate (their setState
+  // happens synchronously inside the handler).
+  const refreshBlockedStatus = useCallback(
+    async (isCancelled: () => boolean = () => false) => {
+      if (!user?.uid) return;
+      try {
+        const set = await getBlockedUids(user.uid);
+        if (isCancelled()) return;
+        setBlockedByMe(set.has(otherUid));
+      } catch {
+        if (isCancelled()) return;
+        setBlockedByMe(false);
+      }
+    },
+    [user?.uid, otherUid],
+  );
 
-  useEffect(() => { refreshBlockedStatus(); }, [refreshBlockedStatus]);
+  useEffect(() => {
+    let cancelled = false;
+    void refreshBlockedStatus(() => cancelled);
+    return () => { cancelled = true; };
+  }, [refreshBlockedStatus]);
 
   const clearTypingStatus = useCallback(() => {
     if (typingTimeout.current) { clearTimeout(typingTimeout.current); typingTimeout.current = null; }
@@ -469,14 +493,34 @@ export default function ChatDetailScreen() {
       notifyInfo('Няма достъп', 'Разреши достъп до камерата/галерията.');
       return;
     }
-    const opts: ImagePicker.ImagePickerOptions = { mediaTypes: 'images', quality: 0.5 };
+    // quality: 0.75 was 0.5. At 0.5 photos with text or fine detail
+    // (screenshots, lure shots, catch close-ups) showed visible JPEG
+    // artifacts; bumping to 0.75 lands at a much better quality/size
+    // ratio without bloating uploads. The resize step below caps long-
+    // edge at 1600px before the upload — matching AddCatchScreen's
+    // pre-upload normalization so chat photos aren't sent as raw 4032px
+    // captures.
+    const opts: ImagePicker.ImagePickerOptions = { mediaTypes: 'images', quality: 0.75 };
     const result = source === 'camera'
       ? await ImagePicker.launchCameraAsync(opts)
       : await ImagePicker.launchImageLibraryAsync(opts);
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
     if (!checkImageSize(asset)) return;
-    setPendingMedia({ uri: asset.uri, type: 'photo' });
+    let resizedUri = asset.uri;
+    try {
+      const manipulated = await ImageManipulator.manipulateAsync(
+        asset.uri,
+        [{ resize: { width: 1600 } }],
+        { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG },
+      );
+      resizedUri = manipulated.uri;
+    } catch {
+      // Manipulator failed on this device — fall back to the raw asset.
+      // R2 rules still cap the file size, so the worst case is a heavier
+      // upload, not a broken one.
+    }
+    setPendingMedia({ uri: resizedUri, type: 'photo' });
   }, [user, blockedByMe]);
 
   // Uploads a staged photo and dispatches it as a message with an optional
@@ -586,7 +630,13 @@ export default function ChatDetailScreen() {
         id: clientId,
         senderUid: user.uid,
         text: trimmed,
-        createdAt: { toMillis: () => Date.now() } as DirectMessage['createdAt'],
+        // Plain number — formatMsgTime's `typeof === 'number'` branch
+        // handles this directly. Previously we passed a fake Firestore
+        // timestamp shape `{ toMillis }` which formatMsgTime didn't
+        // recognize (it only checks `toDate` and `seconds`), so the
+        // optimistic bubble showed an empty time string until the server
+        // snapshot arrived and replaced the shape.
+        createdAt: Date.now() as DirectMessage['createdAt'],
         replyTo: replyRef,
       };
       setPendingMsgs((prev) => {
@@ -605,13 +655,20 @@ export default function ChatDetailScreen() {
           const code = typeof e === 'object' && e !== null && 'code' in e ? String((e as { code: unknown }).code) : '';
           if (code === 'unavailable' || code === 'failed-precondition') {
             await enqueueMessage(convId, user.uid, trimmed, otherUid, myName, undefined, undefined, clientId, replyRef).catch(() => {});
+            // notifyInfo (toast) is safe to call on an unmounted screen —
+            // the Toast root lives globally — so we don't gate it.
             notifyInfo('Офлайн', 'Съобщението ще бъде изпратено, когато се свържеш с интернет.');
           } else {
             // Genuine failure (rules, App Check, etc.) — yank the optimistic
-            // bubble + put the text back so the user can retry.
-            setPendingMsgs((prev) => prev.filter((m) => m.id !== clientId));
-            setText(trimmed);
-            if (replyRef) setReplyingTo(capturedReplyingTo);
+            // bubble + put the text back so the user can retry. Skip the
+            // setStates if the user has already left the screen, otherwise
+            // React logs setState-on-unmounted. handleError's toast is
+            // global so it can still fire.
+            if (isMountedRef.current) {
+              setPendingMsgs((prev) => prev.filter((m) => m.id !== clientId));
+              setText(trimmed);
+              if (replyRef) setReplyingTo(capturedReplyingTo);
+            }
             handleError(e);
           }
         }
@@ -1631,7 +1688,12 @@ export default function ChatDetailScreen() {
                         style={styles.actionRow}
                         onPress={() => {
                           setReactionTarget(null);
-                          Clipboard.setString(msg.text);
+                          // expo-clipboard's setStringAsync replaces react-
+                          // native's deprecated Clipboard.setString. The
+                          // RN-bundled one will be removed in a future
+                          // release; switching now avoids the deprecation
+                          // warning + a future migration.
+                          void Clipboard.setStringAsync(msg.text);
                         }}
                       >
                         <Ionicons name="copy-outline" size={20} color={colors.text} />

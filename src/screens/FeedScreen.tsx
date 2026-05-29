@@ -144,17 +144,29 @@ export default function FeedScreen() {
   }, []);
 
   useEffect(() => {
-    // When the active user changes, reset session-scoped UI state so the
-    // previous account's avatar and "new posts" baseline don't bleed into
-    // the next account's session.
+    // When the active user changes, reset ALL session-scoped state so the
+    // previous account's items/scope/filter/error don't bleed into the next
+    // account's first render. The auth-context account-switch wipe only
+    // touches AsyncStorage — in-memory React state is this screen's job.
+    // Previously this effect only cleared avatar + "new posts" baseline,
+    // which left items/posts/scope visible for the new user momentarily
+    // before the next load() overwrote them. Race-prone and confusing.
     setMyPhotoUrl(undefined);
     seenTopIdRef.current = null;
     newPostsCountRef.current = 0;
     setNewPostsCount(0);
+    setItems([]);
+    setPosts([]);
+    setLastDoc(null);
+    setHasMore(false);
+    setError(null);
+    followingUidsRef.current = [];
     if (!user?.uid) return;
+    let cancelled = false;
     AsyncStorage.getItem(`@ribolov/profilePhoto/${user.uid}`)
-      .then((v) => { if (v) setMyPhotoUrl(v); })
+      .then((v) => { if (v && !cancelled) setMyPhotoUrl(v); })
       .catch(() => {});
+    return () => { cancelled = true; };
   }, [user?.uid]);
 
   const [scope, setScope] = useState<FeedScope>('all');
@@ -449,11 +461,18 @@ export default function FeedScreen() {
     load();
   }, [load]);
 
-  // Switching between "Всички" and "Следвани" must wipe ALL pagination state
-  // so the next load doesn't mix scope-A's posts with scope-B's catches, or
-  // page using scope-A's cursor while scope-B is active. The hero header
-  // and the sticky compact tabs both call this — keeping the cleanup in one
-  // place avoids drift between the two surfaces.
+  // Switching between "Всички" and "Следвани" must wipe ALL state that
+  // belongs to the outgoing scope so the next load doesn't mix scope-A's
+  // posts with scope-B's catches, or page using scope-A's cursor while
+  // scope-B is active. The hero header and the sticky compact tabs both
+  // call this — keeping the cleanup in one place avoids drift between the
+  // two surfaces.
+  //
+  // Beyond the obvious pagination wipe: we also clear `error` (so a stuck
+  // failure banner doesn't survive a scope flip), `followingUidsRef` (so a
+  // mid-flight loadMore in the previous scope can't be filtered against
+  // the wrong follow list), and the "X нови" pill state (so a freshness
+  // signal from the previous scope's top-of-feed doesn't carry over).
   const switchScope = useCallback((next: FeedScope) => {
     setScope((prev) => {
       if (prev === next) return prev;
@@ -461,6 +480,11 @@ export default function FeedScreen() {
       setPosts([]);
       setLastDoc(null);
       setHasMore(false);
+      setError(null);
+      followingUidsRef.current = [];
+      seenTopIdRef.current = null;
+      newPostsCountRef.current = 0;
+      setNewPostsCount(0);
       void Haptics.selectionAsync();
       return next;
     });
@@ -560,17 +584,40 @@ export default function FeedScreen() {
   // Helper: an instant repost — creates a Post doc with just the reshareOf
   // payload (no text, no photo). Goes through the feed immediately. The user
   // can still pick "Сподели с коментар" to land in the compose screen.
+  //
+  // Optimistic insert: drop the repost at the top of the local `posts` array
+  // as soon as the Firestore write resolves with the doc id. Without this,
+  // the user sees a success toast but their repost doesn't appear until the
+  // next pull-to-refresh or the focus-effect re-load (8s freshness window).
+  // On failure we never inserted, so there's nothing to roll back.
   const instantRepost = useCallback(async (target: ResharedRef) => {
     if (!user) return;
     try {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      await createPost({
+      const ownerName = user.displayName?.trim() || user.email?.trim() || 'Рибар';
+      const id = await createPost({
         ownerUid: user.uid,
-        ownerName: user.displayName?.trim() || user.email?.trim() || 'Рибар',
+        ownerName,
         ownerPhotoUrl: myPhotoUrl,
         text: '',
         mentionUids: [],
         reshareOf: target,
+      });
+      const optimisticPost: Post = {
+        id,
+        ownerUid: user.uid,
+        ownerName,
+        ownerPhotoUrl: myPhotoUrl,
+        text: '',
+        hashtags: [],
+        mentionUids: [],
+        date: new Date().toISOString(),
+        reshareOf: target,
+      };
+      setPosts((prev) => {
+        // Dedupe — if a snapshot/refresh already inserted this id, leave it.
+        if (prev.some((p) => p.id === id)) return prev;
+        return [optimisticPost, ...prev];
       });
       Toast.show({ type: 'success', text1: 'Споделено в лентата', visibilityTime: 1500 });
     } catch (e) {

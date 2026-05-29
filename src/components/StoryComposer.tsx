@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Modal,
   View,
@@ -97,7 +97,9 @@ function InlineVideo({ mod, uri }: { mod: ExpoVideoMod; uri: string }) {
   // Muted + looping preview. Different defaults from StoryVideoPlayer (the
   // viewer): the composer is a draft surface — autoplaying audio would
   // surprise the user, especially if they're previewing in a quiet room.
-  const player = useVideoPlayer({ uri, useCaching: true }, (p) => {
+  // `useCaching: false` because composer previews are throwaway — caching
+  // them would waste disk for clips the user may discard or replace.
+  const player = useVideoPlayer({ uri, useCaching: false }, (p) => {
     p.loop = true;
     p.muted = true;
     p.bufferOptions = {
@@ -111,7 +113,11 @@ function InlineVideo({ mod, uri }: { mod: ExpoVideoMod; uri: string }) {
     <VideoView
       player={player}
       style={{ flex: 1, backgroundColor: '#000' }}
-      contentFit="cover"
+      // `contain` mirrors the viewer's contentFit so the composer preview
+      // shows exactly what the user will publish. Previously `cover` cropped
+      // 16:9 clips heavily in the composer but the viewer showed the full
+      // frame letterboxed — composer ≠ post-publish framing was confusing.
+      contentFit="contain"
       fullscreenOptions={{ enable: false }}
       allowsPictureInPicture={false}
       nativeControls={false}
@@ -129,22 +135,50 @@ export function StoryComposer({ visible, onClose, addStory }: Props) {
   const hasMedia = !!addStory.mediaUri;
   const isTextMode = addStory.mode === 'text';
   const canShare = hasMedia || (isTextMode && addStory.text.trim().length > 0);
+  const isSaving = addStory.saving;
+
+  /** Reset composer-local UI state when the modal is closed. Without this,
+      `bgIndex` / `emojiPaletteOpen` / `locationOpen` survive across opens of
+      the same component instance — reopening can land the user on the last
+      gradient or with a popover already showing. */
+  useEffect(() => {
+    if (!visible) {
+      setEmojiPaletteOpen(false);
+      setLocationOpen(false);
+      setBgIndex(0);
+    }
+  }, [visible]);
 
   /** Wraps onClose with a "Discard draft?" alert when content is present.
       Skips the alert if the composer is empty. On discard, wipes draft state
-      so reopening the composer is a fresh session. */
+      so reopening the composer is a fresh session.
+
+      While `saving` is true we refuse the close request entirely — the upload
+      is in flight and the in-flight `handlePost` closure captured the media
+      URI before any reset(). Allowing discard mid-upload caused the story to
+      post anyway (the upload completes, addStory runs, doc is written) after
+      the user thought they cancelled. Until we wire upload cancellation, the
+      safe behavior is "wait until it finishes." */
   const requestClose = () => {
+    if (isSaving) {
+      Alert.alert(
+        'Качването е в ход',
+        'Изчакай кратко — споделянето ще приключи след малко.',
+        [{ text: 'OK', style: 'cancel' }],
+      );
+      return;
+    }
     if (!hasContent) {
       onClose();
       return;
     }
     Alert.alert(
-      'Изтегли черновата?',
-      'Това ще изтрие текущия текст и медия. Действието е необратимо.',
+      'Изхвърли черновата?',
+      'Текущият текст и медия ще бъдат изтрити. Действието е необратимо.',
       [
         { text: 'Продължи редакцията', style: 'cancel' },
         {
-          text: 'Изтегли',
+          text: 'Изхвърли',
           style: 'destructive',
           onPress: () => {
             addStory.reset();
@@ -203,10 +237,12 @@ export function StoryComposer({ visible, onClose, addStory }: Props) {
         pickerTitle: { color: '#fff', fontFamily: 'Nunito_700Bold', fontSize: 15 },
         pickerSub: { color: MUTED, fontSize: 12, marginTop: 2 },
 
-        // Emoji sticker on the canvas
+        // Emoji sticker on the canvas. Anchored relative to the topBar so it
+        // never overlaps on devices with deep notches/Dynamic Islands. topBar
+        // sits at `insets.top + 6` and is 40 tall, so we start 12pt below it.
         sticker: {
           position: 'absolute',
-          top: 84,
+          top: insets.top + 6 + 40 + 12,
           right: 22,
           width: 64,
           height: 64,
@@ -399,7 +435,13 @@ export function StoryComposer({ visible, onClose, addStory }: Props) {
   const currentBg = TEXT_BG_PRESETS[bgIndex] ?? TEXT_BG_PRESETS[0];
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={requestClose} presentationStyle="pageSheet">
+    // `fullScreen` (was `pageSheet`) — pageSheet has a built-in swipe-down
+    // dismiss gesture on iOS that bypasses our requestClose entirely (Modal's
+    // onRequestClose doesn't fire for the gesture). The user could swipe down
+    // mid-edit and lose their draft without the discard alert. Full-screen is
+    // the right shape for this composer anyway: the canvas is full-bleed and
+    // we own the ✕ button.
+    <Modal visible={visible} animationType="slide" onRequestClose={requestClose} presentationStyle="fullScreen">
       <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         {/* ── CANVAS ── */}
         {/* Pressable wrapper dismisses the keyboard on tap-outside. Nested
@@ -421,9 +463,10 @@ export function StoryComposer({ visible, onClose, addStory }: Props) {
                   onChangeText={addStory.setText}
                   placeholder="Какво се случва?"
                   placeholderTextColor="rgba(255,255,255,0.55)"
-                  style={styles.textOnlyInput}
+                  style={[styles.textOnlyInput, isSaving && { opacity: 0.5 }]}
                   multiline
                   maxLength={280}
+                  editable={!isSaving}
                   inputAccessoryViewID={Platform.OS === 'ios' ? ACCESSORY_ID : undefined}
                 />
                 {addStory.text.length > 0 ? (
@@ -500,7 +543,11 @@ export function StoryComposer({ visible, onClose, addStory }: Props) {
             </>
           ) : null}
 
-          {/* Caption overlay (media mode only — text mode has its own input) */}
+          {/* Caption overlay (media mode only — text mode has its own input).
+              `editable={!isSaving}` because handlePost captured the text via
+              closure at the moment Share was tapped; further typing during the
+              upload would be silently discarded. Disabling the input matches
+              what the share button already does. */}
           {hasMedia ? (
             <View style={styles.captionWrap}>
               <BlurView intensity={Platform.OS === 'ios' ? 28 : 0} tint="dark" style={styles.captionBlur}>
@@ -509,9 +556,10 @@ export function StoryComposer({ visible, onClose, addStory }: Props) {
                   onChangeText={addStory.setText}
                   placeholder="Кажи нещо…"
                   placeholderTextColor="rgba(255,255,255,0.55)"
-                  style={styles.captionInput}
+                  style={[styles.captionInput, isSaving && { opacity: 0.5 }]}
                   multiline
                   maxLength={280}
+                  editable={!isSaving}
                   inputAccessoryViewID={Platform.OS === 'ios' ? ACCESSORY_ID : undefined}
                 />
                 {addStory.text.length > 0 ? (
@@ -522,11 +570,18 @@ export function StoryComposer({ visible, onClose, addStory }: Props) {
           ) : null}
 
           {/* Emoji sticker — only on media canvases (text-mode story doesn't
-              have a fixed corner to stick something onto). */}
+              have a fixed corner to stick something onto). Dismiss the
+              keyboard before opening the palette so the popover (positioned
+              at bottom+64) isn't hidden behind the keyboard. */}
           {hasMedia ? (
             <Pressable
-              style={styles.sticker}
-              onPress={() => { setEmojiPaletteOpen((v) => !v); setLocationOpen(false); }}
+              style={[styles.sticker, isSaving && { opacity: 0.5 }]}
+              onPress={() => {
+                Keyboard.dismiss();
+                setEmojiPaletteOpen((v) => !v);
+                setLocationOpen(false);
+              }}
+              disabled={isSaving}
               accessibilityLabel="Промени емоджи стикер"
             >
               <Text style={styles.stickerEmoji}>{addStory.selectedEmoji}</Text>
@@ -588,8 +643,13 @@ export function StoryComposer({ visible, onClose, addStory }: Props) {
         {hasMedia || isTextMode ? (
           <View style={styles.bottomBar}>
             <Pressable
-              style={styles.chipPill}
-              onPress={() => { setLocationOpen((v) => !v); setEmojiPaletteOpen(false); }}
+              style={[styles.chipPill, isSaving && { opacity: 0.5 }]}
+              onPress={() => {
+                Keyboard.dismiss();
+                setLocationOpen((v) => !v);
+                setEmojiPaletteOpen(false);
+              }}
+              disabled={isSaving}
               accessibilityLabel="Добави локация"
             >
               <Ionicons
@@ -604,19 +664,26 @@ export function StoryComposer({ visible, onClose, addStory }: Props) {
 
             {/* Emoji palette button — only meaningful in media mode (text mode
                 has no sticker target). Replaced with a background-swap button
-                in text-only mode. */}
+                in text-only mode. Both dismiss the keyboard before opening so
+                popovers don't render behind the keyboard. */}
             {hasMedia ? (
               <Pressable
-                style={styles.iconBtn}
-                onPress={() => { setEmojiPaletteOpen((v) => !v); setLocationOpen(false); }}
+                style={[styles.iconBtn, isSaving && { opacity: 0.5 }]}
+                onPress={() => {
+                  Keyboard.dismiss();
+                  setEmojiPaletteOpen((v) => !v);
+                  setLocationOpen(false);
+                }}
+                disabled={isSaving}
                 accessibilityLabel="Емоджи"
               >
                 <Ionicons name="happy-outline" size={20} color="#fff" />
               </Pressable>
             ) : (
               <Pressable
-                style={styles.iconBtn}
+                style={[styles.iconBtn, isSaving && { opacity: 0.5 }]}
                 onPress={() => setBgIndex((i) => (i + 1) % TEXT_BG_PRESETS.length)}
+                disabled={isSaving}
                 accessibilityLabel="Смени фона"
               >
                 <Ionicons name="color-palette-outline" size={20} color="#fff" />
@@ -625,9 +692,11 @@ export function StoryComposer({ visible, onClose, addStory }: Props) {
 
             {/* "Reset/replace media" — in media mode dumps the picked file; in
                 text mode flips back to the empty picker so the user can switch
-                to a photo without re-opening the composer. */}
+                to a photo without re-opening the composer. Disabled during
+                upload so a mid-upload tap can't desync state vs. what's being
+                published. */}
             <Pressable
-              style={styles.iconBtn}
+              style={[styles.iconBtn, isSaving && { opacity: 0.5 }]}
               onPress={() => {
                 if (hasMedia) {
                   addStory.setMediaUri(null);
@@ -637,6 +706,7 @@ export function StoryComposer({ visible, onClose, addStory }: Props) {
                   addStory.setText('');
                 }
               }}
+              disabled={isSaving}
               accessibilityLabel={hasMedia ? 'Премахни медия' : 'Назад към избор'}
             >
               <Ionicons name="refresh" size={20} color="#fff" />
@@ -647,10 +717,12 @@ export function StoryComposer({ visible, onClose, addStory }: Props) {
               disabled={addStory.saving || !canShare}
               style={[styles.shareBtn, (addStory.saving || !canShare) && { opacity: 0.55 }]}
             >
-              {/* Progress fill behind the label — visible while uploadProgress
-                  is between 0 and 1. Shows real upload progress for video
-                  stories on slow connections instead of a flat spinner. */}
-              {addStory.saving && addStory.uploadProgress > 0 && addStory.uploadProgress < 1 ? (
+              {/* Progress fill behind the label. Stays visible while saving
+                  is true (even at 100%) so the bar doesn't snap to invisible
+                  during the post-upload Firestore-write phase. Previously the
+                  fill disappeared at progress=1, leaving just a spinner that
+                  hid the bar's last few percent. */}
+              {addStory.saving && addStory.uploadProgress > 0 ? (
                 <View
                   style={[
                     styles.shareProgressFill,

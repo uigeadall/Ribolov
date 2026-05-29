@@ -2,6 +2,7 @@ import AsyncStorage from './kv';
 import * as Crypto from 'expo-crypto';
 import { Catch, Spot, GearItem, TripPlan } from '../types';
 import { resetRateLimits } from '../services/socialRateLimit';
+import { makePromiseChain } from '../utils/promiseChain';
 
 const KEYS = {
   catches: '@ribolov/catches',
@@ -29,20 +30,11 @@ async function writeJson<T>(key: string, value: T): Promise<void> {
 
 let _catchesCache: Catch[] | null = null;
 
-// Serialise all read-modify-write operations to prevent concurrent saves from clobbering each other.
-function makeMutex() {
-  let chain: Promise<unknown> = Promise.resolve();
-  return function withMutex<T>(task: () => Promise<T>): Promise<T> {
-    const next = chain.then(task, task);
-    chain = next.then(() => {}, () => {});
-    return next as Promise<T>;
-  };
-}
-
-const withCatchesMutex = makeMutex();
-const withSpotsMutex = makeMutex();
-const withGearMutex = makeMutex();
-const withTripsMutex = makeMutex();
+// Serialise read-modify-write per store so concurrent saves don't clobber.
+const withCatchesMutex = makePromiseChain();
+const withSpotsMutex = makePromiseChain();
+const withGearMutex = makePromiseChain();
+const withTripsMutex = makePromiseChain();
 
 async function readCatches(): Promise<Catch[]> {
   if (_catchesCache !== null) return _catchesCache;
@@ -58,8 +50,11 @@ async function writeCatches(items: Catch[]): Promise<void> {
 }
 
 export const catchesStore = {
-  // Return a shallow copy so every call gives a new reference — React useMemo will
-  // always see a changed dependency and recompute filtered lists after a save.
+  // Shallow-copy on every read so consumers that sort in place (e.g.
+  // LogbookScreen's `fresh.sort(byDateDesc)`) can't mutate the shared
+  // `_catchesCache` array and leak their ordering into every other
+  // reader. Also gives React a new reference each call, so useMemo deps
+  // that pass the result through re-fire after a write.
   list: () => readCatches().then((c) => [...c]),
   replaceAll: (items: Catch[]) => withCatchesMutex(async () => {
     await writeCatches([...items]);

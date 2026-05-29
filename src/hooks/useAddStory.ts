@@ -101,7 +101,13 @@ export function useAddStory(
         result = await ImagePicker.launchCameraAsync(opts);
       } else {
         const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (!perm.granted) return;
+        if (!perm.granted) {
+          // Library denial was previously silent — user tapped a picker row,
+          // got nothing, no signal why. Match the camera-permission UX so the
+          // user knows to flip the setting in iOS / Android settings.
+          Alert.alert('Достъп', 'Разреши достъп до снимките в настройките.');
+          return;
+        }
         result = await ImagePicker.launchImageLibraryAsync(opts);
       }
       if (!result.canceled && result.assets[0]) {
