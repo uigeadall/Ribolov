@@ -164,6 +164,33 @@ function feedStyles(colors: AppColors) {
 
 export type { FeedItem };
 
+/* ── Photo grid tile ─────────────────────────────────────────
+   One cell of the 2-4 photo X-style grid. flex:1 so the tile expands to
+   share row/column space; `recyclingKey` is stable per (post, index) so
+   expo-image's recycler treats it correctly during list churn. Tap opens
+   the fullscreen viewer at the tile's photo index — passed in as onPress
+   from the parent. */
+type PhotoGridTileProps = {
+  uri: string;
+  onPress: () => void;
+  id: string;
+};
+
+const PhotoGridTile = React.memo(function PhotoGridTile({ uri, onPress, id }: PhotoGridTileProps) {
+  return (
+    <Pressable onPress={onPress} style={{ flex: 1, backgroundColor: '#1a1a1a' }}>
+      <Image
+        source={{ uri: getImageVariant(uri, ImageSize.feed) ?? uri }}
+        style={StyleSheet.absoluteFillObject}
+        contentFit="cover"
+        cachePolicy="memory-disk"
+        transition={200}
+        recyclingKey={id}
+      />
+    </Pressable>
+  );
+});
+
 type Props = {
   item: FeedItem;
   myUid?: string;
@@ -515,13 +542,59 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
             </Text>
           ) : null}
 
-        {/* ── Photo area ── */}
-        {/* Multi-photo carousel: wraps the existing primary-photo block as page
-            0 so its double-tap-to-like + bookmark + error-fallback behavior is
-            preserved unchanged. Pages 1..N are `extraPhotoUris` and tap to open
-            the full-screen viewer. When there are no extras, scrollEnabled=false
-            and the dots row hides — visually identical to the single-photo case. */}
-        {item.photoUri && carouselPhotos.length > 1 ? (
+        {/* ── Photo area ──
+            Branch order matters:
+            1. 2-4 photos → X-style grid (most common multi-photo case)
+            2. 5+ photos → swipeable carousel (rare; carousels at 5+ tiles
+               are easier to navigate than a 3×2 grid that hides photos)
+            3. 1 photo → standalone with full error-fallback + double-tap UI
+            4. 0 photos → null (text-only post) */}
+        {carouselPhotos.length >= 2 && carouselPhotos.length <= 4 ? (
+          // X-style photo grid. 16:9 container width; 2-photo split is
+          // side-by-side, 3-photo is left-large + 2-stacked, 4-photo is
+          // 2×2. Tap any tile to open the viewer at that index. The 2px
+          // gaps come from the parent's gap prop on Android/iOS RN ≥0.71.
+          <View style={{
+            marginTop: 8,
+            borderRadius: 18,
+            overflow: 'hidden',
+            width: contentWidth,
+            height: Math.round(contentWidth * (9 / 16)),
+            flexDirection: 'row',
+            gap: 2,
+            backgroundColor: colors.surfaceAlt,
+          }}>
+            {/* 2 photos: each takes flex 1, full height. */}
+            {carouselPhotos.length === 2 ? (
+              <>
+                <PhotoGridTile uri={carouselPhotos[0]} onPress={() => setViewerIndex(0)} id={`${item.id}-0`} />
+                <PhotoGridTile uri={carouselPhotos[1]} onPress={() => setViewerIndex(1)} id={`${item.id}-1`} />
+              </>
+            ) : carouselPhotos.length === 3 ? (
+              <>
+                {/* Left column: 1 tile full height. */}
+                <PhotoGridTile uri={carouselPhotos[0]} onPress={() => setViewerIndex(0)} id={`${item.id}-0`} />
+                {/* Right column: 2 tiles stacked. */}
+                <View style={{ flex: 1, gap: 2 }}>
+                  <PhotoGridTile uri={carouselPhotos[1]} onPress={() => setViewerIndex(1)} id={`${item.id}-1`} />
+                  <PhotoGridTile uri={carouselPhotos[2]} onPress={() => setViewerIndex(2)} id={`${item.id}-2`} />
+                </View>
+              </>
+            ) : (
+              // 4 photos: 2×2 grid (two columns, each with two stacked tiles).
+              <>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <PhotoGridTile uri={carouselPhotos[0]} onPress={() => setViewerIndex(0)} id={`${item.id}-0`} />
+                  <PhotoGridTile uri={carouselPhotos[2]} onPress={() => setViewerIndex(2)} id={`${item.id}-2`} />
+                </View>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <PhotoGridTile uri={carouselPhotos[1]} onPress={() => setViewerIndex(1)} id={`${item.id}-1`} />
+                  <PhotoGridTile uri={carouselPhotos[3]} onPress={() => setViewerIndex(3)} id={`${item.id}-3`} />
+                </View>
+              </>
+            )}
+          </View>
+        ) : carouselPhotos.length >= 5 ? (
           // X-style media block: rounded 18px corners, clipped, no edge-to-edge
           // bleed. The carousel pages the content column width (not the screen
           // width) so the photo sits inside the right column. marginTop pads

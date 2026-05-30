@@ -40,6 +40,12 @@ export type AddStoryState = {
 
 const DEFAULT_EMOJI = '🎣';
 
+/** Hard cap on story video length. Matches the feed-video cap so users
+    have one rule to remember ("videos are 15 seconds"). 15s is short
+    enough to keep the upload+download cheap on mobile data and long
+    enough for a single fishing moment. */
+const STORY_VIDEO_MAX_SECONDS = 15;
+
 export function useAddStory(
   user: Pick<User, 'uid' | 'displayName' | 'photoURL'> | null,
   onSuccess: () => void,
@@ -75,7 +81,12 @@ export function useAddStory(
       const opts: ImagePicker.ImagePickerOptions = {
         mediaTypes: type === 'video' ? 'videos' : 'images',
         quality: type === 'video' ? 0.8 : 0.85,
-        videoMaxDuration: 60,
+        // 15-second cap — matches the feed-video limit, keeps stories
+        // ephemeral and skimmable, and bounds upload size. videoMaxDuration
+        // is iOS-only in expo-image-picker; the post-pick duration check
+        // below catches Android (and any iOS edge cases like a 16s video
+        // produced by a fractional-second rounding error).
+        videoMaxDuration: STORY_VIDEO_MAX_SECONDS,
         allowsEditing: type === 'photo',
         // Force a 9:16 crop on photos so the composer canvas isn't letterboxed
         // for landscape captures. Stories are conventionally vertical (IG,
@@ -111,10 +122,26 @@ export function useAddStory(
         result = await ImagePicker.launchImageLibraryAsync(opts);
       }
       if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
         // Photos use the standard 10 MB cap; videos rely on the storage rule's
-        // 100 MB cap since most clips under 60s fit comfortably.
-        if (type === 'photo' && !checkImageSize(result.assets[0])) return;
-        setMediaUri(result.assets[0].uri);
+        // 100 MB cap since most clips under 15s fit comfortably.
+        if (type === 'photo' && !checkImageSize(asset)) return;
+        if (type === 'video') {
+          // Android's picker doesn't honour videoMaxDuration, and iOS can hand
+          // back a clip a fraction over the limit when a user rounds-up trim
+          // handles. Reject anything over the cap so we never upload a story
+          // that the viewer can't actually display in its 15s window.
+          // asset.duration is in milliseconds when present.
+          const durationMs = typeof asset.duration === 'number' ? asset.duration : 0;
+          if (durationMs > 0 && durationMs > STORY_VIDEO_MAX_SECONDS * 1000 + 500) {
+            Alert.alert(
+              'Твърде дълго видео',
+              `Видеата за моменти са до ${STORY_VIDEO_MAX_SECONDS} секунди. Избери по-кратък клип или го изрежи в галерията.`,
+            );
+            return;
+          }
+        }
+        setMediaUri(asset.uri);
         setMediaType(type);
         setMode('media');
       }
