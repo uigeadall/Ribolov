@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Политика за поверителност — Риболов</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 760px; margin: 0 auto; padding: 32px 20px; color: #1a1a1a; line-height: 1.65; }
+    h1 { color: #0E4D64; font-size: 32px; }
+    h2 { color: #0E4D64; font-size: 22px; margin-top: 36px; }
+    h3 { font-size: 17px; margin-top: 24px; }
+    a { color: #1A7A9C; }
+    .meta { color: #777; font-size: 14px; margin-top: -8px; }
+    .lang-toggle { background: #F5FAFC; padding: 12px 16px; border-radius: 12px; margin: 24px 0; }
+    code { background: #f4f4f4; padding: 2px 6px; border-radius: 4px; font-size: 14px; }
+    ul { padding-left: 24px; }
+    li { margin: 6px 0; }
+    hr { border: none; border-top: 1px solid #DDE8EE; margin: 48px 0; }
+  </style>
+</head>
+<body>
+
+<h1>Политика за поверителност</h1>
+<p class="meta">В сила от: <strong>30 май 2026</strong> · Последна актуализация: <strong>30 май 2026</strong></p>
+
+<div class="lang-toggle">
+  <strong>BG / EN</strong> — българската версия е по-долу, последвана от English version. The English version is below the Bulgarian.
+</div>
+
+<h2>1. Кои сме ние</h2>
+<p>„Риболов" е мобилно приложение за рибари в България — позволява на потребителите да водят дневник на уловите си, да споделят моменти, да следят прогнозата за времето и да се свързват с други рибари.</p>
+<p>Администратор на личните данни: <strong>Антон Кондачиев</strong>. Контакт: <a href="mailto:support@ribolov.app">support@ribolov.app</a></p>
+
+<h2>2. Какви данни събираме</h2>
+
+<h3>2.1 Данни, които предоставяш при регистрация</h3>
+<ul>
+  <li><strong>Имейл адрес</strong> — за идентификация в акаунта.</li>
+  <li><strong>Парола</strong> — съхранява се в хеширан вид от Firebase Auth (не я виждаме).</li>
+  <li><strong>Показвано име</strong> — при регистрация през Google или Apple ID се извлича автоматично.</li>
+  <li><strong>Снимка на профил</strong> (по избор).</li>
+  <li><strong>Град или регион</strong> (по избор).</li>
+</ul>
+
+<h3>2.2 Данни, които създаваш в приложението</h3>
+<ul>
+  <li><strong>Уловите ти</strong> — вид, тегло, дължина, дата, бележки, снимки, видео, локация.</li>
+  <li><strong>Спотове</strong> — GPS координати, име, описание.</li>
+  <li><strong>Излети, екипировка, цели по вид.</strong></li>
+  <li><strong>Социално съдържание</strong> — публикации, коментари, реакции, моменти (Stories), директни съобщения.</li>
+  <li><strong>Следване</strong> — кои потребители следиш / кои те следват.</li>
+</ul>
+
+<h3>2.3 Данни, събирани автоматично</h3>
+<ul>
+  <li><strong>Технически</strong> — версия на приложението, тип устройство, операционна система (за отстраняване на бъгове).</li>
+  <li><strong>Диагностика</strong> — анонимизирани сривове и грешки (чрез Firebase Crashlytics / Sentry, ако е активиран).</li>
+  <li><strong>Push token</strong> — за изпращане на известия (ако си разрешил).</li>
+</ul>
+
+<h3>2.4 Какво НЕ събираме</h3>
+<ul>
+  <li>Не четем контакти, SMS, гласови съобщения или други приложения.</li>
+  <li>Не проследяваме рекламна идентичност (IDFA).</li>
+  <li>Не споделяме данни с трети рекламни мрежи.</li>
+  <li>Не записваме фоново локация — само когато активно натиснеш „Маркирай локация".</li>
+</ul>
+
+<h2>3. Защо ги обработваме</h2>
+<ul>
+  <li><strong>Изпълнение на договора</strong> — за да можеш да използваш приложението: вход, синхронизация на улови, прогноза за времето за избрана локация, директни съобщения.</li>
+  <li><strong>Легитимен интерес</strong> — за да поддържаме приложението стабилно (анонимизирана диагностика, защита срещу злоупотреба чрез App Check / rate limits).</li>
+  <li><strong>Съгласие</strong> — за push известия (можеш да оттеглиш по всяко време от настройките на телефона) и за публично споделяне на улов в лентата (можеш да оттеглиш чрез Дневник → улов → „Премахни от лентата").</li>
+</ul>
+
+<h2>4. С кого споделяме</h2>
+
+<h3>4.1 Други потребители</h3>
+<p>Публично видими са: показвано име, снимка на профил, публичните ти улови, публикации, реакции, коментари, следване. Директните съобщения са видими само за теб и получателя.</p>
+
+<h3>4.2 Доставчици на услуги (трети страни)</h3>
+<ul>
+  <li><strong>Firebase / Google Cloud</strong> (САЩ, EU зони) — Authentication, Firestore (база данни), Cloud Functions (сървърна логика), Cloud Messaging (push), App Check (защита). Подлежи на <a href="https://policies.google.com/privacy">Privacy Policy на Google</a>.</li>
+  <li><strong>Cloudflare R2</strong> (САЩ) — съхранение на снимки и видео. Подлежи на <a href="https://www.cloudflare.com/privacypolicy/">Privacy Policy на Cloudflare</a>.</li>
+  <li><strong>Open-Meteo</strong> (Германия) — прогноза за времето. Изпращаме само GPS координатите на спота, без личен идентификатор.</li>
+  <li><strong>OSRM</strong> (общодостъпен сървър) — пресмятане на маршрути до водоеми.</li>
+  <li><strong>Sentry</strong> (САЩ, EU зона) — диагностика на сривове, ако е активиран. Изпращат се анонимизирани стек-трейсове.</li>
+</ul>
+
+<p>Всички тези доставчици са договорно задължени да обработват данните само за услугата, която предоставят на нас, и не могат да ги препродават.</p>
+
+<h3>4.3 Държавни органи</h3>
+<p>Само при законово разпореждане (съдебно решение, разследване на тежко престъпление). Известяваме потребителя, освен ако сме законово възпрепятствани.</p>
+
+<h2>5. Колко дълго съхраняваме</h2>
+<ul>
+  <li><strong>Профил и улови</strong> — докато имаш активен акаунт. Изтриват се при заявка за изтриване (вж. раздел 7).</li>
+  <li><strong>Моменти (Stories)</strong> — автоматично изтриване след 24 часа.</li>
+  <li><strong>Директни съобщения</strong> — докато не ги изтрие една от страните или докато една от страните не изтрие акаунта си (твоите съобщения се запазват за другия участник в чата при изтриване на акаунта ти).</li>
+  <li><strong>Известия</strong> — 30 дни след прочитането.</li>
+  <li><strong>Логове и диагностика</strong> — до 90 дни.</li>
+</ul>
+
+<h2>6. Сигурност</h2>
+<ul>
+  <li>Всички връзки между приложението и сървърите ни са криптирани (HTTPS / TLS 1.2+).</li>
+  <li>Паролите се хешират от Firebase Auth (никога не ги съхраняваме в чист вид).</li>
+  <li>Достъпът до базата данни е ограничен от Firestore Security Rules — потребителите могат да четат и пишат само собствените си данни (или публични данни, които сами са направили публични).</li>
+  <li>App Check предпазва от автоматизирани злоупотреби.</li>
+  <li>Не съхраняваме платежни данни — приложението е безплатно.</li>
+</ul>
+
+<h2>7. Твоите права (GDPR)</h2>
+
+<p>Ако си в ЕС/ЕИП, имаш следните права:</p>
+<ul>
+  <li><strong>Достъп</strong> — да получиш копие на личните си данни. Изпрати запитване на <a href="mailto:support@ribolov.app">support@ribolov.app</a>; отговаряме до 30 дни.</li>
+  <li><strong>Коригиране</strong> — можеш да редактираш профила и публичните си данни директно в приложението (Профил → Редактирай).</li>
+  <li><strong>Изтриване (право да бъдеш забравен)</strong> — Профил → Изтриване на акаунта. Сървърна каскада изтрива всички твои данни от Firestore и медийните файлове от R2.</li>
+  <li><strong>Ограничаване / Възражение</strong> — пиши ни на имейла.</li>
+  <li><strong>Преносимост</strong> — можеш да поискаш износ на данните в JSON формат (по имейл).</li>
+  <li><strong>Оттегляне на съгласие</strong> — за push (от настройките на телефона), за публично споделяне (от Дневник → улов → „Премахни от лентата").</li>
+  <li><strong>Жалба до надзорен орган</strong> — Комисия за защита на личните данни (КЗЛД): <a href="https://www.cpdp.bg">www.cpdp.bg</a>.</li>
+</ul>
+
+<h2>8. Деца</h2>
+<p>Приложението е предназначено за лица над 13 години. Не събираме съзнателно данни за деца под 13. Ако родител установи, че детето му е създало акаунт, може да поиска изтриване на акаунта писмено на support@ribolov.app.</p>
+
+<h2>9. Промени в политиката</h2>
+<p>При съществени промени ще те уведомим вътре в приложението и/или по имейл поне 14 дни преди влизането им в сила.</p>
+
+<h2>10. Контакт</h2>
+<p>Имейл: <a href="mailto:support@ribolov.app">support@ribolov.app</a></p>
+
+<hr>
+
+<h1>Privacy Policy (English)</h1>
+<p class="meta">Effective: <strong>May 30, 2026</strong> · Last updated: <strong>May 30, 2026</strong></p>
+
+<h2>1. Who we are</h2>
+<p>"Риболов" (Ribolov) is a mobile app for anglers in Bulgaria — it lets users keep a catch log, share moments, get weather forecasts, and connect with other anglers.</p>
+<p>Data controller: <strong>Anton Kondachiev</strong>. Contact: <a href="mailto:support@ribolov.app">support@ribolov.app</a></p>
+
+<h2>2. Data we collect</h2>
+<p><strong>Account data:</strong> email, password (hashed), display name, optional avatar/city.</p>
+<p><strong>Content you create:</strong> catches (species, weight, length, notes, photos, video, GPS), spots, gear, trips, posts, comments, reactions, stories, direct messages, follow graph.</p>
+<p><strong>Automatic:</strong> app version, device type, OS, crash diagnostics (anonymized via Firebase/Sentry), push token (if opted in).</p>
+<p><strong>We do NOT collect:</strong> contacts, SMS, ad ID (IDFA), background location, third-party app data.</p>
+
+<h2>3. Why we process it</h2>
+<ul>
+  <li>Contract: providing app functionality.</li>
+  <li>Legitimate interest: stability, anti-abuse (App Check, rate limits).</li>
+  <li>Consent: push notifications, public sharing.</li>
+</ul>
+
+<h2>4. Third parties</h2>
+<ul>
+  <li><strong>Firebase / Google Cloud</strong> — Auth, Firestore, Functions, FCM, App Check.</li>
+  <li><strong>Cloudflare R2</strong> — media storage.</li>
+  <li><strong>Open-Meteo</strong> — weather (GPS only, no PII).</li>
+  <li><strong>OSRM</strong> — routing.</li>
+  <li><strong>Sentry</strong> (optional) — anonymized crash reports.</li>
+</ul>
+
+<h2>5. Retention</h2>
+<ul>
+  <li>Profile + catches: until account deletion.</li>
+  <li>Stories: auto-deleted after 24 hours.</li>
+  <li>DMs: kept until either party deletes them or their account.</li>
+  <li>Notifications: 30 days post-read.</li>
+  <li>Logs: 90 days.</li>
+</ul>
+
+<h2>6. Your rights (GDPR)</h2>
+<p>Access, correction, deletion ("right to be forgotten"), restriction, portability (JSON export by email), withdraw consent, complaint to your national supervisory authority.</p>
+<p>Delete account: Profile → Delete account (in-app). Cascade wipes all Firestore data + R2 media within minutes.</p>
+
+<h2>7. Children</h2>
+<p>Not for users under 13. We don't knowingly collect data from children under 13.</p>
+
+<h2>8. Changes</h2>
+<p>We'll notify you in-app and/or by email at least 14 days before material changes take effect.</p>
+
+<h2>9. Contact</h2>
+<p>Email: <a href="mailto:support@ribolov.app">support@ribolov.app</a></p>
+
+</body>
+</html>

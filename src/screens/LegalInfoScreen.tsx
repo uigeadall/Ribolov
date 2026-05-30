@@ -10,11 +10,12 @@ import { radius, spacing, typography } from '../theme/typography';
 import { handleError } from '../utils/handleError';
 
 /**
- * ← Замени тези URL-и с реалните адреси на документите.
- * Можеш да ги публикуваш в Notion, GitHub Pages или друга статична страница.
+ * Public-facing legal documents are hosted on GitHub Pages from /docs.
+ * To enable: repo Settings → Pages → Source = main branch, /docs folder.
+ * After enabling, the URLs below resolve to the static HTML.
  */
-const PRIVACY_POLICY_URL = 'https://your-domain.com/privacy';
-const TERMS_URL = 'https://your-domain.com/terms';
+const PRIVACY_POLICY_URL = 'https://uigeadall.github.io/Ribolov/privacy.html';
+const TERMS_URL = 'https://uigeadall.github.io/Ribolov/terms.html';
 const CONTACT_EMAIL = 'support@ribolov.app';
 
 const openUrl = (url: string) =>

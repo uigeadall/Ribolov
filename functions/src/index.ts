@@ -2068,3 +2068,89 @@ export const onStoryDeleted = onDocumentDeleted(
     }
   },
 );
+
+// ---------------------------------------------------------------------------
+// publicCatches / posts R2 cleanup triggers
+// ---------------------------------------------------------------------------
+// When a catch or post doc is deleted (via account-delete cascade, the user's
+// own "delete catch" action, or any future admin-side moderation tool) the
+// R2 photo/video/poster files would otherwise be orphaned. The client used
+// to handle this itself via `deleteFromR2` in the client-side delete flow,
+// but the account-delete cascade runs server-side and skips that path
+// entirely. Mirroring the onStoryDeleted pattern keeps R2 in sync regardless
+// of who initiated the delete.
+
+/** Shared key-deriver for a public R2 URL OR a raw storage key. Returns null
+    for Cloudinary-prefixed paths (Cloudinary manages its own lifecycle) and
+    for non-R2 URLs (e.g. external avatars). */
+function deriveR2Key(value: string | undefined | null): string | null {
+  if (!value) return null;
+  const v = value.trim();
+  if (!v) return null;
+  if (v.startsWith("cloudinary:")) return null;
+  if (/^https?:\/\//i.test(v)) {
+    if (!/^https:\/\/[^/]+\.r2\.dev\//i.test(v)) return null;
+    try {
+      return new URL(v).pathname.replace(/^\//, "") || null;
+    } catch {
+      return null;
+    }
+  }
+  // Already a bare storage key (e.g. publicCatchPhotos/uid/id/123.jpg).
+  return v;
+}
+
+async function deleteR2Keys(keys: Array<string | null | undefined>, source: string): Promise<void> {
+  const real = keys.filter((k): k is string => typeof k === "string" && k.length > 0);
+  if (real.length === 0) return;
+  const s3 = makeR2Client();
+  await Promise.all(
+    real.map(async (key) => {
+      try {
+        await s3.send(new DeleteObjectCommand({ Bucket: R2_BUCKET.value(), Key: key }));
+      } catch (e) {
+        logger.warn(`[${source}] R2 delete failed for ${key}`, e);
+      }
+    }),
+  );
+}
+
+export const onPublicCatchDeleted = onDocumentDeleted(
+  {
+    document: "publicCatches/{catchId}",
+    secrets: [R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY],
+    maxInstances: 20,
+  },
+  async (event) => {
+    const data = event.data?.data() as Record<string, unknown> | undefined;
+    if (!data) return;
+    const keys: Array<string | null> = [];
+    keys.push(deriveR2Key(data.photoStoragePath as string | undefined));
+    keys.push(deriveR2Key(data.videoStoragePath as string | undefined));
+    keys.push(deriveR2Key(data.videoThumbnailStoragePath as string | undefined));
+    // Extra photos are stored as URLs (no per-extra storage path). Derive
+    // each from the URL — non-R2 ones return null and are filtered out.
+    const extras = Array.isArray(data.extraPhotoUris) ? (data.extraPhotoUris as unknown[]) : [];
+    for (const u of extras) {
+      if (typeof u === "string") keys.push(deriveR2Key(u));
+    }
+    await deleteR2Keys(keys, "onPublicCatchDeleted");
+  },
+);
+
+export const onPostDeleted = onDocumentDeleted(
+  {
+    document: "posts/{postId}",
+    secrets: [R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY],
+    maxInstances: 20,
+  },
+  async (event) => {
+    const data = event.data?.data() as Record<string, unknown> | undefined;
+    if (!data) return;
+    const keys: Array<string | null> = [];
+    keys.push(deriveR2Key(data.photoStoragePath as string | undefined));
+    keys.push(deriveR2Key(data.videoStoragePath as string | undefined));
+    keys.push(deriveR2Key(data.videoThumbnailStoragePath as string | undefined));
+    await deleteR2Keys(keys, "onPostDeleted");
+  },
+);
