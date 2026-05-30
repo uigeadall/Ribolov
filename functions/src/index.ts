@@ -353,6 +353,23 @@ export const onNotificationCreated = onDocumentCreated(
     // a message-type notification doc.
     if (type === "message") return;
 
+    // Idempotency claim — same shape as onNewMessage. onDocumentCreated has
+    // at-least-once delivery, so a duplicate fire would re-send the Expo push
+    // and the recipient would see TWO buzzes for one like/comment/etc. The
+    // claim transaction reads + writes the notif doc atomically: a concurrent
+    // retry sees _fnProcessed=true and bails before reaching sendExpoPush.
+    // Admin SDK bypasses Firestore rules, and the recipient's "mark as read"
+    // path uses affectedKeys.hasOnly(['read']) so adding _fnProcessed to the
+    // doc doesn't interfere with any client write.
+    const claimed = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(event.data!.ref);
+      if (!snap.exists) return false;
+      if ((snap.data() as Record<string, unknown>)?._fnProcessed) return false;
+      tx.update(event.data!.ref, { _fnProcessed: true });
+      return true;
+    });
+    if (!claimed) return;
+
     // Honor the recipient's notification preferences.
     const prefs = await getNotifPrefs(userId);
     if (!shouldNotify(type, prefs)) return;
@@ -883,28 +900,66 @@ export const onPublicCatchForRollup = onDocumentWritten(
       }
     }
 
-    const batch = db.batch();
-    for (const [docId, d] of byDoc.entries()) {
-      // Skip pure-zero deltas (can happen if beforeKg == afterKg AND the
-      // same bucket appears on both sides — e.g. a non-substantive edit
-      // touching neither weight nor date). A zero-delta merge would still
-      // count as a billable write; skipping saves a few % of writes on
-      // bulk edits.
-      if (d.deltaKg === 0 && d.deltaCount === 0) continue;
-
-      const ref = db.collection("leaderboardRollup").doc(docId);
-      const payload: Record<string, unknown> = {
-        bucket: d.bucket,
-        period: d.period,
-        ownerUid: d.ownerUid,
-        ownerName,
-        totalKg: FieldValue.increment(d.deltaKg),
-        catchCount: FieldValue.increment(d.deltaCount),
-      };
-      if (d.ttlAt) payload.ttlAt = d.ttlAt;
-      batch.set(ref, payload, { merge: true });
+    // Idempotency via per-event dedup doc + atomic transaction. onDocumentWritten
+    // has at-least-once delivery, and the function emits FieldValue.increment
+    // deltas — a duplicate fire would re-issue +/-N kg and inflate (or sink)
+    // the leaderboard totals. event.id is stable across retries of the same
+    // logical event, so we can use it as the dedup key. weeklyLeaderboardDriftFix
+    // still runs as a safety net, but with this guard in place it should rarely
+    // find drift to correct.
+    //
+    // The claim AND the rollup writes happen inside one transaction so we
+    // never end up "claimed but not written": if the writes fail, the claim
+    // doesn't commit, and the retry sees no prior claim and processes cleanly.
+    // 4 rollup writes max (one per period bucket) + 1 dedup doc = 5 ops, well
+    // under the 500-write transaction limit.
+    //
+    // ttlAt on the dedup doc lets the rollupEvents collection self-clean via
+    // Firestore native TTL (configure rollupEvents.ttlAt as a TTL field in the
+    // GCP console). 7 days is generous — Firebase retries usually happen
+    // within seconds, never days.
+    const dedupRef = db.doc(`rollupEvents/${event.id}`);
+    try {
+      await db.runTransaction(async (tx) => {
+        const dedupSnap = await tx.get(dedupRef);
+        if (dedupSnap.exists) {
+          // Duplicate delivery — already processed. Skip silently.
+          return;
+        }
+        tx.set(dedupRef, {
+          processedAt: FieldValue.serverTimestamp(),
+          catchId: event.params.catchId,
+          ttlAt: Timestamp.fromMillis(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        });
+        for (const [docId, d] of byDoc.entries()) {
+          // Skip pure-zero deltas (can happen if beforeKg == afterKg AND the
+          // same bucket appears on both sides — e.g. a non-substantive edit
+          // touching neither weight nor date). A zero-delta merge would still
+          // count as a billable write; skipping saves a few % of writes on
+          // bulk edits.
+          if (d.deltaKg === 0 && d.deltaCount === 0) continue;
+          const ref = db.collection("leaderboardRollup").doc(docId);
+          const payload: Record<string, unknown> = {
+            bucket: d.bucket,
+            period: d.period,
+            ownerUid: d.ownerUid,
+            ownerName,
+            totalKg: FieldValue.increment(d.deltaKg),
+            catchCount: FieldValue.increment(d.deltaCount),
+          };
+          if (d.ttlAt) payload.ttlAt = d.ttlAt;
+          tx.set(ref, payload, { merge: true });
+        }
+      });
+    } catch (e) {
+      // A transaction throw means neither the dedup claim nor the rollup
+      // writes landed — Firebase will retry the event automatically, and the
+      // next invocation will see no prior claim and try again. Log so any
+      // persistent failure surfaces; don't rethrow because that triggers
+      // exponential-backoff retries on top of the at-least-once retries we
+      // already handle.
+      logger.warn(`[onPublicCatchForRollup] tx failed for event ${event.id}`, e);
     }
-    await batch.commit();
   },
 );
 
