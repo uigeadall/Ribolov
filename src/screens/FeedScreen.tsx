@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '../storage/kv';
-import { View, Text, StyleSheet, Pressable, Platform, Animated, Alert } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Platform, Animated, Alert, ScrollView } from 'react-native';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 
 // FlashList is a drop-in for FlatList with 5-10× the scroll perf at this
@@ -653,7 +653,12 @@ export default function FeedScreen() {
    */
   type MixedFeedItem =
     | { kind: 'catch'; data: FeedItem; date: string }
-    | { kind: 'post'; data: Post; date: string };
+    | { kind: 'post'; data: Post; date: string }
+    // Suggested-users carousel — non-content slot injected every Nth item
+    // in the For You feed. Carries a stable id so FlashList's recycler
+    // doesn't mistake successive slots for different rows; the actual
+    // content is rendered by PeopleYouMayKnowRow.
+    | { kind: 'suggested'; data: { id: string }; date: string };
 
   const displayedItems = useMemo<MixedFeedItem[]>(() => {
     const seen = new Set<string>();
@@ -683,14 +688,28 @@ export default function FeedScreen() {
     // mixing in unrelated text posts.
     if (scope === 'forYou') {
       const ranked = rankFeedItems(dedupedCatches, rankingSignals);
-      const merged: MixedFeedItem[] = [
-        ...ranked.map((c) => ({ kind: 'catch' as const, data: c, date: c.date ?? '' })),
-        // Posts still appear, but ordered by date and after the ranked catches.
-        ...filteredPosts
-          .slice()
-          .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''))
-          .map((p) => ({ kind: 'post' as const, data: p, date: p.date ?? '' })),
-      ];
+      const merged: MixedFeedItem[] = [];
+      // Inject "Suggested users" every 8th catch — close enough to Twitter's
+      // ~10-item cadence to feel intentional, sparse enough not to break the
+      // reading flow. Position-derived id keeps the slot stable across
+      // re-renders so FlashList's recycler doesn't drop the carousel state.
+      ranked.forEach((c, i) => {
+        merged.push({ kind: 'catch' as const, data: c, date: c.date ?? '' });
+        if ((i + 1) % 8 === 0) {
+          merged.push({
+            kind: 'suggested' as const,
+            data: { id: `suggested-${i}` },
+            date: c.date ?? '',
+          });
+        }
+      });
+      // Posts still appear, but ordered by date and after the ranked catches.
+      filteredPosts
+        .slice()
+        .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''))
+        .forEach((p) => {
+          merged.push({ kind: 'post' as const, data: p, date: p.date ?? '' });
+        });
       return merged;
     }
 
@@ -920,6 +939,27 @@ export default function FeedScreen() {
   }, [refreshFeedSignals]);
 
   const renderItem = useCallback(({ item }: { item: MixedFeedItem }) => {
+    if (item.kind === 'suggested') {
+      // Wrap the row in a hairline-bordered container so it visually
+      // separates from the surrounding posts. collapseWhenEmpty=true means
+      // a brand-new account with no candidates gets a null row, not a
+      // confusing "Suggested users" header with no carousel beneath.
+      return (
+        <View style={{
+          backgroundColor: colors.card,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: colors.border,
+          paddingVertical: spacing.sm,
+        }}>
+          <View style={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.xs }}>
+            <Text style={{ fontSize: 15, fontWeight: '800', color: colors.text }}>
+              Може да харесаш
+            </Text>
+          </View>
+          <PeopleYouMayKnowRow collapseWhenEmpty={true} />
+        </View>
+      );
+    }
     if (item.kind === 'catch') {
       const c = item.data;
       // `isVisible` is no longer passed — FeedPost subscribes via
@@ -1107,6 +1147,27 @@ export default function FeedScreen() {
     alignItems: 'center' as const, justifyContent: 'center' as const,
   };
 
+  // Trending hashtags — derived from already-loaded posts so it costs zero
+  // Firestore reads. We count tag occurrences across the last 200 posts
+  // (a generous batch — posts.length is rarely that big), sort by count,
+  // pull the top 5. Only shown when we have at least 3 tags total;
+  // otherwise the strip would look sparse.
+  const trendingHashtags = useMemo<Array<{ tag: string; count: number }>>(() => {
+    const counts = new Map<string, number>();
+    for (const p of posts.slice(0, 200)) {
+      for (const tag of p.hashtags ?? []) {
+        if (!tag) continue;
+        const lc = tag.toLowerCase();
+        counts.set(lc, (counts.get(lc) ?? 0) + 1);
+      }
+    }
+    if (counts.size < 3) return [];
+    return [...counts.entries()]
+      .map(([tag, count]) => ({ tag, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+  }, [posts]);
+
   /** Flat X-style top bar — no gradient, no border-radius pills, no
       glassmorphism. A thin hairline separates the top bar from the tab row,
       and another hairline separates the tab row from the feed. The active
@@ -1234,6 +1295,44 @@ export default function FeedScreen() {
           );
         })}
       </View>
+
+      {/* Trending hashtags strip — horizontal scroll of pill chips, rendered
+          ONLY when we have at least 3 distinct tags across the loaded posts.
+          Tapping a chip opens HashtagFeed, which is the existing screen for
+          per-tag browsing. Pure client-side aggregation — no extra Firestore
+          reads. Hidden on the Following tab where the feed is already a
+          narrow signal; trending is most useful on Всички / За теб. */}
+      {trendingHashtags.length > 0 && scope !== 'following' ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 8, gap: 6 }}
+        >
+          {trendingHashtags.map(({ tag }) => (
+            <Pressable
+              key={tag}
+              onPress={() => navigation.navigate('HashtagFeed', { tag })}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 4,
+                paddingHorizontal: 10,
+                paddingVertical: 5,
+                borderRadius: 999,
+                borderWidth: 1,
+                borderColor: colors.border,
+                backgroundColor: colors.background,
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={`Отвори #${tag}`}
+            >
+              <Text style={{ fontSize: 12, color: colors.primary, fontWeight: '700' }}>
+                #{tag}
+              </Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      ) : null}
 
       {/* Water-body filter chip — only shown when a filter is active, with
           a close button to clear it. Replaces the always-visible fat pill
