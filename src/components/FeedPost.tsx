@@ -569,6 +569,7 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
           }}>
             <FeedVideoPlayer
               uri={item.videoUri}
+              posterUri={item.videoThumbnailUri}
               playing={isVisible}
               width={contentWidth}
               height={Math.round(contentWidth * (5 / 4))}

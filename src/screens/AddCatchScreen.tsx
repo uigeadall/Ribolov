@@ -62,6 +62,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { handleError } from '../utils/handleError';
 import { notifyInfo, notifyError } from '../utils/notify';
 import { VIDEO_MAX_SECONDS, isVideoOverLimit, VIDEO_OVER_LIMIT_MESSAGE } from '../utils/videoLimits';
+import { generateVideoThumbnail } from '../services/videoThumbnail';
 import { allowCatchSave } from '../services/socialRateLimit';
 import { logEvent } from '../services/analytics';
 import { maybePromptForReview } from '../services/storeReview';
@@ -97,6 +98,10 @@ type FormState = {
       video per catch; replaces previous video if the user re-picks. */
   videoUri: string | undefined;
   videoDurationMs: number | undefined;
+  /** Local JPEG poster URI from expo-video-thumbnails. Uploaded together
+      with the video; rendered behind the inline player so the post never
+      shows a black box while buffering. */
+  videoThumbnailUri: string | undefined;
   locationCoords: { lat: number; lon: number } | null;
   locationName: string;
   cameraVerifiedPhoto: boolean;
@@ -119,7 +124,7 @@ type FormAction =
   | { type: 'SET_ENTER_LEADERBOARD'; payload: boolean }
   | { type: 'SET_PHOTO'; payload: { uri: string | undefined; cameraVerified: boolean } }
   | { type: 'CLEAR_PHOTO' }
-  | { type: 'SET_VIDEO'; payload: { uri: string; durationMs: number } }
+  | { type: 'SET_VIDEO'; payload: { uri: string; durationMs: number; thumbnailUri?: string } }
   | { type: 'CLEAR_VIDEO' }
   | { type: 'SET_LOCATION'; payload: { coords: { lat: number; lon: number }; name: string } }
   | { type: 'ADD_EXTRA_PHOTO'; payload: string }
@@ -141,8 +146,8 @@ function formReducer(state: FormState, action: FormAction): FormState {
     case 'SET_ENTER_LEADERBOARD': return { ...state, enterLeaderboard: action.payload };
     case 'SET_PHOTO': return { ...state, photoUri: action.payload.uri, cameraVerifiedPhoto: action.payload.cameraVerified };
     case 'CLEAR_PHOTO': return { ...state, photoUri: undefined, photoTitle: '', cameraVerifiedPhoto: false };
-    case 'SET_VIDEO': return { ...state, videoUri: action.payload.uri, videoDurationMs: action.payload.durationMs };
-    case 'CLEAR_VIDEO': return { ...state, videoUri: undefined, videoDurationMs: undefined };
+    case 'SET_VIDEO': return { ...state, videoUri: action.payload.uri, videoDurationMs: action.payload.durationMs, videoThumbnailUri: action.payload.thumbnailUri };
+    case 'CLEAR_VIDEO': return { ...state, videoUri: undefined, videoDurationMs: undefined, videoThumbnailUri: undefined };
     case 'SET_LOCATION': return { ...state, locationCoords: action.payload.coords, locationName: action.payload.name };
     case 'ADD_EXTRA_PHOTO': return { ...state, extraPhotoUris: [...state.extraPhotoUris, action.payload] };
     case 'REMOVE_EXTRA_PHOTO': return { ...state, extraPhotoUris: state.extraPhotoUris.filter((_, i) => i !== action.payload) };
@@ -194,6 +199,7 @@ export default function AddCatchScreen() {
     photoUri: undefined,
     videoUri: undefined,
     videoDurationMs: undefined,
+    videoThumbnailUri: undefined,
     locationCoords: prefill ? { lat: prefill.latitude, lon: prefill.longitude } : null,
     locationName: prefill?.name ?? '',
     cameraVerifiedPhoto: false,
@@ -373,6 +379,7 @@ export default function AddCatchScreen() {
             photoUri: c.photoUri,
             videoUri: c.videoUri,
             videoDurationMs: c.videoDurationMs,
+            videoThumbnailUri: c.videoThumbnailUri,
             extraPhotoUris: c.extraPhotoUris ?? [],
             cameraVerifiedPhoto: isRemoteImageUri(c.photoUri) || c.photoTakenWithAppCamera === true,
             locationCoords: c.location
@@ -589,9 +596,23 @@ export default function AddCatchScreen() {
       Alert.alert('Твърде дълго видео', VIDEO_OVER_LIMIT_MESSAGE);
       return;
     }
+    // Set the video URI immediately so the UI updates without waiting on
+    // thumbnail extraction. The thumbnail is best-effort and gets folded in
+    // via a second dispatch when it resolves — typically <500ms after pick.
+    // If extraction fails (codec, missing native module, etc.) the catch
+    // still saves; the inline player just shows its loading spinner over
+    // a black frame until readyToPlay fires, which is the pre-poster
+    // behaviour and not a regression.
     dispatch({
       type: 'SET_VIDEO',
       payload: { uri: asset.uri, durationMs: durationMs || 0 },
+    });
+    void generateVideoThumbnail(asset.uri).then((thumbUri) => {
+      if (!thumbUri) return;
+      dispatch({
+        type: 'SET_VIDEO',
+        payload: { uri: asset.uri, durationMs: durationMs || 0, thumbnailUri: thumbUri },
+      });
     });
   };
 
@@ -843,15 +864,23 @@ export default function AddCatchScreen() {
       photoTakenWithAppCamera,
       videoUri: form.videoUri,
       videoDurationMs: form.videoDurationMs,
-      // Preserve the cloud storagePath when the user is editing a catch whose
-      // video URL hasn't changed — same pattern as the photoStoragePath block
-      // below. Without this, re-saving an unchanged catch loses the storage
-      // key and the bucket leaks orphans on next delete.
+      videoThumbnailUri: form.videoThumbnailUri,
+      // Preserve the cloud storagePath(s) when the user is editing a catch
+      // whose video URL hasn't changed — same pattern as the photoStoragePath
+      // block below. Without this, re-saving an unchanged catch loses the
+      // storage keys and the bucket leaks orphans on next delete. The
+      // thumbnail's storage path piggybacks on the same condition since
+      // poster and video share their lifecycle.
       ...(form.videoUri &&
       initialCatch?.videoUri?.trim() === form.videoUri &&
       isRemoteImageUri(form.videoUri) &&
       initialCatch.videoStoragePath
-        ? { videoStoragePath: initialCatch.videoStoragePath }
+        ? {
+            videoStoragePath: initialCatch.videoStoragePath,
+            ...(initialCatch.videoThumbnailStoragePath
+              ? { videoThumbnailStoragePath: initialCatch.videoThumbnailStoragePath }
+              : {}),
+          }
         : {}),
       ...(uri &&
       initialCatch?.photoUri?.trim() === uri &&
@@ -1147,7 +1176,19 @@ export default function AddCatchScreen() {
           borderBottomWidth: StyleSheet.hairlineWidth,
           borderBottomColor: colors.border,
         }}>
-          <Ionicons name="videocam-outline" size={20} color={colors.primary} />
+          {/* When a video is attached and the thumbnail has been generated,
+              show a small 48×48 poster as inline visual feedback. Falls
+              back to the videocam-outline icon while the thumbnail is
+              still extracting (or if extraction fails). */}
+          {form.videoUri && form.videoThumbnailUri ? (
+            <Image
+              source={{ uri: form.videoThumbnailUri }}
+              style={{ width: 48, height: 48, borderRadius: 8, backgroundColor: colors.surfaceAlt }}
+              contentFit="cover"
+            />
+          ) : (
+            <Ionicons name="videocam-outline" size={20} color={colors.primary} />
+          )}
           {form.videoUri ? (
             <>
               <Text style={{ ...typography.body, color: colors.text, flex: 1 }} numberOfLines={1}>

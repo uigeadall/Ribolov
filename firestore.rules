@@ -224,7 +224,14 @@ service cloud.firestore {
         && (!('videoDurationMs' in request.resource.data)
           || (request.resource.data.videoDurationMs is number
             && request.resource.data.videoDurationMs >= 0
-            && request.resource.data.videoDurationMs <= 30000));
+            && request.resource.data.videoDurationMs <= 30000))
+        // Poster JPEG generated client-side from the first frame. Same
+        // https-only constraint as photoUri; size is the URL length, not
+        // the image — the image itself is gated by R2's bucket limits.
+        && (!('videoThumbnailUri' in request.resource.data)
+          || (request.resource.data.videoThumbnailUri is string
+            && request.resource.data.videoThumbnailUri.size() <= 2000
+            && isHttpsUrl(request.resource.data.videoThumbnailUri)));
       // Update splits two paths so non-owners can still bump likeCount when
       // they react. The previous combined rule required ownerUid match for
       // ALL updates, which broke `toggleCatchReaction` for friends (rejected
@@ -259,7 +266,11 @@ service cloud.firestore {
           && (!('videoDurationMs' in request.resource.data)
             || (request.resource.data.videoDurationMs is number
               && request.resource.data.videoDurationMs >= 0
-              && request.resource.data.videoDurationMs <= 30000)))
+              && request.resource.data.videoDurationMs <= 30000))
+          && (!('videoThumbnailUri' in request.resource.data)
+            || (request.resource.data.videoThumbnailUri is string
+              && request.resource.data.videoThumbnailUri.size() <= 2000
+              && isHttpsUrl(request.resource.data.videoThumbnailUri))))
         ||
         // Any signed-in user can step likeCount by exactly ±1 (one reaction
         // toggle = one count change) and adjust the per-type reactionCounts

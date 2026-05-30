@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, Animated } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 
 /**
@@ -30,6 +31,11 @@ type Props = {
   /** Optional: called when a video tile is tapped — usually opens the
       fullscreen viewer or post detail. */
   onPress?: () => void;
+  /** Poster image rendered behind the VideoView until the player reports
+      readyToPlay. Generated client-side at upload time from the first
+      frame, stored as a JPEG on R2. Optional — when missing, the player
+      falls back to a black background + spinner. */
+  posterUri?: string;
 };
 
 // Cached singleton: undefined = haven't tried, null = tried + failed, value = available.
@@ -46,29 +52,54 @@ function loadExpoVideo(): ExpoVideoMod | null {
   return cachedMod;
 }
 
-export function FeedVideoPlayer({ uri, playing, width, height, onPress }: Props) {
+export function FeedVideoPlayer({ uri, playing, width, height, onPress, posterUri }: Props) {
   const mod = loadExpoVideo();
   if (!mod) {
-    // Native module not bundled (Expo Go, older dev client). Render a
-    // clear hint so the user knows what's missing; tap still opens
-    // whatever the parent provides as the press target.
+    // Native module not bundled (Expo Go, older dev client). Render the
+    // poster (if we have one) as the still-image fallback so the card
+    // still shows the captured first frame instead of a black box +
+    // wrench icon. Tap still opens whatever the parent provides.
     return (
       <Pressable onPress={onPress} style={[styles.center, { width, height }]}>
+        {posterUri ? (
+          <Image
+            source={{ uri: posterUri }}
+            style={StyleSheet.absoluteFillObject}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+          />
+        ) : null}
         <Ionicons name="construct-outline" size={36} color="rgba(255,255,255,0.5)" />
         <Text style={styles.fallbackTitle}>Видеото изисква нов билд</Text>
       </Pressable>
     );
   }
-  return <InnerPlayer mod={mod} uri={uri} playing={playing} width={width} height={height} onPress={onPress} />;
+  return <InnerPlayer mod={mod} uri={uri} playing={playing} width={width} height={height} onPress={onPress} posterUri={posterUri} />;
 }
 
 function InnerPlayer({
-  mod, uri, playing, width, height, onPress,
+  mod, uri, playing, width, height, onPress, posterUri,
 }: Props & { mod: ExpoVideoMod }) {
   const { useVideoPlayer, VideoView } = mod;
   // Default muted for feed videos — see header comment.
   const [muted, setMuted] = useState(true);
   const [ready, setReady] = useState(false);
+
+  // Poster fade-out. Held at opacity:1 while !ready, then animated to 0 over
+  // 220ms once the player reports readyToPlay. Without the fade the cut from
+  // poster → first video frame is visually jarring; the short animation
+  // matches expo-image's transition prop and feels like the same surface
+  // smoothing into motion.
+  const posterOpacity = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (ready) {
+      Animated.timing(posterOpacity, {
+        toValue: 0,
+        duration: 220,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [ready, posterOpacity]);
 
   const player = useVideoPlayer({ uri, useCaching: true }, (p) => {
     p.loop = true;
@@ -121,6 +152,28 @@ function InnerPlayer({
         allowsPictureInPicture={false}
         nativeControls={false}
       />
+      {/* Poster sits ABOVE the VideoView. Held at opacity 1 until the player
+          reaches readyToPlay, then animated to 0 — at which point the
+          real video shows through. After the fade completes the poster
+          is still mounted but invisible; we don't unmount it because the
+          Animated subtree would recreate on each playing toggle. */}
+      {posterUri ? (
+        <Animated.View
+          style={[
+            StyleSheet.absoluteFillObject,
+            { opacity: posterOpacity },
+          ]}
+          pointerEvents="none"
+        >
+          <Image
+            source={{ uri: posterUri }}
+            style={StyleSheet.absoluteFillObject}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            transition={0}
+          />
+        </Animated.View>
+      ) : null}
       {!ready ? (
         <View style={[styles.centerAbs, { width, height }]} pointerEvents="none">
           <ActivityIndicator size="small" color="rgba(255,255,255,0.7)" />

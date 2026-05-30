@@ -66,6 +66,12 @@ export type Catch = {
   videoUri?: string;
   videoStoragePath?: string;
   videoDurationMs?: number;
+  /** Poster image (JPEG) shown by the inline player before the video
+      reaches readyToPlay. Generated client-side from the first frame at
+      pick time and uploaded to R2 alongside the clip. Same lifecycle as
+      videoStoragePath — kept so deletion can sweep the orphan poster. */
+  videoThumbnailUri?: string;
+  videoThumbnailStoragePath?: string;
   /** true ако снимката е заснета с камерата в приложението — изисква се за публични постове и класики */
   photoTakenWithAppCamera?: boolean;
   /** Потребителят е избрал да участва в седмичните/месечните класации */

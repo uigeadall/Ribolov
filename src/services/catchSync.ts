@@ -157,9 +157,28 @@ export async function ensureCatchPhotoUploadedForCloud(
   // the doc so catch deletion can call deleteFromR2.
   const videoUri = updated.videoUri?.trim();
   if (videoUri && !isRemote(videoUri)) {
-    const path = `publicCatchVideos/${ownerUid}/${c.id}/${Date.now()}.mp4`;
-    const { url, storagePath } = await uploadVideoToR2(videoUri, path);
-    updated = { ...updated, videoUri: url, videoStoragePath: storagePath };
+    const ts = Date.now();
+    // Upload poster + video in parallel. The poster is a small JPEG (typically
+    // 80-120KB after resize), so even on slow uplinks it tends to finish
+    // before the video — meaning the feed has a thumbnail to show by the
+    // time the catch first appears, even before any video bytes arrive.
+    const thumbUri = updated.videoThumbnailUri?.trim();
+    const thumbUpload = thumbUri && !isRemote(thumbUri)
+      ? uploadImageToR2(thumbUri, `publicCatchVideos/${ownerUid}/${c.id}/poster_${ts}.jpg`)
+          .then((r) => ({ url: r.url, storagePath: r.storagePath }))
+          .catch(() => null) // soft-fail: poster is decorative, missing one shouldn't block the video
+      : Promise.resolve(null);
+    const [{ url, storagePath }, thumbResult] = await Promise.all([
+      uploadVideoToR2(videoUri, `publicCatchVideos/${ownerUid}/${c.id}/${ts}.mp4`),
+      thumbUpload,
+    ]);
+    updated = {
+      ...updated,
+      videoUri: url,
+      videoStoragePath: storagePath,
+      videoThumbnailUri: thumbResult?.url ?? updated.videoThumbnailUri,
+      videoThumbnailStoragePath: thumbResult?.storagePath ?? updated.videoThumbnailStoragePath,
+    };
   }
 
   onProgress?.(1);
@@ -197,6 +216,8 @@ export async function pushCatch(c: Catch, ownerUid: string, ownerName: string, i
     videoUri: c.videoUri ?? deleteField(),
     videoStoragePath: c.videoStoragePath ?? deleteField(),
     videoDurationMs: c.videoDurationMs ?? deleteField(),
+    videoThumbnailUri: c.videoThumbnailUri ?? deleteField(),
+    videoThumbnailStoragePath: c.videoThumbnailStoragePath ?? deleteField(),
   };
   const payload = stripUndefinedForFirestore(rawPayload);
   await setDoc(doc(fb.db, 'users', ownerUid, 'catches', c.id), payload, { merge: true });
@@ -275,15 +296,26 @@ export async function deleteMediaByUrl(url: string | undefined): Promise<void> {
 export async function deleteCatchEverywhere(catchId: string, ownerUid: string): Promise<void> {
   const fb = requireFirebase();
 
-  // Read storage path + extra photos before deleting the doc
+  // Read storage paths + extra photos before deleting the doc. Video and
+  // poster paths are read here too so a single catch delete sweeps all
+  // four R2 objects (primary photo, extras, video, poster).
   let storagePath: string | undefined;
   let extraPhotoUris: string[] | undefined;
+  let videoStoragePath: string | undefined;
+  let videoThumbnailStoragePath: string | undefined;
   try {
     const snap = await getDoc(doc(fb.db, 'users', ownerUid, 'catches', catchId));
     if (snap.exists()) {
-      const data = snap.data() as { photoStoragePath?: string; extraPhotoUris?: string[] };
+      const data = snap.data() as {
+        photoStoragePath?: string;
+        extraPhotoUris?: string[];
+        videoStoragePath?: string;
+        videoThumbnailStoragePath?: string;
+      };
       storagePath = data.photoStoragePath;
       extraPhotoUris = data.extraPhotoUris;
+      videoStoragePath = data.videoStoragePath;
+      videoThumbnailStoragePath = data.videoThumbnailStoragePath;
     }
   } catch { /* ignore */ }
 
@@ -302,6 +334,14 @@ export async function deleteCatchEverywhere(catchId: string, ownerUid: string): 
       const key = r2KeyFromUrl(url);
       if (key) await deleteFromR2(key);
     }
+  }
+  // Video + poster cleanup. Best-effort — a failed sweep here leaves an
+  // orphan in R2 but doesn't break the catch-was-deleted user expectation.
+  if (videoStoragePath) {
+    await deleteFromR2(videoStoragePath).catch(() => {});
+  }
+  if (videoThumbnailStoragePath) {
+    await deleteFromR2(videoThumbnailStoragePath).catch(() => {});
   }
   // A catch was deleted from publicCatches — the cached feed page may still
   // contain it. Invalidate so the next mount doesn't briefly render a "ghost"
