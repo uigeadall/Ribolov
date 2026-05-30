@@ -126,8 +126,7 @@
       "googleAndroidClientId": "",
       "facebookAppId": "",
       "firebaseAppCheckEnabled": "true",
-      "firebaseAppCheckDebugToken": "",
-      "sentryDsn": ""
+      "firebaseAppCheckDebugToken": ""
     },
     "owner": "tonyjobs97"
   }

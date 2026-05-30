@@ -17,23 +17,21 @@ Already written in `/docs`. To make them publicly reachable:
 
 The in-app Legal Info screen already links to these URLs.
 
-## 2. Sentry (crash reporting)
+## 2. Crash reporting (deferred)
 
-The integration is fully wired in `src/services/observability.ts` and
-`src/components/ErrorBoundary.tsx`. It just needs a DSN.
+Sentry was removed for cost reasons. The ErrorBoundary still catches
+React tree crashes and shows a recoverable fallback UI, so the app
+doesn't whitescreen, but you won't see remote reports until you wire
+something.
 
-1. Sign up at https://sentry.io (free tier: 5k errors/mo + 10k perf/mo)
-2. Create a new React Native project, name it `ribolov-app`
-3. Copy the DSN (looks like `https://abc123@o123.ingest.sentry.io/456`)
-4. Paste into `app.json` → `extra.sentryDsn`
-5. Rebuild the app (`npx expo run:ios --device --configuration Release`)
+When you want crash visibility later, two free options:
 
-The integration is gated on a non-empty DSN — until then it's a no-op,
-so it's safe to ship without it (you just won't see crashes).
-
-In dev mode Sentry is disabled by default so local errors don't waste
-your free-tier budget. To force-enable for testing, set
-`EXPO_PUBLIC_SENTRY_FORCE=1` in `.env`.
+- **Firebase Crashlytics** — already integrated with the Firebase
+  project; add `@react-native-firebase/crashlytics`, call
+  `crashlytics().recordError()` from `captureException` in
+  `src/services/observability.ts`. Free.
+- **Sentry** — restore from git history (commit `50cb7be`); free tier
+  is 5k errors/month.
 
 ## 3. Apple Developer account (for App Store + TestFlight)
 
