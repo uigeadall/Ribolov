@@ -165,6 +165,16 @@ export type Post = {
   text: string;
   photoUri?: string;
   photoStoragePath?: string;
+  /** Optional 15-second video clip attached to the post. Capped at 15s on
+      pick (same VIDEO_MAX_SECONDS as catch videos). videoStoragePath
+      mirrors the R2 object key so post deletion can clean up the bucket.
+      videoThumbnailUri is a JPEG poster generated client-side; the inline
+      feed player renders it as a background while the video buffers. */
+  videoUri?: string;
+  videoStoragePath?: string;
+  videoDurationMs?: number;
+  videoThumbnailUri?: string;
+  videoThumbnailStoragePath?: string;
   /** Lowercased hashtag tokens (no '#' prefix). Stored for query filtering. */
   hashtags: string[];
   /** UIDs mentioned in the text. Used to fan out notifications. */

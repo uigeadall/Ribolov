@@ -23,6 +23,8 @@ import { logEvent } from '../services/analytics';
 import { handleError } from '../utils/handleError';
 import { notifyInfo } from '../utils/notify';
 import { checkImageSize } from '../utils/imageSize';
+import { VIDEO_MAX_SECONDS, isVideoOverLimit, VIDEO_OVER_LIMIT_MESSAGE } from '../utils/videoLimits';
+import { generateVideoThumbnail } from '../services/videoThumbnail';
 import { useRoute, RouteProp } from '@react-navigation/native';
 import type { FeedStackParamList } from '../navigation/types';
 
@@ -51,6 +53,12 @@ export default function CreatePostScreen() {
 
   const [text, setText] = useState('');
   const [photoUri, setPhotoUri] = useState<string | undefined>();
+  // Video state. videoThumbnailUri arrives asynchronously after pick
+  // (generateVideoThumbnail is fire-and-forget); rendered with a fallback
+  // to the videocam icon until it lands.
+  const [videoUri, setVideoUri] = useState<string | undefined>();
+  const [videoDurationMs, setVideoDurationMs] = useState<number | undefined>();
+  const [videoThumbnailUri, setVideoThumbnailUri] = useState<string | undefined>();
   const [posting, setPosting] = useState(false);
   // 0..1 upload progress, surfaced as a thin bar at the top during posting.
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -149,6 +157,41 @@ export default function CreatePostScreen() {
     }
   };
 
+  /** Pick a 15-second video clip. Mirror of AddCatchScreen.pickVideo —
+      iOS picker enforces videoMaxDuration; Android picker doesn't, so we
+      re-check the reported duration after the pick and reject overflow.
+      A video and a photo can BOTH be attached to a single post (the
+      composer renders both rows independently), but the feed card picks
+      video as primary content when present. */
+  const pickVideo = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      notifyInfo('Достъп до галерията', 'Разреши достъп в настройките на телефона.');
+      return;
+    }
+    const r = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: 'videos',
+      quality: 0.8,
+      videoMaxDuration: VIDEO_MAX_SECONDS,
+      videoExportPreset: ImagePicker.VideoExportPreset.H264_1280x720,
+    });
+    if (r.canceled || !r.assets[0]) return;
+    const asset = r.assets[0];
+    const durationMs = typeof asset.duration === 'number' ? asset.duration : 0;
+    if (isVideoOverLimit(durationMs)) {
+      notifyInfo('Твърде дълго видео', VIDEO_OVER_LIMIT_MESSAGE);
+      return;
+    }
+    setVideoUri(asset.uri);
+    setVideoDurationMs(durationMs || 0);
+    // Generate the poster asynchronously — same pattern as AddCatch. The
+    // local thumbnail uploads alongside the video; if extraction fails
+    // the post still saves, the feed player just won't have a poster.
+    void generateVideoThumbnail(asset.uri).then((thumb) => {
+      if (thumb) setVideoThumbnailUri(thumb);
+    });
+  };
+
   const takePhoto = async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) {
@@ -164,8 +207,8 @@ export default function CreatePostScreen() {
 
   const submit = async () => {
     if (!user || posting || submittingRef.current) return;
-    if (!text.trim() && !photoUri && !reshare) {
-      notifyInfo('Празна публикация', 'Добави текст или снимка.');
+    if (!text.trim() && !photoUri && !videoUri && !reshare) {
+      notifyInfo('Празна публикация', 'Добави текст, снимка или видео.');
       return;
     }
     submittingRef.current = true;
@@ -220,6 +263,9 @@ export default function CreatePostScreen() {
         ownerPhotoUrl: ownerPhotoUrl || undefined,
         text,
         localPhotoUri: photoUri,
+        localVideoUri: videoUri,
+        localVideoThumbnailUri: videoThumbnailUri,
+        videoDurationMs,
         mentionUids,
         reshareOf: reshare,
         onUploadProgress: (f) => setUploadProgress(f),
@@ -227,6 +273,7 @@ export default function CreatePostScreen() {
       Toast.show({ type: 'success', text1: 'Публикувано', visibilityTime: 1800 });
       logEvent('post_shared', {
         has_photo: !!photoUri,
+        has_video: !!videoUri,
         has_reshare: !!reshare,
         text_length: text.length,
       });
@@ -396,8 +443,8 @@ export default function CreatePostScreen() {
           <Text style={styles.heroTitle}>{reshare ? 'Сподели' : 'Нова публикация'}</Text>
           <Pressable
             onPress={submit}
-            disabled={posting || (!text.trim() && !photoUri && !reshare)}
-            style={[styles.postBtn, (posting || (!text.trim() && !photoUri && !reshare)) && { opacity: 0.5 }]}
+            disabled={posting || (!text.trim() && !photoUri && !videoUri && !reshare)}
+            style={[styles.postBtn, (posting || (!text.trim() && !photoUri && !videoUri && !reshare)) && { opacity: 0.5 }]}
             hitSlop={8}
           >
             {posting
@@ -487,6 +534,47 @@ export default function CreatePostScreen() {
             </View>
           ) : null}
 
+          {/* Video preview — when a clip is attached, we show the poster
+              thumbnail (if extracted) with a Play overlay so the user sees
+              they have a video staged. Tapping × removes the attachment. */}
+          {videoUri ? (
+            <View style={styles.photoWrap}>
+              {videoThumbnailUri ? (
+                <Image source={{ uri: videoThumbnailUri }} style={styles.photo} contentFit="cover" />
+              ) : (
+                <View style={[styles.photo, { backgroundColor: colors.surfaceAlt, alignItems: 'center', justifyContent: 'center' }]}>
+                  <Ionicons name="videocam" size={36} color={colors.primary} />
+                </View>
+              )}
+              <View style={{
+                position: 'absolute', alignSelf: 'center', top: '40%',
+                width: 56, height: 56, borderRadius: 28,
+                backgroundColor: 'rgba(0,0,0,0.5)',
+                alignItems: 'center', justifyContent: 'center',
+              }} pointerEvents="none">
+                <Ionicons name="play" size={28} color="#fff" />
+              </View>
+              {videoDurationMs ? (
+                <View style={{
+                  position: 'absolute', bottom: 8, right: 8,
+                  paddingHorizontal: 8, paddingVertical: 3,
+                  borderRadius: 10, backgroundColor: 'rgba(0,0,0,0.6)',
+                }}>
+                  <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>
+                    {Math.round(videoDurationMs / 1000)}с
+                  </Text>
+                </View>
+              ) : null}
+              <Pressable
+                onPress={() => { setVideoUri(undefined); setVideoThumbnailUri(undefined); setVideoDurationMs(undefined); }}
+                style={styles.photoRemove}
+                hitSlop={8}
+              >
+                <Ionicons name="close" size={18} color="#fff" />
+              </Pressable>
+            </View>
+          ) : null}
+
           {reshare ? (
             <View style={styles.reshareCard}>
               <View style={styles.reshareHeader}>
@@ -531,6 +619,16 @@ export default function CreatePostScreen() {
             <Pressable style={styles.actionBtn} onPress={() => void takePhoto()}>
               <Ionicons name="camera-outline" size={20} color={colors.primary} />
               <Text style={styles.actionText}>Камера</Text>
+            </Pressable>
+            {/* Video pick — 15-second cap. Disabled while a clip is already
+                attached (one video per post; the X removes it for a re-pick). */}
+            <Pressable
+              style={[styles.actionBtn, !!videoUri && { opacity: 0.5 }]}
+              onPress={() => { if (!videoUri) void pickVideo(); }}
+              disabled={!!videoUri}
+            >
+              <Ionicons name="videocam-outline" size={20} color={colors.primary} />
+              <Text style={styles.actionText}>Видео</Text>
             </Pressable>
           </View>
 

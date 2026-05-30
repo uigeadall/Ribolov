@@ -20,7 +20,7 @@ import {
 } from 'firebase/firestore';
 import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
-import { uploadImageToR2, deleteFromR2 } from './r2Upload';
+import { uploadImageToR2, uploadVideoToR2, deleteFromR2 } from './r2Upload';
 import { invalidateAllFeedCaches } from './catchSync';
 import { extractHashtags } from '../utils/textTokens';
 import { allowComment, allowPostCreate } from './socialRateLimit';
@@ -38,6 +38,12 @@ export type CreatePostInput = {
   text: string;
   /** Local file:// URI — uploaded to Storage before the doc is written. Optional. */
   localPhotoUri?: string;
+  /** Local file:// URI of a 15-second video clip. Uploaded to R2 alongside
+      the post; URL is stored on the doc. The thumbnail (if extracted
+      client-side) is uploaded in parallel. */
+  localVideoUri?: string;
+  localVideoThumbnailUri?: string;
+  videoDurationMs?: number;
   /** Already-resolved UIDs of @mentioned users. */
   mentionUids: string[];
   /** If set, this post is a quote-reshare of another feed item. */
@@ -74,18 +80,46 @@ export async function createPost(input: CreatePostInput): Promise<string> {
   const fb = requireFirebase();
   const id = newPostId();
   const text = (input.text || '').trim();
-  if (!text && !input.localPhotoUri && !input.reshareOf) {
-    throw new Error('Постът трябва да съдържа текст или снимка.');
+  if (!text && !input.localPhotoUri && !input.localVideoUri && !input.reshareOf) {
+    throw new Error('Постът трябва да съдържа текст, снимка или видео.');
   }
 
   let photoUri: string | undefined;
   let photoStoragePath: string | undefined;
+  let videoUri: string | undefined;
+  let videoStoragePath: string | undefined;
+  let videoThumbnailUri: string | undefined;
+  let videoThumbnailStoragePath: string | undefined;
+
+  // Video upload runs first when present so the progress bar reflects the
+  // dominant size on slow connections. Photo is small (~80-120KB
+  // post-resize); video is the bulk (~5-15MB).
+  if (input.localVideoUri && !isRemote(input.localVideoUri)) {
+    const ts = Date.now();
+    const thumbPromise = input.localVideoThumbnailUri && !isRemote(input.localVideoThumbnailUri)
+      ? uploadImageToR2(input.localVideoThumbnailUri, `posts/${input.ownerUid}/${id}_poster_${ts}.jpg`)
+          .then((r) => ({ url: r.url, storagePath: r.storagePath }))
+          .catch(() => null) // poster soft-fail; player falls back to spinner
+      : Promise.resolve(null);
+    const [video, thumb] = await Promise.all([
+      uploadVideoToR2(input.localVideoUri, `posts/${input.ownerUid}/${id}_${ts}.mp4`, input.onUploadProgress),
+      thumbPromise,
+    ]);
+    videoUri = video.url;
+    videoStoragePath = video.storagePath;
+    if (thumb) {
+      videoThumbnailUri = thumb.url;
+      videoThumbnailStoragePath = thumb.storagePath;
+    }
+    input.onUploadProgress?.(1);
+  }
+
   if (input.localPhotoUri && !isRemote(input.localPhotoUri)) {
     const requestedPath = `posts/${input.ownerUid}/${id}_${Date.now()}.jpg`;
     const uploaded = await uploadImageToR2(
       input.localPhotoUri,
       requestedPath,
-      input.onUploadProgress,
+      input.localVideoUri ? undefined : input.onUploadProgress, // skip duplicate progress events when video also uploading
     );
     photoUri = uploaded.url;
     photoStoragePath = uploaded.storagePath;
@@ -104,6 +138,11 @@ export async function createPost(input: CreatePostInput): Promise<string> {
     text: text.slice(0, 2000),
     photoUri,
     photoStoragePath,
+    videoUri,
+    videoStoragePath,
+    videoDurationMs: input.videoDurationMs,
+    videoThumbnailUri,
+    videoThumbnailStoragePath,
     hashtags,
     mentionUids: [...new Set(input.mentionUids)],
     date: new Date().toISOString(),
@@ -127,9 +166,9 @@ export async function createPost(input: CreatePostInput): Promise<string> {
     // clean up the orphan R2 object. Otherwise the file sits in
     // posts/{uid}/ forever — no doc references it, no cleanup function
     // walks R2, and it counts against the bucket quota indefinitely.
-    if (photoStoragePath) {
-      void deleteFromR2(photoStoragePath);
-    }
+    if (photoStoragePath) void deleteFromR2(photoStoragePath);
+    if (videoStoragePath) void deleteFromR2(videoStoragePath);
+    if (videoThumbnailStoragePath) void deleteFromR2(videoThumbnailStoragePath);
     throw e;
   }
 

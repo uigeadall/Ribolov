@@ -15,6 +15,9 @@ import type { Post } from '../types';
 import { RichText } from './RichText';
 import { looksNonBulgarian, openTranslation } from '../utils/captionLanguage';
 import { ImageViewer } from './ImageViewer';
+import { FeedVideoPlayer } from './FeedVideoPlayer';
+import { useFeedItemVisibility } from '../hooks/useFeedItemVisibility';
+import { useWindowDimensions } from 'react-native';
 import { SharePickerModal, buildPostSharedRef } from './SharePickerModal';
 import { LikersSheet, useLikersSheet } from './LikersSheet';
 import {
@@ -69,6 +72,11 @@ function PostCardInner({
 }: Props) {
   const { colors, mode } = useTheme();
   const { configured } = useAuth();
+  // Visibility for inline video autoplay — same pub-sub the FeedPost uses,
+  // so at most one video plays at a time across the whole feed regardless
+  // of whether the visible card is a catch or a standalone post.
+  const isVisible = useFeedItemVisibility(post.id);
+  const { width: screenWidth } = useWindowDimensions();
   // Reaction state — replaces the old boolean `liked`. `myReaction === null`
   // means the user hasn't reacted. The picker fans out the 5 emoji options.
   const [myReaction, setMyReaction] = useState<ReactionType | null>(null);
@@ -477,6 +485,31 @@ function PostCardInner({
           </View>
         );
       })() : null}
+
+      {/* Inline video player — takes precedence over the photo when both
+          are present (the user explicitly attached a video; that's the
+          primary content). Sized to match the photo block: full card
+          width, 5:4 aspect. Visibility-driven playback so the recipe of
+          "one video at a time" still holds across mixed feed item types. */}
+      {post.videoUri ? (
+        <View style={{
+          width: screenWidth - 32, // matches photoWrap padding
+          height: Math.round((screenWidth - 32) * (5 / 4)),
+          marginTop: 8,
+          borderRadius: 18,
+          overflow: 'hidden',
+          backgroundColor: '#000',
+          alignSelf: 'center',
+        }}>
+          <FeedVideoPlayer
+            uri={post.videoUri}
+            posterUri={post.videoThumbnailUri}
+            playing={isVisible}
+            width={screenWidth - 32}
+            height={Math.round((screenWidth - 32) * (5 / 4))}
+          />
+        </View>
+      ) : null}
 
       {/* Photo */}
       {post.photoUri ? (

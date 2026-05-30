@@ -375,6 +375,20 @@ service cloud.firestore {
           || (request.resource.data.photoUri is string
             && request.resource.data.photoUri.size() <= 1000
             && isHttpsUrl(request.resource.data.photoUri)))
+        // Optional 15-second video clip + poster — same shape as
+        // publicCatches/videoUri. 30000 ms ceiling = 15s + rounding slop.
+        && (!('videoUri' in request.resource.data)
+          || (request.resource.data.videoUri is string
+            && request.resource.data.videoUri.size() <= 2000
+            && isHttpsUrl(request.resource.data.videoUri)))
+        && (!('videoThumbnailUri' in request.resource.data)
+          || (request.resource.data.videoThumbnailUri is string
+            && request.resource.data.videoThumbnailUri.size() <= 2000
+            && isHttpsUrl(request.resource.data.videoThumbnailUri)))
+        && (!('videoDurationMs' in request.resource.data)
+          || (request.resource.data.videoDurationMs is number
+            && request.resource.data.videoDurationMs >= 0
+            && request.resource.data.videoDurationMs <= 30000))
         && (!('reshareOf' in request.resource.data)
           || (request.resource.data.reshareOf is map
             && request.resource.data.reshareOf.kind in ['catch', 'post']
