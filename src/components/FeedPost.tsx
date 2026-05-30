@@ -1029,6 +1029,8 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                   outline heart when set; X uses a red filled heart, we honour
                   the user's chosen reaction instead since the app's identity
                   is multi-reactions. */}
+              {/* Heart icon (toggle / change reaction) — long-press opens the
+                  reaction picker, single-tap toggles or re-applies. */}
               <Pressable
                 onPress={() => {
                   void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -1053,7 +1055,19 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                     <Ionicons name="heart-outline" size={18} color={colors.textMuted} />
                   )}
                 </Animated.View>
-                {social.likeCount > 0 ? (
+              </Pressable>
+              {/* Like count — separate tap target so tapping the number
+                  opens the likers sheet (who reacted) without firing the
+                  reaction toggle on the heart. The previous unified cell
+                  meant users had no way to see who liked a post. */}
+              {social.likeCount > 0 ? (
+                <Pressable
+                  onPress={social.openLikers}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Виж кой е харесал"
+                  style={{ paddingVertical: 4, paddingHorizontal: 4, marginRight: 2 }}
+                >
                   <Text
                     style={[
                       styles.actionCount,
@@ -1062,8 +1076,8 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                   >
                     {social.likeCount}
                   </Text>
-                ) : null}
-              </Pressable>
+                </Pressable>
+              ) : null}
 
               {/* Send to friend via DM */}
               <Pressable
