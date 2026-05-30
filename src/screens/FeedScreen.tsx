@@ -860,111 +860,186 @@ export default function FeedScreen() {
     });
   }, [navigation]);
 
-  const glassBtn = {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)',
+  // X-style flat icon button — no glassmorphism, no border, just a press
+  // target. Color comes from the theme so it works in dark mode too.
+  const flatIconBtn = {
+    width: 36, height: 36, borderRadius: 18,
     alignItems: 'center' as const, justifyContent: 'center' as const,
   };
 
+  /** Flat X-style top bar — no gradient, no border-radius pills, no
+      glassmorphism. A thin hairline separates the top bar from the tab row,
+      and another hairline separates the tab row from the feed. The active
+      scope tab gets a short bold underline (X's signature visual). The
+      water filter is no longer a fat pill — it's a small chip that only
+      appears when active, with a close button. */
   const Hero = (
-    <LinearGradient
-      colors={['#0A2550', '#1570B8', '#1A8FE3']}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={{ paddingTop: insets.top + 8, paddingBottom: 52, paddingHorizontal: spacing.lg }}
-    >
-      {/* Title + action buttons */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <Text style={{ fontSize: 28, fontWeight: '800', color: '#fff', flex: 1, letterSpacing: -0.5 }}>Лента</Text>
-        <Pressable onPress={() => navigation.navigate('Notifications')} hitSlop={8} style={glassBtn} accessibilityLabel="Известия">
+    <View style={{ backgroundColor: colors.card }}>
+      {/* Status-bar safe area + title row */}
+      <View style={{
+        paddingTop: insets.top + 4,
+        paddingHorizontal: 16,
+        paddingBottom: 8,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+      }}>
+        <Text style={{
+          fontSize: 20, fontWeight: '800', color: colors.text,
+          flex: 1, letterSpacing: -0.3,
+        }}>
+          Начало
+        </Text>
+        <Pressable
+          onPress={() => navigation.navigate('Notifications')}
+          hitSlop={8}
+          style={flatIconBtn}
+          android_ripple={{ color: colors.primary + '33', borderless: true, radius: 18 }}
+          accessibilityLabel="Известия"
+        >
           <View style={{ position: 'relative' }}>
-            <Ionicons name={unreadNotifCount > 0 ? 'notifications' : 'notifications-outline'} size={22} color="#fff" />
+            <Ionicons
+              name={unreadNotifCount > 0 ? 'notifications' : 'notifications-outline'}
+              size={20}
+              color={colors.text}
+            />
             {unreadNotifCount > 0 && (
-              <View style={{ position: 'absolute', top: -4, right: -6, backgroundColor: '#e53935', borderRadius: 8, minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 }}>
-                <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700', lineHeight: 12 }}>
+              <View style={{
+                position: 'absolute', top: -3, right: -5,
+                backgroundColor: '#e53935', borderRadius: 8,
+                minWidth: 14, height: 14,
+                alignItems: 'center', justifyContent: 'center',
+                paddingHorizontal: 3,
+              }}>
+                <Text style={{ color: '#fff', fontSize: 9, fontWeight: '700', lineHeight: 11 }}>
                   {unreadNotifCount > 99 ? '99+' : unreadNotifCount}
                 </Text>
               </View>
             )}
           </View>
         </Pressable>
-        <Pressable onPress={() => navigation.navigate('Search')} hitSlop={8} style={glassBtn} accessibilityLabel="Търси">
-          <Ionicons name="search-outline" size={22} color="#fff" />
+        <Pressable
+          onPress={() => navigation.navigate('Search')}
+          hitSlop={8}
+          style={flatIconBtn}
+          android_ripple={{ color: colors.primary + '33', borderless: true, radius: 18 }}
+          accessibilityLabel="Търси"
+        >
+          <Ionicons name="search-outline" size={20} color={colors.text} />
         </Pressable>
-        <Pressable onPress={openOverflow} hitSlop={8} style={glassBtn} accessibilityLabel="Още">
-          <Ionicons name="ellipsis-horizontal" size={22} color="#fff" />
+        <Pressable
+          onPress={() => {
+            // Open a richer overflow menu — adds the water-body filter to the
+            // existing trophy/saved/explore options since the filter no
+            // longer has its own pill in the header.
+            ActionSheet.show({
+              options: [
+                {
+                  label: waterFilter ? `Филтър: ${waterFilter.item.name}` : 'Филтрирай по водоем',
+                  icon: 'water-outline',
+                  onPress: () => {
+                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setWaterPickerOpen(true);
+                  },
+                },
+                { label: 'Класации', icon: 'trophy-outline', onPress: () => navigation.navigate('Classics') },
+                { label: 'Запазени', icon: 'bookmark-outline', onPress: () => navigation.navigate('SavedPosts') },
+                { label: 'Открий', icon: 'compass-outline', onPress: () => navigation.navigate('Explore') },
+              ],
+            });
+          }}
+          hitSlop={8}
+          style={flatIconBtn}
+          android_ripple={{ color: colors.primary + '33', borderless: true, radius: 18 }}
+          accessibilityLabel="Още"
+        >
+          <Ionicons name="ellipsis-horizontal" size={20} color={colors.text} />
         </Pressable>
       </View>
 
-      {/* Scope tabs */}
-      <View style={{ flexDirection: 'row', marginTop: spacing.md, backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', overflow: 'hidden' }}>
-        <Pressable
-          onPress={() => switchScope('all')}
-          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, backgroundColor: scope === 'all' ? 'rgba(255,255,255,0.2)' : 'transparent', borderRadius: 12 }}
-        >
-          <Ionicons name="grid-outline" size={18} color="#fff" />
-          <Text style={{ fontSize: 13, fontWeight: '700', color: '#fff' }}>Всички</Text>
-        </Pressable>
-        <Pressable
-          onPress={() => switchScope('following')}
-          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, backgroundColor: scope === 'following' ? 'rgba(255,255,255,0.2)' : 'transparent', borderRadius: 12 }}
-        >
-          <Ionicons name="people-outline" size={18} color="#fff" />
-          <Text style={{ fontSize: 13, fontWeight: '700', color: '#fff' }}>Следвани</Text>
-        </Pressable>
+      {/* X-style scope tabs — text labels, no icons, with a short bold
+          underline beneath the active tab. The container has a hairline
+          bottom border so the tab row visually separates from the feed. */}
+      <View style={{
+        flexDirection: 'row',
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: colors.border,
+      }}>
+        {(['all', 'following'] as const).map((s) => {
+          const active = scope === s;
+          const label = s === 'all' ? 'Всички' : 'Следвани';
+          return (
+            <Pressable
+              key={s}
+              onPress={() => switchScope(s)}
+              style={{ flex: 1, alignItems: 'center', paddingTop: 14, paddingBottom: 10 }}
+              android_ripple={{ color: colors.primary + '22' }}
+            >
+              <Text style={{
+                fontSize: 15,
+                fontWeight: active ? '700' : '500',
+                color: active ? colors.text : colors.textMuted,
+              }}>
+                {label}
+              </Text>
+              {/* Underline indicator — short, ~50px, centred under the label. */}
+              <View style={{
+                marginTop: 10,
+                height: 3,
+                width: 48,
+                borderRadius: 2,
+                backgroundColor: active ? colors.primary : 'transparent',
+              }} />
+            </Pressable>
+          );
+        })}
       </View>
 
-      {/* Water-body filter chip — opens DamPicker. When active, shows the
-          selected water name with a clear (×) button. The pill style mirrors
-          the scope-tab background so the two controls feel like one cluster.
-          Light haptic on open mirrors the "primary action" pattern used
-          elsewhere; selection haptic fires inside the picker's onSelect. */}
-      <Pressable
-        onPress={() => {
-          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          setWaterPickerOpen(true);
-        }}
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 8,
-          marginTop: spacing.sm,
-          paddingVertical: 10,
-          paddingHorizontal: 14,
-          backgroundColor: waterFilter ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.12)',
-          borderRadius: 14,
-          borderWidth: 1,
-          borderColor: 'rgba(255,255,255,0.18)',
-        }}
-        accessibilityRole="button"
-        accessibilityLabel="Филтър по водоем"
-      >
-        <Ionicons
-          name={waterFilter?.kind === 'river' ? 'git-branch-outline' : 'water-outline'}
-          size={18}
-          color="#fff"
-        />
-        <Text style={{ flex: 1, fontSize: 13, fontWeight: '700', color: '#fff' }} numberOfLines={1}>
-          {waterFilter ? waterFilter.item.name : 'Филтър: всички водоеми'}
-        </Text>
-        {waterFilter ? (
+      {/* Water-body filter chip — only shown when a filter is active, with
+          a close button to clear it. Replaces the always-visible fat pill
+          that took up real estate. Tapping the chip body re-opens the
+          picker so the user can switch waters without re-clearing. */}
+      {waterFilter ? (
+        <Pressable
+          onPress={() => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setWaterPickerOpen(true);
+          }}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+            alignSelf: 'flex-start',
+            marginHorizontal: 16,
+            marginTop: 8,
+            paddingVertical: 5,
+            paddingHorizontal: 10,
+            borderRadius: 999,
+            backgroundColor: colors.primarySurface,
+            borderWidth: 1,
+            borderColor: colors.border,
+          }}
+        >
+          <Ionicons
+            name={waterFilter.kind === 'river' ? 'git-branch-outline' : 'water-outline'}
+            size={13}
+            color={colors.primary}
+          />
+          <Text style={{ fontSize: 12, fontWeight: '700', color: colors.primary }} numberOfLines={1}>
+            {waterFilter.item.name}
+          </Text>
           <Pressable
             onPress={() => {
               void Haptics.selectionAsync();
               setWaterFilter(null);
             }}
-            hitSlop={10}
-            accessibilityRole="button"
-            accessibilityLabel="Изчисти филтър по водоем"
+            hitSlop={8}
           >
-            <Ionicons name="close-circle" size={20} color="rgba(255,255,255,0.85)" />
+            <Ionicons name="close-circle" size={15} color={colors.primary} />
           </Pressable>
-        ) : (
-          <Ionicons name="chevron-down" size={16} color="rgba(255,255,255,0.75)" />
-        )}
-      </Pressable>
-    </LinearGradient>
+        </Pressable>
+      ) : null}
+    </View>
   );
 
   const waveContent = (() => {
@@ -1272,11 +1347,12 @@ export default function FeedScreen() {
         onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
       >
         {Hero}
-        {!feedIsEmpty ? (
-          <View style={{ backgroundColor: colors.background, borderTopLeftRadius: 32, borderTopRightRadius: 32, marginTop: -32 }}>
-            <StoriesRow />
-          </View>
-        ) : null}
+        {/* Stories row sits flush under the top bar — no rounded overlap
+            sleight (the gradient hero needed that to feel like a curve into
+            the body; with the flat X-style top bar a hairline divider does
+            the same job for free, and the rounded mask was clipping the
+            first story's avatar). */}
+        {!feedIsEmpty ? <StoriesRow /> : null}
       </Animated.View>
 
       {/* Full-screen content — each branch handles its own paddingTop */}

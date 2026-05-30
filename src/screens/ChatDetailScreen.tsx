@@ -1253,7 +1253,11 @@ export default function ChatDetailScreen() {
             const mine = item.senderUid === user.uid;
             const isDeleted = !!item.deletedAt;
             const isEdited = !!item.editedAt;
-            const msgReactions = reactions[item.id] ?? {};
+            // Hide reactions on soft-deleted messages — the reactions doc
+            // isn't cleaned up server-side, but showing emojis under "Изтрито
+            // съобщение" is confusing and leaks that someone reacted before
+            // the delete.
+            const msgReactions = isDeleted ? {} : reactions[item.id] ?? {};
             const reactionCounts: Record<string, number> = {};
             for (const code of Object.values(msgReactions)) {
               reactionCounts[code] = (reactionCounts[code] ?? 0) + 1;

@@ -45,67 +45,82 @@ import * as Haptics from 'expo-haptics';
 
 function feedStyles(colors: AppColors) {
   return StyleSheet.create({
-    // Outer wrapper — Instagram-style, no radius, no shadow, full-width
+    // Outer wrapper — X (Twitter) style two-column layout. The avatar lives
+    // in its own left column (avatarCol) and everything else (header line,
+    // caption, photo, action bar, comments) renders inside the right column
+    // (contentCol). A single hairline divides one post from the next.
     postWrap: {
       backgroundColor: colors.card,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.border,
+      flexDirection: 'row',
+      paddingHorizontal: 14,
+      paddingTop: 12,
+      paddingBottom: 4,
+      gap: 12,
     },
-    // ── Header ──
+    avatarCol: {
+      width: 40,
+      alignItems: 'center',
+    },
+    contentCol: {
+      flex: 1,
+      minWidth: 0, // prevents flexbox overflow on long words / URLs
+    },
+    // ── Header (one tight line: name · time · more) ──
     postHeader: {
-      paddingHorizontal: 12,
-      paddingVertical: 8,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 10,
+      gap: 4,
+      marginBottom: 2,
     },
     avatar: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
+      width: 40,
+      height: 40,
+      borderRadius: 20,
       backgroundColor: colors.primary,
       alignItems: 'center',
       justifyContent: 'center',
       overflow: 'hidden',
     },
-    avatarImg: { width: 32, height: 32 },
-    avatarText: { color: colors.white, fontFamily: 'Nunito_700Bold', fontSize: 13 },
-    headerMeta: { flex: 1 },
-    headerName: { fontWeight: '700', color: colors.text, fontSize: 14 },
-    headerSub: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
-    // ── No-photo fallback banner ──
-    noBanner: {
-      width: '100%',
-      height: 160,
-      backgroundColor: colors.primarySurface,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    noBannerEmoji: { fontSize: 52, opacity: 0.35 },
-    noBannerSpecies: { ...typography.h3, color: colors.primary, marginTop: 8 },
-    // ── Action bar ──
+    avatarImg: { width: 40, height: 40 },
+    avatarText: { color: colors.white, fontFamily: 'Nunito_700Bold', fontSize: 15 },
+    headerName: { fontWeight: '700', color: colors.text, fontSize: 15 },
+    headerSep: { color: colors.textMuted, fontSize: 14 },
+    headerTime: { color: colors.textMuted, fontSize: 14 },
+    // No-photo banner removed — text-only posts in the X layout don't get
+    // a fish-illustration placeholder; the species line above is the
+    // content.
+    // ── Action bar — X style: a single row of icon + count cells spread
+    // across the content column width. Each cell is a touch target with the
+    // icon on the left and the count beside it. No bookmark on the far
+    // right (kept inline as the last cell). marginTop reserves a bit of
+    // breathing room from the photo / caption above. */
     actionBar: {
-      paddingHorizontal: 12,
-      paddingVertical: 8,
       flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: 8,
+      paddingRight: 12,
     },
-    actionGroup: {
+    actionCell: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 16,
+      gap: 4,
+      paddingVertical: 4,
+      paddingRight: 6,
+    },
+    actionCount: {
+      fontSize: 13,
+      color: colors.textMuted,
+      fontVariant: ['tabular-nums'],
     },
     // ── Below action bar ──
-    metaWrap: { paddingHorizontal: 12 },
-    likeCountText: { fontWeight: '700', color: colors.text, fontSize: 13 },
-    captionWrap: { marginTop: 2 },
-    captionName: { fontWeight: '700', color: colors.text, fontSize: 13 },
-    captionText: { color: colors.text, fontSize: 13 },
-    viewCommentsBtn: { marginTop: 4 },
-    viewCommentsText: { color: colors.textMuted, fontSize: 13 },
-    timestamp: { color: colors.textMuted, fontSize: 11, marginTop: 4, marginBottom: 8 },
-    loc: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
-    locText: { color: colors.primary, fontWeight: '600', fontSize: 11 },
+    metaWrap: { marginTop: 4 },
+    // Kept only the styles still consumed by the active render paths. The
+    // old Instagram-style caption / location pill / repeated-timestamp
+    // styles were removed when the body restructured to text-first.
+    captionText: { color: colors.text, fontSize: 15, lineHeight: 20 },
     // ── Comments (inline) ──
     commentsWrap: { paddingHorizontal: 12, paddingBottom: 4 },
     commentRow: { marginBottom: 6 },
@@ -177,6 +192,12 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
   const { colors, mode } = useTheme();
   const styles = useMemo(() => feedStyles(colors), [colors]);
   const { width: screenWidth } = useWindowDimensions();
+  // Width of the right content column once the avatar (40), gap (12), and
+  // wrapper horizontal padding (14 each side) are deducted. The photo
+  // carousel pages this column width instead of the full screen so the
+  // photo sits inside the X-style two-column layout rather than bleeding
+  // across the avatar gutter.
+  const contentWidth = Math.max(0, screenWidth - 14 - 40 - 12 - 14);
   const [commentsOpen, setCommentsOpen] = useState(false);
   // Index into the combined carouselPhotos list when the viewer is open;
   // null means closed. Tracking the index (not the URI) lets the ImageViewer
@@ -363,62 +384,124 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
     item.released ? 'пуснат' : null,
   ].filter(Boolean).join(' · ');
 
-  const photoHeight = Math.round(screenWidth * (5 / 4));
+  // Photo height tracks the content column width but is capped at 360px so
+  // tall portrait fish photos don't dominate the feed (X never lets media
+  // exceed roughly this height — the post should still feel skimmable, and
+  // the user can tap to see the full photo in the viewer). Aspect ratio is
+  // ~4:3 landscape-leaning since 5:4 portrait pushed a single post past
+  // 400px of vertical space which is the opposite of the X feed feel.
+  const photoHeight = Math.min(360, Math.round(contentWidth * (3 / 4)));
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={styles.postWrap}>
 
-        {/* ── Post Header ── */}
-        <View style={styles.postHeader}>
-          {/* Avatar + author info — pressable */}
-          <Pressable
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}
-            onPress={() => onPressAuthor(item.ownerUid, displayName)}
-          >
-            <View style={{ position: 'relative' }}>
-              {isRecent && (
-                <View style={{
-                  position: 'absolute', top: -2.5, left: -2.5,
-                  width: 37, height: 37, borderRadius: 18.5,
-                  borderWidth: 2.5, borderColor: colors.primary,
-                }} />
+        {/* ── Avatar column (X-style) — sits to the left of everything,
+            tapping it opens the author's profile. The "recent" ring (a
+            primary-coloured halo for catches < 24h old) wraps the avatar
+            so it still reads at a glance. */}
+        <Pressable
+          onPress={() => onPressAuthor(item.ownerUid, displayName)}
+          style={styles.avatarCol}
+          hitSlop={4}
+          accessibilityRole="button"
+          accessibilityLabel={`Профил на ${displayName}`}
+        >
+          <View style={{ position: 'relative' }}>
+            {isRecent && (
+              <View style={{
+                position: 'absolute', top: -3, left: -3,
+                width: 46, height: 46, borderRadius: 23,
+                borderWidth: 2.5, borderColor: colors.primary,
+              }} />
+            )}
+            <View style={styles.avatar}>
+              {avatarUrl ? (
+                <Image
+                  source={{ uri: getImageVariant(avatarUrl, ImageSize.avatar) ?? avatarUrl }}
+                  style={styles.avatarImg}
+                  contentFit="cover"
+                  cachePolicy="memory-disk"
+                  transition={200}
+                  recyclingKey={avatarUrl}
+                />
+              ) : (
+                <Text style={styles.avatarText}>{initials}</Text>
               )}
-              <View style={styles.avatar}>
-                {avatarUrl ? (
-                  <Image
-                    source={{ uri: getImageVariant(avatarUrl, ImageSize.avatar) ?? avatarUrl }}
-                    style={styles.avatarImg}
-                    contentFit="cover"
-                    cachePolicy="memory-disk"
-                    transition={200}
-                    recyclingKey={avatarUrl}
-                  />
-                ) : (
-                  <Text style={styles.avatarText}>{initials}</Text>
-                )}
-              </View>
             </View>
-            <View style={styles.headerMeta}>
+          </View>
+        </Pressable>
+
+        {/* ── Right content column — header line, caption, photo, action
+            bar, comments. Everything previously below the old header now
+            renders here. */}
+        <View style={styles.contentCol}>
+
+          {/* X-style header — one tight line of text. Bold display name in
+              normal text colour, then muted "· Локация · 2ч" suffix.
+              Location lives next to the time so the header carries all the
+              post metadata. Tap target is the whole line; the ⋯ menu sits
+              at the far right with its own hit area. */}
+          <View style={styles.postHeader}>
+            <Pressable
+              onPress={() => onPressAuthor(item.ownerUid, displayName)}
+              style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 4, minWidth: 0 }}
+              hitSlop={4}
+            >
               <Text style={styles.headerName} numberOfLines={1}>{displayName}</Text>
-              <Text style={styles.headerSub} numberOfLines={1}>
-                {[
-                  item.location?.name ?? null,
-                  formatTimeAgo(item.date),
-                ].filter(Boolean).join(' · ')}
-              </Text>
-            </View>
-          </Pressable>
-          {/* More (···) button */}
-          <Pressable
-            onPress={openMoreMenu}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Опции"
-          >
-            <Ionicons name="ellipsis-horizontal" size={22} color={colors.textMuted} />
-          </Pressable>
-        </View>
+              <Text style={styles.headerSep}>·</Text>
+              {item.location?.name ? (
+                <>
+                  <Text style={styles.headerTime} numberOfLines={1}>{item.location.name}</Text>
+                  <Text style={styles.headerSep}>·</Text>
+                </>
+              ) : null}
+              <Text style={styles.headerTime} numberOfLines={1}>{formatTimeAgo(item.date)}</Text>
+            </Pressable>
+            <Pressable
+              onPress={openMoreMenu}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Опции"
+            >
+              <Ionicons name="ellipsis-horizontal" size={16} color={colors.textMuted} />
+            </Pressable>
+          </View>
+
+          {/* Tweet-text body — X renders post text in default body weight,
+              no colour accents. If the user wrote notes, those are the
+              tweet text. Otherwise we fall back to a natural-language
+              species summary ("Щука · 3 кг · 60 см"). Either way it's
+              normal text weight; no bold colored "headline" treatment.
+              Hashtags and @mentions are tappable inside RichText. */}
+          {item.notes ? (
+            <RichText
+              text={item.notes}
+              style={{ color: colors.text, fontSize: 15, lineHeight: 20, marginTop: 2 }}
+              linkStyle={{ color: colors.primary }}
+              numberOfLines={commentsOpen ? undefined : 6}
+              onPressHashtag={onPressHashtag}
+              onPressMention={onPressMention}
+            />
+          ) : captionBody ? (
+            <Text
+              style={{ color: colors.text, fontSize: 15, lineHeight: 20, marginTop: 2 }}
+              numberOfLines={2}
+            >
+              {captionBody}
+            </Text>
+          ) : null}
+
+          {/* When BOTH notes and species info exist, surface the species
+              summary as a small secondary line under the notes — same
+              treatment as a Twitter "context" label (e.g. "Replying to
+              @x"). Hidden when notes are absent (the captionBody is
+              already the tweet text in that case). */}
+          {item.notes && captionBody ? (
+            <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 4 }} numberOfLines={1}>
+              {captionBody}
+            </Text>
+          ) : null}
 
         {/* ── Photo area ── */}
         {/* Multi-photo carousel: wraps the existing primary-photo block as page
@@ -427,19 +510,23 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
             the full-screen viewer. When there are no extras, scrollEnabled=false
             and the dots row hides — visually identical to the single-photo case. */}
         {item.photoUri && carouselPhotos.length > 1 ? (
-          <View>
+          // X-style media block: rounded 18px corners, clipped, no edge-to-edge
+          // bleed. The carousel pages the content column width (not the screen
+          // width) so the photo sits inside the right column. marginTop pads
+          // off the caption above.
+          <View style={{ marginTop: 8, borderRadius: 18, overflow: 'hidden' }}>
             <ScrollView
               horizontal
               pagingEnabled
               showsHorizontalScrollIndicator={false}
               scrollEventThrottle={160}
               onMomentumScrollEnd={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
-                const idx = Math.round(e.nativeEvent.contentOffset.x / screenWidth);
+                const idx = Math.round(e.nativeEvent.contentOffset.x / Math.max(1, contentWidth));
                 if (idx !== currentPhotoIdx) setCurrentPhotoIdx(idx);
               }}
             >
               {/* Page 0 — primary photo with double-tap-to-like overlay. */}
-              <View style={{ width: screenWidth }}>
+              <View style={{ width: contentWidth }}>
                 <Pressable onPress={handlePhotoPress}>
                   <View style={{ width: '100%', height: photoHeight, backgroundColor: colors.surfaceAlt }}>
                     <Image
@@ -484,7 +571,7 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                 <Pressable
                   key={`extra-${i}`}
                   onPress={() => setViewerIndex(i + 1)}
-                  style={{ width: screenWidth }}
+                  style={{ width: contentWidth }}
                 >
                   <View style={{ width: '100%', height: photoHeight, backgroundColor: colors.surfaceAlt }}>
                     <Image
@@ -546,7 +633,10 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
             </View>
           </View>
         ) : item.photoUri ? (
-          <Pressable onPress={handlePhotoPress}>
+          // Single-photo case — same X-style rounded media block as the
+          // carousel branch. marginTop pads off the caption above; overflow
+          // hidden clips the image content to the 18px corners.
+          <Pressable onPress={handlePhotoPress} style={{ marginTop: 8, borderRadius: 18, overflow: 'hidden' }}>
             <View style={{ width: '100%', height: photoHeight, backgroundColor: colors.surfaceAlt }}>
               {imageError || photoLooksLocal ? (
                 // Fallback for unreachable URIs (failed upload, expired URL, etc.).
@@ -679,11 +769,10 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
             </View>
           </Pressable>
         ) : (
-          /* No-photo fallback banner */
-          <View style={styles.noBanner}>
-            <Text style={styles.noBannerEmoji}>🐟</Text>
-            <Text style={styles.noBannerSpecies}>{item.speciesName}</Text>
-          </View>
+          /* X-style "text-only" post: no photo, no banner. The species +
+              weight line above already carries the content. Nothing to
+              render here — keeps text-only posts compact. */
+          null
         )}
 
         {/* Lazy-mount: ImageViewer constructs 5 Animated.Values + a PanResponder
@@ -721,175 +810,145 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
               onAutoClose={closePicker}
             />
 
-            {/* ── Action bar ── */}
+            {/* ── Action bar — X (Twitter) style ──
+                Five cells spread across the content column: reply, repost,
+                like, send-to-friend, bookmark/share. Each shows an outline
+                icon with its count inline (count omitted when zero). The
+                icons are smaller (18px) than the old Instagram-style 24-26px
+                so they read as text-like rather than dominant UI. */}
             <View style={styles.actionBar}>
-              <View style={styles.actionGroup}>
-                {/* Like */}
-                <Pressable
-                  onPress={() => {
-                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                    animateReaction();
-                    if (social.myReaction) social.onPickReaction(social.myReaction);
-                    else openPicker();
-                  }}
-                  onLongPress={openPicker}
-                  disabled={social.likeBusy}
-                  hitSlop={8}
-                  delayLongPress={300}
-                  android_ripple={{ color: colors.primary + '33', borderless: true, radius: 22 }}
-                  style={social.likeBusy ? { opacity: 0.5 } : undefined}
-                  accessibilityRole="button"
-                  accessibilityLabel={social.myReaction ? 'Промени реакцията' : 'Хареса'}
-                  accessibilityState={{ selected: !!social.myReaction }}
-                >
-                  <Animated.View style={{ transform: [{ scale: reactionScale }] }}>
-                    {social.myReaction ? (
-                      <Text style={{ fontSize: 26 }}>{REACTIONS[social.myReaction].emoji}</Text>
-                    ) : (
-                      <Ionicons name="heart-outline" size={26} color={colors.text} />
-                    )}
-                  </Animated.View>
-                </Pressable>
-                {/* Comment */}
-                <Pressable
-                  onPress={() => setCommentsOpen((v) => !v)}
-                  hitSlop={8}
-                  android_ripple={{ color: colors.primary + '33', borderless: true, radius: 22 }}
-                  accessibilityRole="button"
-                  accessibilityLabel="Коментари"
-                >
-                  <Ionicons name="chatbubble-outline" size={24} color={colors.text} />
-                </Pressable>
-                {/* Quote-reshare within the app (new post quoting this one) */}
-                {onReshare ? (
-                  <Pressable
-                    onPress={() => onReshare(item)}
-                    hitSlop={8}
-                    android_ripple={{ color: colors.primary + '33', borderless: true, radius: 22 }}
-                    accessibilityRole="button"
-                    accessibilityLabel="Сподели в лентата"
-                  >
-                    <Ionicons name="repeat-outline" size={26} color={colors.text} />
-                  </Pressable>
+              {/* Comment */}
+              <Pressable
+                onPress={() => setCommentsOpen((v) => !v)}
+                hitSlop={8}
+                android_ripple={{ color: colors.primary + '33', borderless: true, radius: 18 }}
+                accessibilityRole="button"
+                accessibilityLabel="Коментари"
+                style={styles.actionCell}
+              >
+                <Ionicons name="chatbubble-outline" size={18} color={colors.textMuted} />
+                {social.commentCount > 0 ? (
+                  <Text style={styles.actionCount}>{social.commentCount}</Text>
                 ) : null}
-                {/* Send to friend via DM */}
+              </Pressable>
+
+              {/* Quote-reshare within the app (new post quoting this one).
+                  When the host screen doesn't support reshare (rare — most
+                  call sites pass it), the cell is omitted so the row stays
+                  visually balanced. */}
+              {onReshare ? (
                 <Pressable
-                  onPress={() => setShareToFriendOpen(true)}
+                  onPress={() => onReshare(item)}
                   hitSlop={8}
-                  android_ripple={{ color: colors.primary + '33', borderless: true, radius: 22 }}
+                  android_ripple={{ color: colors.primary + '33', borderless: true, radius: 18 }}
                   accessibilityRole="button"
-                  accessibilityLabel="Изпрати на приятел"
+                  accessibilityLabel="Сподели в лентата"
+                  style={styles.actionCell}
                 >
-                  <Ionicons name="send-outline" size={24} color={colors.text} />
+                  <Ionicons name="repeat-outline" size={20} color={colors.textMuted} />
                 </Pressable>
-                {/* Share externally */}
-                <Pressable
-                  onPress={social.onShare}
-                  hitSlop={8}
-                  android_ripple={{ color: colors.primary + '33', borderless: true, radius: 22 }}
-                  accessibilityRole="button"
-                  accessibilityLabel="Сподели външно"
-                >
-                  <Ionicons name="paper-plane-outline" size={24} color={colors.text} />
-                </Pressable>
-              </View>
-              {/* Bookmark — right side */}
+              ) : null}
+
+              {/* Like — taps the current reaction off, long-press opens the
+                  multi-reaction picker. Count is the total likes (heart +
+                  fire + trophy + …). The active reaction emoji replaces the
+                  outline heart when set; X uses a red filled heart, we honour
+                  the user's chosen reaction instead since the app's identity
+                  is multi-reactions. */}
+              <Pressable
+                onPress={() => {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  animateReaction();
+                  if (social.myReaction) social.onPickReaction(social.myReaction);
+                  else openPicker();
+                }}
+                onLongPress={openPicker}
+                disabled={social.likeBusy}
+                hitSlop={8}
+                delayLongPress={300}
+                android_ripple={{ color: colors.primary + '33', borderless: true, radius: 18 }}
+                accessibilityRole="button"
+                accessibilityLabel={social.myReaction ? 'Промени реакцията' : 'Хареса'}
+                accessibilityState={{ selected: !!social.myReaction }}
+                style={[styles.actionCell, social.likeBusy && { opacity: 0.5 }]}
+              >
+                <Animated.View style={{ transform: [{ scale: reactionScale }] }}>
+                  {social.myReaction ? (
+                    <Text style={{ fontSize: 18 }}>{REACTIONS[social.myReaction].emoji}</Text>
+                  ) : (
+                    <Ionicons name="heart-outline" size={18} color={colors.textMuted} />
+                  )}
+                </Animated.View>
+                {social.likeCount > 0 ? (
+                  <Text
+                    style={[
+                      styles.actionCount,
+                      social.myReaction ? { color: colors.text, fontWeight: '600' } : null,
+                    ]}
+                  >
+                    {social.likeCount}
+                  </Text>
+                ) : null}
+              </Pressable>
+
+              {/* Send to friend via DM */}
+              <Pressable
+                onPress={() => setShareToFriendOpen(true)}
+                hitSlop={8}
+                android_ripple={{ color: colors.primary + '33', borderless: true, radius: 18 }}
+                accessibilityRole="button"
+                accessibilityLabel="Изпрати на приятел"
+                style={styles.actionCell}
+              >
+                <Ionicons name="paper-plane-outline" size={18} color={colors.textMuted} />
+              </Pressable>
+
+              {/* Bookmark — last cell; toggles saved state. Replaces the
+                  old hard-right alignment so the row distributes evenly. */}
               <Pressable
                 onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); social.onToggleSave(); }}
                 disabled={social.saveBusy}
                 hitSlop={8}
-                style={{ marginLeft: 'auto' }}
                 accessibilityRole="button"
                 accessibilityLabel={social.saved ? 'Премахни от запазени' : 'Запази'}
                 accessibilityState={{ selected: social.saved }}
+                style={styles.actionCell}
               >
                 {social.saveBusy ? (
                   <ActivityIndicator size="small" color={colors.primary} />
                 ) : (
-                  <Ionicons name={social.saved ? 'bookmark' : 'bookmark-outline'} size={24} color={colors.text} />
+                  <Ionicons
+                    name={social.saved ? 'bookmark' : 'bookmark-outline'}
+                    size={18}
+                    color={social.saved ? colors.primary : colors.textMuted}
+                  />
                 )}
               </Pressable>
             </View>
 
-            {/* ── Below action bar ── */}
+            {/* ── Below action bar ──
+                X-style trims the post foot to just notes (when present) and
+                the "view comments" affordance. The species line, like
+                count, and location chip have already rendered above the
+                photo (text-first layout), so they don't reappear here. */}
             <View style={styles.metaWrap}>
-              {/* Like count */}
-              {social.likeCount > 0 && (
-                <Pressable onPress={social.openLikers} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  {social.reactionSummary.slice(0, 3).map((r) => (
-                    <Text key={r.type} style={{ fontSize: 13 }}>{r.emoji}</Text>
-                  ))}
-                  <Text style={styles.likeCountText}>{social.likeCount} {social.likeCount === 1 ? 'харесване' : 'харесвания'}</Text>
-                </Pressable>
-              )}
-
-              {/* Caption: bold username + catch info */}
-              <Text style={[styles.captionWrap]} numberOfLines={commentsOpen ? undefined : 3}>
-                <Text style={styles.captionName}>{displayName} </Text>
-                <Text style={styles.captionText}>{captionBody}</Text>
-              </Text>
-
-              {/* Notes — rendered separately so #hashtags and @mentions are tappable */}
-              {item.notes ? (
-                <RichText
-                  text={item.notes}
-                  style={[styles.captionText, { marginTop: 4 }]}
-                  linkStyle={{ color: colors.primary, fontWeight: '600' }}
-                  numberOfLines={commentsOpen ? undefined : 3}
-                  onPressHashtag={onPressHashtag}
-                  onPressMention={onPressMention}
-                />
-              ) : null}
-              {/* "Виж превод" — only when notes look foreign-language. Opens
-                  the system translation flow (Google Translate app → Apple
-                  Translate → web fallback). See utils/captionLanguage.ts. */}
+              {/* Notes already rendered above the photo (X text-first
+                  layout). Below the photo only carries auxiliary actions:
+                  translation prompt, view-all-comments link. */}
               {item.notes && looksNonBulgarian(item.notes) ? (
-                <Pressable onPress={() => void openTranslation(item.notes!)} hitSlop={6} style={{ marginTop: 4 }}>
-                  <Text style={{ ...typography.caption, color: colors.primary, fontWeight: '600' }}>
+                <Pressable onPress={() => void openTranslation(item.notes!)} hitSlop={6} style={{ marginTop: 2 }}>
+                  <Text style={{ fontSize: 13, color: colors.primary, fontWeight: '600' }}>
                     Виж превод
                   </Text>
                 </Pressable>
               ) : null}
 
-              {/* Location pill (inline, compact) */}
-              {(item.location?.name || (item.location?.latitude != null && item.location.longitude != null)) ? (
-                <Pressable
-                  style={styles.loc}
-                  hitSlop={8}
-                  onPress={() => {
-                    const coords = `${item.location!.latitude?.toFixed(6) ?? ''}, ${item.location!.longitude?.toFixed(6) ?? ''}`;
-                    Clipboard.setString(item.location!.name ?? coords);
-                    // Cross-platform confirmation. The previous Android-only
-                    // ToastAndroid call left iOS users with no feedback that
-                    // the copy actually happened.
-                    if (Platform.OS === 'android') {
-                      ToastAndroid.show('Копирано', ToastAndroid.SHORT);
-                    } else {
-                      Toast.show({ type: 'success', text1: 'Копирано', visibilityTime: 1200 });
-                    }
-                  }}
-                >
-                  <Ionicons name="location" size={12} color={colors.primary} />
-                  <Text style={styles.locText} numberOfLines={1}>
-                    {item.location!.name
-                      ? item.location!.name
-                      : `${item.location!.latitude!.toFixed(4)}, ${item.location!.longitude!.toFixed(4)}`}
-                  </Text>
-                  {/* Trailing copy icon signals what tapping does — without
-                      this the pill looked like a "view location" action but
-                      actually copies to clipboard, which surprised users. */}
-                  <Ionicons name="copy-outline" size={11} color={colors.textMuted} style={{ marginLeft: 2 }} />
-                </Pressable>
-              ) : null}
-
               {/* "View all comments" uses the denormalized commentCount —
                   it's accurate without us subscribing to the comments
-                  subcollection on every visible card. The actual comment
-                  list only loads after the user taps to expand (commentsOpen
-                  toggles the subscription in useFeedPostSocial). */}
+                  subcollection on every visible card. */}
               {social.commentCount > 0 && !commentsOpen && (
-                <Pressable style={styles.viewCommentsBtn} onPress={() => setCommentsOpen(true)}>
-                  <Text style={styles.viewCommentsText}>
+                <Pressable onPress={() => setCommentsOpen(true)} style={{ marginTop: 4 }}>
+                  <Text style={{ fontSize: 13, color: colors.textMuted }}>
                     Виж всички {social.commentCount} {social.commentCount === 1 ? 'коментар' : 'коментара'}
                   </Text>
                 </Pressable>
@@ -1025,10 +1084,9 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
               </View>
             )}
 
-            {/* ── Timestamp ── */}
-            <View style={{ paddingHorizontal: 12 }}>
-              <Text style={styles.timestamp}>{formatTimeAgo(item.date)}</Text>
-            </View>
+            {/* Timestamp removed — already shown next to the name in the
+                header (X-style). Repeating it under every post was visual
+                noise once the header carries the time. */}
 
             {/* ── Likers modal ── Lazy-mounted: the Modal + its FlatList + Animated.View
                 + PanResponder reconcile on every FeedPost render when always-mounted,
@@ -1076,43 +1134,12 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
             )}
           </>
         ) : (
-          /* Social disabled: just show caption below the photo */
-          <View style={styles.metaWrap}>
-            <Text style={[styles.captionWrap]} numberOfLines={3}>
-              <Text style={styles.captionName}>{displayName} </Text>
-              <Text style={styles.captionText}>{captionBody}</Text>
-            </Text>
-            {item.notes ? (
-              <RichText
-                text={item.notes}
-                style={[styles.captionText, { marginTop: 4 }]}
-                linkStyle={{ color: colors.primary, fontWeight: '600' }}
-                numberOfLines={3}
-                onPressHashtag={onPressHashtag}
-                onPressMention={onPressMention}
-              />
-            ) : null}
-            {(item.location?.name || (item.location?.latitude != null && item.location.longitude != null)) ? (
-              <Pressable
-                style={styles.loc}
-                hitSlop={8}
-                onPress={() => {
-                  const coords = `${item.location!.latitude?.toFixed(6) ?? ''}, ${item.location!.longitude?.toFixed(6) ?? ''}`;
-                  Clipboard.setString(item.location!.name ?? coords);
-                  if (Platform.OS === 'android') ToastAndroid.show('Копирано', ToastAndroid.SHORT);
-                }}
-              >
-                <Ionicons name="location" size={12} color={colors.primary} />
-                <Text style={styles.locText} numberOfLines={1}>
-                  {item.location!.name
-                    ? item.location!.name
-                    : `${item.location!.latitude!.toFixed(4)}, ${item.location!.longitude!.toFixed(4)}`}
-                </Text>
-              </Pressable>
-            ) : null}
-            <Text style={styles.timestamp}>{formatTimeAgo(item.date)}</Text>
-          </View>
+          /* Social disabled (preview / no-auth contexts). Tweet body
+              (notes + caption + location) is rendered above the photo in
+              the text-first layout, so nothing renders here. */
+          null
         )}
+        </View>{/* /contentCol */}
       </View>
     </KeyboardAvoidingView>
   );

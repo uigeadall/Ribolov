@@ -160,6 +160,11 @@ export type Post = {
   createdAt?: unknown;
   likeCount?: number;
   commentCount?: number;
+  /** Per-reaction-type tally maintained atomically by togglePostReaction so
+      PostCard can render the emoji breakdown without the per-card
+      fetchPostReactionSummary call (which read up to 50 docs per visible
+      post). Optional because legacy posts predate this field. */
+  reactionCounts?: Partial<Record<'heart' | 'fire' | 'trophy' | 'fish' | 'wow', number>>;
   isPublic?: boolean;
   /** Set when this post is a quote-reshare of another feed item. */
   reshareOf?: ResharedRef;

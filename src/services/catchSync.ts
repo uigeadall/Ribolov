@@ -31,6 +31,12 @@ export type CloudCatch = Catch & {
   isPublic?: boolean;
   syncedAt?: unknown;
   likeCount?: number;
+  /** Per-reaction-type tally maintained atomically by toggleCatchReaction.
+      Lets FeedPost render the emoji breakdown without the per-card
+      `fetchReactionSummary` round-trip (which read up to 50 docs per card).
+      Optional because legacy catches created before this field existed
+      don't have it — callers fall back to fetchReactionSummary in that case. */
+  reactionCounts?: Partial<Record<'heart' | 'fire' | 'trophy' | 'fish' | 'wow', number>>;
 };
 
 export type FeedItem = CloudCatch;
@@ -187,9 +193,14 @@ export async function pushCatch(c: Catch, ownerUid: string, ownerName: string, i
     const publicRef = doc(fb.db, 'publicCatches', c.id);
     await runTransaction(fb.db, async (txn) => {
       const snap = await txn.get(publicRef);
+      // Seed both `likeCount` and `reactionCounts` on first write so the feed
+      // can render the inline emoji breakdown with zero Firestore reads.
+      // Without the empty-map seed, every brand-new catch falls back to the
+      // legacy fetchReactionSummary path (50-doc read per card) until
+      // someone reacts.
       const publicPayload = snap.exists()
         ? payload
-        : { ...payload, likeCount: 0 };
+        : { ...payload, likeCount: 0, reactionCounts: {} };
       txn.set(publicRef, publicPayload, { merge: true });
     });
   } else {
