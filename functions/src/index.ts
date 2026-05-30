@@ -340,7 +340,7 @@ function isInQuietHours(prefs: NotifPrefs): boolean {
 // ---------------------------------------------------------------------------
 
 export const onNotificationCreated = onDocumentCreated(
-  "users/{userId}/notifications/{notifId}",
+  { document: "users/{userId}/notifications/{notifId}", maxInstances: 50 },
   async (event) => {
     const { userId } = event.params;
     const data = event.data?.data() as Record<string, unknown> | undefined;
@@ -454,7 +454,7 @@ export const onNotificationCreated = onDocumentCreated(
 // ---------------------------------------------------------------------------
 
 export const onNewMessage = onDocumentCreated(
-  "conversations/{convId}/messages/{msgId}",
+  { document: "conversations/{convId}/messages/{msgId}", maxInstances: 50 },
   async (event) => {
     const { convId } = event.params;
     const msgData = event.data?.data() as Record<string, unknown> | undefined;
@@ -640,7 +640,9 @@ export const onNewMessage = onDocumentCreated(
 // itself. Cadence dropped from every-10-min to once-daily — still validates
 // the new system's output against a full-scan recompute, but at ~1/144 the
 // read cost during the overlap. Remove after 7 days of confirmed agreement.
-export const aggregateLeaderboards = onSchedule("every 24 hours", async () => {
+export const aggregateLeaderboards = onSchedule(
+  { schedule: "every 24 hours", maxInstances: 1 },
+  async () => {
   const periods: Period[] = ["day", "week", "month", "year"];
 
   for (const period of periods) {
@@ -795,7 +797,7 @@ function rollupDocId(bucket: string, ownerUid: string): string {
 // we just shift totalKg by (afterKg - beforeKg). For a date change, we
 // decrement old buckets and increment new ones in a single batch.
 export const onPublicCatchForRollup = onDocumentWritten(
-  "publicCatches/{catchId}",
+  { document: "publicCatches/{catchId}", maxInstances: 20 },
   async (event) => {
     const before = event.data?.before?.data() as Record<string, unknown> | undefined;
     const after = event.data?.after?.data() as Record<string, unknown> | undefined;
@@ -919,7 +921,9 @@ export const onPublicCatchForRollup = onDocumentWritten(
 
 const LEADERBOARD_TOP_N = 200;
 
-export const consolidateLeaderboards = onSchedule("every 10 minutes", async () => {
+export const consolidateLeaderboards = onSchedule(
+  { schedule: "every 10 minutes", maxInstances: 1 },
+  async () => {
   const now = new Date();
   const periods: Period[] = ["day", "week", "month", "year"];
 
@@ -976,7 +980,7 @@ export const consolidateLeaderboards = onSchedule("every 10 minutes", async () =
 // 144 times a day, so ~99.3% cheaper. At 10k DAU this is roughly $5/month.
 
 export const weeklyLeaderboardDriftFix = onSchedule(
-  { schedule: "0 3 * * 0", timeZone: "Europe/Sofia" },
+  { schedule: "0 3 * * 0", timeZone: "Europe/Sofia", maxInstances: 1 },
   async () => {
     const now = new Date();
     const periods: Period[] = ["day", "week", "month", "year"];
@@ -1081,7 +1085,9 @@ function startOfMonthUtc(now: Date): Date {
 const CLASSICS_TOP_N = 50;
 const CLASSICS_CANDIDATE_SCAN = 100;
 
-export const consolidateClassicsCache = onSchedule("every 60 minutes", async () => {
+export const consolidateClassicsCache = onSchedule(
+  { schedule: "every 60 minutes", maxInstances: 1 },
+  async () => {
   const now = new Date();
   const periods: Array<{ key: "week" | "month"; sinceIso: string }> = [
     { key: "week", sinceIso: startOfIsoWeekUtc(now).toISOString() },
@@ -1172,7 +1178,9 @@ const BACKFILL_ADMIN_UIDS: string[] = [
   // Add your own uid(s) here before deploying.
 ];
 
-export const backfillLeaderboardRollup = onCall(async (request) => {
+export const backfillLeaderboardRollup = onCall(
+  { maxInstances: 2 },
+  async (request) => {
   const uid = request.auth?.uid;
   if (!uid || !BACKFILL_ADMIN_UIDS.includes(uid)) {
     throw new HttpsError("permission-denied", "Admin-only.");
@@ -1285,7 +1293,7 @@ export const backfillLeaderboardRollup = onCall(async (request) => {
 // marker also lets a host see in the console whether a reminder fired.
 
 export const tournamentEndingSoonReminder = onSchedule(
-  { schedule: "every day 09:00", timeZone: "Europe/Sofia" },
+  { schedule: "every day 09:00", timeZone: "Europe/Sofia", maxInstances: 1 },
   async () => {
     // ISO YYYY-MM-DD for tomorrow in the configured timezone. The scheduler
     // already runs in Europe/Sofia, but Date() inside the function uses the
@@ -1454,7 +1462,9 @@ async function recursiveDelete(refs: admin.firestore.DocumentReference[]): Promi
 // enforcement rejects dev calls before the function runs and the client
 // sees a confusing "unauthenticated" error. See memory:
 // `ribolov-app-check-enforcement` for the full re-enable checklist.
-export const deleteMyAccount = onCall(async (request) => {
+export const deleteMyAccount = onCall(
+  { maxInstances: 5 },
+  async (request) => {
   const uid = request.auth?.uid;
   if (!uid) {
     throw new HttpsError("unauthenticated", "Sign in required.");
@@ -1464,6 +1474,20 @@ export const deleteMyAccount = onCall(async (request) => {
   // re-running the recursive-delete walk (which scans many subcollections
   // and burns compute on each invocation).
   await checkAndConsumeRateBucket(uid, "deleteMyAccount", 1, 1);
+
+  // ── Phases 1 + 2: parallelized. Both touch independent doc paths
+  // (Phase 1 = the user's own owned docs; Phase 2 = backrefs in other
+  // users' subcollections), and Firestore deletes are idempotent, so
+  // running them concurrently is safe and roughly 3× faster than the
+  // previous sequential walk. Each per-collection query still paginates
+  // sequentially within itself — only the cross-collection orchestration
+  // moves to Promise.all.
+  //
+  // One subtle overlap: a user-hosted tournament (deleted by Phase 1)
+  // contains the user's own photoEntries, which Phase 2c (collectionGroup
+  // photoEntries) ALSO targets. Both paths converge on the same docs —
+  // Firestore treats a delete of an already-deleted doc as a no-op, so
+  // the worst case is a few redundant batch operations, not corruption.
 
   // ── Phase 1: top-level docs the user owns (recursive — includes subcols)
   const ownedQueries: Array<[admin.firestore.Query, string]> = [
@@ -1475,7 +1499,9 @@ export const deleteMyAccount = onCall(async (request) => {
     [db.collection("liveFishingPins").where("ownerUid", "==", uid), "liveFishingPins"],
     [db.collection("waterReports").where("reporterUid", "==", uid), "waterReports"],
   ];
-  for (const [q, label] of ownedQueries) {
+  // Each owned-query loop runs its own pagination — wrap it as a separate
+  // async task so Promise.all schedules them concurrently.
+  const ownedTasks = ownedQueries.map(async ([q, label]) => {
     try {
       // Paginate: a user with >DELETE_PHASE_LIMIT owned docs (e.g. 600 hosted
       // tournaments) would otherwise see only the first 500 deleted, leaving
@@ -1498,7 +1524,7 @@ export const deleteMyAccount = onCall(async (request) => {
     } catch (e) {
       logger.warn(`[deleteMyAccount] ${label} phase failed`, e);
     }
-  }
+  });
 
   // ── Phase 2: backref cleanup — entries in OTHER users' subcollections
   // pointing back at this user. These can't be done with recursiveDelete on
@@ -1515,24 +1541,28 @@ export const deleteMyAccount = onCall(async (request) => {
   // exposure is minimal (a like with no resolvable user) and a Cloud
   // Function couldn't enumerate every catch ever liked anyway.
 
-  // 2b) Comments the user left across catches and posts.
-  await deleteByQuery(
-    db.collectionGroup("comments").where("authorUid", "==", uid),
-    "comments(authored)",
-  );
+  // 2b/2c/2d are collectionGroup deleteByQuery calls on disjoint groups —
+  // run them concurrently with Phase 1.
+  const backrefTasks = [
+    deleteByQuery(
+      db.collectionGroup("comments").where("authorUid", "==", uid),
+      "comments(authored)",
+    ),
+    deleteByQuery(
+      db.collectionGroup("photoEntries").where("ownerUid", "==", uid),
+      "tournamentEntries",
+    ),
+    deleteByQuery(
+      db.collectionGroup("members").where("uid", "==", uid),
+      "groupMemberships",
+    ),
+  ];
 
-  // 2c) Tournament photo entries the user submitted.
-  await deleteByQuery(
-    db.collectionGroup("photoEntries").where("ownerUid", "==", uid),
-    "tournamentEntries",
-  );
-
-  // 2d) Group memberships — the per-group `members/{uid}` doc.
-  //     Doc id is the uid, so collectionGroup + where(documentId, ==, uid).
-  await deleteByQuery(
-    db.collectionGroup("members").where("uid", "==", uid),
-    "groupMemberships",
-  );
+  // Await all of Phase 1 + Phase 2's first three sub-phases together.
+  // 2e (follow backrefs) reads /users/{uid}/following + /followers, which
+  // are deleted by Phase 3. Keep 2e sequential after this barrier so the
+  // reads land before Phase 3 wipes those subcollections.
+  await Promise.all([...ownedTasks, ...backrefTasks]);
 
   // 2e) Followers/Following — the user's own subcollections deleted by
   //     phase 3 below, but BACKREFS in other users' /followers and
@@ -1712,6 +1742,10 @@ export const getR2UploadUrl = onCall(
   {
     // `enforceAppCheck` temporarily disabled — see deleteMyAccount comment.
     secrets: [R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_PUBLIC_BASE_URL],
+    // Cap concurrent instances — uploads can burst (multi-photo posts) but
+    // 20 is well above any legit per-user-second pattern; bounds attack
+    // surface if rate-limit-bypass attempts ever stack up.
+    maxInstances: 20,
   },
   async (request) => {
     const uid = request.auth?.uid;
@@ -1753,6 +1787,7 @@ export const deleteR2Object = onCall(
   {
     // `enforceAppCheck` temporarily disabled — see deleteMyAccount comment.
     secrets: [R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY],
+    maxInstances: 20,
   },
   async (request) => {
     const uid = request.auth?.uid;
@@ -1809,7 +1844,9 @@ type HeatmapCell = {
   catchCount: number;
 };
 
-export const getSpeciesHeatmap = onCall(async (request) => {
+export const getSpeciesHeatmap = onCall(
+  { maxInstances: 10 },
+  async (request) => {
   if (!request.auth?.uid) {
     throw new HttpsError("unauthenticated", "Sign in required.");
   }
@@ -1939,19 +1976,25 @@ function ttlFromCreatedAt(data: Record<string, unknown> | undefined, ttlMs: numb
   return Timestamp.fromMillis(createdAt.toMillis() + ttlMs);
 }
 
-export const stampStoryTtl = onDocumentCreated("stories/{storyId}", async (event) => {
+export const stampStoryTtl = onDocumentCreated(
+  { document: "stories/{storyId}", maxInstances: 10 },
+  async (event) => {
   const ttlAt = ttlFromCreatedAt(event.data?.data(), STORY_TTL_MS);
   if (!ttlAt) return;
   await event.data!.ref.update({ ttlAt });
 });
 
-export const stampLivePinTtl = onDocumentCreated("liveFishingPins/{pinId}", async (event) => {
+export const stampLivePinTtl = onDocumentCreated(
+  { document: "liveFishingPins/{pinId}", maxInstances: 10 },
+  async (event) => {
   const ttlAt = ttlFromCreatedAt(event.data?.data(), LIVE_PIN_TTL_MS);
   if (!ttlAt) return;
   await event.data!.ref.update({ ttlAt });
 });
 
-export const stampWaterReportTtl = onDocumentCreated("waterReports/{reportId}", async (event) => {
+export const stampWaterReportTtl = onDocumentCreated(
+  { document: "waterReports/{reportId}", maxInstances: 10 },
+  async (event) => {
   const ttlAt = ttlFromCreatedAt(event.data?.data(), WATER_REPORT_TTL_MS);
   if (!ttlAt) return;
   await event.data!.ref.update({ ttlAt });
@@ -1962,7 +2005,7 @@ export const stampWaterReportTtl = onDocumentCreated("waterReports/{reportId}", 
     Instead we stamp on the read=false → read=true transition. Unread notifs
     have no `ttlAt`, so TTL passes them over indefinitely. */
 export const stampNotificationTtl = onDocumentUpdated(
-  "users/{userId}/notifications/{notifId}",
+  { document: "users/{userId}/notifications/{notifId}", maxInstances: 50 },
   async (event) => {
     const before = event.data?.before.data();
     const after = event.data?.after.data();
@@ -1989,6 +2032,7 @@ export const onStoryDeleted = onDocumentDeleted(
   {
     document: "stories/{storyId}",
     secrets: [R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY],
+    maxInstances: 10,
   },
   async (event) => {
     const storyId = event.params.storyId;

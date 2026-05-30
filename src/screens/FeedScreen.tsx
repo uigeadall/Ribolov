@@ -134,9 +134,24 @@ export default function FeedScreen() {
   const scrollY = useRef(new Animated.Value(0)).current;
   const [headerHeight, setHeaderHeight] = useState(0);
 
-  // diffClamp: goes up when scrolling down (max 300), down when scrolling up (min 0)
-  const clampedScroll = useRef(Animated.diffClamp(scrollY, 0, 300)).current;
-  const headerTranslate = useRef(Animated.multiply(clampedScroll, -1)).current;
+  // diffClamp: goes up when scrolling down (clamped at the MEASURED header
+  // height), back to 0 when scrolling up. The clamp ceiling has to match the
+  // real header height — was hardcoded to 300, so on taller headers (Hero +
+  // StoriesRow + safe-area insets, easily 400-500px) only the first 300px
+  // slid up and the remainder stayed visibly stuck on screen at "fully
+  // collapsed." Recreate the Animated chain when headerHeight changes; the
+  // first-layout pass (headerHeight=0) yields a no-op chain that keeps the
+  // header anchored, which is the right behavior pre-measurement.
+  //
+  // useMemo instead of useRef: useRef captured the initial diffClamp(.,0,0)
+  // forever, so even after measurement the chain stayed degenerate. useMemo
+  // rebuilds when headerHeight changes. diffClamp's internal accumulator
+  // resets on rebuild — acceptable here because the rebuild fires at first
+  // layout (before any scroll input) so the user never sees a discontinuity.
+  const headerTranslate = useMemo(
+    () => Animated.multiply(Animated.diffClamp(scrollY, 0, headerHeight || 1), -1),
+    [scrollY, headerHeight],
+  );
 
   useEffect(() => {
     mountedRef.current = true;
@@ -230,7 +245,6 @@ export default function FeedScreen() {
   // itemsRef mirrors items so the onScroll listener can read fresh data
   // without forcing a listener re-create on every items change.
   const [newPostsCount, setNewPostsCount] = useState(0);
-  const [stickyTabsVisible, setStickyTabsVisible] = useState(false);
   const seenTopIdRef = useRef<string | null>(null);
   const isAtTopRef = useRef(true);
   const itemsRef = useRef<FeedItem[]>([]);
@@ -464,9 +478,9 @@ export default function FeedScreen() {
   // Switching between "Всички" and "Следвани" must wipe ALL state that
   // belongs to the outgoing scope so the next load doesn't mix scope-A's
   // posts with scope-B's catches, or page using scope-A's cursor while
-  // scope-B is active. The hero header and the sticky compact tabs both
-  // call this — keeping the cleanup in one place avoids drift between the
-  // two surfaces.
+  // scope-B is active. switchScope is the single entry point for scope
+  // changes from the hero header — keeping the cleanup in one helper
+  // avoids drift if more callers are added later.
   //
   // Beyond the obvious pagination wipe: we also clear `error` (so a stuck
   // failure banner doesn't survive a scope flip), `followingUidsRef` (so a
@@ -811,9 +825,6 @@ export default function FeedScreen() {
               seenTopIdRef.current = itemsRef.current[0]?.id ?? null;
             }
           }
-          // Toggle compact sticky tabs when the user scrolls past the main header.
-          const shouldShowSticky = y > 200;
-          setStickyTabsVisible((prev) => prev === shouldShowSticky ? prev : shouldShowSticky);
         },
       },
     ),
@@ -1141,75 +1152,6 @@ export default function FeedScreen() {
             <Text style={{ ...typography.small, color: colors.white, fontWeight: '700' }}>Нагоре</Text>
           </Pressable>
         </Animated.View>
-
-        {/* Sticky compact tabs — fade in once the big header has scrolled away,
-            so users can switch scope without scrolling back to top. The main
-            header's tabs still work; this is a duplicate that lives over the
-            content during deep scrolls. */}
-        {configured && user && stickyTabsVisible ? (
-          <Animated.View
-            style={{
-              position: 'absolute',
-              top: insets.top,
-              left: 0,
-              right: 0,
-              zIndex: 11,
-              paddingHorizontal: spacing.lg,
-              paddingVertical: spacing.sm,
-              backgroundColor: colors.background + 'F0',
-              borderBottomWidth: StyleSheet.hairlineWidth,
-              borderBottomColor: colors.border,
-              opacity: scrollY.interpolate({
-                inputRange: [180, 240],
-                outputRange: [0, 1],
-                extrapolate: 'clamp',
-              }),
-            }}
-          >
-            <View style={{
-              flexDirection: 'row',
-              backgroundColor: colors.surfaceAlt,
-              borderRadius: 14,
-              borderWidth: 1,
-              borderColor: colors.border,
-              overflow: 'hidden',
-              padding: 3,
-            }}>
-              <Pressable
-                onPress={() => switchScope('all')}
-                style={{
-                  flex: 1,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                  paddingVertical: 8,
-                  borderRadius: 11,
-                  backgroundColor: scope === 'all' ? colors.primary : 'transparent',
-                }}
-              >
-                <Ionicons name="grid-outline" size={16} color={scope === 'all' ? '#fff' : colors.textMuted} />
-                <Text style={{ fontSize: 13, fontWeight: '700', color: scope === 'all' ? '#fff' : colors.textMuted }}>Всички</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => switchScope('following')}
-                style={{
-                  flex: 1,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                  paddingVertical: 8,
-                  borderRadius: 11,
-                  backgroundColor: scope === 'following' ? colors.primary : 'transparent',
-                }}
-              >
-                <Ionicons name="people-outline" size={16} color={scope === 'following' ? '#fff' : colors.textMuted} />
-                <Text style={{ fontSize: 13, fontWeight: '700', color: scope === 'following' ? '#fff' : colors.textMuted }}>Следвани</Text>
-              </Pressable>
-            </View>
-          </Animated.View>
-        ) : null}
 
         {/* "X нови" pill — appears under the header when new items arrive while
             the user is scrolled away. Tap to scroll to the top and clear. */}
