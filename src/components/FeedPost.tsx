@@ -255,6 +255,10 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
   // when they swipe through the rest in the fullscreen viewer.
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [shareToFriendOpen, setShareToFriendOpen] = useState(false);
+  // Likers sheet filter — null means "all reactions", otherwise the
+  // ReactionType the user tapped (heart / fire / trophy / fish / wow).
+  // Filters the FlatList client-side from the already-loaded social.likers.
+  const [likersFilter, setLikersFilter] = useState<ReactionType | null>(null);
   // Image-load error state — flips when expo-image fails to fetch the photoUri.
   // A common failure mode is a published catch whose photoUri is still a local
   // file:// URI because the background upload never completed; we treat that as
@@ -292,6 +296,10 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
   });
 
   const social = useFeedPostSocial({ item, myUid, myDisplayName, ownerName, socialEnabled, isVisible, commentsOpen });
+  // Reset the likers filter when the sheet closes so a freshly-opened
+  // sheet on the next post starts on "Всички" instead of inheriting the
+  // previous selection.
+  useEffect(() => { if (!social.likersOpen) setLikersFilter(null); }, [social.likersOpen]);
   const reactionScale = useRef(new Animated.Value(1)).current;
 
   // The shared ReactionPicker owns its own enter/exit animation now;
@@ -1343,18 +1351,79 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                     <View style={{ alignItems: 'center', marginBottom: spacing.sm }}>
                       <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border }} />
                     </View>
-                    <Text style={styles.modalTitle}>Харесали ({social.likeCount})</Text>
+                    <Text style={styles.modalTitle}>Реакции ({social.likeCount})</Text>
+                    {/* Per-type reaction breakdown chips. Shows ALL reaction
+                        types that have at least one count, sorted by count
+                        desc. Tap a chip to filter the liker list to that
+                        reaction; tap "Всички" to clear. Empty state: no
+                        chips rendered when nobody has reacted. */}
+                    {social.reactionSummary.length > 0 ? (
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: spacing.md }}>
+                        <Pressable
+                          onPress={() => setLikersFilter(null)}
+                          style={{
+                            paddingHorizontal: 10,
+                            paddingVertical: 5,
+                            borderRadius: 999,
+                            borderWidth: 1,
+                            borderColor: colors.border,
+                            backgroundColor: likersFilter === null ? colors.primarySurface : 'transparent',
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 4,
+                          }}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: likersFilter === null ? colors.primary : colors.text }}>
+                            Всички {social.likeCount}
+                          </Text>
+                        </Pressable>
+                        {social.reactionSummary.map((r) => {
+                          const active = likersFilter === r.type;
+                          return (
+                            <Pressable
+                              key={r.type}
+                              onPress={() => setLikersFilter(active ? null : r.type)}
+                              style={{
+                                paddingHorizontal: 10,
+                                paddingVertical: 5,
+                                borderRadius: 999,
+                                borderWidth: 1,
+                                borderColor: active ? colors.primary : colors.border,
+                                backgroundColor: active ? colors.primarySurface : 'transparent',
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                gap: 4,
+                              }}
+                            >
+                              <Text style={{ fontSize: 14 }}>{r.emoji}</Text>
+                              <Text style={{ fontSize: 12, fontWeight: '700', color: active ? colors.primary : colors.text }}>
+                                {r.count}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    ) : null}
                     {social.likersLoading ? (
                       <ActivityIndicator color={colors.primary} style={{ marginVertical: spacing.lg }} />
                     ) : (
                       <FlatList
-                        data={social.likers}
+                        data={likersFilter ? social.likers.filter((l) => l.reaction === likersFilter) : social.likers}
                         keyExtractor={(x) => x.uid}
                         style={{ maxHeight: 360 }}
                         renderItem={({ item: liker }) => (
                           <Pressable style={styles.likerRow} onPress={() => { sheetPanY.setValue(0); social.setLikersOpen(false); onPressAuthor(liker.uid, liker.displayName); }}>
                             <Ionicons name="person-circle-outline" size={28} color={colors.primary} />
                             <Text style={styles.likerName}>{liker.displayName}</Text>
+                            {/* Per-liker reaction emoji — shows which reaction
+                                THIS person picked. Hidden when missing
+                                (legacy likes with no reaction field default
+                                to heart). */}
+                            {liker.reaction ? (
+                              <Text style={{ fontSize: 18, marginRight: 6 }}>{REACTIONS[liker.reaction].emoji}</Text>
+                            ) : (
+                              <Text style={{ fontSize: 18, marginRight: 6 }}>❤️</Text>
+                            )}
                             <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
                           </Pressable>
                         )}
