@@ -31,6 +31,15 @@ export type RankingSignals = {
   /** Current user's uid — so we don't score their own catches in the For
       You feed (they already know about those). null when signed out. */
   myUid: string | null;
+  /** Authors the user explicitly hid via the ⋯ menu. Items from these uids
+      are dropped from For You entirely (not just demoted). */
+  hiddenAuthorUids?: Set<string>;
+  /** Specific catches the user marked "Не ме интересува". Dropped too. */
+  notInterestedCatchIds?: Set<string>;
+  /** Accumulated dwell-time per author (seconds, time-decayed). Used as a
+      multiplicative boost: longer reading time → higher rank in future
+      sessions. Capped via log() so a single power-author can't dominate. */
+  dwellByAuthorUid?: Record<string, number>;
 };
 
 const RECENCY_HALF_LIFE_HOURS = 24;
@@ -84,11 +93,27 @@ function nearAnyFavorite(
 /** Score a single item — exposed for tests / debugging. */
 export function scoreFeedItem(item: FeedItem, signals: RankingSignals): number {
   if (signals.myUid && item.ownerUid === signals.myUid) return -Infinity; // hide my own catches in For You
+  // Negative-feedback drops the item entirely. The diversity pass and
+  // engagement signal can't overcome an explicit "hide" — that's the
+  // user telling us a hard NO.
+  if (signals.hiddenAuthorUids?.has(item.ownerUid)) return -Infinity;
+  if (signals.notInterestedCatchIds?.has(item.id)) return -Infinity;
+
   const ageHours = ageHoursFromDateString(item.date);
   let score = Math.pow(0.5, ageHours / RECENCY_HALF_LIFE_HOURS);
   if (signals.followedUids.has(item.ownerUid)) score *= FOLLOW_BOOST;
   if (nearAnyFavorite(item.location, signals.favoriteSpotCoords)) score *= FAVORITE_SPOT_BOOST;
   if (signals.topSpeciesIds.has(item.speciesId)) score *= TOP_SPECIES_BOOST;
+
+  // Dwell boost — log1p so the marginal value of each additional second
+  // tapers off (the difference between 10s and 11s of reading should be
+  // small; the difference between 0s and 10s should be big). Capped
+  // implicitly by the log + the 60s/session cap in feedSignals.
+  const dwellSecs = signals.dwellByAuthorUid?.[item.ownerUid] ?? 0;
+  if (dwellSecs > 0) {
+    score *= 1 + Math.log1p(dwellSecs) * 0.15;
+  }
+
   const likes = typeof item.likeCount === 'number' ? item.likeCount : 0;
   const engagement = Math.log10(1 + likes); // capped naturally — no comment count plumbed through FeedItem
   score += engagement * 0.5; // additive so engagement boosts low-ranked items without overwhelming followed-author hits

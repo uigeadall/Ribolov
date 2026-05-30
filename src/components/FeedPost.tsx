@@ -207,9 +207,14 @@ type Props = {
   onReshare?: (item: FeedItem) => void;
   onPressHashtag?: (tag: string) => void;
   onPressMention?: (handle: string) => void;
+  /** Negative-feedback hooks for the For You ranker. When provided, the
+      "⋯" menu surfaces "Не ме интересува" and "Скрий автора" options that
+      persist the demotion + refresh the ranker. */
+  onMarkNotInterested?: (item: FeedItem) => void;
+  onHideAuthor?: (authorUid: string, displayName: string) => void;
 };
 
-function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarUrl, socialEnabled, isVisible: isVisibleProp, onPressAuthor, onPressCatch, onDeletePhoto, onRemovePost, onReshare, onPressHashtag, onPressMention }: Props) {
+function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarUrl, socialEnabled, isVisible: isVisibleProp, onPressAuthor, onPressCatch, onDeletePhoto, onRemovePost, onReshare, onPressHashtag, onPressMention, onMarkNotInterested, onHideAuthor }: Props) {
   // Visibility resolution: when rendered inside FeedScreen the prop is
   // undefined and we read live visibility from the pub-sub. When rendered
   // outside the feed list (e.g. catch detail), the parent passes
@@ -396,16 +401,31 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
       });
       ActionSheet.show({ options });
     } else {
-      ActionSheet.show({
-        options: [
-          {
-            label: 'Докладвай',
-            icon: 'flag-outline',
-            destructive: true,
-            onPress: social.onReportCatch,
-          },
-        ],
+      // Non-owner menu now also surfaces For You training options when
+      // the parent screen wires the callbacks (FeedScreen does; profile /
+      // detail screens don't, since the ranker doesn't reach there).
+      const options: ActionSheetOption[] = [];
+      if (onMarkNotInterested) {
+        options.push({
+          label: 'Не ме интересува',
+          icon: 'thumbs-down-outline',
+          onPress: () => onMarkNotInterested(item),
+        });
+      }
+      if (onHideAuthor) {
+        options.push({
+          label: `Скрий ${displayName}`,
+          icon: 'eye-off-outline',
+          onPress: () => onHideAuthor(item.ownerUid, displayName),
+        });
+      }
+      options.push({
+        label: 'Докладвай',
+        icon: 'flag-outline',
+        destructive: true,
+        onPress: social.onReportCatch,
       });
+      ActionSheet.show({ options });
     }
   };
 

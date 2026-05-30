@@ -30,6 +30,7 @@ import type { AppColors } from '../theme/palette';
 import { spacing, typography } from '../theme/typography';
 import { fetchPublicFeed, prefetchFirstPageItems, deletePhotoFromFeedPost, removeFromPublicFeed, getFollowing, getUserPublicSummary, fetchPublicPosts, deletePost, searchUsersByName, createPost, type FeedPage } from '../services/cloudSync';
 import { rankFeedItems, type RankingSignals } from '../services/feedRanking';
+import { loadFeedSignals, recordDwell, type PersistedFeedSignals } from '../services/feedSignals';
 import { catchesStore, spotsStore } from '../storage/storage';
 import { publishFeedVisibility } from '../services/feedVisibility';
 import Toast from 'react-native-toast-message';
@@ -210,10 +211,11 @@ export default function FeedScreen() {
     let cancelled = false;
     void (async () => {
       try {
-        const [followingRows, spots, catches] = await Promise.all([
+        const [followingRows, spots, catches, persisted] = await Promise.all([
           getFollowing(user.uid).catch(() => [] as Array<{ uid: string }>),
           spotsStore.list().catch(() => []),
           catchesStore.list().catch(() => []),
+          loadFeedSignals(),
         ]);
         if (cancelled) return;
         // Top-5 most-caught species — proxy for "what the user actually
@@ -237,6 +239,9 @@ export default function FeedScreen() {
           favoriteSpotCoords,
           topSpeciesIds,
           myUid: user.uid,
+          hiddenAuthorUids: new Set(persisted.hiddenAuthorUids),
+          notInterestedCatchIds: new Set(persisted.notInterestedCatchIds),
+          dwellByAuthorUid: persisted.dwellByAuthorUid,
         });
       } catch {
         /* signals stay zeroed → chronological ranking */
@@ -244,6 +249,20 @@ export default function FeedScreen() {
     })();
     return () => { cancelled = true; };
   }, [user?.uid]);
+
+  // Expose a refresh helper so the menu actions ("Не ме интересува" /
+  // "Скрий автора") can re-load signals after a mutation. Avoids
+  // depending on a global event bus — the FeedPost callbacks fire this
+  // explicitly after the AsyncStorage write completes.
+  const refreshFeedSignals = useCallback(async () => {
+    const persisted = await loadFeedSignals();
+    setRankingSignals((prev) => ({
+      ...prev,
+      hiddenAuthorUids: new Set(persisted.hiddenAuthorUids),
+      notInterestedCatchIds: new Set(persisted.notInterestedCatchIds),
+      dwellByAuthorUid: persisted.dwellByAuthorUid,
+    }));
+  }, []);
 
   // Water-body filter (dam or river). When set, the feed shows only catches
   // matching that water — same matching rule as the Leaderboard scope
@@ -864,6 +883,42 @@ export default function FeedScreen() {
     ]);
   }, [user]);
 
+  // ── Negative-feedback handlers wired into the FeedPost ⋯ menu.
+  //   - markNotInterested persists the catchId; the ranker then drops it
+  //     from For You. We also yank it from the visible items right away so
+  //     the user sees their action take effect.
+  //   - hideAuthor persists the uid; the ranker drops all of that author's
+  //     items from For You. Confirmation Alert prevents fat-finger hides.
+  const handleNotInterested = useCallback(async (item: FeedItem) => {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    const { markNotInterested } = await import('../services/feedSignals');
+    await markNotInterested(item.id);
+    await refreshFeedSignals();
+    setItems((prev) => prev.filter((x) => x.id !== item.id));
+    Toast.show({ type: 'success', text1: 'Няма да го виждаш повече', visibilityTime: 1800 });
+  }, [refreshFeedSignals]);
+  const handleHideAuthor = useCallback((authorUid: string, displayName: string) => {
+    Alert.alert(
+      `Скрий ${displayName}?`,
+      'Няма да виждаш повече публикации от този потребител в "За теб".',
+      [
+        { text: 'Отказ', style: 'cancel' },
+        {
+          text: 'Скрий',
+          style: 'destructive',
+          onPress: async () => {
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+            const { hideAuthor } = await import('../services/feedSignals');
+            await hideAuthor(authorUid);
+            await refreshFeedSignals();
+            setItems((prev) => prev.filter((x) => x.ownerUid !== authorUid));
+            Toast.show({ type: 'success', text1: 'Авторът е скрит', visibilityTime: 1800 });
+          },
+        },
+      ],
+    );
+  }, [refreshFeedSignals]);
+
   const renderItem = useCallback(({ item }: { item: MixedFeedItem }) => {
     if (item.kind === 'catch') {
       const c = item.data;
@@ -886,6 +941,8 @@ export default function FeedScreen() {
           onReshare={user ? onReshareCatch : undefined}
           onPressHashtag={onPressHashtag}
           onPressMention={onPressMention}
+          onMarkNotInterested={scope === 'forYou' ? handleNotInterested : undefined}
+          onHideAuthor={handleHideAuthor}
         />
       );
     }
@@ -905,7 +962,7 @@ export default function FeedScreen() {
         onPressReshareTarget={onPressReshareTarget}
       />
     );
-  }, [user?.uid, user, myDisplayName, myPhotoUrl, avatarMap, socialEnabled, onPressAuthor, onPressCatch, onDeletePhoto, onRemovePost, onPressHashtag, onPressMention, onDeletePostItem, onReshareCatch, onResharePost]);
+  }, [user?.uid, user, myDisplayName, myPhotoUrl, avatarMap, socialEnabled, onPressAuthor, onPressCatch, onDeletePhoto, onRemovePost, onPressHashtag, onPressMention, onDeletePostItem, onReshareCatch, onResharePost, onPressReshareTarget, scope, handleNotInterested, handleHideAuthor]);
 
   // No separator — each post has its own bottom border
   const ItemSeparator = useCallback(() => null, []);
@@ -977,15 +1034,57 @@ export default function FeedScreen() {
   const itemsForLookaheadRef = useRef<FeedItem[]>([]);
   useEffect(() => { itemsForLookaheadRef.current = items; }, [items]);
 
+  // ── Dwell tracking ──────────────────────────────────────────────
+  // dwellEntryRef[id] = wall-clock ms when the id first entered the viewport
+  // in the current dwell session. When the id exits (no longer in
+  // viewableItems), we look up its owner uid, compute seconds, and queue
+  // into pendingDwellRef. A single timer flushes pendingDwellRef to
+  // AsyncStorage every 15s + on unmount, so we write at most ~4× per minute
+  // of active scrolling, not 10× per second.
+  const dwellEntryRef = useRef<Map<string, number>>(new Map());
+  const pendingDwellRef = useRef<Record<string, number>>({});
+  const dwellByIdToUidRef = useRef<Map<string, string>>(new Map());
+  useEffect(() => {
+    for (const it of items) dwellByIdToUidRef.current.set(it.id, it.ownerUid);
+  }, [items]);
+  useEffect(() => {
+    const flushDwell = async () => {
+      const pending = pendingDwellRef.current;
+      pendingDwellRef.current = {};
+      if (Object.keys(pending).length === 0) return;
+      await recordDwell(pending).catch(() => {});
+    };
+    const interval = setInterval(() => { void flushDwell(); }, 15_000);
+    return () => {
+      clearInterval(interval);
+      // Flush on unmount so a brief session still trains the model.
+      void flushDwell();
+    };
+  }, []);
+
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: Array<{ item: { kind: string; data: { id: string } } }> }) => {
+      const now = Date.now();
       const ids = new Set(viewableItems.map((v) => v.item.data.id));
+
+      // EXIT: anything in the previous visible set but not in the new set
+      // closes its dwell session. Accumulate seconds-by-owner into pending.
+      for (const [id, enteredAt] of dwellEntryRef.current.entries()) {
+        if (!ids.has(id)) {
+          const ownerUid = dwellByIdToUidRef.current.get(id);
+          if (ownerUid) {
+            const secs = (now - enteredAt) / 1000;
+            pendingDwellRef.current[ownerUid] = (pendingDwellRef.current[ownerUid] ?? 0) + secs;
+          }
+          dwellEntryRef.current.delete(id);
+        }
+      }
+      // ENTER: anything newly visible starts a dwell session.
+      for (const id of ids) {
+        if (!dwellEntryRef.current.has(id)) dwellEntryRef.current.set(id, now);
+      }
+
       visibleIdsRef.current = ids;
-      // Push to the pub-sub; FeedPost / PostCard subscribe individually. No
-      // React state update here — that used to live in `visibleIds` and put
-      // a fresh Set identity into renderItem's deps every tick, regenerating
-      // the closure (and forcing FlashList to re-run renderItem for every
-      // visible cell). Now the parent renders nothing on viewability change.
       publishFeedVisibility(ids);
       lookaheadRef.current(ids, itemsForLookaheadRef.current);
     }
