@@ -21,7 +21,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
 import { getCloudinaryUploadConfig, uploadImageToCloudinary } from './cloudinaryConfig';
-import { uploadImageToR2, deleteFromR2, isR2Url, r2KeyFromUrl } from './r2Upload';
+import { uploadImageToR2, uploadVideoToR2, deleteFromR2, isR2Url, r2KeyFromUrl } from './r2Upload';
 import type { Catch } from '../types';
 
 export type CloudCatch = Catch & {
@@ -149,6 +149,19 @@ export async function ensureCatchPhotoUploadedForCloud(
     updated = { ...updated, extraPhotoUris: uploadedExtras };
   }
 
+  // Video upload. Single per-catch, capped at 15s by the AddCatch picker.
+  // R2 path matches the photos' namespace so deletion can sweep both with
+  // one prefix scan. We don't transcode here — expo-image-picker already
+  // hands back H.264/MP4 at 720p (iOS) or the native asset (Android), and
+  // the inline player streams whatever arrives. videoStoragePath stays on
+  // the doc so catch deletion can call deleteFromR2.
+  const videoUri = updated.videoUri?.trim();
+  if (videoUri && !isRemote(videoUri)) {
+    const path = `publicCatchVideos/${ownerUid}/${c.id}/${Date.now()}.mp4`;
+    const { url, storagePath } = await uploadVideoToR2(videoUri, path);
+    updated = { ...updated, videoUri: url, videoStoragePath: storagePath };
+  }
+
   onProgress?.(1);
   return updated;
 }
@@ -178,6 +191,12 @@ export async function pushCatch(c: Catch, ownerUid: string, ownerName: string, i
     photoStoragePath: c.photoStoragePath ?? deleteField(),
     photoTitle: c.photoTitle ?? deleteField(),
     extraPhotoUris: c.extraPhotoUris ?? deleteField(),
+    // Video fields — same deleteField pattern. Removing a video from a
+    // catch (set videoUri undefined) should also drop the stored path so
+    // a stale orphan doesn't keep streaming after the user "removed" it.
+    videoUri: c.videoUri ?? deleteField(),
+    videoStoragePath: c.videoStoragePath ?? deleteField(),
+    videoDurationMs: c.videoDurationMs ?? deleteField(),
   };
   const payload = stripUndefinedForFirestore(rawPayload);
   await setDoc(doc(fb.db, 'users', ownerUid, 'catches', c.id), payload, { merge: true });

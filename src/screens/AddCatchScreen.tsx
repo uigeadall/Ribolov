@@ -61,6 +61,7 @@ import { isRemoteImageUri, formatCatchDate } from '../utils/formatCatchDate';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { handleError } from '../utils/handleError';
 import { notifyInfo, notifyError } from '../utils/notify';
+import { VIDEO_MAX_SECONDS, isVideoOverLimit, VIDEO_OVER_LIMIT_MESSAGE } from '../utils/videoLimits';
 import { allowCatchSave } from '../services/socialRateLimit';
 import { logEvent } from '../services/analytics';
 import { maybePromptForReview } from '../services/storeReview';
@@ -92,6 +93,10 @@ type FormState = {
   shareToFeed: boolean;
   enterLeaderboard: boolean;
   photoUri: string | undefined;
+  /** Local file:// URI or remote URL of the attached 15s clip. Single
+      video per catch; replaces previous video if the user re-picks. */
+  videoUri: string | undefined;
+  videoDurationMs: number | undefined;
   locationCoords: { lat: number; lon: number } | null;
   locationName: string;
   cameraVerifiedPhoto: boolean;
@@ -114,6 +119,8 @@ type FormAction =
   | { type: 'SET_ENTER_LEADERBOARD'; payload: boolean }
   | { type: 'SET_PHOTO'; payload: { uri: string | undefined; cameraVerified: boolean } }
   | { type: 'CLEAR_PHOTO' }
+  | { type: 'SET_VIDEO'; payload: { uri: string; durationMs: number } }
+  | { type: 'CLEAR_VIDEO' }
   | { type: 'SET_LOCATION'; payload: { coords: { lat: number; lon: number }; name: string } }
   | { type: 'ADD_EXTRA_PHOTO'; payload: string }
   | { type: 'REMOVE_EXTRA_PHOTO'; payload: number }
@@ -134,6 +141,8 @@ function formReducer(state: FormState, action: FormAction): FormState {
     case 'SET_ENTER_LEADERBOARD': return { ...state, enterLeaderboard: action.payload };
     case 'SET_PHOTO': return { ...state, photoUri: action.payload.uri, cameraVerifiedPhoto: action.payload.cameraVerified };
     case 'CLEAR_PHOTO': return { ...state, photoUri: undefined, photoTitle: '', cameraVerifiedPhoto: false };
+    case 'SET_VIDEO': return { ...state, videoUri: action.payload.uri, videoDurationMs: action.payload.durationMs };
+    case 'CLEAR_VIDEO': return { ...state, videoUri: undefined, videoDurationMs: undefined };
     case 'SET_LOCATION': return { ...state, locationCoords: action.payload.coords, locationName: action.payload.name };
     case 'ADD_EXTRA_PHOTO': return { ...state, extraPhotoUris: [...state.extraPhotoUris, action.payload] };
     case 'REMOVE_EXTRA_PHOTO': return { ...state, extraPhotoUris: state.extraPhotoUris.filter((_, i) => i !== action.payload) };
@@ -183,6 +192,8 @@ export default function AddCatchScreen() {
     shareToFeed: false,
     enterLeaderboard: true,
     photoUri: undefined,
+    videoUri: undefined,
+    videoDurationMs: undefined,
     locationCoords: prefill ? { lat: prefill.latitude, lon: prefill.longitude } : null,
     locationName: prefill?.name ?? '',
     cameraVerifiedPhoto: false,
@@ -360,6 +371,8 @@ export default function AddCatchScreen() {
             released: !!c.released,
             enterLeaderboard: c.enterLeaderboard ?? true,
             photoUri: c.photoUri,
+            videoUri: c.videoUri,
+            videoDurationMs: c.videoDurationMs,
             extraPhotoUris: c.extraPhotoUris ?? [],
             cameraVerifiedPhoto: isRemoteImageUri(c.photoUri) || c.photoTakenWithAppCamera === true,
             locationCoords: c.location
@@ -535,6 +548,51 @@ export default function AddCatchScreen() {
         payload: { uri: await compressPhoto(result.assets[0].uri), cameraVerified: false },
       });
     }
+  };
+
+  /** Pick a 15-second video for this catch. iOS picker enforces
+      videoMaxDuration; Android picker doesn't, so we re-check the
+      reported duration after the pick and reject anything over the cap.
+      Replaces whatever video was previously attached. */
+  const pickVideo = async () => {
+    const current = await ImagePicker.getMediaLibraryPermissionsAsync();
+    if (current.status === 'denied' && !current.canAskAgain) {
+      Alert.alert(
+        'Достъп до галерията',
+        'Ribolov няма достъп до галерията. Отвори настройките на телефона и разреши достъп.',
+        [
+          { text: 'Отказ', style: 'cancel' },
+          { text: 'Отвори настройките', onPress: () => Linking.openSettings() },
+        ],
+      );
+      return;
+    }
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      notifyInfo('Нужно е разрешение', 'Разреши достъп до галерията, за да добавиш видео.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: 'videos',
+      quality: 0.8,
+      videoMaxDuration: VIDEO_MAX_SECONDS,
+      // Transcode to 720p H.264 on iOS — same rationale as stories: a 1080p
+      // raw clip is ~3× the upload of a 720p one without a visible quality
+      // win at feed-sized playback. Android picker ignores this, we live
+      // with the raw upload there.
+      videoExportPreset: ImagePicker.VideoExportPreset.H264_1280x720,
+    });
+    if (result.canceled || !result.assets[0]) return;
+    const asset = result.assets[0];
+    const durationMs = typeof asset.duration === 'number' ? asset.duration : 0;
+    if (isVideoOverLimit(durationMs)) {
+      Alert.alert('Твърде дълго видео', VIDEO_OVER_LIMIT_MESSAGE);
+      return;
+    }
+    dispatch({
+      type: 'SET_VIDEO',
+      payload: { uri: asset.uri, durationMs: durationMs || 0 },
+    });
   };
 
   const takePhoto = async () => {
@@ -783,6 +841,18 @@ export default function AddCatchScreen() {
       photoUri: form.photoUri,
       extraPhotoUris: form.extraPhotoUris.length > 0 ? form.extraPhotoUris : undefined,
       photoTakenWithAppCamera,
+      videoUri: form.videoUri,
+      videoDurationMs: form.videoDurationMs,
+      // Preserve the cloud storagePath when the user is editing a catch whose
+      // video URL hasn't changed — same pattern as the photoStoragePath block
+      // below. Without this, re-saving an unchanged catch loses the storage
+      // key and the bucket leaks orphans on next delete.
+      ...(form.videoUri &&
+      initialCatch?.videoUri?.trim() === form.videoUri &&
+      isRemoteImageUri(form.videoUri) &&
+      initialCatch.videoStoragePath
+        ? { videoStoragePath: initialCatch.videoStoragePath }
+        : {}),
       ...(uri &&
       initialCatch?.photoUri?.trim() === uri &&
       isRemoteImageUri(uri) &&
@@ -1061,6 +1131,45 @@ export default function AddCatchScreen() {
           onClearPhoto={() => dispatch({ type: 'CLEAR_PHOTO' })}
           onNavigationBack={() => navigation.goBack()}
         />
+
+        {/* ── VIDEO ROW ──
+            Compact strip under the photo hero: a single CTA to pick a 15s
+            clip when none is attached, or a row showing the attached clip
+            + a remove button. Kept here so it's visible next to the photo
+            without scrolling further down. */}
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 10,
+          paddingHorizontal: spacing.lg,
+          paddingVertical: spacing.sm,
+          backgroundColor: colors.card,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: colors.border,
+        }}>
+          <Ionicons name="videocam-outline" size={20} color={colors.primary} />
+          {form.videoUri ? (
+            <>
+              <Text style={{ ...typography.body, color: colors.text, flex: 1 }} numberOfLines={1}>
+                Видео прикачено
+                {form.videoDurationMs ? ` · ${Math.round((form.videoDurationMs ?? 0) / 1000)}с` : ''}
+              </Text>
+              <Pressable
+                onPress={() => dispatch({ type: 'CLEAR_VIDEO' })}
+                hitSlop={8}
+                style={{ paddingHorizontal: 6, paddingVertical: 4 }}
+              >
+                <Text style={{ ...typography.caption, color: colors.danger, fontWeight: '700' }}>Премахни</Text>
+              </Pressable>
+            </>
+          ) : (
+            <Pressable onPress={() => void pickVideo()} hitSlop={6} style={{ flex: 1 }}>
+              <Text style={{ ...typography.body, color: colors.primary, fontWeight: '600' }}>
+                Добави {VIDEO_MAX_SECONDS} сек. видео (по избор)
+              </Text>
+            </Pressable>
+          )}
+        </View>
 
         {/* ── SHEET (overlaps hero, white card, curved top) ── */}
         <View style={styles.sheet}>

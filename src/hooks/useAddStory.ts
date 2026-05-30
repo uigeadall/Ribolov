@@ -3,6 +3,7 @@ import { Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { addStory, deleteStoryMedia, uploadStoryMedia } from '../services/stories';
 import { checkImageSize } from '../utils/imageSize';
+import { VIDEO_MAX_SECONDS, isVideoOverLimit, VIDEO_OVER_LIMIT_MESSAGE } from '../utils/videoLimits';
 import type { User } from 'firebase/auth';
 
 /** Composition mode for a story.
@@ -39,12 +40,6 @@ export type AddStoryState = {
 };
 
 const DEFAULT_EMOJI = '🎣';
-
-/** Hard cap on story video length. Matches the feed-video cap so users
-    have one rule to remember ("videos are 15 seconds"). 15s is short
-    enough to keep the upload+download cheap on mobile data and long
-    enough for a single fishing moment. */
-const STORY_VIDEO_MAX_SECONDS = 15;
 
 export function useAddStory(
   user: Pick<User, 'uid' | 'displayName' | 'photoURL'> | null,
@@ -86,7 +81,7 @@ export function useAddStory(
         // is iOS-only in expo-image-picker; the post-pick duration check
         // below catches Android (and any iOS edge cases like a 16s video
         // produced by a fractional-second rounding error).
-        videoMaxDuration: STORY_VIDEO_MAX_SECONDS,
+        videoMaxDuration: VIDEO_MAX_SECONDS,
         allowsEditing: type === 'photo',
         // Force a 9:16 crop on photos so the composer canvas isn't letterboxed
         // for landscape captures. Stories are conventionally vertical (IG,
@@ -129,15 +124,12 @@ export function useAddStory(
         if (type === 'video') {
           // Android's picker doesn't honour videoMaxDuration, and iOS can hand
           // back a clip a fraction over the limit when a user rounds-up trim
-          // handles. Reject anything over the cap so we never upload a story
-          // that the viewer can't actually display in its 15s window.
-          // asset.duration is in milliseconds when present.
+          // handles. Reject anything over the cap (with rounding tolerance)
+          // so we never upload a story that the viewer can't display in
+          // its 15s window.
           const durationMs = typeof asset.duration === 'number' ? asset.duration : 0;
-          if (durationMs > 0 && durationMs > STORY_VIDEO_MAX_SECONDS * 1000 + 500) {
-            Alert.alert(
-              'Твърде дълго видео',
-              `Видеата за моменти са до ${STORY_VIDEO_MAX_SECONDS} секунди. Избери по-кратък клип или го изрежи в галерията.`,
-            );
+          if (isVideoOverLimit(durationMs)) {
+            Alert.alert('Твърде дълго видео', VIDEO_OVER_LIMIT_MESSAGE);
             return;
           }
         }

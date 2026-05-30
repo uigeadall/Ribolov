@@ -38,6 +38,7 @@ import { ReactionPicker } from './ReactionPicker';
 import { useFeedPostSocial } from '../hooks/useFeedPostSocial';
 import { useFeedItemVisibility } from '../hooks/useFeedItemVisibility';
 import { ImageViewer } from './ImageViewer';
+import { FeedVideoPlayer } from './FeedVideoPlayer';
 import { SharePickerModal, buildCatchSharedRef } from './SharePickerModal';
 import { CommentLikeButton } from './CommentLikeButton';
 import { getImageVariant, ImageSize } from '../utils/imageVariants';
@@ -542,14 +543,39 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
             </Text>
           ) : null}
 
-        {/* ── Photo area ──
-            Branch order matters:
+        {/* ── Media area ──
+            Branch order matters and reflects priority:
+            0. Video → inline 15s player (preferred when present; the user
+               chose to attach a clip, that's the primary content)
             1. 2-4 photos → X-style grid (most common multi-photo case)
             2. 5+ photos → swipeable carousel (rare; carousels at 5+ tiles
                are easier to navigate than a 3×2 grid that hides photos)
             3. 1 photo → standalone with full error-fallback + double-tap UI
             4. 0 photos → null (text-only post) */}
-        {carouselPhotos.length >= 2 && carouselPhotos.length <= 4 ? (
+        {item.videoUri ? (
+          // Inline 15s video. Aspect ratio defaults to 4:5 (vertical-leaning
+          // since most phone-shot fishing clips are portrait); we don't have
+          // a load-time hook for video natural ratio yet, so the box stays
+          // 4:5 and contentFit="cover" inside the player crops to fit.
+          // `playing` is driven by the card's visibility — exactly one
+          // feed video plays at a time. Tap opens the catch detail.
+          <View style={{
+            marginTop: 8,
+            borderRadius: 18,
+            overflow: 'hidden',
+            width: contentWidth,
+            height: Math.round(contentWidth * (5 / 4)),
+            backgroundColor: '#000',
+          }}>
+            <FeedVideoPlayer
+              uri={item.videoUri}
+              playing={isVisible}
+              width={contentWidth}
+              height={Math.round(contentWidth * (5 / 4))}
+              onPress={() => onPressCatch?.(item)}
+            />
+          </View>
+        ) : carouselPhotos.length >= 2 && carouselPhotos.length <= 4 ? (
           // X-style photo grid. 16:9 container width; 2-photo split is
           // side-by-side, 3-photo is left-large + 2-stacked, 4-photo is
           // 2×2. Tap any tile to open the viewer at that index. The 2px

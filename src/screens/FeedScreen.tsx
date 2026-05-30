@@ -29,6 +29,8 @@ import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { spacing, typography } from '../theme/typography';
 import { fetchPublicFeed, prefetchFirstPageItems, deletePhotoFromFeedPost, removeFromPublicFeed, getFollowing, getUserPublicSummary, fetchPublicPosts, deletePost, searchUsersByName, createPost, type FeedPage } from '../services/cloudSync';
+import { rankFeedItems, type RankingSignals } from '../services/feedRanking';
+import { catchesStore, spotsStore } from '../storage/storage';
 import { publishFeedVisibility } from '../services/feedVisibility';
 import Toast from 'react-native-toast-message';
 import type { ResharedRef } from '../types';
@@ -52,7 +54,7 @@ import { useUnreadNotifCount } from '../hooks/useUnreadNotifCount';
 import { DamPicker, type WaterPick } from '../components/DamPicker';
 import { catchMatchesLeaderboardWater } from '../services/leaderboards';
 
-type FeedScope = 'all' | 'following';
+type FeedScope = 'forYou' | 'all' | 'following';
 // AsyncStorage key for the last-selected water filter. Persisted so the
 // user's "Язовир Искър" view survives an app restart — they almost always
 // want the same dam they were last looking at.
@@ -184,7 +186,65 @@ export default function FeedScreen() {
     return () => { cancelled = true; };
   }, [user?.uid]);
 
-  const [scope, setScope] = useState<FeedScope>('all');
+  // Default to 'forYou' so new users land on personalised content immediately.
+  // The ranker tolerates an empty signals set — if we haven't loaded
+  // favorites/top-species yet, every catch's score is the bare recency value
+  // and the list reads as plain chronological until the signal effect lands.
+  const [scope, setScope] = useState<FeedScope>('forYou');
+
+  // For You ranking signals. Loaded once on mount and refreshed when the
+  // user opens For You — cheap (all local AsyncStorage reads + one
+  // getFollowing). The default zero-signals state is a valid RankingSignals
+  // input that just produces chronological order; the effect below
+  // populates it after the initial render so first-paint isn't blocked on
+  // a signals fetch.
+  const [rankingSignals, setRankingSignals] = useState<RankingSignals>({
+    followedUids: new Set(),
+    favoriteSpotCoords: [],
+    topSpeciesIds: new Set(),
+    myUid: null,
+  });
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [followingRows, spots, catches] = await Promise.all([
+          getFollowing(user.uid).catch(() => [] as Array<{ uid: string }>),
+          spotsStore.list().catch(() => []),
+          catchesStore.list().catch(() => []),
+        ]);
+        if (cancelled) return;
+        // Top-5 most-caught species — proxy for "what the user actually
+        // fishes for." Beats a separate target-species preferences screen
+        // because it's zero-effort (auto-derived from logging behaviour).
+        const speciesCount = new Map<string, number>();
+        for (const c of catches) {
+          speciesCount.set(c.speciesId, (speciesCount.get(c.speciesId) ?? 0) + 1);
+        }
+        const topSpeciesIds = new Set(
+          [...speciesCount.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([id]) => id),
+        );
+        const favoriteSpotCoords = spots
+          .filter((s) => s.isFavorite)
+          .map((s) => ({ latitude: s.latitude, longitude: s.longitude }));
+        setRankingSignals({
+          followedUids: new Set(followingRows.map((f) => f.uid)),
+          favoriteSpotCoords,
+          topSpeciesIds,
+          myUid: user.uid,
+        });
+      } catch {
+        /* signals stay zeroed → chronological ranking */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user?.uid]);
+
   // Water-body filter (dam or river). When set, the feed shows only catches
   // matching that water — same matching rule as the Leaderboard scope
   // (`catchMatchesLeaderboardWater`): GPS within radius OR text match in
@@ -266,8 +326,10 @@ export default function FeedScreen() {
       // *before* hitting the network. For the "all" (For You) tab we can paint
       // immediately because no follow-list lookup is needed. For Following,
       // the cache key depends on the follow list — so we fetch follows + the
-      // cached page in parallel below, then paint with the right key.
-      if (scope === 'all') {
+      // cached page in parallel below, then paint with the right key. The
+      // "forYou" scope shares the same underlying candidate set as "all"
+      // (it just re-orders client-side); reuse the same instant-paint cache.
+      if (scope === 'all' || scope === 'forYou') {
         const cached = await prefetchFirstPageItems(20);
         if (cached.length > 0 && mountedRef.current && scopeAtRequest === scope) {
           setItems(cached);
@@ -385,7 +447,7 @@ export default function FeedScreen() {
       setPosts(nextPosts);
       prefetchBatch(next);
       setLastDoc(page.lastDoc);
-      setHasMore(scope === 'all' ? page.hasMore : false);
+      setHasMore(scope === 'all' || scope === 'forYou' ? page.hasMore : false);
       const missingUids = [...new Set(
         next
           .filter((i) => !i.ownerPhotoUrl && i.ownerUid && i.ownerUid !== user.uid)
@@ -555,13 +617,32 @@ export default function FeedScreen() {
       filteredPosts = [];
     }
 
+    // "За теб" ranking: re-order the deduped catches via the For You scorer
+    // (recency × follow × spot × species × engagement) before merging in
+    // posts. Posts stay chronological at the tail — they're harder to score
+    // (no GPS, no species) and treating them as a strict timeline keeps
+    // the personalised section feeling like "catches I'd like" rather than
+    // mixing in unrelated text posts.
+    if (scope === 'forYou') {
+      const ranked = rankFeedItems(dedupedCatches, rankingSignals);
+      const merged: MixedFeedItem[] = [
+        ...ranked.map((c) => ({ kind: 'catch' as const, data: c, date: c.date ?? '' })),
+        // Posts still appear, but ordered by date and after the ranked catches.
+        ...filteredPosts
+          .slice()
+          .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''))
+          .map((p) => ({ kind: 'post' as const, data: p, date: p.date ?? '' })),
+      ];
+      return merged;
+    }
+
     const merged: MixedFeedItem[] = [
       ...dedupedCatches.map((c) => ({ kind: 'catch' as const, data: c, date: c.date ?? '' })),
       ...filteredPosts.map((p) => ({ kind: 'post' as const, data: p, date: p.date ?? '' })),
     ];
     merged.sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
     return merged;
-  }, [items, posts, waterFilter]);
+  }, [items, posts, waterFilter, scope, rankingSignals]);
 
   // Mention-notification deep link: scroll to the focused post once it
   // appears in the merged list. focusHandledRef gates this to once per
@@ -976,9 +1057,9 @@ export default function FeedScreen() {
         borderBottomWidth: StyleSheet.hairlineWidth,
         borderBottomColor: colors.border,
       }}>
-        {(['all', 'following'] as const).map((s) => {
+        {(['forYou', 'all', 'following'] as const).map((s) => {
           const active = scope === s;
-          const label = s === 'all' ? 'Всички' : 'Следвани';
+          const label = s === 'forYou' ? 'За теб' : s === 'all' ? 'Всички' : 'Следвани';
           return (
             <Pressable
               key={s}

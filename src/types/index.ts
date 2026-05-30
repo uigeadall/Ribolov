@@ -58,6 +58,14 @@ export type Catch = {
   photoUri?: string;
   extraPhotoUris?: string[];
   photoStoragePath?: string;
+  /** Optional short video clip attached to the catch. Capped at 15 seconds
+      during upload (utils/videoLimits.ts). videoStoragePath mirrors the
+      R2/Storage object key so post deletion can clean up the bucket.
+      videoDurationMs is captured at pick time and used for inline player
+      progress + analytics. */
+  videoUri?: string;
+  videoStoragePath?: string;
+  videoDurationMs?: number;
   /** true ако снимката е заснета с камерата в приложението — изисква се за публични постове и класики */
   photoTakenWithAppCamera?: boolean;
   /** Потребителят е избрал да участва в седмичните/месечните класации */

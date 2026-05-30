@@ -211,7 +211,20 @@ service cloud.firestore {
             && isHttpsUrl(request.resource.data.ownerPhotoUrl)))
         && (!('extraPhotoUris' in request.resource.data)
           || (request.resource.data.extraPhotoUris is list
-            && request.resource.data.extraPhotoUris.size() <= 5));
+            && request.resource.data.extraPhotoUris.size() <= 5))
+        // Optional 15-second video clip. URL must be https:// for the
+        // same reason as photoUri (no file:// or data: injections); 30000
+        // ms is the hard ceiling on videoDurationMs — 15s + generous
+        // rounding slop, but anything past that is rejected so a bad
+        // client can't write 9999999 to fake an infinite progress bar.
+        && (!('videoUri' in request.resource.data)
+          || (request.resource.data.videoUri is string
+            && request.resource.data.videoUri.size() <= 2000
+            && isHttpsUrl(request.resource.data.videoUri)))
+        && (!('videoDurationMs' in request.resource.data)
+          || (request.resource.data.videoDurationMs is number
+            && request.resource.data.videoDurationMs >= 0
+            && request.resource.data.videoDurationMs <= 30000));
       // Update splits two paths so non-owners can still bump likeCount when
       // they react. The previous combined rule required ownerUid match for
       // ALL updates, which broke `toggleCatchReaction` for friends (rejected
@@ -235,7 +248,18 @@ service cloud.firestore {
               && request.resource.data.bait.size() <= 300))
           && (!('extraPhotoUris' in request.resource.data)
             || (request.resource.data.extraPhotoUris is list
-              && request.resource.data.extraPhotoUris.size() <= 5)))
+              && request.resource.data.extraPhotoUris.size() <= 5))
+          // Mirror the create-time video validation on owner updates so
+          // editing a catch can attach or replace its clip with the same
+          // constraints.
+          && (!('videoUri' in request.resource.data)
+            || (request.resource.data.videoUri is string
+              && request.resource.data.videoUri.size() <= 2000
+              && isHttpsUrl(request.resource.data.videoUri)))
+          && (!('videoDurationMs' in request.resource.data)
+            || (request.resource.data.videoDurationMs is number
+              && request.resource.data.videoDurationMs >= 0
+              && request.resource.data.videoDurationMs <= 30000)))
         ||
         // Any signed-in user can step likeCount by exactly ±1 (one reaction
         // toggle = one count change) and adjust the per-type reactionCounts
