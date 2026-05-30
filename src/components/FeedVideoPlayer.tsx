@@ -142,8 +142,23 @@ function InnerPlayer({
     return () => sub?.remove();
   }, [player, ready]);
 
+  // Tap-anywhere behavior (Twitter / Reels style):
+  //   - A short tap toggles mute. Most engagement with feed video is the
+  //     "show me what the sound is" reflex, so the whole area being a mute
+  //     toggle dramatically reduces friction.
+  //   - A long-press still opens the detail screen via the parent's onPress.
+  //     We don't surface a "tap to open" gesture because tap is now taken
+  //     by mute; tap the post body / species line if you want detail.
+  //   - The small speaker chip in the corner now only INDICATES state.
+  //     We could remove it entirely, but keeping it makes mute discoverable
+  //     for users who don't intuit the tap-anywhere convention.
   return (
-    <Pressable onPress={onPress} style={{ width, height, backgroundColor: '#000' }}>
+    <Pressable
+      onPress={() => setMuted((v) => !v)}
+      onLongPress={onPress}
+      delayLongPress={300}
+      style={{ width, height, backgroundColor: '#000' }}
+    >
       <VideoView
         player={player}
         style={{ width, height }}
@@ -179,20 +194,18 @@ function InnerPlayer({
           <ActivityIndicator size="small" color="rgba(255,255,255,0.7)" />
         </View>
       ) : null}
-      {/* Mute toggle — bottom-right corner, small. Stops propagation so
-          tapping the speaker doesn't ALSO open the detail screen. */}
-      <Pressable
-        onPress={(e) => {
-          e.stopPropagation();
-          setMuted((v) => !v);
-        }}
-        hitSlop={10}
+      {/* Speaker indicator — passive, no longer a separate tap target since
+          the whole video toggles mute. Kept as visual affordance so users
+          who don't intuit tap-anywhere can see "this video has sound /
+          this video is muted." pointerEvents=none lets touches pass
+          through to the parent Pressable. */}
+      <View
         style={styles.muteBtn}
-        accessibilityRole="button"
-        accessibilityLabel={muted ? 'Включи звука' : 'Изключи звука'}
+        pointerEvents="none"
+        accessibilityLabel={muted ? 'Звукът е изключен' : 'Звукът е включен'}
       >
         <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={16} color="#fff" />
-      </Pressable>
+      </View>
     </Pressable>
   );
 }

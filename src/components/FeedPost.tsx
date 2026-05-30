@@ -227,6 +227,11 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
   // across the avatar gutter.
   const contentWidth = Math.max(0, screenWidth - 14 - 40 - 12 - 14);
   const [commentsOpen, setCommentsOpen] = useState(false);
+  // True when commentsOpen was set via the quick-reply stub (so the
+  // composer input should autofocus on mount). Reset to false after a
+  // single render so re-opening the panel via the chat icon doesn't
+  // grab keyboard unexpectedly.
+  const [quickReplyFocused, setQuickReplyFocused] = useState(false);
   // Natural aspect ratio (width / height) of the primary photo. Defaults to
   // 4/3 so expo-image gets a non-zero pixel size on the very first render
   // — a zero-height container short-circuits its load pipeline on Android
@@ -1079,6 +1084,52 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                   </Text>
                 </Pressable>
               )}
+
+              {/* Quick-reply inline composer — single-tap path to "drop a
+                  comment without opening the full thread." Mirrors X's
+                  "Post your reply" affordance. We don't auto-focus the
+                  input (would steal keyboard from the user scrolling past)
+                  but the whole row is a single tap target that lands the
+                  cursor + opens the comments panel atomically.
+                  Visible only when:
+                    - social is enabled (we have someone to send to)
+                    - user is signed in (myUid present)
+                    - comments are NOT already open (full composer takes over) */}
+              {socialEnabled && myUid && !commentsOpen ? (
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 8,
+                    marginTop: 8,
+                    paddingTop: 8,
+                    borderTopWidth: StyleSheet.hairlineWidth,
+                    borderTopColor: colors.border,
+                  }}
+                >
+                  <Pressable
+                    onPress={() => {
+                      setQuickReplyFocused(true);
+                      setCommentsOpen(true);
+                    }}
+                    style={{
+                      flex: 1,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      borderRadius: 999,
+                      paddingHorizontal: 12,
+                      paddingVertical: 6,
+                      backgroundColor: colors.background,
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Напиши отговор"
+                  >
+                    <Text style={{ fontSize: 13, color: colors.textMuted }}>
+                      Отговори на {displayName}…
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : null}
             </View>
 
             {/* ── Inline comments section ── */}
@@ -1198,6 +1249,8 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                     onChangeText={social.setDraft}
                     maxLength={2000}
                     editable={!social.sendBusy}
+                    autoFocus={quickReplyFocused}
+                    onBlur={() => setQuickReplyFocused(false)}
                   />
                   <Pressable onPress={social.onSendComment} disabled={social.sendBusy || !social.draft.trim()} hitSlop={8}>
                     {social.sendBusy ? (

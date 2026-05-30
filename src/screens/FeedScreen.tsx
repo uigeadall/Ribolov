@@ -314,8 +314,47 @@ export default function FeedScreen() {
     list.forEach((item) => {
       if (item.photoUri) Image.prefetch(item.photoUri).catch(() => {});
       if (item.ownerPhotoUrl) Image.prefetch(item.ownerPhotoUrl).catch(() => {});
+      // Video posters too — they're tiny (typically <120 KB) but render
+      // as the inline-player background while the video buffers, so
+      // having them warm in cache means the post never shows a black
+      // box during fast scrolling.
+      if (item.videoThumbnailUri) Image.prefetch(item.videoThumbnailUri).catch(() => {});
+      // Extra photos — load only the FIRST extra. Grid posts (2-4 photos)
+      // show all of them on-screen, but on entry the user only sees the
+      // first tile of pages 2-N; the rest comes in as they swipe.
+      // For 1+ extras we just warm the lead so the grid paints without
+      // a blank-tile flash.
+      if (item.extraPhotoUris && item.extraPhotoUris[0]) {
+        Image.prefetch(item.extraPhotoUris[0]).catch(() => {});
+      }
     });
   }, []);
+
+  // Lookahead media prefetch on visibility change. The viewability handler
+  // pushes IDs to the visibility pub-sub for play/pause + dwell tracking;
+  // this picks up the FRESH visible-set, finds the next 3 items beyond the
+  // bottom-most visible card, and prefetches their media. Triggered on every
+  // viewability tick (~100ms during a scroll), so it stays close to the
+  // user's scroll velocity without us having to listen to onScroll directly.
+  const lastLookaheadKeyRef = useRef<string>('');
+  const lookaheadPrefetch = useCallback(
+    (visibleIds: Set<string>, currentList: ReturnType<typeof Array.from<FeedItem>>) => {
+      if (visibleIds.size === 0 || currentList.length === 0) return;
+      const indices: number[] = [];
+      currentList.forEach((it, i) => { if (visibleIds.has(it.id)) indices.push(i); });
+      if (indices.length === 0) return;
+      const lastVisible = indices[indices.length - 1];
+      const upcoming = currentList.slice(lastVisible + 1, lastVisible + 4);
+      // Dedupe re-fires: cheap key on the upcoming ids so re-running the
+      // handler doesn't issue redundant Image.prefetch calls every viewport
+      // tick during a stationary pause.
+      const key = upcoming.map((u) => u.id).join('|');
+      if (key === lastLookaheadKeyRef.current) return;
+      lastLookaheadKeyRef.current = key;
+      prefetchBatch(upcoming);
+    },
+    [prefetchBatch],
+  );
 
   const load = useCallback(async () => {
     if (!configured || !user) return;
@@ -929,6 +968,15 @@ export default function FeedScreen() {
   }, []);
 
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 40 }).current;
+  // useRef wraps `lookaheadPrefetch` so the FlashList prop stays stable
+  // across renders (changing onViewableItemsChanged after mount triggers
+  // a hard re-init that wipes scroll position). The handler reads the
+  // freshest `lookaheadPrefetch` via the ref instead.
+  const lookaheadRef = useRef(lookaheadPrefetch);
+  useEffect(() => { lookaheadRef.current = lookaheadPrefetch; }, [lookaheadPrefetch]);
+  const itemsForLookaheadRef = useRef<FeedItem[]>([]);
+  useEffect(() => { itemsForLookaheadRef.current = items; }, [items]);
+
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: Array<{ item: { kind: string; data: { id: string } } }> }) => {
       const ids = new Set(viewableItems.map((v) => v.item.data.id));
@@ -939,6 +987,7 @@ export default function FeedScreen() {
       // the closure (and forcing FlashList to re-run renderItem for every
       // visible cell). Now the parent renders nothing on viewability change.
       publishFeedVisibility(ids);
+      lookaheadRef.current(ids, itemsForLookaheadRef.current);
     }
   ).current;
 
