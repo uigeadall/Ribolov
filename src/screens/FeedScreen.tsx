@@ -23,6 +23,7 @@ import { ComposeFab } from '../components/ComposeFab';
 import { EmptyState } from '../components/EmptyState';
 import { Button } from '../components/Button';
 import { FeedPost, FeedItem } from '../components/FeedPost';
+import { PeekPreview } from '../components/PeekPreview';
 import { PostCard } from '../components/PostCard';
 import { PeopleYouMayKnowRow } from '../components/PeopleYouMayKnowRow';
 import { useTheme } from '../services/themeContext';
@@ -271,6 +272,12 @@ export default function FeedScreen() {
   // since they don't carry a location signal worth filtering on.
   const [waterFilter, setWaterFilter] = useState<WaterPick | null>(null);
   const [waterPickerOpen, setWaterPickerOpen] = useState(false);
+
+  // Peek preview — driven by FeedPost's onLongPressCatch. Lives at screen
+  // level so the modal mounts outside the FlashList recycler (otherwise a
+  // long-press during scroll could un-mount the modal mid-animation when
+  // FlashList recycles the underlying cell). null means no peek active.
+  const [peekItem, setPeekItem] = useState<FeedItem | null>(null);
 
   // Restore last water filter on mount. Stored as { kind, id } — we resolve
   // back to the full Dam / River object from the local DAMS / RIVERS data
@@ -983,6 +990,7 @@ export default function FeedScreen() {
           onPressMention={onPressMention}
           onMarkNotInterested={scope === 'forYou' ? handleNotInterested : undefined}
           onHideAuthor={handleHideAuthor}
+          onLongPressCatch={setPeekItem}
         />
       );
     }
@@ -1648,6 +1656,12 @@ export default function FeedScreen() {
           setWaterPickerOpen(false);
         }}
       />
+
+      {/* Peek preview — held while the user long-presses a feed card. The
+          modal mounts here so it lives outside the FlashList recycler and
+          its animation state isn't reset by cell churn. Tap anywhere on
+          the backdrop to dismiss. */}
+      <PeekPreview item={peekItem} onClose={() => setPeekItem(null)} />
     </View>
   );
 }

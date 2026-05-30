@@ -212,9 +212,13 @@ type Props = {
       persist the demotion + refresh the ranker. */
   onMarkNotInterested?: (item: FeedItem) => void;
   onHideAuthor?: (authorUid: string, displayName: string) => void;
+  /** Long-press handler — wired by FeedScreen to open PeekPreview. We
+      bubble the FeedItem up rather than mounting the modal inside the
+      card so the peek lives outside the FlashList recycler. */
+  onLongPressCatch?: (item: FeedItem) => void;
 };
 
-function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarUrl, socialEnabled, isVisible: isVisibleProp, onPressAuthor, onPressCatch, onDeletePhoto, onRemovePost, onReshare, onPressHashtag, onPressMention, onMarkNotInterested, onHideAuthor }: Props) {
+function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarUrl, socialEnabled, isVisible: isVisibleProp, onPressAuthor, onPressCatch, onDeletePhoto, onRemovePost, onReshare, onPressHashtag, onPressMention, onMarkNotInterested, onHideAuthor, onLongPressCatch }: Props) {
   // Visibility resolution: when rendered inside FeedScreen the prop is
   // undefined and we read live visibility from the pub-sub. When rendered
   // outside the feed list (e.g. catch detail), the parent passes
@@ -459,6 +463,25 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      {/* Outer Pressable handles the peek long-press. We delegate to the
+          host screen via onLongPressCatch — peek state lives there so the
+          modal renders outside the FlashList recycler. delayLongPress of
+          450ms is a little longer than the system default (500ms feels
+          like a delay; ~450ms feels "instant if held"). Inner Pressables
+          (avatar, action buttons, photo carousel) still handle their own
+          taps normally — the responder system gives precedence to the
+          inner node on tap and routes only sustained holds to the outer. */}
+      <Pressable
+        onLongPress={onLongPressCatch ? () => {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          onLongPressCatch(item);
+        } : undefined}
+        delayLongPress={450}
+        // android_disableSound + no pressed style: the outer container
+        // shouldn't react to a tap. We rely on inner Pressables for
+        // tap feedback.
+        android_disableSound
+      >
       <View style={styles.postWrap}>
 
         {/* ── Avatar column (X-style) — sits to the left of everything,
@@ -1340,6 +1363,7 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
         )}
         </View>{/* /contentCol */}
       </View>
+      </Pressable>
     </KeyboardAvoidingView>
   );
 }
