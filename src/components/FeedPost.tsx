@@ -199,6 +199,14 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
   // across the avatar gutter.
   const contentWidth = Math.max(0, screenWidth - 14 - 40 - 12 - 14);
   const [commentsOpen, setCommentsOpen] = useState(false);
+  // Natural aspect ratio (width / height) of the primary photo. Defaults to
+  // 4/3 so expo-image gets a non-zero pixel size on the very first render
+  // — a zero-height container short-circuits its load pipeline on Android
+  // and the photo never appears. The Image's onLoad callback updates this
+  // to the actual ratio so the feed render matches the full-resolution
+  // viewer: no crop, no letterboxing. All carousel pages share the primary
+  // photo's ratio so page-to-page scrolling stays visually stable.
+  const [photoAspectRatio, setPhotoAspectRatio] = useState<number>(4 / 3);
   // Index into the combined carouselPhotos list when the viewer is open;
   // null means closed. Tracking the index (not the URI) lets the ImageViewer
   // open on the same page the user tapped AND keeps the user in-context
@@ -384,13 +392,17 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
     item.released ? 'пуснат' : null,
   ].filter(Boolean).join(' · ');
 
-  // Photo height tracks the content column width but is capped at 360px so
-  // tall portrait fish photos don't dominate the feed (X never lets media
-  // exceed roughly this height — the post should still feel skimmable, and
-  // the user can tap to see the full photo in the viewer). Aspect ratio is
-  // ~4:3 landscape-leaning since 5:4 portrait pushed a single post past
-  // 400px of vertical space which is the opposite of the X feed feel.
-  const photoHeight = Math.min(360, Math.round(contentWidth * (3 / 4)));
+  // Photo height matches the photo's natural aspect ratio so the feed
+  // render shows the full image, exactly as the fullscreen viewer would —
+  // no crop, no letterboxing. The cap is a generous safety net (1.5× the
+  // content column width) so an absurdly tall panorama can't shove the
+  // entire post off-screen on small devices; in practice almost every
+  // fishing photo is well below that bound and renders at its natural
+  // size. The ratio is bumped to the photo's real value on first onLoad.
+  const photoHeight = Math.min(
+    Math.round(contentWidth * 1.5),
+    Math.round(contentWidth / photoAspectRatio),
+  );
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -539,6 +551,14 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                       cachePolicy="memory-disk"
                       transition={250}
                       recyclingKey={item.id}
+                      onLoad={(e) => {
+                        // Update the container ratio to the photo's natural
+                        // dimensions so it renders full-size. Guard against
+                        // zero-dimension events (some Cloudinary placeholders
+                        // emit width:0 height:0 before the real image arrives).
+                        const { width, height } = e.source;
+                        if (width && height) setPhotoAspectRatio(width / height);
+                      }}
                       onError={(e) => setImageError(e?.error ?? 'unknown')}
                     />
                     {/* Double-tap heart + bookmark — kept on the primary page only. */}
@@ -735,6 +755,12 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                   cachePolicy="memory-disk"
                   transition={250}
                   recyclingKey={item.id}
+                  onLoad={(e) => {
+                    // Mirror of the carousel-branch handler — keep the
+                    // container in step with the photo's natural ratio.
+                    const { width, height } = e.source;
+                    if (width && height) setPhotoAspectRatio(width / height);
+                  }}
                   onError={(e) => {
                     const message = e?.error ?? 'unknown';
                     if (__DEV__) {
