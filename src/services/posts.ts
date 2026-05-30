@@ -10,13 +10,11 @@ import {
   orderBy,
   limit,
   where,
-  startAfter,
   serverTimestamp,
   increment,
   runTransaction,
   onSnapshot,
   updateDoc,
-  type DocumentSnapshot,
 } from 'firebase/firestore';
 import { requireFirebase } from './firebase';
 import { stripUndefinedForFirestore } from './firestoreSanitize';
@@ -56,7 +54,12 @@ export type CreatePostInput = {
 
 export type PostsPage = {
   items: Post[];
-  lastDoc: DocumentSnapshot | null;
+  /** Cursor for the next page — ISO date string of the last returned item.
+      Pass back as the `afterDate` arg on the next call. null when no more
+      pages. We use a date cursor (not a DocumentSnapshot) so the chunked
+      "follows > 30 users" path can paginate too — startAfter(DocSnapshot)
+      doesn't work across multiple merged queries. */
+  lastDate: string | null;
   hasMore: boolean;
 };
 
@@ -209,7 +212,7 @@ export async function createPost(input: CreatePostInput): Promise<string> {
 
 export async function fetchPublicPosts(
   maxItems = 20,
-  afterDoc?: DocumentSnapshot | null,
+  afterDate?: string | null,
   ownerUids?: string[],
 ): Promise<PostsPage> {
   const fb = requireFirebase();
@@ -220,24 +223,41 @@ export async function fetchPublicPosts(
     const CHUNK = 30;
     for (let i = 0; i < ownerUids.length; i += CHUNK) {
       const chunk = ownerUids.slice(i, i + CHUNK);
-      const snap = await getDocs(
-        query(
-          collection(fb.db, POSTS_COLLECTION),
-          where('ownerUid', 'in', chunk),
-          orderBy('date', 'desc'),
-          limit(maxItems + 1),
-        ),
-      );
+      // Build chunk-local constraints; the date cursor is applied to EACH
+      // chunk so the merged result is genuinely "next page" rather than
+      // re-fetching items we've already shown.
+      const constraints: Parameters<typeof query>[1][] = [
+        where('ownerUid', 'in', chunk),
+        orderBy('date', 'desc'),
+        limit(maxItems + 1),
+      ];
+      if (afterDate) constraints.push(where('date', '<', afterDate));
+      const snap = await getDocs(query(collection(fb.db, POSTS_COLLECTION), ...constraints));
       snap.docs.forEach((d) => all.push(d.data() as Post));
     }
-    all.sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
+    // Dedupe — an ownerUid is in exactly one chunk so collisions shouldn't
+    // happen, but a defensive check is cheap and protects against a
+    // future chunking-pass bug returning the same doc twice.
+    const seenIds = new Set<string>();
+    const deduped = all.filter((p) => { if (seenIds.has(p.id)) return false; seenIds.add(p.id); return true; });
+    deduped.sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
+    // hasMore: we asked for maxItems+1 per chunk, so if any chunk returned
+    // more than `maxItems` total after sorting we genuinely have a next
+    // page. lastDate is the cursor: the date of the last item we return,
+    // which the next call will use as a strict-less-than filter.
+    const items = deduped.slice(0, maxItems);
     return {
-      items: all.slice(0, maxItems),
-      lastDoc: null,
-      hasMore: all.length > maxItems,
+      items,
+      lastDate: items.length > 0 ? items[items.length - 1].date ?? null : null,
+      hasMore: deduped.length > maxItems,
     };
   }
 
+  // Single-query path — also uses the date cursor so chunked + non-chunked
+  // callers can paginate using the same `afterDate` value passed back from
+  // the previous result. (Previously this path used startAfter(DocSnapshot),
+  // which was incompatible with the chunked path's cursor format and meant
+  // pagination broke the moment the follow count crossed 30.)
   const constraints: Parameters<typeof query>[1][] = [
     orderBy('date', 'desc'),
     limit(maxItems + 1),
@@ -245,14 +265,15 @@ export async function fetchPublicPosts(
   if (ownerUids && ownerUids.length > 0) {
     constraints.unshift(where('ownerUid', 'in', ownerUids));
   }
-  if (afterDoc) constraints.push(startAfter(afterDoc));
+  if (afterDate) constraints.unshift(where('date', '<', afterDate));
 
   const snap = await getDocs(query(collection(fb.db, POSTS_COLLECTION), ...constraints));
   const hasMore = snap.docs.length > maxItems;
   const docs = hasMore ? snap.docs.slice(0, maxItems) : snap.docs;
+  const items = docs.map((d) => d.data() as Post);
   return {
-    items: docs.map((d) => d.data() as Post),
-    lastDoc: docs[docs.length - 1] ?? null,
+    items,
+    lastDate: items.length > 0 ? items[items.length - 1].date ?? null : null,
     hasMore,
   };
 }
@@ -445,8 +466,11 @@ export async function addPostComment(
   );
 
   // Bump the post's commentCount so the badge stays in sync without a re-read.
-  // Best-effort: if this fails (e.g. rules), comments still saved.
-  updateDoc(doc(fb.db, POSTS_COLLECTION, postId), { commentCount: increment(1) }).catch(() => {});
+  // Best-effort: if this fails (e.g. rules tighten), comments still saved.
+  // Capture failures to observability rather than swallowing silently —
+  // otherwise the count drifts and we have no signal that it's drifting.
+  updateDoc(doc(fb.db, POSTS_COLLECTION, postId), { commentCount: increment(1) })
+    .catch((e) => captureException(e, { area: 'post_comment_count_inc', postId }));
 
   // Fire-and-forget notification — only when commenter ≠ owner. We piggy-back
   // on the existing catch-comment notification shape (storing postId in the
@@ -479,8 +503,10 @@ export async function editPostComment(postId: string, commentId: string, newText
 export async function deletePostComment(postId: string, commentId: string): Promise<void> {
   const fb = requireFirebase();
   await deleteDoc(doc(fb.db, POSTS_COLLECTION, postId, 'comments', commentId));
-  // Best-effort decrement
-  updateDoc(doc(fb.db, POSTS_COLLECTION, postId), { commentCount: increment(-1) }).catch(() => {});
+  // Best-effort decrement. Capture failures to observability so silent
+  // count drift becomes visible to us, not just to confused users.
+  updateDoc(doc(fb.db, POSTS_COLLECTION, postId), { commentCount: increment(-1) })
+    .catch((e) => captureException(e, { area: 'post_comment_count_dec', postId, commentId }));
 }
 
 /**
@@ -519,18 +545,16 @@ export async function togglePostLike(postId: string, myUid: string, actorName: s
 }
 
 /**
- * Deletes a post and its photo. Best-effort on the Storage file.
+ * Deletes a post. R2 media (photo, video, thumbnail) cleanup is owned by
+ * the `onPostDeleted` Firestore trigger in functions/src/index.ts — it
+ * sweeps every *StoragePath field on the deleted doc. We used to call
+ * deleteFromR2 from here as well, but the client only knew about
+ * photoStoragePath (videos / thumbnails would leak), and the trigger
+ * already covers all three; doing it twice just paid for a redundant
+ * R2 round trip.
  */
 export async function deletePost(postId: string): Promise<void> {
   const fb = requireFirebase();
-  let storagePath: string | undefined;
-  try {
-    const snap = await getDoc(doc(fb.db, POSTS_COLLECTION, postId));
-    if (snap.exists()) storagePath = snap.data()?.photoStoragePath as string | undefined;
-  } catch { /* ignore */ }
-  await deleteDoc(doc(fb.db, POSTS_COLLECTION, postId)).catch(() => {});
-  if (storagePath) {
-    await deleteFromR2(storagePath);
-  }
+  await deleteDoc(doc(fb.db, POSTS_COLLECTION, postId));
   void invalidateAllFeedCaches();
 }

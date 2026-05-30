@@ -6,13 +6,10 @@ import {
   Pressable,
   TextInput,
   ActivityIndicator,
-  KeyboardAvoidingView,
   Platform,
   Modal,
   FlatList,
-  Clipboard,
   Linking,
-  ToastAndroid,
   Animated,
   PanResponder,
   ScrollView,
@@ -249,6 +246,11 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
   // viewer: no crop, no letterboxing. All carousel pages share the primary
   // photo's ratio so page-to-page scrolling stays visually stable.
   const [photoAspectRatio, setPhotoAspectRatio] = useState<number>(4 / 3);
+  // Reset on cell recycle. Without this, when FlashList recycles a cell into
+  // a different post, the container briefly renders at the PREVIOUS post's
+  // photo ratio until the new image's onLoad fires — visible as a flash of
+  // wrong dimensions during fast scroll.
+  useEffect(() => { setPhotoAspectRatio(4 / 3); }, [item.id]);
   // Index into the combined carouselPhotos list when the viewer is open;
   // null means closed. Tracking the index (not the URI) lets the ImageViewer
   // open on the same page the user tapped AND keeps the user in-context
@@ -300,6 +302,12 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
   // sheet on the next post starts on "Всички" instead of inheriting the
   // previous selection.
   useEffect(() => { if (!social.likersOpen) setLikersFilter(null); }, [social.likersOpen]);
+  // Memoize the filtered likers — without this the FlatList prop changes
+  // identity on every parent re-render, defeating the recycler's diff.
+  const filteredLikers = useMemo(
+    () => likersFilter ? social.likers.filter((l) => l.reaction === likersFilter) : social.likers,
+    [likersFilter, social.likers],
+  );
   const reactionScale = useRef(new Animated.Value(1)).current;
 
   // The shared ReactionPicker owns its own enter/exit animation now;
@@ -470,15 +478,20 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
   );
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      {/* Outer Pressable handles the peek long-press. We delegate to the
-          host screen via onLongPressCatch — peek state lives there so the
-          modal renders outside the FlashList recycler. delayLongPress of
-          450ms is a little longer than the system default (500ms feels
-          like a delay; ~450ms feels "instant if held"). Inner Pressables
-          (avatar, action buttons, photo carousel) still handle their own
-          taps normally — the responder system gives precedence to the
-          inner node on tap and routes only sustained holds to the outer. */}
+    // No per-cell KeyboardAvoidingView: it was wrapping every card in the
+    // list, so each one ran its own keyboard listener + layout recalculation
+    // when the keyboard appeared (e.g. opening a composer on ONE card moved
+    // all of them). Keyboard avoidance for the composer is handled at the
+    // screen level (FeedScreen's keyboardAwareScrollProps) and the comment
+    // modal's own Modal+ScrollView handles the rest.
+    /* Outer Pressable handles the peek long-press. We delegate to the
+       host screen via onLongPressCatch — peek state lives there so the
+       modal renders outside the FlashList recycler. delayLongPress of
+       450ms is a little longer than the system default (500ms feels
+       like a delay; ~450ms feels "instant if held"). Inner Pressables
+       (avatar, action buttons, photo carousel) still handle their own
+       taps normally — the responder system gives precedence to the
+       inner node on tap and routes only sustained holds to the outer. */
       <Pressable
         onLongPress={onLongPressCatch ? () => {
           void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -699,8 +712,15 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                   <View style={{ width: '100%', height: photoHeight, backgroundColor: colors.surfaceAlt }}>
                     <Image
                       source={{ uri: (() => {
-                        const sized = getImageVariant(item.photoUri, ImageSize.feed) ?? item.photoUri;
-                        return imageRetryNonce > 0 ? `${sized}#r=${imageRetryNonce}` : sized;
+                        const sized = getImageVariant(item.photoUri, ImageSize.feed) ?? item.photoUri ?? '';
+                        if (imageRetryNonce === 0 || !sized) return sized;
+                        // Query param, not fragment: expo-image's underlying
+                        // native cache (SDWebImage / Glide) strips URL
+                        // fragments before generating the cache key, so
+                        // `foo.jpg#r=1` collides with `foo.jpg` and the
+                        // retry would silently serve the cached failure.
+                        const sep = sized.includes('?') ? '&' : '?';
+                        return `${sized}${sep}r=${imageRetryNonce}`;
                       })() }}
                       style={StyleSheet.absoluteFillObject}
                       contentFit="cover"
@@ -903,8 +923,13 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                   // variant — covers full-width feed renders without paying
                   // 1200×1200 bandwidth costs.
                   source={{ uri: (() => {
-                    const sized = getImageVariant(item.photoUri, ImageSize.feed) ?? item.photoUri;
-                    return imageRetryNonce > 0 ? `${sized}#r=${imageRetryNonce}` : sized;
+                    const sized = getImageVariant(item.photoUri, ImageSize.feed) ?? item.photoUri ?? '';
+                    if (imageRetryNonce === 0 || !sized) return sized;
+                    // Query param (not fragment) — native image caches strip
+                    // fragments before keying, so a `#r=N` retry collides
+                    // with the cached failed response.
+                    const sep = sized.includes('?') ? '&' : '?';
+                    return `${sized}${sep}r=${imageRetryNonce}`;
                   })() }}
                   style={StyleSheet.absoluteFillObject}
                   contentFit="cover"
@@ -1408,7 +1433,7 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                       <ActivityIndicator color={colors.primary} style={{ marginVertical: spacing.lg }} />
                     ) : (
                       <FlatList
-                        data={likersFilter ? social.likers.filter((l) => l.reaction === likersFilter) : social.likers}
+                        data={filteredLikers}
                         keyExtractor={(x) => x.uid}
                         style={{ maxHeight: 360 }}
                         renderItem={({ item: liker }) => (
@@ -1447,7 +1472,6 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
         </View>{/* /contentCol */}
       </View>
       </Pressable>
-    </KeyboardAvoidingView>
   );
 }
 

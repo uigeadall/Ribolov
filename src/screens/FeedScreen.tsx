@@ -441,7 +441,7 @@ export default function FeedScreen() {
         if (uids.length > 0) {
           const [pageRes, postsRes, tags] = await Promise.all([
             fetchPublicFeed(20, null, uids),
-            fetchPublicPosts(40, null, uids).catch(() => ({ items: [] as Post[], lastDoc: null, hasMore: false })),
+            fetchPublicPosts(40, null, uids).catch(() => ({ items: [] as Post[], lastDate: null, hasMore: false })),
             tagsP,
           ]);
           page = pageRes;
@@ -467,7 +467,7 @@ export default function FeedScreen() {
         followingUidsRef.current = [];
         [page, postsPage] = await Promise.all([
           fetchPublicFeed(20),
-          fetchPublicPosts(40).catch(() => ({ items: [] as Post[], lastDoc: null, hasMore: false })),
+          fetchPublicPosts(40).catch(() => ({ items: [] as Post[], lastDate: null, hasMore: false })),
         ]);
       }
 
@@ -497,7 +497,12 @@ export default function FeedScreen() {
       const newTopId = next[0]?.id ?? null;
       if (newTopId && seenTopIdRef.current && newTopId !== seenTopIdRef.current) {
         const seenIdx = next.findIndex((i) => i.id === seenTopIdRef.current);
-        const delta = seenIdx > 0 ? seenIdx : next.length;
+        // seenIdx === -1 means the previously-seen top has dropped off the
+        // page entirely (deleted, scrolled past the page window, etc.). Cap
+        // the new-posts count at the page size so a stale tip doesn't make
+        // the pill read "40 нови публикации" when really only ~5 came in.
+        // 20 here mirrors the page size requested from fetchPublicFeed.
+        const delta = seenIdx > 0 ? seenIdx : Math.min(next.length, 20);
         newPostsCountRef.current = delta;
         setNewPostsCount(delta);
       } else if (!seenTopIdRef.current) {
@@ -1093,7 +1098,15 @@ export default function FeedScreen() {
   const pendingDwellRef = useRef<Record<string, number>>({});
   const dwellByIdToUidRef = useRef<Map<string, string>>(new Map());
   useEffect(() => {
-    for (const it of items) dwellByIdToUidRef.current.set(it.id, it.ownerUid);
+    // Rebuild rather than additive-merge: the old "for (it of items) map.set"
+    // only ADDED entries, so the Map grew unboundedly as the user scrolled
+    // (cleared items via block / hide / scope-switch were never released).
+    // Rebuilding each pass costs ~items.length set() calls — negligible —
+    // and keeps the Map's footprint proportional to what's actually on
+    // screen + paginated.
+    const next = new Map<string, string>();
+    for (const it of items) next.set(it.id, it.ownerUid);
+    dwellByIdToUidRef.current = next;
   }, [items]);
   useEffect(() => {
     const flushDwell = async () => {

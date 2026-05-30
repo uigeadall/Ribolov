@@ -1,5 +1,6 @@
 import AsyncStorage from '../storage/kv';
 import { catchesStore } from '../storage/storage';
+import { ensureFirebase } from './firebase';
 import { ensureCatchPhotoUploadedForCloud, pushCatch } from './cloudSync';
 import { addBreadcrumb, captureException } from './observability';
 import { calcBackoffMs, readSyncQueue, writeSyncQueue } from './syncQueue';
@@ -45,18 +46,29 @@ function normalizeEntries(raw: unknown): Entry[] {
 const readQ = () => readSyncQueue(QUEUE_KEY, normalizeEntries);
 const writeQ = (entries: Entry[]) => writeSyncQueue(QUEUE_KEY, entries);
 
+// Serialise EVERY read-modify-write of the queue — enqueue, force-retry, and
+// flush. Previously only flushes were mutex'd, which left a race where an
+// enqueue (e.g. user saves a catch) firing while a flush was mid-loop would
+// read the same queue snapshot the flush did and write a disjoint result
+// back, clobbering the flush's pending-list — and potentially losing the
+// new entry as well. Treating the queue as a single-writer resource closes
+// that window.
+const withQueueMutex = makePromiseChain();
+
 export async function enqueueCatchSync(catchId: string, sharePublic: boolean): Promise<void> {
-  const q = await readQ();
-  // Preserve the in-flight retry counter if this catch is already in the
-  // queue. Resetting attempts on every enqueue let a perpetually-failing
-  // catch loop forever, since each save would zero it. The user-facing
-  // `forceRetryCatchSync` path still resets attempts intentionally to give
-  // a manual retry a fresh budget.
-  const prev = q.find((e) => e.catchId === catchId);
-  const rest = q.filter((e) => e.catchId !== catchId);
-  rest.push({ catchId, sharePublic, attempts: prev?.attempts ?? 0 });
-  await writeQ(rest);
-  addBreadcrumb('sync', 'catch_enqueue', { catchId, sharePublic: String(sharePublic) });
+  await withQueueMutex(async () => {
+    const q = await readQ();
+    // Preserve the in-flight retry counter if this catch is already in the
+    // queue. Resetting attempts on every enqueue let a perpetually-failing
+    // catch loop forever, since each save would zero it. The user-facing
+    // `forceRetryCatchSync` path still resets attempts intentionally to give
+    // a manual retry a fresh budget.
+    const prev = q.find((e) => e.catchId === catchId);
+    const rest = q.filter((e) => e.catchId !== catchId);
+    rest.push({ catchId, sharePublic, attempts: prev?.attempts ?? 0 });
+    await writeQ(rest);
+    addBreadcrumb('sync', 'catch_enqueue', { catchId, sharePublic: String(sharePublic) });
+  });
 }
 
 /** Number of catches currently waiting to upload. Used by the LogbookScreen
@@ -83,25 +95,21 @@ export async function forceRetryCatchSync(
   sharePublic: boolean,
   ctx: { user: { uid: string; displayName: string | null; email: string | null } },
 ): Promise<void> {
-  const q = await readQ();
-  const rest = q.filter((e) => e.catchId !== catchId);
-  rest.push({ catchId, sharePublic, attempts: 0 });
-  await writeQ(rest);
-  addBreadcrumb('sync', 'catch_force_retry', { catchId });
+  await withQueueMutex(async () => {
+    const q = await readQ();
+    const rest = q.filter((e) => e.catchId !== catchId);
+    rest.push({ catchId, sharePublic, attempts: 0 });
+    await writeQ(rest);
+    addBreadcrumb('sync', 'catch_force_retry', { catchId });
+  });
   await flushPendingCatchSync(ctx);
 }
-
-// Serialise flushes — a forceRetryCatchSync from a user tap firing while an
-// ambient AppState resume flush is mid-run would otherwise read the same
-// queue snapshot and write disjoint `remaining` lists, with the second
-// writer clobbering the first.
-const withFlushMutex = makePromiseChain();
 
 /** Изпраща чакащите улови към Firebase с експоненциален backoff. */
 export async function flushPendingCatchSync(ctx: {
   user: { uid: string; displayName: string | null; email: string | null };
 }): Promise<void> {
-  return withFlushMutex(() => runFlush(ctx));
+  return withQueueMutex(() => runFlush(ctx));
 }
 
 async function runFlush(ctx: {
@@ -131,6 +139,22 @@ async function runFlush(ctx: {
     }
 
     try {
+      // Account-switch guard: if the auth user has changed since this flush
+      // started (e.g. user signed out + a different user signed in mid-loop),
+      // bail. Continuing would push catches as the wrong user (Firestore
+      // rules would reject anyway) and worse, the catchesStore.save below
+      // could persist the old user's catch into the new user's local store.
+      const currentUid = ensureFirebase()?.auth.currentUser?.uid;
+      if (currentUid !== ctx.user.uid) {
+        addBreadcrumb('sync', 'catch_flush_user_changed', {
+          startedAs: ctx.user.uid,
+          currentUid: currentUid ?? 'null',
+        });
+        // Push the rest back into `remaining` and exit — the next flush
+        // (triggered by the new user's auth state change) will re-evaluate.
+        remaining.push(entry);
+        continue;
+      }
       let toSync = c;
       const uri = toSync.photoUri?.trim();
       if (uri && !/^https?:\/\//i.test(uri)) {
@@ -140,10 +164,17 @@ async function runFlush(ctx: {
       // Re-read the latest local state before saving syncedToCloud. The user may
       // have edited this catch between enqueue and flush; if we wrote the stale
       // `toSync` snapshot back, those edits would be silently overwritten.
-      // catchesStore.save is mutex-serialised, so the read-modify-write below
-      // can't race with another save.
+      // If the local store no longer has this catch (deleted between enqueue
+      // and flush, OR wiped by an account switch that happened between the
+      // pushCatch above and the read below), we MUST NOT re-save — saving
+      // `toSync` into a wiped store would persist stale data, and into a
+      // different user's store would leak our catch into their logbook.
       const latest = (await catchesStore.list()).find((x) => x.id === entry.catchId);
-      const synced = { ...(latest ?? toSync), syncedToCloud: true };
+      if (!latest) {
+        addBreadcrumb('sync', 'catch_local_missing_post_push', { catchId: entry.catchId });
+        continue;
+      }
+      const synced = { ...latest, syncedToCloud: true };
       await catchesStore.save(synced);
       catchById.set(entry.catchId, synced);
       addBreadcrumb('sync', 'catch_push_ok', { catchId: entry.catchId });

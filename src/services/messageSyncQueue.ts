@@ -2,6 +2,7 @@ import { addBreadcrumb, captureException } from './observability';
 import { sendConversationMessage, makeMessageClientId } from './messaging';
 import type { MessageReplyRef, SharedRef } from '../types';
 import { calcBackoffMs, readSyncQueue, writeSyncQueue } from './syncQueue';
+import { makePromiseChain } from '../utils/promiseChain';
 
 const QUEUE_KEY = 'ribolov:message-sync-queue';
 
@@ -106,6 +107,16 @@ function normalizeEntries(raw: unknown): Entry[] {
 const readQ = () => readSyncQueue(QUEUE_KEY, normalizeEntries);
 const writeQ = (entries: Entry[]) => writeSyncQueue(QUEUE_KEY, entries);
 
+// Single mutex serialises every read-modify-write of the queue — both
+// enqueue and flush. Without this, an enqueue (user taps "send") firing
+// while a flush is mid-loop would read the same queue snapshot the flush
+// read, and write a disjoint result back, clobbering the flush's pending
+// list. Worse case: a perpetually-failing message would be re-added to
+// the queue every time a new one enqueues during its flush, causing
+// duplicate Firestore writes (clientId dedupes those, but only after the
+// rule check + transaction round trip).
+const withQueueMutex = makePromiseChain();
+
 export async function enqueueMessage(
   convId: string,
   senderUid: string,
@@ -118,25 +129,27 @@ export async function enqueueMessage(
   replyTo?: MessageReplyRef,
   sharedRef?: SharedRef,
 ): Promise<void> {
-  const q = await readQ();
-  const id = clientId ?? makeMessageClientId();
-  // Defensive: if this exact clientId is already queued, don't duplicate it.
-  if (q.some((e) => e.clientId === id)) return;
-  q.push({
-    convId,
-    senderUid,
-    senderName,
-    text,
-    recipientUid,
-    mediaUrl,
-    mediaType,
-    replyTo,
-    sharedRef,
-    clientId: id,
-    attempts: 0,
+  await withQueueMutex(async () => {
+    const q = await readQ();
+    const id = clientId ?? makeMessageClientId();
+    // Defensive: if this exact clientId is already queued, don't duplicate it.
+    if (q.some((e) => e.clientId === id)) return;
+    q.push({
+      convId,
+      senderUid,
+      senderName,
+      text,
+      recipientUid,
+      mediaUrl,
+      mediaType,
+      replyTo,
+      sharedRef,
+      clientId: id,
+      attempts: 0,
+    });
+    await writeQ(q);
+    addBreadcrumb('sync', 'message_enqueue', { convId, senderUid, clientId: id });
   });
-  await writeQ(q);
-  addBreadcrumb('sync', 'message_enqueue', { convId, senderUid, clientId: id });
 }
 
 export async function getPendingMessageCount(): Promise<number> {
@@ -145,6 +158,10 @@ export async function getPendingMessageCount(): Promise<number> {
 }
 
 export async function flushPendingMessages(): Promise<void> {
+  return withQueueMutex(runFlush);
+}
+
+async function runFlush(): Promise<void> {
   const entries = await readQ();
   if (entries.length === 0) return;
 

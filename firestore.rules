@@ -131,13 +131,16 @@ service cloud.firestore {
       /** Известия за харесвания и коментари по мои публични улови. */
       match /notifications/{nid} {
         allow read, delete: if isSelf(userId);
-        // Actor can create/update the notification (latter handles re-follow
-        // after unfollow: the deterministic-id setDoc becomes an UPDATE
-        // because the original notification doc still exists from the first
-        // follow; without allowing update here, the second follow was being
-        // rejected with permission-denied).
+        // Actor writes a notification (create or self-update). Update covers
+        // the re-follow case (deterministic-id setDoc becomes an UPDATE
+        // because the original doc still exists from the first follow); the
+        // additional `actorUid == resource.data.actorUid` guard on the
+        // update path prevents actor B from overwriting actor A's slot
+        // (notification IDs are predictable, so without this guard B could
+        // setDoc on `like_alice_catch1` and make the slot read "B liked
+        // your catch" — silly but possible).
         // Reshare and personalBest types added for the push improvements.
-        allow create, update: if signedIn()
+        allow create: if signedIn()
           && request.auth.uid != userId
           && request.resource.data.actorUid == request.auth.uid
           && request.resource.data.actorName is string
@@ -176,8 +179,53 @@ service cloud.firestore {
               && request.resource.data.catchId.size() > 0
               && request.resource.data.catchId.size() <= 128)
           );
-        // Recipient can mark as read — separate from the actor write path
-        // above. Both allow rules OR together for update.
+        // Actor self-update — same conditions as create plus the actorUid-
+        // preservation guard. Covers the re-follow case: alice follows bob,
+        // unfollows, follows again — the deterministic-id setDoc lands as
+        // an UPDATE on the still-existing notification doc; both writes
+        // are by alice, so actorUid is preserved.
+        allow update: if signedIn()
+          && request.auth.uid != userId
+          && request.resource.data.actorUid == request.auth.uid
+          && request.resource.data.actorUid == resource.data.actorUid
+          && request.resource.data.actorName is string
+          && request.resource.data.actorName.size() <= 120
+          && request.resource.data.type in ['like', 'comment', 'follow', 'storyLike', 'storyComment', 'mention', 'reshare', 'personalBest']
+          && request.resource.data.preview is string
+          && request.resource.data.preview.size() <= 200
+          && request.resource.data.read == false
+          && (
+            (request.resource.data.type == 'follow'
+              && (!('catchId' in request.resource.data) || request.resource.data.catchId == '')
+              && request.resource.data.preview == '')
+            || (request.resource.data.type in ['like', 'comment']
+              && (
+                (request.resource.data.catchId is string
+                  && request.resource.data.catchId.size() > 0
+                  && request.resource.data.catchId.size() <= 128)
+                || (request.resource.data.get('postId', '') is string
+                  && request.resource.data.get('postId', '').size() > 0
+                  && request.resource.data.get('postId', '').size() <= 128)
+              ))
+            || (request.resource.data.type in ['storyLike', 'storyComment']
+              && request.resource.data.storyId is string
+              && request.resource.data.storyId.size() > 0
+              && request.resource.data.storyId.size() <= 128)
+            || (request.resource.data.type == 'mention'
+              && request.resource.data.catchId is string
+              && request.resource.data.catchId.size() > 0
+              && request.resource.data.catchId.size() <= 128)
+            || (request.resource.data.type == 'reshare'
+              && request.resource.data.get('postId', '') is string
+              && request.resource.data.get('postId', '').size() > 0
+              && request.resource.data.get('postId', '').size() <= 128)
+            || (request.resource.data.type == 'personalBest'
+              && request.resource.data.catchId is string
+              && request.resource.data.catchId.size() > 0
+              && request.resource.data.catchId.size() <= 128)
+          );
+        // Recipient can mark as read — separate from the actor write paths
+        // above. Multiple allow rules OR together for update.
         allow update: if isSelf(userId)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])
           && request.resource.data.read == true;
@@ -333,10 +381,14 @@ service cloud.firestore {
           // Counter bump — get('likeCount', 0) defaults legacy comments
           // (created before likeCount was a tracked field) so the rule
           // doesn't reject the first comment-like with permission-denied.
+          // affectedKeys.hasOnly(['likeCount']) prevents the non-author bump
+          // path from being abused to overwrite the comment's text or
+          // replyTo fields while satisfying the ±1 constraint.
           (request.resource.data.likeCount is number
             && request.resource.data.likeCount >= resource.data.get('likeCount', 0) - 1
             && request.resource.data.likeCount <= resource.data.get('likeCount', 0) + 1
-            && request.resource.data.authorUid == resource.data.authorUid)
+            && request.resource.data.authorUid == resource.data.authorUid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount']))
         );
         allow delete: if signedIn() && (
           resource.data.authorUid == request.auth.uid
@@ -444,7 +496,9 @@ service cloud.firestore {
           && request.resource.data.text.size() <= 2000
           && request.resource.data.createdAt == request.time;
         // Mirrors the publicCatches/comments rule — author can edit text,
-        // anyone can bump likeCount by ±1.
+        // anyone can bump likeCount by ±1. affectedKeys.hasOnly(['likeCount'])
+        // keeps the non-author bump path from being abused to overwrite text
+        // or replyTo fields while satisfying the ±1 constraint.
         allow update: if signedIn() && (
           (resource.data.authorUid == request.auth.uid
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])
@@ -456,7 +510,8 @@ service cloud.firestore {
           (request.resource.data.likeCount is number
             && request.resource.data.likeCount >= resource.data.get('likeCount', 0) - 1
             && request.resource.data.likeCount <= resource.data.get('likeCount', 0) + 1
-            && request.resource.data.authorUid == resource.data.authorUid)
+            && request.resource.data.authorUid == resource.data.authorUid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount']))
         );
         allow delete: if signedIn() && (
           resource.data.authorUid == request.auth.uid
@@ -569,11 +624,16 @@ service cloud.firestore {
           // through the second branch below.
           ;
         // Counter bump — defaults legacy entries without likeCount.
+        // affectedKeys.hasOnly(['likeCount']) keeps the non-owner counter-
+        // bump path from being abused to overwrite photoUri / other fields
+        // while satisfying the ±1 constraint. Same pattern as the publicCatches
+        // and posts comment-like rules.
         allow update: if signedIn()
           && request.resource.data.likeCount is number
           && request.resource.data.likeCount >= resource.data.get('likeCount', 0) - 1
           && request.resource.data.likeCount <= resource.data.get('likeCount', 0) + 1
-          && request.resource.data.ownerUid == resource.data.ownerUid;
+          && request.resource.data.ownerUid == resource.data.ownerUid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount']);
         allow delete: if signedIn() && (
           isSelf(ownerUid)
           || get(/databases/$(database)/documents/tournaments/$(tid)).data.hostUid == request.auth.uid
@@ -660,7 +720,16 @@ service cloud.firestore {
         resource.data.createdBy == request.auth.uid
         ||
         // Any signed-in user can only touch memberCount / postCount (join, leave, post)
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberCount', 'postCount'])
+        // — and each only by ±1 per request so a troll can't set memberCount=0
+        // on a 500-person group. Defaults via .get() so legacy docs that pre-date
+        // these fields don't reject the first write.
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberCount', 'postCount'])
+          && request.resource.data.get('memberCount', 0) is number
+          && request.resource.data.get('memberCount', 0) >= resource.data.get('memberCount', 0) - 1
+          && request.resource.data.get('memberCount', 0) <= resource.data.get('memberCount', 0) + 1
+          && request.resource.data.get('postCount', 0) is number
+          && request.resource.data.get('postCount', 0) >= resource.data.get('postCount', 0) - 1
+          && request.resource.data.get('postCount', 0) <= resource.data.get('postCount', 0) + 1)
       );
       allow delete: if signedIn() && resource.data.createdBy == request.auth.uid;
 
@@ -700,8 +769,22 @@ service cloud.firestore {
           // Creator can edit fully
           resource.data.createdBy == request.auth.uid
           || get(/databases/$(database)/documents/groups/$(groupId)).data.createdBy == request.auth.uid
-          // Any signed-in member can bump RSVP counts
-          || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rsvpCounts'])
+          // Any signed-in member can bump RSVP counts — each known bucket
+          // (going / maybe / not_going) bounded to ±1 per request so a
+          // troll can't zero out attendance on a popular event. The .get()
+          // default handles freshly-created events whose rsvpCounts map is
+          // missing the bucket the user is voting in.
+          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rsvpCounts'])
+            && request.resource.data.rsvpCounts is map
+            && request.resource.data.rsvpCounts.get('going', 0) is number
+            && request.resource.data.rsvpCounts.get('going', 0) >= resource.data.get('rsvpCounts', {}).get('going', 0) - 1
+            && request.resource.data.rsvpCounts.get('going', 0) <= resource.data.get('rsvpCounts', {}).get('going', 0) + 1
+            && request.resource.data.rsvpCounts.get('maybe', 0) is number
+            && request.resource.data.rsvpCounts.get('maybe', 0) >= resource.data.get('rsvpCounts', {}).get('maybe', 0) - 1
+            && request.resource.data.rsvpCounts.get('maybe', 0) <= resource.data.get('rsvpCounts', {}).get('maybe', 0) + 1
+            && request.resource.data.rsvpCounts.get('not_going', 0) is number
+            && request.resource.data.rsvpCounts.get('not_going', 0) >= resource.data.get('rsvpCounts', {}).get('not_going', 0) - 1
+            && request.resource.data.rsvpCounts.get('not_going', 0) <= resource.data.get('rsvpCounts', {}).get('not_going', 0) + 1)
         );
         allow delete: if signedIn() && (
           resource.data.createdBy == request.auth.uid
@@ -731,8 +814,30 @@ service cloud.firestore {
         allow update: if signedIn() && (
           resource.data.createdBy == request.auth.uid
           || get(/databases/$(database)/documents/groups/$(groupId)).data.createdBy == request.auth.uid
-          // Any signed-in member can update voteCounts
-          || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['voteCounts'])
+          // Any signed-in member can update voteCounts — each known bucket
+          // (string-keyed "0".."5", matching the option indices) bounded to
+          // ±1 per request so a troll can't zero out the leading option.
+          // Defaults via .get() so missing keys (sparse map) don't reject.
+          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['voteCounts'])
+            && request.resource.data.voteCounts is map
+            && request.resource.data.voteCounts.get('0', 0) is number
+            && request.resource.data.voteCounts.get('0', 0) >= resource.data.get('voteCounts', {}).get('0', 0) - 1
+            && request.resource.data.voteCounts.get('0', 0) <= resource.data.get('voteCounts', {}).get('0', 0) + 1
+            && request.resource.data.voteCounts.get('1', 0) is number
+            && request.resource.data.voteCounts.get('1', 0) >= resource.data.get('voteCounts', {}).get('1', 0) - 1
+            && request.resource.data.voteCounts.get('1', 0) <= resource.data.get('voteCounts', {}).get('1', 0) + 1
+            && request.resource.data.voteCounts.get('2', 0) is number
+            && request.resource.data.voteCounts.get('2', 0) >= resource.data.get('voteCounts', {}).get('2', 0) - 1
+            && request.resource.data.voteCounts.get('2', 0) <= resource.data.get('voteCounts', {}).get('2', 0) + 1
+            && request.resource.data.voteCounts.get('3', 0) is number
+            && request.resource.data.voteCounts.get('3', 0) >= resource.data.get('voteCounts', {}).get('3', 0) - 1
+            && request.resource.data.voteCounts.get('3', 0) <= resource.data.get('voteCounts', {}).get('3', 0) + 1
+            && request.resource.data.voteCounts.get('4', 0) is number
+            && request.resource.data.voteCounts.get('4', 0) >= resource.data.get('voteCounts', {}).get('4', 0) - 1
+            && request.resource.data.voteCounts.get('4', 0) <= resource.data.get('voteCounts', {}).get('4', 0) + 1
+            && request.resource.data.voteCounts.get('5', 0) is number
+            && request.resource.data.voteCounts.get('5', 0) >= resource.data.get('voteCounts', {}).get('5', 0) - 1
+            && request.resource.data.voteCounts.get('5', 0) <= resource.data.get('voteCounts', {}).get('5', 0) + 1)
         );
         allow delete: if signedIn() && (
           resource.data.createdBy == request.auth.uid
