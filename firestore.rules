@@ -20,6 +20,35 @@ service cloud.firestore {
       return v is string && (v.size() == 0 || v.matches('https://.*'));
     }
 
+    /** Returns the other participant's uid for a conversation. Relies on
+        participantIds being a 2-element array (enforced on conversation create). */
+    function peerUidForConv(convId) {
+      return get(/databases/$(database)/documents/conversations/$(convId)).data.participantIds[0] == request.auth.uid
+        ? get(/databases/$(database)/documents/conversations/$(convId)).data.participantIds[1]
+        : get(/databases/$(database)/documents/conversations/$(convId)).data.participantIds[0];
+    }
+
+    /** True when the caller has NOT been blocked by the other participant.
+        Costs +1 read per write op (the exists() lookup) — the price of
+        moderation. Used by message create, reaction create/update, and the
+        conv-level update that bumps lastMessage. */
+    function peerHasNotBlockedMeInConv(convId) {
+      return !exists(/databases/$(database)/documents/users/$(peerUidForConv(convId))/blockedUsers/$(request.auth.uid));
+    }
+
+    /** Same check as peerHasNotBlockedMeInConv but for conversation create —
+        the conv doc doesn't exist yet so participantIds is read from the
+        incoming write. */
+    function peerHasNotBlockedMeInRequest() {
+      return !exists(
+        /databases/$(database)/documents/users/$(
+          request.resource.data.participantIds[0] == request.auth.uid
+            ? request.resource.data.participantIds[1]
+            : request.resource.data.participantIds[0]
+        )/blockedUsers/$(request.auth.uid)
+      );
+    }
+
     /** Профил и лични подколекции — само собственикът пише. */
     match /users/{userId} {
       allow read: if signedIn();
@@ -209,16 +238,28 @@ service cloud.firestore {
               && request.resource.data.extraPhotoUris.size() <= 5)))
         ||
         // Any signed-in user can step likeCount by exactly ±1 (one reaction
-        // toggle = one count change). Uses get('likeCount', 0) to default
-        // to 0 when the catch was created before likeCount was a tracked
-        // field — without the default, `resource.data.likeCount - 1` errors
-        // for those legacy docs and the rule rejects the first like with
-        // permission-denied. New catches still get likeCount initialized to
-        // 0 in pushCatch, but the rule handles both shapes.
+        // toggle = one count change) and adjust the per-type reactionCounts
+        // tally that backs the inline feed breakdown.
+        //
+        // - likeCount stays within ±1 of the prior value
+        // - non-owner writes are limited via affectedKeys.hasOnly() so the
+        //   reaction path can't be abused to clobber other fields (previously
+        //   the rule never checked which keys were affected, so a non-owner
+        //   could in theory rewrite the whole doc while still satisfying the
+        //   likeCount ±1 constraint)
+        // - reactionCounts is a free-form map and changes by ±1 per type
+        //   inside the toggleCatchReaction transaction; we don't validate
+        //   each per-type delta here because a misbehaving client could
+        //   only inflate counts on its own writes (the corresponding likes
+        //   subdoc is also written and gated by isSelf(uid))
+        // - get('likeCount', 0) defaults legacy docs so the first like
+        //   doesn't reject with permission-denied
         (request.resource.data.likeCount is number
           && request.resource.data.likeCount >= resource.data.get('likeCount', 0) - 1
           && request.resource.data.likeCount <= resource.data.get('likeCount', 0) + 1
-          && request.resource.data.ownerUid == resource.data.ownerUid)
+          && request.resource.data.ownerUid == resource.data.ownerUid
+          && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['likeCount', 'reactionCounts']))
       );
       allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
 
@@ -310,17 +351,22 @@ service cloud.firestore {
         resource.data.ownerUid == request.auth.uid
         ||
         // Counter bumps — likeCount/commentCount each by ±1, ownerUid
-        // preserved. get('field', 0) defaults to 0 for legacy docs missing
-        // the field, otherwise `resource.data.X - 1` errors and denies the
-        // write. (Posts initialize both to 0 on create, but legacy posts
-        // and any future create paths that miss it would otherwise fail.)
+        // preserved, plus the per-reaction-type tally map that backs the
+        // inline emoji breakdown in PostCard. Restricted via affectedKeys
+        // so non-owners can't smuggle other fields in.
+        // get('field', 0) defaults to 0 for legacy docs missing the field,
+        // otherwise `resource.data.X - 1` errors and denies the write.
+        // (Posts initialize both to 0 on create, but legacy posts and any
+        // future create paths that miss it would otherwise fail.)
         (request.resource.data.likeCount is number
           && request.resource.data.likeCount >= resource.data.get('likeCount', 0) - 1
           && request.resource.data.likeCount <= resource.data.get('likeCount', 0) + 1
           && request.resource.data.commentCount is number
           && request.resource.data.commentCount >= resource.data.get('commentCount', 0) - 1
           && request.resource.data.commentCount <= resource.data.get('commentCount', 0) + 1
-          && request.resource.data.ownerUid == resource.data.ownerUid)
+          && request.resource.data.ownerUid == resource.data.ownerUid
+          && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['likeCount', 'commentCount', 'reactionCounts']))
       );
       allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
 
@@ -693,18 +739,29 @@ service cloud.firestore {
     /** Директни съобщения — само двамата участници. */
     match /conversations/{convId} {
       allow read: if signedIn() && (resource == null || request.auth.uid in resource.data.participantIds);
+      // Conversation create: the other participant must not have blocked me,
+      // otherwise a blocked user could re-open a fresh thread with the victim.
       allow create: if signedIn()
         && request.auth.uid in request.resource.data.participantIds
-        && request.resource.data.participantIds.size() == 2;
+        && request.resource.data.participantIds.size() == 2
+        && peerHasNotBlockedMeInRequest();
       allow update: if signedIn()
         && request.auth.uid in resource.data.participantIds
         && (
-          // Full update (e.g. add participant names) — participantIds must stay the same
+          // Full update (e.g. add participant names) — participantIds must stay the same.
+          // Block check skipped: changing your own name in shared state shouldn't
+          // be rejected just because you've since been blocked.
           request.resource.data.participantIds == resource.data.participantIds
           ||
-          // Message metadata update (lastMessage, unreadCounts) — only these fields allowed
-          request.resource.data.diff(resource.data).affectedKeys()
+          // Message metadata update (lastMessage, unreadCounts) — only these
+          // fields allowed, and only if I haven't been blocked by the peer.
+          // This is the write that accompanies sendConversationMessage; without
+          // the block check here the batch would partially succeed (the message
+          // create is rejected separately) and the inbox row could update
+          // anyway, leaking the blocked sender's preview to the victim.
+          (request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['lastMessage', 'lastMessageAt', 'lastSenderUid', 'unreadCounts'])
+           && peerHasNotBlockedMeInConv(convId))
         );
       allow delete: if false;
 
@@ -714,6 +771,14 @@ service cloud.firestore {
         allow create: if signedIn()
           && request.resource.data.senderUid == request.auth.uid
           && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participantIds
+          // Recipient-blocked-me check: drops the write at the server so a
+          // blocked sender can't bypass the client-side hide. Without this,
+          // blocking is purely cosmetic on the victim's side.
+          && peerHasNotBlockedMeInConv(convId)
+          // mediaType is a client-supplied enum used for inbox previews and
+          // viewer routing. Reject anything other than 'photo' or 'video'.
+          && (!('mediaType' in request.resource.data)
+            || request.resource.data.mediaType in ['photo', 'video'])
           // Block clients from presetting `_fnProcessed`. Without this check,
           // a malicious client could write `_fnProcessed: true` on create →
           // onNewMessage's pre-check sees it as already processed and skips
@@ -803,17 +868,21 @@ service cloud.firestore {
       }
 
       /** Per-message reactions, keyed by messageId. The doc is a map of uid → emoji code.
-          Any participant can react, but only on their own key. */
+          Any participant can react, but only on their own key. A blocked user
+          can't react to the blocker's messages either — same rationale as
+          message create. */
       match /reactions/{msgId} {
         allow read: if signedIn()
           && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participantIds;
         allow create: if signedIn()
           && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participantIds
+          && peerHasNotBlockedMeInConv(convId)
           && request.resource.data.keys().hasOnly([request.auth.uid])
           && (!(request.auth.uid in request.resource.data)
             || request.resource.data[request.auth.uid] in ['heart','fire','trophy','fish','wow']);
         allow update: if signedIn()
           && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participantIds
+          && peerHasNotBlockedMeInConv(convId)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([request.auth.uid])
           && (!(request.auth.uid in request.resource.data)
             || request.resource.data[request.auth.uid] in ['heart','fire','trophy','fish','wow']);

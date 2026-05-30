@@ -110,6 +110,10 @@ export async function createPost(input: CreatePostInput): Promise<string> {
     isPublic: true,
     likeCount: 0,
     commentCount: 0,
+    // Empty map seed so PostCard can use its inline-counts path immediately —
+    // without it the very first render falls back to fetchPostReactionSummary
+    // (50-doc getDocs) until the first reaction populates the map.
+    reactionCounts: {},
     reshareOf: input.reshareOf,
   };
 

@@ -127,12 +127,33 @@ function PostCardInner({
     setLikeCount(post.likeCount ?? 0);
   }, [post.likeCount]);
 
-  // Reaction summary — fetched once on mount + after every successful toggle.
-  // Counts on this list can drift slightly from likeCount because the summary
-  // is sampled to 50 docs; for low-volume posts they match exactly.
+  // Reaction summary — read inline from the post doc's denormalized
+  // `reactionCounts` map (maintained atomically by togglePostReaction). Saves
+  // the per-card fetchPostReactionSummary call that previously read up to 50
+  // like docs. `fetchPostReactionSummary` is reserved for legacy posts
+  // missing the field, and only fired in that fallback effect below.
+  const inlineSummaryFromCounts = useMemo<ReactionSummaryItem[] | null>(() => {
+    const counts = post.reactionCounts;
+    if (!counts) return null;
+    const out: ReactionSummaryItem[] = [];
+    for (const [type, count] of Object.entries(counts) as [ReactionType, number][]) {
+      if (typeof count === 'number' && count > 0) {
+        out.push({ type, emoji: REACTIONS[type].emoji, count });
+      }
+    }
+    out.sort((a, b) => b.count - a.count);
+    return out;
+  }, [post.reactionCounts]);
+
   const reloadReactionSummary = useCallback(() => {
+    // Only network-fetch when the denormalized counts aren't on the doc —
+    // i.e. legacy posts created before this field existed.
+    if (inlineSummaryFromCounts !== null) {
+      setReactionSummary(inlineSummaryFromCounts);
+      return;
+    }
     fetchPostReactionSummary(post.id).then(setReactionSummary).catch(() => {});
-  }, [post.id]);
+  }, [post.id, inlineSummaryFromCounts]);
   useEffect(() => { reloadReactionSummary(); }, [reloadReactionSummary]);
 
   const openPicker = useCallback(() => setShowPicker(true), []);
@@ -153,21 +174,44 @@ function PostCardInner({
     // If the user is removing the same reaction, the toggle returns null.
     const prev = myReaction;
     const same = prev === reaction;
+    const prevSummary = reactionSummary;
     setMyReaction(same ? null : reaction);
     setLikeCount((c) => Math.max(0, c + (prev === null ? 1 : same ? -1 : 0)));
+    // Optimistic per-type summary update. Mirrors the post-doc transaction so
+    // the emoji breakdown moves the moment the user taps — we no longer fire
+    // a fetchPostReactionSummary read after the toggle. The next feed
+    // refresh (which carries the updated reactionCounts inline) is the
+    // ultimate source of truth.
+    setReactionSummary(() => {
+      let updated = prevSummary.map((r) => ({ ...r }));
+      if (prev) {
+        const idx = updated.findIndex((r) => r.type === prev);
+        if (idx >= 0) {
+          updated[idx].count -= 1;
+          if (updated[idx].count <= 0) updated = updated.filter((r) => r.type !== prev);
+        }
+      }
+      if (!same) {
+        const idx = updated.findIndex((r) => r.type === reaction);
+        if (idx >= 0) updated[idx].count += 1;
+        else updated.push({ type: reaction, emoji: REACTIONS[reaction].emoji, count: 1 });
+        updated.sort((a, b) => b.count - a.count);
+      }
+      return updated;
+    });
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       await togglePostReaction(post.id, myUid, post.ownerUid, myDisplayName, reaction);
-      reloadReactionSummary();
     } catch {
       // Roll back optimistic delta on rate-limit/rules failure.
       setMyReaction(prev);
       setLikeCount((c) => Math.max(0, c + (prev === null ? -1 : same ? 1 : 0)));
+      setReactionSummary(prevSummary);
     } finally {
       likeBusyRef.current = false;
       setLikeBusy(false);
     }
-  }, [post.id, post.ownerUid, myUid, myDisplayName, myReaction, reloadReactionSummary]);
+  }, [post.id, post.ownerUid, myUid, myDisplayName, myReaction, reactionSummary]);
 
   // Lazy-subscribe to comments only when the user expands them (saves listener cost).
   useEffect(() => {

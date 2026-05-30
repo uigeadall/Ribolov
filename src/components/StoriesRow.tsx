@@ -6,6 +6,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useTheme } from '../services/themeContext';
@@ -28,6 +30,182 @@ const MIN_VIDEO_PROGRESS_MS = 3500;
 const { width: SW, height: SH } = Dimensions.get('window');
 
 const EMOJIS = ['🎣', '🐟', '🌊', '🌅', '🌧️', '☀️', '🔥', '🤙'];
+
+// Instagram's signature ring gradient (orange → red → pink → purple → blue).
+// Used as the outer ring colour when the user has at least one unseen story.
+const IG_GRADIENT: readonly [string, string, ...string[]] = ['#f09433', '#e6683c', '#dc2743', '#cc2366', '#bc1888'];
+
+const STORY_RING_OUTER = 68; // outer ring diameter (gradient ring)
+const STORY_RING_GAP = 2.5;   // gap between ring and avatar (theme bg colour)
+const STORY_AVATAR_SIZE = STORY_RING_OUTER - STORY_RING_GAP * 2 - 4; // inner avatar
+
+// Local persistent set of story IDs the user has opened — drives the
+// Instagram "ring goes grey after viewing" affordance. Backed by AsyncStorage
+// so a user who scrolls past stories, opens a few, closes the app, and
+// re-opens still sees the same grey/coloured state. We keep this client-only
+// (no Firestore write) because the cost of a per-view write is high and the
+// value is purely cosmetic.
+const SEEN_STORIES_KEY = '@ribolov/seenStoryIds';
+
+async function loadSeenStoryIds(): Promise<Set<string>> {
+  try {
+    const raw = await AsyncStorage.getItem(SEEN_STORIES_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return new Set();
+    return new Set(arr.filter((v): v is string => typeof v === 'string'));
+  } catch {
+    return new Set();
+  }
+}
+
+async function persistSeenStoryIds(ids: Set<string>): Promise<void> {
+  try {
+    // Keep the persisted list bounded — stories expire after 24h server-side,
+    // so 200 recently-seen IDs covers a generous viewing window without the
+    // AsyncStorage row growing unboundedly across months of use.
+    const arr = [...ids].slice(-200);
+    await AsyncStorage.setItem(SEEN_STORIES_KEY, JSON.stringify(arr));
+  } catch {
+    /* best-effort */
+  }
+}
+
+/* ── Instagram-style story avatar ─────────────────────────────
+   Outer gradient ring (or grey when all of this user's stories have been
+   seen), small theme-coloured gap, then the avatar/image/emoji inside. The
+   "Add" bubble at the head of the row reuses this with showAdd=true — it
+   keeps the same outer size so the row stays visually aligned. */
+type StoryAvatarProps = {
+  uri?: string;
+  emoji?: string;
+  isVideo?: boolean;
+  seen: boolean;
+  isAdd?: boolean;
+  bgColor: string;
+  surfaceColor: string;
+  textMutedColor: string;
+  primaryColor: string;
+};
+
+function StoryAvatar({
+  uri,
+  emoji,
+  isVideo,
+  seen,
+  isAdd,
+  bgColor,
+  surfaceColor,
+  textMutedColor,
+  primaryColor,
+}: StoryAvatarProps) {
+  // Ring contents: the "Add" bubble shows a plus icon over a flat surface,
+  // a media story shows the image, an emoji story shows the emoji centred.
+  const inner = (
+    <View
+      style={{
+        width: STORY_AVATAR_SIZE,
+        height: STORY_AVATAR_SIZE,
+        borderRadius: STORY_AVATAR_SIZE / 2,
+        overflow: 'hidden',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: surfaceColor,
+      }}
+    >
+      {isAdd ? (
+        <Ionicons name="add" size={28} color={primaryColor} />
+      ) : uri && !isVideo ? (
+        <Image
+          source={{ uri }}
+          style={{ width: STORY_AVATAR_SIZE, height: STORY_AVATAR_SIZE }}
+          contentFit="cover"
+        />
+      ) : isVideo ? (
+        <Ionicons name="videocam" size={26} color={primaryColor} />
+      ) : (
+        <Text style={{ fontSize: 26 }}>{emoji ?? '🎣'}</Text>
+      )}
+    </View>
+  );
+
+  // The "Add" bubble uses a thin grey border instead of a ring — Instagram
+  // does the same so the +-button reads as an action, not "fresh content".
+  if (isAdd) {
+    return (
+      <View
+        style={{
+          width: STORY_RING_OUTER,
+          height: STORY_RING_OUTER,
+          borderRadius: STORY_RING_OUTER / 2,
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderWidth: 1.5,
+          borderColor: textMutedColor + '55',
+          backgroundColor: surfaceColor,
+        }}
+      >
+        {inner}
+      </View>
+    );
+  }
+
+  // Seen → flat grey ring. Unseen → IG gradient ring.
+  if (seen) {
+    return (
+      <View
+        style={{
+          width: STORY_RING_OUTER,
+          height: STORY_RING_OUTER,
+          borderRadius: STORY_RING_OUTER / 2,
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderWidth: 2,
+          borderColor: textMutedColor + '66',
+        }}
+      >
+        <View style={{
+          width: STORY_AVATAR_SIZE + STORY_RING_GAP * 2,
+          height: STORY_AVATAR_SIZE + STORY_RING_GAP * 2,
+          borderRadius: (STORY_AVATAR_SIZE + STORY_RING_GAP * 2) / 2,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: bgColor,
+        }}>
+          {inner}
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <LinearGradient
+      colors={IG_GRADIENT}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={{
+        width: STORY_RING_OUTER,
+        height: STORY_RING_OUTER,
+        borderRadius: STORY_RING_OUTER / 2,
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      {/* The theme-coloured gap between ring and avatar — this is the bit
+          that visually separates the gradient from the photo. */}
+      <View style={{
+        width: STORY_AVATAR_SIZE + STORY_RING_GAP * 2,
+        height: STORY_AVATAR_SIZE + STORY_RING_GAP * 2,
+        borderRadius: (STORY_AVATAR_SIZE + STORY_RING_GAP * 2) / 2,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: bgColor,
+      }}>
+        {inner}
+      </View>
+    </LinearGradient>
+  );
+}
 
 /* ── Flying emoji ─────────────────────────────────────────── */
 function FlyingEmojiView({ item, onDone }: { item: FlyingEmoji; onDone: () => void }) {
@@ -77,6 +255,23 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
   const viewing = viewingIndex >= 0 ? (stories[viewingIndex] ?? null) : null;
   const [addOpen, setAddOpen] = useState(false);
   const [imageError, setImageError] = useState(false);
+
+  // Seen-story tracking. The ring transitions from the IG gradient to grey
+  // when the user has opened the story. We hydrate from AsyncStorage on mount
+  // and add to the set every time openViewer runs (then persist async). The
+  // ref shadows the state because the openViewer closure needs the freshest
+  // value without re-binding every render. */
+  const [seenIds, setSeenIds] = useState<Set<string>>(new Set());
+  const seenIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    let cancelled = false;
+    void loadSeenStoryIds().then((s) => {
+      if (cancelled) return;
+      seenIdsRef.current = s;
+      setSeenIds(s);
+    });
+    return () => { cancelled = true; };
+  }, []);
   // Video state. Lives on the row (not inside the player) because the
   // progress timer is owned here and needs to know the actual clip length.
   // Reset on every story change so a previous video's duration doesn't
@@ -188,6 +383,17 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
       progressAnim.setValue(0);
       return;
     }
+    // Mark the just-displayed story as seen as the viewer advances. Without
+    // this, a user who taps story 1 and lets the viewer auto-advance through
+    // 2, 3, 4 would still see those rings as coloured (unseen) on return.
+    const advanced = stories[viewingIndex];
+    if (advanced && !seenIdsRef.current.has(advanced.id)) {
+      const next = new Set(seenIdsRef.current);
+      next.add(advanced.id);
+      seenIdsRef.current = next;
+      setSeenIds(next);
+      void persistSeenStoryIds(next);
+    }
     startProgressFrom(0);
     return () => {
       if (progressTimer.current) progressTimer.current.stop();
@@ -286,6 +492,17 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
     viewer.setCommentDraft('');
     setImageError(false);
     setViewingIndex(idx >= 0 ? idx : 0);
+    // Mark this story (and any user's other stories scrolled past in the
+    // viewer's auto-advance) as seen — the ring transitions to grey on the
+    // next render. We persist async so the AsyncStorage write doesn't
+    // block the viewer-open animation.
+    if (!seenIdsRef.current.has(s.id)) {
+      const next = new Set(seenIdsRef.current);
+      next.add(s.id);
+      seenIdsRef.current = next;
+      setSeenIds(next);
+      void persistSeenStoryIds(next);
+    }
   };
 
   const closeViewer = () => { setViewingIndex(-1); };
@@ -293,13 +510,15 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
   const reactionEntries = Object.entries(STORY_REACTIONS) as [StoryReactionType, { emoji: string; label: string }][];
 
   const styles = useMemo(() => StyleSheet.create({
-    rowWrapper: { paddingVertical: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
-    bubble: { alignItems: 'center', marginHorizontal: spacing.xs, width: 72 },
-    ring: { width: 58, height: 58, borderRadius: 29, borderWidth: 2.5, borderColor: colors.primary, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primarySurface, overflow: 'hidden' },
-    addRing: { borderColor: colors.border, backgroundColor: colors.card },
-    emojiText: { fontSize: 26 },
-    name: { ...typography.small, color: colors.text, marginTop: 4, textAlign: 'center', fontWeight: '600' },
-    time: { fontSize: 11, lineHeight: 14, color: colors.textMuted, textAlign: 'center', marginTop: 1 },
+    // Tighter wrapper — Instagram pads the row by 10px and uses a hairline
+    // bottom border. The bubbles themselves carry their visual weight.
+    rowWrapper: { paddingTop: 10, paddingBottom: 8, backgroundColor: colors.card, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+    bubble: { alignItems: 'center', marginHorizontal: 4, width: 78 },
+    // Instagram name treatment under the avatar: 12px, 1 line, ellipsised
+    // — wider than 12 chars overflows visually and the row stops reading
+    // as a tidy strip.
+    name: { fontSize: 12, color: colors.text, marginTop: 6, textAlign: 'center', fontWeight: '500', maxWidth: 78 },
+    time: { fontSize: 10, lineHeight: 13, color: colors.textMuted, textAlign: 'center', marginTop: 1 },
     viewerBg: { flex: 1, backgroundColor: '#000' },
     viewerMedia: { width: SW, height: SH },
     viewerOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0 },
@@ -336,30 +555,41 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
   return (
     <>
       <View style={styles.rowWrapper}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing.md }}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 8 }}>
+        {/* "Your story" / Add — Instagram puts this first. We use the new
+            StoryAvatar in isAdd mode so the bubble keeps the same overall
+            geometry as the rest of the row (no off-grid sizing). */}
         {user && configured ? (
           <Pressable style={styles.bubble} onPress={() => setAddOpen(true)}>
-            <View style={[styles.ring, styles.addRing]}>
-              <Ionicons name="add" size={28} color={colors.primary} />
-            </View>
-            <Text style={styles.name}>Моменти</Text>
+            <StoryAvatar
+              isAdd
+              seen={false}
+              bgColor={colors.card}
+              surfaceColor={colors.surfaceAlt}
+              textMutedColor={colors.textMuted}
+              primaryColor={colors.primary}
+            />
+            <Text style={styles.name} numberOfLines={1}>Моменти</Text>
           </Pressable>
         ) : null}
-        {stories.map((s) => (
-          <Pressable key={s.id} style={styles.bubble} onPress={() => openViewer(s)}>
-            <View style={[styles.ring, { borderColor: s.uid === user?.uid ? colors.accent : colors.primary }]}>
-              {s.mediaUrl && s.mediaType !== 'video' ? (
-                <Image source={{ uri: s.mediaUrl }} style={{ width: 58, height: 58 }} contentFit="cover" />
-              ) : s.mediaUrl && s.mediaType === 'video' ? (
-                <Ionicons name="videocam" size={26} color={colors.primary} />
-              ) : (
-                <Text style={styles.emojiText}>{s.emoji ?? '🎣'}</Text>
-              )}
-            </View>
-            <Text style={styles.name} numberOfLines={1}>{s.userName}</Text>
-            <Text style={styles.time}>{timeAgo(s.createdAt)}</Text>
-          </Pressable>
-        ))}
+        {stories.map((s) => {
+          const isSeen = seenIds.has(s.id);
+          return (
+            <Pressable key={s.id} style={styles.bubble} onPress={() => openViewer(s)}>
+              <StoryAvatar
+                uri={s.mediaUrl}
+                emoji={s.emoji}
+                isVideo={s.mediaType === 'video'}
+                seen={isSeen}
+                bgColor={colors.card}
+                surfaceColor={colors.primarySurface}
+                textMutedColor={colors.textMuted}
+                primaryColor={colors.primary}
+              />
+              <Text style={styles.name} numberOfLines={1}>{s.userName}</Text>
+            </Pressable>
+          );
+        })}
       </ScrollView>
       </View>
 

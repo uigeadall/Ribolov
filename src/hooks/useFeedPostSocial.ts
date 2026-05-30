@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Alert, Share } from 'react-native';
 import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
@@ -21,6 +21,25 @@ import {
   type FeedComment,
   type CatchLiker,
 } from '../services/socialFeed';
+
+/** Derive the reactionSummary array from the denormalized `reactionCounts`
+    map kept on the catch doc. Returns null when the catch was created before
+    the field existed (legacy data) so callers know to fall back to a network
+    fetch. Empty maps return [] — that's not legacy, just a post with zero
+    reactions. */
+function reactionSummaryFromCounts(
+  counts: Partial<Record<ReactionType, number>> | undefined
+): ReactionSummaryItem[] | null {
+  if (!counts) return null;
+  const out: ReactionSummaryItem[] = [];
+  for (const [type, count] of Object.entries(counts) as [ReactionType, number][]) {
+    if (typeof count === 'number' && count > 0) {
+      out.push({ type, emoji: REACTIONS[type].emoji, count });
+    }
+  }
+  out.sort((a, b) => b.count - a.count);
+  return out;
+}
 import { submitContentReport } from '../services/contentReports';
 import { getBlockedUids } from '../services/blockUser';
 import type { FeedItem } from '../services/catchSync';
@@ -112,27 +131,52 @@ export function useFeedPostSocial({
   const sendBusyRef = useRef(false);
   const likersRequestIdRef = useRef(0);
 
+  // likeCount and reactionCounts both live inline on the catch doc (maintained
+  // atomically by toggleCatchReaction), so we can render them with zero
+  // Firestore reads. Only fetchCatchCommentCount still hits the network — one
+  // count() aggregation read per card. fetchReactionSummary is reserved for
+  // legacy catches that pre-date the denormalized `reactionCounts` field.
+  const inlineLikeCount = typeof item.likeCount === 'number' ? item.likeCount : 0;
+  const inlineSummary = useMemo(
+    () => reactionSummaryFromCounts(item.reactionCounts),
+    [item.reactionCounts],
+  );
+
   useEffect(() => {
-    if (!socialEnabled || !myUid || !catchId || !isVisible) return;
+    if (!socialEnabled || !catchId || !isVisible) return;
+    // Inline counts are the source of truth — set immediately, no roundtrip.
+    setLikeCount(inlineLikeCount);
+    if (inlineSummary !== null) setReactionSummary(inlineSummary);
+
     let cancelled = false;
     void (async () => {
-      // `count()` aggregation calls are 1 read each on Firestore's billing —
-      // cheap, and they spare us mounting the per-card `subscribeCatchComments`
-      // listener (~80 reads each) just to show "View N comments". Subscribe
-      // only when the user opens comments (see effect below).
-      const [lc, summary, cc] = await Promise.all([
-        fetchCatchLikeCount(catchId),
-        fetchReactionSummary(catchId),
-        fetchCatchCommentCount(catchId),
-      ]);
-      if (!cancelled) {
-        setLikeCount(lc);
-        setReactionSummary(summary);
-        setCommentCount(cc);
+      const tasks: Promise<unknown>[] = [
+        fetchCatchCommentCount(catchId).then((cc) => {
+          if (!cancelled) setCommentCount(cc);
+        }),
+      ];
+      // Only pay the per-card reaction-summary read when the inline map is
+      // missing (legacy catch from before this field was tracked).
+      if (inlineSummary === null) {
+        tasks.push(
+          fetchReactionSummary(catchId).then((s) => {
+            if (!cancelled) setReactionSummary(s);
+          }),
+        );
+        // For legacy catches the inline likeCount may also be absent; back-fill
+        // from a single count() read rather than scanning all like docs.
+        if (typeof item.likeCount !== 'number') {
+          tasks.push(
+            fetchCatchLikeCount(catchId).then((lc) => {
+              if (!cancelled) setLikeCount(lc);
+            }),
+          );
+        }
       }
+      await Promise.all(tasks);
     })();
     return () => { cancelled = true; };
-  }, [socialEnabled, myUid, catchId, isVisible]);
+  }, [socialEnabled, catchId, isVisible, inlineLikeCount, inlineSummary, item.likeCount]);
 
   useEffect(() => {
     if (!socialEnabled || !myUid || !catchId || !isVisible) return;
@@ -266,7 +310,11 @@ export function useFeedPostSocial({
     setLikeBusy(true);
     try {
       await toggleCatchReaction(catchId, myUid, item.ownerUid, myDisplayName, reaction);
-      fetchReactionSummary(catchId).then(setReactionSummary).catch(() => {});
+      // Reconciliation read removed: the optimistic update above already
+      // matches the transaction's effect on the inline `reactionCounts` map,
+      // and the next feed refresh pulls the authoritative values without a
+      // per-card extra read. Previously this fired a 50-doc getDocs after
+      // every reaction — wasted billing for a correctness no-op.
     } catch (e) {
       setMyReaction(prevReaction);
       setLikeCount(prevLikeCount);

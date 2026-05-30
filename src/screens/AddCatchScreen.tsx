@@ -28,6 +28,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Screen } from '../components/Screen';
 import { BanPeriodCard } from '../components/BanPeriodCard';
 import { TripPickerModal } from '../components/TripPickerModal';
+import { DamPicker } from '../components/DamPicker';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
@@ -223,6 +224,7 @@ export default function AddCatchScreen() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [trips, setTrips] = useState<TripPlan[]>([]);
   const [tripPickerOpen, setTripPickerOpen] = useState(false);
+  const [locationPickerOpen, setLocationPickerOpen] = useState(false);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   // Gear picker — loaded once on mount. Tapping the backpack icon next to the
   // bait field opens a sheet of the user's saved tackle (gearStore). Selecting
@@ -1391,7 +1393,11 @@ export default function AddCatchScreen() {
 
                 <View style={styles.detailDivider} />
 
-                {/* Location */}
+                {/* Location — two paths: GPS grab ("Маркирай") and manual
+                    pick from the dam/river list ("Избери"). Manual pick is
+                    useful when the user isn't on-site (logging from home),
+                    is somewhere with no GPS fix, or wants to override the
+                    auto-suggested water body name. */}
                 <View style={styles.detailRow}>
                   <View style={styles.detailIcon}>
                     <Ionicons name="location-outline" size={18} color={colors.primary} />
@@ -1406,8 +1412,11 @@ export default function AddCatchScreen() {
                         : 'Без координати'}
                     </Text>
                   </View>
+                  <Pressable onPress={() => setLocationPickerOpen(true)} style={[styles.detailButton, { marginRight: 6 }]}>
+                    <Text style={styles.detailButtonText}>Избери</Text>
+                  </Pressable>
                   <Pressable onPress={() => void grabLocation()} style={styles.detailButton}>
-                    <Text style={styles.detailButtonText}>{form.locationCoords ? 'Обнови' : 'Маркирай'}</Text>
+                    <Text style={styles.detailButtonText}>{form.locationCoords ? 'Обнови' : 'GPS'}</Text>
                   </Pressable>
                 </View>
 
@@ -1564,6 +1573,30 @@ export default function AddCatchScreen() {
         selectedId={form.speciesId}
         onSelect={(id) => dispatch({ type: 'SET_SPECIES', payload: id })}
         onClose={() => setPickerOpen(false)}
+      />
+
+      <DamPicker
+        visible={locationPickerOpen}
+        // The DamPicker uses userCoord to surface the nearest waters first.
+        // Pass whatever we already have on the form (either prior GPS grab
+        // or a previously picked water body) so the suggestions stay useful
+        // when the user re-opens the picker to change their choice.
+        userCoord={
+          form.locationCoords
+            ? { latitude: form.locationCoords.lat, longitude: form.locationCoords.lon }
+            : null
+        }
+        onClose={() => setLocationPickerOpen(false)}
+        onSelect={(pick) => {
+          setLocationPickerOpen(false);
+          dispatch({
+            type: 'SET_LOCATION',
+            payload: {
+              coords: { lat: pick.item.latitude, lon: pick.item.longitude },
+              name: pick.item.name,
+            },
+          });
+        }}
       />
 
       <Modal

@@ -140,8 +140,14 @@ export async function toggleCatchReaction(
     const existing = snap.exists() ? (snap.data()?.reaction ?? 'heart') : null;
 
     if (existing === reaction) {
+      // Toggle off: drop the like doc, decrement total likeCount AND the
+      // per-type tally. The per-type tally (`reactionCounts.{type}`) is what
+      // lets the feed render the emoji breakdown without fetchReactionSummary.
       txn.delete(refLike);
-      txn.update(catchRef, { likeCount: increment(-1) });
+      txn.update(catchRef, {
+        likeCount: increment(-1),
+        [`reactionCounts.${existing}`]: increment(-1),
+      });
       return { removed: true, isNew: false };
     }
     txn.set(
@@ -152,8 +158,20 @@ export async function toggleCatchReaction(
         reaction,
       }),
     );
+    // Three cases for the catch doc update:
+    //   - new reaction (no prior): bump likeCount AND the new type's tally
+    //   - change of type (had X, want Y): likeCount unchanged; move 1 from X→Y
+    //   - same type as before: handled above (early return)
     if (existing === null) {
-      txn.update(catchRef, { likeCount: increment(1) });
+      txn.update(catchRef, {
+        likeCount: increment(1),
+        [`reactionCounts.${reaction}`]: increment(1),
+      });
+    } else {
+      txn.update(catchRef, {
+        [`reactionCounts.${existing}`]: increment(-1),
+        [`reactionCounts.${reaction}`]: increment(1),
+      });
     }
     return { removed: false, isNew: existing === null };
   });
@@ -300,9 +318,14 @@ export async function togglePostReaction(
     const snap = await txn.get(refLike);
     const existing = snap.exists() ? (snap.data()?.reaction ?? 'heart') : null;
 
+    // Mirror of toggleCatchReaction's denormalization: maintain `reactionCounts.{type}`
+    // on the post doc so PostCard can render the emoji breakdown inline.
     if (existing === reaction) {
       txn.delete(refLike);
-      txn.update(postRef, { likeCount: increment(-1) });
+      txn.update(postRef, {
+        likeCount: increment(-1),
+        [`reactionCounts.${existing}`]: increment(-1),
+      });
       return { removed: true, isNew: false };
     }
     txn.set(
@@ -314,7 +337,15 @@ export async function togglePostReaction(
       }),
     );
     if (existing === null) {
-      txn.update(postRef, { likeCount: increment(1) });
+      txn.update(postRef, {
+        likeCount: increment(1),
+        [`reactionCounts.${reaction}`]: increment(1),
+      });
+    } else {
+      txn.update(postRef, {
+        [`reactionCounts.${existing}`]: increment(-1),
+        [`reactionCounts.${reaction}`]: increment(1),
+      });
     }
     return { removed: false, isNew: existing === null };
   });
