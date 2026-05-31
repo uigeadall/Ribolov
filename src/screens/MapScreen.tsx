@@ -27,6 +27,7 @@ import { Button } from '../components/Button';
 import type { LeafletMapHandle, LeafletMapType } from '../components/LeafletMap';
 import { MapEngineComponent } from '../components/mapEngineComponent';
 import { Solunar7DayStrip } from '../components/Solunar7DayStrip';
+import { WindCompassChip } from '../components/WindCompassChip';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
@@ -613,8 +614,14 @@ export default function MapScreen() {
     navigation.navigate('WaterDetail', { kind: 'river', id: r.id });
   };
 
+  // Map center mirrors the persisted position so the WindCompassChip can
+  // re-query weather when the user pans. We debounce the actual weather
+  // fetch inside the chip itself (~800 ms) so this state can update on
+  // every frame without spamming the API.
+  const [mapCenter, setMapCenter] = useState<{ latitude: number; longitude: number } | null>(null);
   const saveMapPos = useCallback((lat: number, lng: number, zoom: number) => {
     AsyncStorage.setItem('@ribolov/lastMapPos', JSON.stringify({ lat, lng, zoom })).catch(() => {});
+    setMapCenter({ latitude: lat, longitude: lng });
   }, []);
 
   const flyToSpot = (s: Spot) => {
@@ -743,6 +750,28 @@ export default function MapScreen() {
             onSpotPress={flyToSpot}
             onSpotLongPress={(s) => recordCatchAt({ latitude: s.latitude, longitude: s.longitude, name: s.name })}
           />
+        ) : null}
+
+        {/* ── Wind compass chip ──
+            Floating in the top-right of the map below the search bar /
+            chips row. Shows the regional wind direction + speed at the
+            current map center; debounces internally so panning doesn't
+            spam the weather API. Falls back to userCoord when the user
+            hasn't panned yet (cold-start state). */}
+        {(mapCenter ?? userCoord) ? (
+          <View
+            pointerEvents="box-none"
+            style={{
+              position: 'absolute',
+              top: insets.top + 130,
+              right: 12,
+            }}
+          >
+            <WindCompassChip
+              latitude={(mapCenter ?? userCoord!).latitude}
+              longitude={(mapCenter ?? userCoord!).longitude}
+            />
+          </View>
         ) : null}
 
         {/* ── Solunar 7-day strip ──
