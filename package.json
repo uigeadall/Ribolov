@@ -14,7 +14,9 @@
     "submit:ios": "eas submit --platform ios --latest",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "postinstall": "patch-package",
+    "reinstall:ios": "expo run:ios --device 00008150-0015359E36D2401C --configuration Release"
   },
   "dependencies": {
     "@expo-google-fonts/dm-sans": "^0.4.2",
@@ -76,6 +78,7 @@
   "devDependencies": {
     "@types/react": "~19.1.10",
     "@types/react-native": "^0.72.8",
+    "patch-package": "^8.0.1",
     "typescript": "~5.9"
   },
   "private": true

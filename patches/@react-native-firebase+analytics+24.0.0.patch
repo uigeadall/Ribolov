@@ -1,0 +1,15 @@
+diff --git a/node_modules/@react-native-firebase/analytics/ios/RNFBAnalytics/RNFBAnalyticsModule.h b/node_modules/@react-native-firebase/analytics/ios/RNFBAnalytics/RNFBAnalyticsModule.h
+index 8f0268e..c85683f 100644
+--- a/node_modules/@react-native-firebase/analytics/ios/RNFBAnalytics/RNFBAnalyticsModule.h
++++ b/node_modules/@react-native-firebase/analytics/ios/RNFBAnalytics/RNFBAnalyticsModule.h
+@@ -17,6 +17,10 @@
+ 
+ #import <Foundation/Foundation.h>
+ 
++// Route React's RCTBridgeModule through RNFBApp's umbrella so Xcode's
++// strict modular-header verifier doesn't reject this header (same fix
++// applied to RNFBAppCheckModule.h — see comment there).
++#import <RNFBApp/RNFBAppModule.h>
+ #import <React/RCTBridgeModule.h>
+ 
+ @interface RNFBAnalyticsModule : NSObject <RCTBridgeModule>

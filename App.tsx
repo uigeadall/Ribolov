@@ -56,7 +56,7 @@ export default function App() {
     const t = setTimeout(() => setMinTimeElapsed(true), MIN_SPLASH_MS);
     if (!__DEV__) {
       Updates.checkForUpdateAsync()
-        .then(({ isAvailable }) => { if (isAvailable) return Updates.fetchUpdateAsync(); })
+        .then(({ isAvailable }) => (isAvailable ? Updates.fetchUpdateAsync() : undefined))
         .then((res) => { if (res) void Updates.reloadAsync(); })
         .catch(() => {});
     }

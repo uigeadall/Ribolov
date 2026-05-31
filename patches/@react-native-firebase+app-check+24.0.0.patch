@@ -1,0 +1,19 @@
+diff --git a/node_modules/@react-native-firebase/app-check/ios/RNFBAppCheck/RNFBAppCheckModule.h b/node_modules/@react-native-firebase/app-check/ios/RNFBAppCheck/RNFBAppCheckModule.h
+index 999f403..b6a45a6 100644
+--- a/node_modules/@react-native-firebase/app-check/ios/RNFBAppCheck/RNFBAppCheckModule.h
++++ b/node_modules/@react-native-firebase/app-check/ios/RNFBAppCheck/RNFBAppCheckModule.h
+@@ -17,6 +17,14 @@
+ 
+ #import <Foundation/Foundation.h>
+ 
++// Route React's RCTBridgeModule through RNFBApp's umbrella so Xcode's
++// strict modular-header verifier doesn't reject this header. The direct
++// import from <React/RCTBridgeModule.h> triggers
++// "must be imported from module 'RNFBApp.RNFBAppModule' before it is
++// required" under use_modular_headers!. Importing via RNFBApp first
++// establishes the modular path, then the React header can be pulled in
++// normally for the protocol forward-decl.
++#import <RNFBApp/RNFBAppModule.h>
+ #import <React/RCTBridgeModule.h>
+ 
+ #import "RNFBAppCheckProviderFactory.h"
