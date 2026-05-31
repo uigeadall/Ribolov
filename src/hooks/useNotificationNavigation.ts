@@ -68,6 +68,15 @@ function routeNotification(
     return;
   }
 
+  // Throwback ("преди 1 година") → the original catch from the past.
+  // Sent by the dailyThrowbackNotifications Cloud Function each morning
+  // at 08:00 Sofia for any public catch dated this calendar day in a
+  // previous year.
+  if (type === 'throwback' && catchId) {
+    goCatch(catchId);
+    return;
+  }
+
   // Likes + comments. Two flavours:
   //   1. Target is a POST (postId set) — land in PostDetail
   //   2. Target is a CATCH (catchId only) — land in CatchDetail

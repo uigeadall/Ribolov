@@ -1444,6 +1444,128 @@ export const tournamentEndingSoonReminder = onSchedule(
 // `stampNotificationTtl` trigger at the bottom of this file.
 
 // ---------------------------------------------------------------------------
+// dailyThrowbackNotifications — daily at 08:00 Europe/Sofia
+// ---------------------------------------------------------------------------
+// Finds every public catch dated "this day last year" (and "this day 2 years
+// ago" if any) and sends the owner a push notification with the catch info.
+// Classic engagement loop — surfaces the user's own happy memories at a time
+// they're likely to plan a fishing trip.
+//
+// Why publicCatches only: local-only catches live in AsyncStorage on the
+// user's device and aren't visible to the server. A future "background
+// scan + local notification" path would handle them, but that needs an
+// Expo BackgroundFetch task — deferred to v2.
+//
+// Idempotency: same marker-doc pattern as tournamentEndingSoonReminder.
+// After sending a push for catch C on day D we write to
+// `throwbackSent/{D}_{catchId}` so a second invocation that same day
+// (deploy backfill, scheduler hiccup) silently skips.
+//
+// Privacy: the push only references the user's own catch — no other users
+// involved. The Firestore rule keeps `throwbackSent` server-write-only.
+
+export const dailyThrowbackNotifications = onSchedule(
+  { schedule: "every day 08:00", timeZone: "Europe/Sofia", maxInstances: 1 },
+  async () => {
+    // Compute "this day last year" and "this day 2 years ago" in YYYY-MM-DD
+    // form. Catches are stored with their ISO date string, so date-string
+    // equality is the cheapest match. Same-month/day handling: any catch
+    // on YYYY-MM-DD where YYYY differs from today's year by 1 or 2.
+    const today = new Date();
+    const targets: string[] = [];
+    for (const yearsBack of [1, 2]) {
+      const d = new Date(today);
+      d.setFullYear(d.getFullYear() - yearsBack);
+      targets.push(d.toISOString().slice(0, 10));
+    }
+    const todayKey = today.toISOString().slice(0, 10);
+
+    let totalSent = 0;
+    for (const targetDate of targets) {
+      // date field on publicCatches is ISO — startsWith match on YYYY-MM-DD
+      // means "any catch on that calendar day regardless of the time slot
+      // saved alongside it" (some catches store full datetime, others just
+      // the date). Range query [targetDate, targetDate+1) achieves this.
+      const lo = targetDate;
+      // Date string +1 day for the upper bound. Constructing as Date keeps
+      // the leap-year and month-boundary math right.
+      const upperDate = new Date(targetDate + 'T00:00:00Z');
+      upperDate.setUTCDate(upperDate.getUTCDate() + 1);
+      const hi = upperDate.toISOString().slice(0, 10);
+
+      const snap = await db
+        .collection("publicCatches")
+        .where("date", ">=", lo)
+        .where("date", "<", hi)
+        .get();
+      if (snap.empty) continue;
+
+      for (const docSnap of snap.docs) {
+        const data = docSnap.data() as Record<string, unknown>;
+        const ownerUid = data.ownerUid as string | undefined;
+        const speciesName = data.speciesName as string | undefined;
+        const weightKg = data.weightKg as number | undefined;
+        const locationName = (data.location as { name?: string } | undefined)?.name;
+        if (!ownerUid) continue;
+
+        // Per-catch dedup marker so a same-day retry doesn't re-notify.
+        const markerRef = db.doc(`throwbackSent/${todayKey}_${docSnap.id}`);
+        const marker = await markerRef.get();
+        if (marker.exists) continue;
+
+        // Quiet hours respected; no dedicated category toggle for throwback
+        // yet so the global "push disabled" check is handled by the absence
+        // of a push token (next branch). If we add a "throwback enabled"
+        // pref later it goes here.
+        const prefs = await getNotifPrefs(ownerUid);
+        if (isInQuietHours(prefs)) {
+          await markerRef.set({ skipped: 'quietHours', at: FieldValue.serverTimestamp() });
+          continue;
+        }
+
+        const tokenSnap = await db.doc(`users/${ownerUid}/private/pushToken`).get();
+        const token = tokenSnap.data()?.expoPushToken as string | undefined;
+        if (!token || !token.startsWith("ExponentPushToken[")) {
+          await markerRef.set({ skipped: 'noToken', at: FieldValue.serverTimestamp() });
+          continue;
+        }
+
+        const yearsAgo = (Math.round(
+          (today.getTime() - new Date(targetDate).getTime()) / (365 * 24 * 60 * 60 * 1000),
+        )) || 1;
+        const yearsLabel = yearsAgo === 1 ? '1 година' : `${yearsAgo} години`;
+        const speciesPart = speciesName ?? 'риба';
+        const weightPart = typeof weightKg === 'number' ? ` ${weightKg} кг` : '';
+        const locationPart = locationName ? ` при ${locationName}` : '';
+
+        try {
+          await sendExpoPush(
+            token,
+            `Преди ${yearsLabel} 🎣`,
+            `Хвана ${speciesPart}${weightPart}${locationPart}. Време за нов улов?`,
+            {
+              type: 'throwback',
+              catchId: docSnap.id,
+            },
+          );
+          await markerRef.set({
+            sentAt: FieldValue.serverTimestamp(),
+            catchId: docSnap.id,
+            ownerUid,
+          });
+          totalSent += 1;
+        } catch (e) {
+          logger.warn(`[dailyThrowbackNotifications] push failed for ${docSnap.id}`, e);
+          // No marker write on push failure — next run will retry.
+        }
+      }
+    }
+
+    logger.info(`[dailyThrowbackNotifications] sent ${totalSent} throwback pushes`);
+  },
+);
+
+// ---------------------------------------------------------------------------
 // deleteMyAccount — callable function for "delete my account" flow
 // ---------------------------------------------------------------------------
 // Why callable, not auth.user().onDelete():
