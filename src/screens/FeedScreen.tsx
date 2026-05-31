@@ -589,13 +589,19 @@ export default function FeedScreen() {
     }
   }, [load, user, configured]);
 
-  // Refresh feed when returning to this tab if data is >= 30s old.
-  // This catches the case where a catch was just shared publicly from AddCatch
-  // (cloud sync runs in the background after navigation, so the feed needs a refresh).
+  // Refresh feed when returning to this tab if data is >= 5min old.
+  //
+  // Cost: every refresh fetches ~60 docs (20 catches + 40 posts). At 10k
+  // DAU with 4 sessions × multiple tab switches per session, the previous
+  // 8s window was triggering refreshes on nearly every tab focus and
+  // dominating Firestore read cost. 5 min still feels fresh to users —
+  // anyone wanting newer content can pull-to-refresh, and the
+  // "X нови публикации" pill surfaces the delta on the next ambient load.
+  // Cuts feed reads by ~50-70% in typical usage.
   useFocusEffect(
     useCallback(() => {
       if (!user || !configured) return;
-      if (Date.now() - lastLoadRef.current >= 8_000) {
+      if (Date.now() - lastLoadRef.current >= 300_000) {
         loadRef.current();
         lastLoadRef.current = Date.now();
       }

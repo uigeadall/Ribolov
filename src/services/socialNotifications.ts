@@ -132,10 +132,16 @@ export async function notifyPersonalBest(opts: {
 
 export function subscribeMyNotifications(myUid: string, onNext: (items: SocialNotification[]) => void): () => void {
   const fb = requireFirebase();
+  // Was limit(80) — every initial attach charged 80 reads even though most
+  // users have 0-5 unread + a long tail of read history they rarely scroll
+  // back through. 30 covers roughly the last week of activity for a typical
+  // user; "load more history" can be added later as a one-shot fetch if
+  // users start asking for older items. Cuts initial-attach reads by 62%
+  // and is the cheapest visible-cost reduction in the listener path.
   const q = query(
     collection(fb.db, 'users', myUid, 'notifications'),
     orderBy('createdAt', 'desc'),
-    limit(80)
+    limit(30)
   );
   return onSnapshot(q, (snap) => {
     onNext(
