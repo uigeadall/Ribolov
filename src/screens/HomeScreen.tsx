@@ -45,6 +45,7 @@ import type { Catch } from '../types/index';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 import { ScalePressable } from '../components/ScalePressable';
 import { ComposeFab } from '../components/ComposeFab';
+import { SolunarCard } from '../components/SolunarCard';
 
 const FALLBACK_COORD = { latitude: 42.6977, longitude: 23.3219 };
 const WAVE = 32;
@@ -988,6 +989,22 @@ export default function HomeScreen() {
             )}
           </>
         )}
+
+        {/* ── Solunar / moon-phase prediction ──
+            Sits between the weather forecast and tournaments. Uses the
+            already-resolved userCoord (real or fallback to Sofia) so the
+            prediction matches the same location the weather card shows. */}
+        {userCoord ? (
+          <View style={{ paddingHorizontal: spacing.xl, marginBottom: spacing.lg }}>
+            <View style={S.sectionRow}>
+              <View style={S.sectionLeft}>
+                <View style={[S.sectionAccent, { backgroundColor: '#7B5BBE' }]} />
+                <Text style={[S.sectionLabel, { color: mutedColor }]}>Лунен прогноз</Text>
+              </View>
+            </View>
+            <SolunarCard latitude={userCoord.latitude} longitude={userCoord.longitude} />
+          </View>
+        ) : null}
 
         {/* ── Active tournaments — countdown to soonest ending ── */}
         {activeTournaments.length > 0 && (

@@ -26,6 +26,7 @@ import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
 import { WeatherIcon } from '../components/WeatherIcon';
+import { SolunarCard } from '../components/SolunarCard';
 import { StarRatingBar } from '../components/StarRatingBar';
 import { BiteForecast } from '../components/BiteForecast';
 import { ForecastStrip } from '../components/ForecastStrip';
@@ -622,6 +623,20 @@ export default function WaterDetailScreen() {
               <BiteForecast weather={weather} />
             </View>
           ) : null}
+
+          {/* ── SOLUNAR FORECAST — moon phase + best fishing windows for
+              this exact water. Uses the dam/river's own coords so the
+              transit times are correct for the spot (not the user's
+              current location, which could be hundreds of km away). */}
+          <View style={styles.section}>
+            <SolunarCard
+              latitude={water.item.latitude}
+              longitude={water.item.longitude}
+              title={`Лунен прогноз — ${water.item.name}`}
+            />
+          </View>
+
+
 
           {/* ── WEATHER DETAILS ── */}
           {weather ? (
