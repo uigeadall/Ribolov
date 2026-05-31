@@ -87,9 +87,6 @@ function styleForMapType(mt: LeafletMapType): string | StyleSpecification {
 
 // ── Geo helpers ──────────────────────────────────────────────────────────────
 
-const CULL_BUFFER = 0.25;
-const LABEL_ZOOM_THRESHOLD = 12;
-
 const EARTH_RADIUS_M = 6_378_137;
 
 /** Build a 32-sided polygon approximating a circle of `radiusMeters` around
@@ -124,38 +121,6 @@ function SpotPin() {
   return (
     <View style={styles.spotPlate}>
       <Ionicons name="fish-outline" size={20} color="#E8F8FF" />
-    </View>
-  );
-}
-
-function WaterPin({
-  name,
-  showLabel,
-  type,
-}: {
-  name: string;
-  showLabel: boolean;
-  type: 'dam' | 'river';
-}) {
-  return (
-    <View style={styles.markerCol}>
-      {showLabel ? (
-        <View style={[styles.labelBubble, type === 'dam' ? styles.labelDam : styles.labelRiver]}>
-          <Text
-            numberOfLines={1}
-            style={type === 'dam' ? styles.labelTextDam : styles.labelTextRiver}
-          >
-            {name}
-          </Text>
-        </View>
-      ) : null}
-      <View style={[styles.iconPlate, type === 'dam' ? styles.plateDam : styles.plateRiver]}>
-        <Ionicons
-          name={type === 'dam' ? 'layers-outline' : 'water-outline'}
-          size={20}
-          color={type === 'dam' ? '#C8F0E8' : '#E8FFF2'}
-        />
-      </View>
     </View>
   );
 }
@@ -200,8 +165,6 @@ export const MapLibreMap = forwardRef<LeafletMapHandle, LeafletMapProps>(functio
   const [center, setCenter] = useState<[number, number]>([25.35, 42.65]);
   const [zoom, setZoom] = useState(7);
   const [bounds, setBounds] = useState<LngLatBounds | null>(null);
-
-  const showWaterLabels = zoom >= LABEL_ZOOM_THRESHOLD;
 
   useImperativeHandle(
     ref,
@@ -256,31 +219,70 @@ export const MapLibreMap = forwardRef<LeafletMapHandle, LeafletMapProps>(functio
     [onLongPress],
   );
 
-  // Cull dams/rivers to the visible bounds + buffer to avoid mounting thousands
-  // of <Marker>s off-screen (large for Bulgaria's full river dataset).
-  const visibleDams = useMemo(() => {
-    if (!bounds) return dams;
-    const [west, south, east, north] = bounds;
-    return dams.filter(
-      (d) =>
-        d.longitude >= west - CULL_BUFFER &&
-        d.longitude <= east + CULL_BUFFER &&
-        d.latitude >= south - CULL_BUFFER &&
-        d.latitude <= north + CULL_BUFFER,
-    );
-  }, [dams, bounds]);
+  // Dams + rivers GeoJSON for clustering. The whole dataset goes to the source
+  // (no manual viewport cull) because MapLibre's native clustering does the
+  // grouping internally and only renders cluster bubbles for the actual
+  // visible region. The previous per-marker React render + bounds-cull
+  // approach drew hundreds of overlapping pins at country zoom — see
+  // screenshots from before this change.
+  const damsGeoJson = useMemo<GeoJSON.FeatureCollection>(
+    () => ({
+      type: 'FeatureCollection',
+      features: dams.map((d) => ({
+        type: 'Feature',
+        properties: { id: d.id, name: d.name, kind: 'dam' },
+        geometry: { type: 'Point', coordinates: [d.longitude, d.latitude] },
+      })),
+    }),
+    [dams],
+  );
 
-  const visibleRivers = useMemo(() => {
-    if (!bounds) return rivers;
-    const [west, south, east, north] = bounds;
-    return rivers.filter(
-      (r) =>
-        r.longitude >= west - CULL_BUFFER &&
-        r.longitude <= east + CULL_BUFFER &&
-        r.latitude >= south - CULL_BUFFER &&
-        r.latitude <= north + CULL_BUFFER,
-    );
-  }, [rivers, bounds]);
+  const riversGeoJson = useMemo<GeoJSON.FeatureCollection>(
+    () => ({
+      type: 'FeatureCollection',
+      features: rivers.map((r) => ({
+        type: 'Feature',
+        properties: { id: r.id, name: r.name, kind: 'river' },
+        geometry: { type: 'Point', coordinates: [r.longitude, r.latitude] },
+      })),
+    }),
+    [rivers],
+  );
+
+  // Tap handler shared by both sources: clusters zoom in two levels at the
+  // tap point; individual features call back into the host screen with the
+  // dam/river id. Cluster expansion via getClusterExpansionZoom would be
+  // more precise but is async + adds complexity; +2 levels is what Leaflet's
+  // MarkerCluster effectively did and feels natural.
+  // GeoJSONSource onPress fires NativeSyntheticEvent<PressEventWithFeatures>.
+  // Inferring the parameter type from the prop keeps us in sync with the
+  // package's actual signature without re-deriving the (un-exported) alias.
+  type WaterPressEvent = Parameters<
+    NonNullable<React.ComponentProps<typeof GeoJSONSource>['onPress']>
+  >[0];
+  const onWaterSourcePress = useCallback(
+    (event: WaterPressEvent) => {
+      const f = event.nativeEvent.features?.[0];
+      const props = f?.properties;
+      if (!f || !props) return;
+      const geom = f.geometry;
+      const coord = geom && 'coordinates' in geom ? (geom.coordinates as number[]) : undefined;
+      if (props.cluster && coord && coord.length === 2) {
+        cameraRef.current?.flyTo({
+          center: [coord[0]!, coord[1]!],
+          zoom: Math.min(14, zoom + 2),
+          duration: 400,
+        });
+        return;
+      }
+      const id = props.id as string | undefined;
+      const kind = props.kind as string | undefined;
+      if (!id) return;
+      if (kind === 'dam') onDamPress(id);
+      else if (kind === 'river') onRiverPress(id);
+    },
+    [zoom, onDamPress, onRiverPress],
+  );
 
   // GeoJSON for catch markers — rendered as a CircleLayer for performance
   // when many catches are visible at once.
@@ -418,31 +420,129 @@ export const MapLibreMap = forwardRef<LeafletMapHandle, LeafletMapProps>(functio
         </Marker>
       ))}
 
-      {/* Dams */}
-      {visibleDams.map((d) => (
-        <Marker
-          key={`dam-${d.id}`}
-          id={`dam-${d.id}`}
-          lngLat={[d.longitude, d.latitude]}
-          anchor="bottom"
-          onPress={() => onDamPress(d.id)}
+      {/* Dams — clustered GeoJSON source. clusterMaxZoomLevel: 12 means at
+          zoom ≥13 individual pins show; below that, count bubbles appear.
+          clusterRadius: 60 collapses pins within 60px of each other. Same
+          UX as the old Leaflet MarkerCluster engine. */}
+      {damsGeoJson.features.length > 0 ? (
+        <GeoJSONSource
+          id="dams-src"
+          data={damsGeoJson}
+          cluster
+          clusterMaxZoom={12}
+          clusterRadius={60}
+          onPress={onWaterSourcePress}
         >
-          <WaterPin name={d.name} showLabel={showWaterLabels} type="dam" />
-        </Marker>
-      ))}
+          {/* Cluster bubbles — navy circle, stepped radius by count */}
+          <Layer
+            id="dams-cluster-circle"
+            type="circle"
+            source="dams-src"
+            filter={['has', 'point_count']}
+            paint={{
+              'circle-color': '#062D3D',
+              'circle-radius': [
+                'step',
+                ['get', 'point_count'],
+                18,
+                5, 22,
+                15, 26,
+                30, 32,
+              ],
+              'circle-stroke-color': '#ffffff',
+              'circle-stroke-width': 3,
+              'circle-opacity': 0.95,
+            }}
+          />
+          {/* Cluster count label */}
+          <Layer
+            id="dams-cluster-count"
+            type="symbol"
+            source="dams-src"
+            filter={['has', 'point_count']}
+            layout={{
+              'text-field': ['get', 'point_count_abbreviated'],
+              'text-size': 13,
+              'text-allow-overlap': true,
+              'text-ignore-placement': true,
+            }}
+            paint={{ 'text-color': '#ffffff' }}
+          />
+          {/* Individual dam pins — small navy dots at high zoom */}
+          <Layer
+            id="dams-point"
+            type="circle"
+            source="dams-src"
+            filter={['!', ['has', 'point_count']]}
+            paint={{
+              'circle-color': '#062D3D',
+              'circle-radius': 9,
+              'circle-stroke-color': '#ffffff',
+              'circle-stroke-width': 2.5,
+              'circle-opacity': 0.95,
+            }}
+          />
+        </GeoJSONSource>
+      ) : null}
 
-      {/* Rivers */}
-      {visibleRivers.map((r) => (
-        <Marker
-          key={`river-${r.id}`}
-          id={`river-${r.id}`}
-          lngLat={[r.longitude, r.latitude]}
-          anchor="bottom"
-          onPress={() => onRiverPress(r.id)}
+      {/* Rivers — same pattern, green color scheme */}
+      {riversGeoJson.features.length > 0 ? (
+        <GeoJSONSource
+          id="rivers-src"
+          data={riversGeoJson}
+          cluster
+          clusterMaxZoom={12}
+          clusterRadius={60}
+          onPress={onWaterSourcePress}
         >
-          <WaterPin name={r.name} showLabel={showWaterLabels} type="river" />
-        </Marker>
-      ))}
+          <Layer
+            id="rivers-cluster-circle"
+            type="circle"
+            source="rivers-src"
+            filter={['has', 'point_count']}
+            paint={{
+              'circle-color': '#2E9B5A',
+              'circle-radius': [
+                'step',
+                ['get', 'point_count'],
+                18,
+                5, 22,
+                15, 26,
+                30, 32,
+              ],
+              'circle-stroke-color': '#ffffff',
+              'circle-stroke-width': 3,
+              'circle-opacity': 0.95,
+            }}
+          />
+          <Layer
+            id="rivers-cluster-count"
+            type="symbol"
+            source="rivers-src"
+            filter={['has', 'point_count']}
+            layout={{
+              'text-field': ['get', 'point_count_abbreviated'],
+              'text-size': 13,
+              'text-allow-overlap': true,
+              'text-ignore-placement': true,
+            }}
+            paint={{ 'text-color': '#ffffff' }}
+          />
+          <Layer
+            id="rivers-point"
+            type="circle"
+            source="rivers-src"
+            filter={['!', ['has', 'point_count']]}
+            paint={{
+              'circle-color': '#2E9B5A',
+              'circle-radius': 9,
+              'circle-stroke-color': '#ffffff',
+              'circle-stroke-width': 2.5,
+              'circle-opacity': 0.95,
+            }}
+          />
+        </GeoJSONSource>
+      ) : null}
 
       {/* Live fishing pins */}
       {(liveFishingMarkers ?? []).map((p) => (
