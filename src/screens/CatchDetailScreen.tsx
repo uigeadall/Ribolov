@@ -9,6 +9,7 @@ import { useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { doc, getDoc } from 'firebase/firestore';
 import { Image } from 'expo-image';
 import ViewShot from 'react-native-view-shot';
+import { BrandedCatchPoster } from '../components/BrandedCatchPoster';
 import * as Haptics from 'expo-haptics';
 import * as Sharing from 'expo-sharing';
 import Toast from 'react-native-toast-message';
@@ -84,6 +85,8 @@ export default function CatchDetailScreen() {
   const [viewerIndex, setViewerIndex] = useState(0);
   const [currentExtraPhoto, setCurrentExtraPhoto] = useState(0);
   const cardRef = useRef<ViewShot>(null);
+  const posterRef = useRef<ViewShot>(null);
+  const [posterSharing, setPosterSharing] = useState(false);
 
   // `silent` flag lets focus-triggered refreshes skip the skeleton so the
   // user doesn't see a flash when returning from the edit screen.
@@ -255,6 +258,29 @@ export default function CatchDetailScreen() {
       Toast.show({ type: 'error', text1: 'Споделянето не успя', visibilityTime: 2400 });
     } finally {
       setSharing(false);
+    }
+  };
+
+  /**
+   * "Share as Story" — captures the off-screen BrandedCatchPoster at
+   * Instagram-Story aspect ratio (9:16) with bold typography over the
+   * full-bleed catch photo plus a Ribolov watermark + ribolov.app footer.
+   * This is the "outbound virality" path: users post their poster to
+   * Stories, friends see the watermark, tap through to install.
+   */
+  const sharePoster = async () => {
+    if (!posterRef.current) return;
+    setPosterSharing(true);
+    try {
+      const uri = await (posterRef.current as any).capture();
+      if (await Sharing.isAvailableAsync()) {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: 'Сподели улова' });
+      }
+    } catch {
+      Toast.show({ type: 'error', text1: 'Споделянето не успя', visibilityTime: 2400 });
+    } finally {
+      setPosterSharing(false);
     }
   };
 
@@ -530,6 +556,7 @@ export default function CatchDetailScreen() {
           )}
 
           <Card style={styles.actions}>
+            <Button title="Сподели като Story" onPress={sharePoster} loading={posterSharing} />
             <Button title="Сподели като снимка" variant="secondary" onPress={shareCard} loading={sharing} />
             {isOwn && (
               <>
@@ -547,6 +574,18 @@ export default function CatchDetailScreen() {
           visible={viewerOpen}
           onClose={() => setViewerOpen(false)}
         />
+        {/* Off-screen story poster. Renders at full 1080x1920 size so the
+            ViewShot capture produces a print-quality image, then sits at
+            -9999 px so it's never visible to the user. The capture itself
+            doesn't care about visibility — it renders to a temp PNG file. */}
+        <View pointerEvents="none" style={{ position: 'absolute', left: -9999, top: -9999 }}>
+          <BrandedCatchPoster
+            ref={posterRef}
+            catchItem={item}
+            ownerName={feedItem?.ownerName ?? user?.displayName ?? undefined}
+            format="story"
+          />
+        </View>
       </Screen>
     </KeyboardAvoidingView>
   );
