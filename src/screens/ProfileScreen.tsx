@@ -43,6 +43,7 @@ import { radius, spacing, typography } from '../theme/typography';
 import { shadowCard } from '../theme/shadows';
 import { useAuth, type DeleteAccountCredential } from '../services/authContext';
 import { buildInviteShareMessage } from '../services/referral';
+import { countMyInvites } from '../services/referralStats';
 import { logEvent } from '../services/analytics';
 import { GoogleSignInSection } from '../components/GoogleSignInButton';
 import { AppleSignInSection } from '../components/AppleSignInSection';
@@ -198,6 +199,17 @@ export default function ProfileScreen() {
 
   const [friends, setFriends] = useState<{ uid: string; displayName: string; photoUrl?: string }[]>([]);
   const [myGroups, setMyGroups] = useState<Group[]>([]);
+  // Count of users who signed up via my invite link. Surfaced as the
+  // subtitle on the "Покани приятел" row so users see their referral
+  // progress at a glance. Single getCountFromServer call = 1 read,
+  // safe on every profile mount.
+  const [inviteCount, setInviteCount] = useState<number>(0);
+  useEffect(() => {
+    if (!user?.uid || !configured) { setInviteCount(0); return; }
+    let cancelled = false;
+    countMyInvites(user.uid).then((n) => { if (!cancelled) setInviteCount(n); });
+    return () => { cancelled = true; };
+  }, [user?.uid, configured]);
 
   const loadSocialData = useCallback(async (isCancelled: () => boolean = () => false) => {
     if (!user?.uid || !configured) {
@@ -2008,6 +2020,13 @@ export default function ProfileScreen() {
                     dense
                     icon="gift-outline"
                     title="Покани приятел"
+                    subtitle={
+                      inviteCount === 0
+                        ? 'Сподели Риболов с приятели'
+                        : inviteCount === 1
+                          ? '1 приятел се регистрира'
+                          : `${inviteCount} приятели се регистрираха`
+                    }
                     onPress={() => {
                       setSettingsOpen(false);
                       if (!user) return;
