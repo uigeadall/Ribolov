@@ -1,48 +1,102 @@
 /**
- * Observability — no-op stub.
+ * Observability — Firebase Crashlytics adapter.
  *
- * Sentry was removed by user request (cost concern). The function
- * signatures are kept so existing call sites compile unchanged; errors
- * now flow only to the dev console. The ErrorBoundary still renders
- * its fallback UI on a React tree crash — users get a recoverable
- * screen rather than a white death — but the crash report doesn't go
- * anywhere.
+ * Sentry was removed for cost reasons; Crashlytics is free forever (no
+ * per-event quota, no tier ramp) and integrates with the Firebase project
+ * we already pay for. The public API on this module hasn't changed —
+ * existing call sites still call captureException / addBreadcrumb /
+ * setObservabilityUser / initObservability the same way. Now those calls
+ * actually deliver to a dashboard instead of disappearing.
  *
- * If you ever want a free crash reporter back, options:
- *   - Sentry (5k events/mo free) → re-add @sentry/react-native and
- *     restore the previous shape from git history (commit 50cb7be).
- *   - expo-error-recovery → in-process restart on crash, no remote.
- *   - Firebase Crashlytics → free, native-only, needs @react-native-
- *     firebase/crashlytics; integrates with the existing Firebase setup.
+ * Lazy-required so the native module isn't loaded before init — keeps
+ * Expo Go (no native bridge) from crashing at startup, and lets us still
+ * compile-test against the typed export.
  */
 
 let _initialized = false;
+type CrashlyticsMod = typeof import('@react-native-firebase/crashlytics').default;
+let _crashlytics: ReturnType<CrashlyticsMod> | null = null;
+
+function loadCrashlytics(): ReturnType<CrashlyticsMod> | null {
+  if (_crashlytics) return _crashlytics;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = require('@react-native-firebase/crashlytics').default as CrashlyticsMod;
+    _crashlytics = mod();
+    return _crashlytics;
+  } catch {
+    // Expo Go path or any environment where the native module isn't bound.
+    // Silent fallthrough — dev shouldn't crash just because Crashlytics is
+    // unavailable, and the no-op behaviour matches what we shipped pre-init.
+    return null;
+  }
+}
 
 export function initObservability(): void {
+  if (_initialized) return;
+  const c = loadCrashlytics();
+  if (!c) return;
+  // Crashlytics collection is enabled by default on a release build; the
+  // explicit call here makes it idempotent + visible in code search.
+  // Setting it again at runtime is a no-op for sticky collection setting.
+  c.setCrashlyticsCollectionEnabled(true).catch(() => undefined);
   _initialized = true;
 }
 
 export function setObservabilityUser(
-  _uid: string | null,
-  _displayName?: string | null,
+  uid: string | null,
+  displayName?: string | null,
 ): void {
-  if (!_initialized) return;
+  const c = loadCrashlytics();
+  if (!c) return;
+  // Crashlytics' setUserId tolerates null/empty and treats it as "anonymous".
+  c.setUserId(uid ?? '').catch(() => undefined);
+  if (displayName) {
+    c.setAttribute('displayName', displayName.slice(0, 120)).catch(() => undefined);
+  }
 }
 
-export function captureException(
-  error: unknown,
-  context?: Record<string, string>,
-): void {
+/**
+ * Record an exception in Crashlytics. Accepts any value — strings, plain
+ * objects, real Errors. Crashlytics requires a real Error, so we coerce.
+ * Context map is recorded as Crashlytics attributes (string → string) which
+ * the dashboard surfaces alongside the stack trace for grouping/debugging.
+ */
+export function captureException(error: unknown, context?: Record<string, string>): void {
   if (__DEV__) {
     // eslint-disable-next-line no-console
     console.error('[captureException]', error, context);
   }
+  const c = loadCrashlytics();
+  if (!c) return;
+  const err = error instanceof Error ? error : new Error(typeof error === 'string' ? error : JSON.stringify(error));
+  if (context) {
+    // Attributes don't surface per-event — they're sticky session-wide on
+    // Crashlytics. The intent of the per-call context map is closer to
+    // "breadcrumb tag", so we also drop a log line so it's grouped with the
+    // upcoming recordError call. log() is synchronous (no Promise).
+    for (const [k, v] of Object.entries(context)) {
+      try { c.log(`${k}=${v}`); } catch { /* ignore */ }
+    }
+  }
+  try { c.recordError(err); } catch { /* ignore — never propagate observability failures */ }
 }
 
+/**
+ * Crashlytics doesn't have a Sentry-style typed breadcrumb API; we map it
+ * to .log() which writes a short human-readable line into the crash log
+ * stream. The category + message format mirrors Sentry's display so the
+ * mental model carries over.
+ */
 export function addBreadcrumb(
-  _category: string,
-  _message: string,
-  _data?: Record<string, unknown>,
+  category: string,
+  message: string,
+  data?: Record<string, unknown>,
 ): void {
-  if (!_initialized) return;
+  const c = loadCrashlytics();
+  if (!c) return;
+  const suffix = data ? ` ${JSON.stringify(data)}` : '';
+  // log() is synchronous on @react-native-firebase/crashlytics; no Promise
+  // to await. Wrap in try/catch so a malformed log line never bubbles up.
+  try { c.log(`[${category}] ${message}${suffix}`); } catch { /* ignore */ }
 }
