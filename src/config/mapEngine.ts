@@ -21,7 +21,7 @@ export type MapEngine = 'maplibre' | 'native' | 'leaflet';
 // `as MapEngine` keeps the type as the wider union — without it, TS narrows
 // the `const` to its literal value and downstream `MAP_ENGINE === 'other'`
 // comparisons become "no overlap" errors.
-export const MAP_ENGINE = 'leaflet' as MapEngine;
+export const MAP_ENGINE = 'maplibre' as MapEngine;
 
 /** @deprecated Use {@link MAP_ENGINE} === 'native' instead. Kept temporarily
  *  so existing screens don't break during the engine swap. */
