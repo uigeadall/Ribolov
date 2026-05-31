@@ -77,6 +77,17 @@ function routeNotification(
     return;
   }
 
+  // Weekly "great fishing day" alert ("Утре изглежда отличен ден за риболов")
+  // → open the trip planner so the user can pick a spot for tomorrow.
+  if (type === 'fishingWindow') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (ref.navigate as any)('Main', {
+      screen: 'ProfileTab',
+      params: { screen: 'TripPlanner' },
+    });
+    return;
+  }
+
   // Likes + comments. Two flavours:
   //   1. Target is a POST (postId set) — land in PostDetail
   //   2. Target is a CATCH (catchId only) — land in CatchDetail

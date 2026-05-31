@@ -1444,6 +1444,122 @@ export const tournamentEndingSoonReminder = onSchedule(
 // `stampNotificationTtl` trigger at the bottom of this file.
 
 // ---------------------------------------------------------------------------
+// weeklyGreatFishingDayAlert — Sundays at 18:00 Europe/Sofia
+// ---------------------------------------------------------------------------
+// Once a week, check tomorrow's forecast at a Bulgaria-central reference point
+// (Sofia). If the bite rating for tomorrow is >= 4, push every user with a
+// valid Expo token: "Утре изглежда отличен за риболов". Otherwise silently
+// skip. The push is generic (not per-user-personalised) because per-user
+// fan-out at 10k DAU would burn through Open-Meteo's free tier of 10k
+// calls/day on the first invocation.
+//
+// Why Sunday evening: weekend trip planning is when this matters. A
+// Wednesday push about Thursday's weather rarely converts; Sunday's push
+// about Monday morning has higher intent.
+//
+// Per-user personalisation followup: when we have favorite-water data
+// densely populated (currently sparse), group user spots into ~50 km cells,
+// fetch forecast per cell once, and send personalised pushes. Until then
+// the global signal is the right cost/benefit.
+
+export const weeklyGreatFishingDayAlert = onSchedule(
+  { schedule: "every sunday 18:00", timeZone: "Europe/Sofia", maxInstances: 1 },
+  async () => {
+    // Sofia coords — Bulgaria's geographic center is close to Sofia for
+    // weather-pattern purposes.
+    const lat = 42.6977;
+    const lng = 23.3219;
+    // We need tomorrow's forecast, so request a 1-day forecast and read
+    // index [0] (the soonest available day). Open-Meteo's free endpoint
+    // tolerates this without auth.
+    let rating = 0;
+    let weatherCode = 0;
+    let temp = 0;
+    try {
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&daily=weather_code,temperature_2m_max,wind_speed_10m_max,precipitation_probability_max&timezone=Europe/Sofia&forecast_days=2`;
+      const res = await fetch(url);
+      const json = await res.json() as {
+        daily: {
+          weather_code: number[];
+          temperature_2m_max: number[];
+          wind_speed_10m_max: number[];
+          precipitation_probability_max: number[];
+        };
+      };
+      // Index 1 = tomorrow (0 is today).
+      const idx = 1;
+      weatherCode = json.daily.weather_code[idx] ?? 0;
+      temp = json.daily.temperature_2m_max[idx] ?? 15;
+      const wind = json.daily.wind_speed_10m_max[idx] ?? 0;
+      const precip = json.daily.precipitation_probability_max[idx] ?? 0;
+      // Crude rating: 5 if clear + temp 15-25 + wind 5-15 + precip < 30,
+      // 4 if some-but-not-all of those hold, lower otherwise. Mirrors the
+      // shape of the client-side fishing-rating heuristic without
+      // re-implementing it server-side.
+      let score = 3;
+      if (weatherCode <= 3) score += 1;
+      if (temp >= 12 && temp <= 26) score += 0.5;
+      if (wind >= 4 && wind <= 18) score += 0.5;
+      if (precip < 30) score += 0.5;
+      if (precip > 60) score -= 1;
+      if (wind > 35) score -= 1.5;
+      rating = Math.max(1, Math.min(5, Math.round(score)));
+    } catch (e) {
+      logger.warn(`[weeklyGreatFishingDayAlert] forecast fetch failed`, e);
+      return;
+    }
+
+    if (rating < 4) {
+      logger.info(`[weeklyGreatFishingDayAlert] rating ${rating} below threshold, skip`);
+      return;
+    }
+
+    // Idempotency marker — one per Sunday evening run so a retry doesn't
+    // re-push to everyone.
+    const today = new Date().toISOString().slice(0, 10);
+    const markerRef = db.doc(`greatFishingAlerts/${today}`);
+    const marker = await markerRef.get();
+    if (marker.exists) {
+      logger.info(`[weeklyGreatFishingDayAlert] already sent today, skip`);
+      return;
+    }
+
+    // Fan out to every user with a valid Expo push token. We read tokens
+    // via a collectionGroup query on the private subcollection. At 10k DAU
+    // this is ~10k reads + 10k pushes once per week = ~40k reads/month
+    // ($0.024) and 40k pushes/month (free).
+    const tokenSnap = await db.collectionGroup("private").get();
+    let sent = 0;
+    const body = `Утре изглежда отличен ден за риболов (${temp}° максимум). Време да планираш!`;
+    for (const tokDoc of tokenSnap.docs) {
+      if (tokDoc.id !== 'pushToken') continue;
+      const token = tokDoc.data()?.expoPushToken as string | undefined;
+      if (!token || !token.startsWith("ExponentPushToken[")) continue;
+      try {
+        await sendExpoPush(token, "Отлична прогноза 🎣", body, {
+          type: 'fishingWindow',
+          weatherCode: String(weatherCode),
+          temp: String(temp),
+        });
+        sent += 1;
+      } catch (e) {
+        // Individual push failures don't abort the fan-out.
+        logger.warn(`[weeklyGreatFishingDayAlert] push fail`, e);
+      }
+    }
+
+    await markerRef.set({
+      sentAt: FieldValue.serverTimestamp(),
+      rating,
+      weatherCode,
+      temp,
+      recipients: sent,
+    });
+    logger.info(`[weeklyGreatFishingDayAlert] sent ${sent} pushes (rating ${rating})`);
+  },
+);
+
+// ---------------------------------------------------------------------------
 // dailyThrowbackNotifications — daily at 08:00 Europe/Sofia
 // ---------------------------------------------------------------------------
 // Finds every public catch dated "this day last year" (and "this day 2 years
