@@ -19,6 +19,20 @@ export default function PersonalBestsScreen() {
   const navigation = useAppNavigation();
   const { colors } = useTheme();
   const [bests, setBests] = useState<PersonalBest[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Extracted so both the focus effect AND pull-to-refresh can call it.
+  const loadBests = useCallback(async () => {
+    const list = await catchesStore.list();
+    const map = computePersonalBests(list);
+    const sorted = Array.from(map.values()).sort((a, b) => b.weightKg - a.weightKg);
+    setBests(sorted);
+  }, []);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try { await loadBests(); } finally { setRefreshing(false); }
+  }, [loadBests]);
 
   const styles = useMemo(
     () =>
@@ -52,15 +66,7 @@ export default function PersonalBestsScreen() {
     [colors]
   );
 
-  useFocusEffect(
-    useCallback(() => {
-      catchesStore.list().then((list) => {
-        const map = computePersonalBests(list);
-        const sorted = Array.from(map.values()).sort((a, b) => b.weightKg - a.weightKg);
-        setBests(sorted);
-      });
-    }, [])
-  );
+  useFocusEffect(useCallback(() => { void loadBests(); }, [loadBests]));
 
   const medal = (i: number) => (i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '🏅');
 
@@ -107,6 +113,8 @@ export default function PersonalBestsScreen() {
           data={bests}
           keyExtractor={(b) => b.speciesId}
           contentContainerStyle={{ padding: spacing.lg, gap: spacing.sm }}
+          refreshing={refreshing}
+          onRefresh={onRefresh}
           renderItem={({ item, index }) => (
             <Pressable
               onPress={() =>

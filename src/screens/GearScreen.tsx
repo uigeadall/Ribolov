@@ -51,17 +51,24 @@ export default function GearScreen() {
   const [form, dispatch] = useReducer(formReducer, initialForm);
   const { name, notes, editingId, editName, editNotes } = form;
   const [saving, setSaving] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   // Synchronous double-tap guard. `saving` state lags one render so two
   // rapid taps both see `saving=false` and both invoke add(); newId() runs
   // twice and we get two gear rows with the same name but different ids.
   // Same pattern as MapScreen spot save fix.
   const savingRef = useRef(false);
 
-  const load = useCallback(() => {
-    gearStore.list().then(setItems);
+  const load = useCallback(async () => {
+    const list = await gearStore.list();
+    setItems(list);
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => { void load(); }, [load]));
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try { await load(); } finally { setRefreshing(false); }
+  }, [load]);
 
   const styles = useMemo(() => StyleSheet.create({
     title: { ...typography.h2, color: colors.text, marginBottom: spacing.md },
@@ -170,6 +177,8 @@ export default function GearScreen() {
 
       <FlatList
         data={items}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
         keyExtractor={(g) => g.id}
         contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl, flexGrow: 1 }}
         ListEmptyComponent={<EmptyState icon="bag-outline" title="Празен списък" subtitle="Добави въдица, макара, кутия…" />}

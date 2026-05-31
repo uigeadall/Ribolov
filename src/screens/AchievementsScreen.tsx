@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
@@ -94,7 +94,7 @@ export default function AchievementsScreen() {
   const navigation = useAppNavigation();
   const { user, configured } = useAuth();
 
-  const { data, loading, reload } = useAsync(async () => {
+  const { data, loading, refreshing, reload } = useAsync(async () => {
     let catches: Catch[] = await catchesStore.list();
     if (configured && user) {
       try {
@@ -200,7 +200,12 @@ export default function AchievementsScreen() {
           <ListSkeleton variant="tile" count={6} />
         </View>
       ) : (
-        <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}>
+        <ScrollView
+          contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={() => reload(true)} tintColor={colors.primary} />
+          }
+        >
           <Card style={styles.summaryCard}>
             <View style={styles.summaryRow}>
               <Ionicons name="trophy-outline" size={40} color={colors.primary} />

@@ -50,6 +50,7 @@ export default function TripsScreen() {
   const [saving, setSaving] = useState(false);
   const [titleError, setTitleError] = useState('');
   const [catchCountByTrip, setCatchCountByTrip] = useState<Map<string, number>>(new Map());
+  const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(() => {
     Promise.all([tripsStore.list(), catchesStore.list()]).then(([list, catches]) => {
@@ -72,6 +73,11 @@ export default function TripsScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try { await Promise.resolve(load()); } finally { setRefreshing(false); }
+  }, [load]);
 
   const inputStyle = {
     borderWidth: 1,
@@ -238,6 +244,8 @@ export default function TripsScreen() {
           data={items}
           keyExtractor={(t) => t.id}
           removeClippedSubviews={Platform.OS === 'android'}
+          refreshing={refreshing}
+          onRefresh={onRefresh}
           // Without this, the first tap on a row while the keyboard is open
           // (from the "Add trip" title input above) only dismisses the keyboard
           // instead of navigating into TripDetail.
