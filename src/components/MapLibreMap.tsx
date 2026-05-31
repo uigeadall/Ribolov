@@ -482,6 +482,31 @@ export const MapLibreMap = forwardRef<LeafletMapHandle, LeafletMapProps>(functio
               'circle-opacity': 0.95,
             }}
           />
+          {/* Dam name label — visible at zoom ≥ 13 (above clusterMaxZoom).
+              text-allow-overlap: false lets MapLibre's collision detection
+              hide labels that would overlap, keeping the map readable when
+              many dams sit close together. text-halo gives crisp legibility
+              over OSM background tiles. */}
+          <Layer
+            id="dams-label"
+            type="symbol"
+            source="dams-src"
+            filter={['!', ['has', 'point_count']]}
+            minzoom={13}
+            layout={{
+              'text-field': ['get', 'name'],
+              'text-size': 12,
+              'text-offset': [0, 1.2],
+              'text-anchor': 'top',
+              'text-allow-overlap': false,
+              'text-optional': true,
+            }}
+            paint={{
+              'text-color': '#062D3D',
+              'text-halo-color': '#ffffff',
+              'text-halo-width': 1.5,
+            }}
+          />
         </GeoJSONSource>
       ) : null}
 
@@ -539,6 +564,27 @@ export const MapLibreMap = forwardRef<LeafletMapHandle, LeafletMapProps>(functio
               'circle-stroke-color': '#ffffff',
               'circle-stroke-width': 2.5,
               'circle-opacity': 0.95,
+            }}
+          />
+          {/* River name label — same shape as dams-label but green text. */}
+          <Layer
+            id="rivers-label"
+            type="symbol"
+            source="rivers-src"
+            filter={['!', ['has', 'point_count']]}
+            minzoom={13}
+            layout={{
+              'text-field': ['get', 'name'],
+              'text-size': 12,
+              'text-offset': [0, 1.2],
+              'text-anchor': 'top',
+              'text-allow-overlap': false,
+              'text-optional': true,
+            }}
+            paint={{
+              'text-color': '#0f3d21',
+              'text-halo-color': '#ffffff',
+              'text-halo-width': 1.5,
             }}
           />
         </GeoJSONSource>
