@@ -637,6 +637,15 @@ export default function FeedScreen() {
       seenTopIdRef.current = null;
       newPostsCountRef.current = 0;
       setNewPostsCount(0);
+      // Snap the list to the top on scope change. Without this, FlashList's
+      // recycler preserves the previous scroll offset when items are replaced
+      // — which means switching tabs while scrolled mid-feed landed the user
+      // at the SAME pixel offset in the new scope's items. In practice that
+      // was usually somewhere around the user's own recent posts (since the
+      // viewport-position math collides with where their content sits in
+      // the chronological feed). `animated: false` so the tab switch feels
+      // instant rather than scroll-animated.
+      flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
       void Haptics.selectionAsync();
       return next;
     });
