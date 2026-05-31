@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { Text, ScrollView, StyleSheet, View, Pressable, Linking } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { Text, ScrollView, StyleSheet, View, Pressable, Linking, ActivityIndicator } from 'react-native';
 import { useAppNavigation } from '../navigation/useAppNavigation';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,6 +8,11 @@ import { Card } from '../components/Card';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 import { handleError } from '../utils/handleError';
+import { useAuth } from '../services/authContext';
+import { exportMyDataAndShare } from '../services/gdprExport';
+import { notifyError } from '../utils/notify';
+import Toast from 'react-native-toast-message';
+import * as Haptics from 'expo-haptics';
 
 /**
  * Public-facing legal documents are hosted on GitHub Pages from /docs.
@@ -25,6 +30,23 @@ export default function LegalInfoScreen() {
   const navigation = useAppNavigation();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+  const [exporting, setExporting] = useState(false);
+
+  const onExportMyData = async () => {
+    if (!user?.uid || exporting) return;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setExporting(true);
+    try {
+      await exportMyDataAndShare(user.uid);
+      Toast.show({ type: 'success', text1: 'Готово', text2: 'Данните са изпратени към избраното приложение.', visibilityTime: 2400 });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Опитай отново.';
+      notifyError('Експортът не успя', msg);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const styles = useMemo(
     () =>
@@ -97,6 +119,42 @@ export default function LegalInfoScreen() {
           <Bullet text="Коригираш неточни данни от Профил → Публични данни." />
           <Bullet text="Изтриеш акаунта и всички свързани данни (Профил → Изтриване на акаунта)." />
           <Bullet text="Ограничиш или възразиш срещу обработването — пиши ни на имейл по-долу." />
+          {/* "Download my data" — fulfils the data-portability promise in
+              the privacy policy. Bundles local logbook + cloud footprint
+              (profile, public catches, posts, follows, etc.) into a JSON
+              file and surfaces the system share sheet. */}
+          {user?.uid ? (
+            <Pressable
+              onPress={onExportMyData}
+              disabled={exporting}
+              hitSlop={6}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 8,
+                marginTop: spacing.md,
+                paddingHorizontal: spacing.md,
+                paddingVertical: spacing.sm,
+                borderRadius: radius.md,
+                backgroundColor: colors.primarySurface,
+                borderWidth: 1,
+                borderColor: colors.border,
+                alignSelf: 'flex-start',
+                opacity: exporting ? 0.6 : 1,
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Изтегли моите данни"
+            >
+              {exporting ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <Ionicons name="download-outline" size={18} color={colors.primary} />
+              )}
+              <Text style={{ ...typography.bodyBold, color: colors.primary }}>
+                {exporting ? 'Подготвяме файла…' : 'Изтегли моите данни'}
+              </Text>
+            </Pressable>
+          ) : null}
           <Pressable onPress={() => openUrl(`mailto:${CONTACT_EMAIL}?subject=GDPR запитване`)} hitSlop={8}>
             <Text style={styles.link}>{CONTACT_EMAIL}</Text>
           </Pressable>
