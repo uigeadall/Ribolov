@@ -26,6 +26,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '../components/Button';
 import type { LeafletMapHandle, LeafletMapType } from '../components/LeafletMap';
 import { MapEngineComponent } from '../components/mapEngineComponent';
+import { Solunar7DayStrip } from '../components/Solunar7DayStrip';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
@@ -742,6 +743,37 @@ export default function MapScreen() {
             onSpotPress={flyToSpot}
             onSpotLongPress={(s) => recordCatchAt({ latitude: s.latitude, longitude: s.longitude, name: s.name })}
           />
+        ) : null}
+
+        {/* ── Solunar 7-day strip ──
+            Anchored above the spot scroll bar (or directly above the
+            home-indicator when no spots). Always visible — gives users
+            an at-a-glance view of which day this week is best to fish
+            and uses their current location for the moon-transit math.
+            Tap a day → fly the map to a wider zoom so they can plan a
+            trip around that date. The strip is small (~52 px tall)
+            so it doesn't fight the map for screen space. */}
+        {userCoord ? (
+          <View
+            pointerEvents="box-none"
+            style={{
+              position: 'absolute',
+              bottom: sortedSpots.length > 0 ? 140 : spacing.md + insets.bottom,
+              left: 0,
+              right: 0,
+            }}
+          >
+            <Solunar7DayStrip
+              latitude={userCoord.latitude}
+              longitude={userCoord.longitude}
+              onPressDay={(date) => {
+                // Tap a day → fly to country zoom so user can pick a
+                // spot for that day. A future improvement is to open
+                // TripPlanner pre-filled with this date.
+                mapRef.current?.flyTo(userCoord.latitude, userCoord.longitude, 8);
+              }}
+            />
+          </View>
         ) : null}
       </View>
 
