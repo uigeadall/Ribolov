@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, FlatList, Pressable,
   TextInput, Platform,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { FishingRefreshControl } from '../components/FishingRefreshControl';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -92,7 +93,7 @@ export default function GroupsScreen() {
 
       <View style={styles.tabs}>
         {(['discover', 'mine'] as Tab[]).map((t) => (
-          <Pressable key={t} style={[styles.tab, tab === t && styles.tabActive]} onPress={() => setTab(t)}>
+          <Pressable key={t} style={[styles.tab, tab === t && styles.tabActive]} onPress={() => { void Haptics.selectionAsync(); setTab(t); }}>
             <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
               {t === 'discover' ? 'Откривай' : 'Моите'}
             </Text>

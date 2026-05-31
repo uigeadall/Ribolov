@@ -8,6 +8,7 @@ import {
   StyleProp,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
 import { shadowButton } from '../theme/shadows';
@@ -67,9 +68,21 @@ export function Button({ title, onPress, onLongPress, variant = 'primary', loadi
   const indicatorColor =
     variant === 'secondary' || variant === 'ghost' ? colors.primary : colors.white;
 
+  // Light impact haptic on every button tap. Universal "felt the press"
+  // confirmation that doesn't fight with system audio/visual cues. Variant
+  // = 'danger' gets a slightly stronger Medium so the user feels the
+  // "are you sure?" weight of a destructive action.
+  const tapHaptic = () => {
+    void Haptics.impactAsync(
+      variant === 'danger'
+        ? Haptics.ImpactFeedbackStyle.Medium
+        : Haptics.ImpactFeedbackStyle.Light,
+    );
+  };
+
   return (
     <Pressable
-      onPress={onPress}
+      onPress={() => { tapHaptic(); onPress(); }}
       onLongPress={onLongPress}
       disabled={isDisabled}
       android_ripple={{ color: variant === 'primary' ? 'rgba(255,255,255,0.2)' : `${colors.primary}22` }}
