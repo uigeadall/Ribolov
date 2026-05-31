@@ -7,18 +7,18 @@
     "development": {
       "developmentClient": false,
       "distribution": "internal",
-      "channel": "development"
+      "channel": "main"
     },
     "preview": {
       "distribution": "internal",
-      "channel": "preview",
+      "channel": "main",
       "android": {
         "buildType": "apk"
       }
     },
     "testflight": {
       "distribution": "store",
-      "channel": "preview",
+      "channel": "production",
       "autoIncrement": true
     },
     "production": {
