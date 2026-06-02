@@ -130,7 +130,7 @@ export function SharePickerModal({ visible, onClose, sharedRef }: Props) {
     if (!user || !sharedRef || pendingUid) return;
     setPendingUid(conv.otherUid);
     try {
-      const myName = user.displayName ?? user.email ?? 'Рибар';
+      const myName = user.displayName ?? 'Рибар';
       await sendConversationMessage(
         conv.convId,
         user.uid,

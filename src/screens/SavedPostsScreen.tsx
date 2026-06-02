@@ -237,7 +237,7 @@ export default function SavedPostsScreen() {
                     <FeedPost
                       item={item}
                       myUid={user.uid}
-                      myDisplayName={user.displayName ?? user.email ?? 'Аз'}
+                      myDisplayName={user.displayName ?? 'Аз'}
                       socialEnabled
                       onPressAuthor={() => {}}
                       onPressCatch={() => {}}
@@ -266,7 +266,7 @@ export default function SavedPostsScreen() {
               <FeedPost
                 item={item}
                 myUid={user.uid}
-                myDisplayName={user.displayName ?? user.email ?? 'Аз'}
+                myDisplayName={user.displayName ?? 'Аз'}
                 socialEnabled
                 onPressAuthor={(authorUid, name) =>
                   navigation.navigate('UserPublicProfile', { uid: authorUid, displayName: name })

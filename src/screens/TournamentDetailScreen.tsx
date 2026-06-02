@@ -194,7 +194,7 @@ export default function TournamentDetailScreen() {
     joiningRef.current = true;
     setBusy(true);
     try {
-      await joinTournament(t.id, user.uid, user.displayName || user.email || 'Рибар');
+      await joinTournament(t.id, user.uid, user.displayName || 'Рибар');
       setIsJoined(true);
       Toast.show({ type: 'success', text1: 'Записан си!', text2: `Участваш в „${t.name}“.`, visibilityTime: 2500 });
     } catch {
@@ -282,7 +282,7 @@ export default function TournamentDetailScreen() {
                 : `${c.speciesName} — участвам в „${t.name}“. #${tag}`;
               await createPost({
                 ownerUid: user.uid,
-                ownerName: user.displayName ?? user.email ?? 'Рибар',
+                ownerName: user.displayName ?? 'Рибар',
                 ownerPhotoUrl: user.photoURL ?? undefined,
                 text: intro,
                 localPhotoUri: c.photoUri,
@@ -353,7 +353,7 @@ export default function TournamentDetailScreen() {
       await submitCatchToTournament(route.params.id, {
         catchId: c.id,
         ownerUid: user.uid,
-        ownerName: user.displayName || user.email || 'Рибар',
+        ownerName: user.displayName || 'Рибар',
         photoUri: c.photoUri,
         speciesName: c.speciesName,
       });

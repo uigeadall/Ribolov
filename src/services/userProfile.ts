@@ -26,7 +26,6 @@ import { uploadImageToR2, deleteFromR2 } from './r2Upload';
 
 export type UserPublicSummary = {
   displayName: string;
-  email?: string;
   city?: string;
   bio?: string;
   photoUrl?: string;
@@ -156,7 +155,6 @@ export async function getUserPublicSummary(uid: string): Promise<UserPublicSumma
   if (!snap.exists()) return null;
   const d = snap.data() as {
     displayName?: string;
-    email?: string;
     city?: string;
     bio?: string;
     photoUrl?: string;
@@ -170,7 +168,6 @@ export async function getUserPublicSummary(uid: string): Promise<UserPublicSumma
     // Returning the literal 'Рибар' here was clobbering caller-known names
     // (e.g. the Auth user's displayName) in UserPublicProfileScreen.
     displayName: (d.displayName && String(d.displayName).trim()) || '',
-    email: d.email,
     city,
     bio,
     photoUrl,

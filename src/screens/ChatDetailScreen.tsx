@@ -540,7 +540,7 @@ export default function ChatDetailScreen() {
     try {
       const requestedPath = `chatMedia/${convId}/${user.uid}_${Date.now()}.jpg`;
       const { url } = await uploadImageToR2(mediaUri, requestedPath);
-      const myName = user.displayName?.trim() || user.email?.trim() || 'Рибар';
+      const myName = user.displayName?.trim() || 'Рибар';
       await sendConversationMessage(convId, user.uid, caption.trim(), otherUid, myName, url, 'photo', clientId, replyRef);
     } catch (e) {
       if (replyRef) setReplyingTo(capturedReplyingTo);
@@ -616,7 +616,7 @@ export default function ChatDetailScreen() {
       const capturedReplyingTo = replyingTo;
       setReplyingTo(null);
       const clientId = makeMessageClientId();
-      const myName = user.displayName?.trim() || user.email?.trim() || 'Рибар';
+      const myName = user.displayName?.trim() || 'Рибар';
 
       // Optimistic insert: drop a placeholder bubble into the local list right
       // now, keyed by `clientId` (which is also the eventual Firestore doc id).

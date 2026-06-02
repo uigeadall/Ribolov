@@ -468,7 +468,7 @@ export default function MapScreen() {
     try {
       const id = await createLiveFishingPin({
         ownerUid: user.uid,
-        ownerName: user.displayName ?? user.email ?? 'Рибар',
+        ownerName: user.displayName ?? 'Рибар',
         ownerPhotoUrl: user.photoURL ?? undefined,
         latitude: lat,
         longitude: lon,
@@ -1153,7 +1153,7 @@ export default function MapScreen() {
                           const pin = selectedLivePin;
                           if (!user) return;
                           try {
-                            const myName = user.displayName ?? user.email ?? 'Рибар';
+                            const myName = user.displayName ?? 'Рибар';
                             const convId = await ensureDirectConversation(user.uid, myName, pin.ownerUid, pin.ownerName);
                             setSelectedLivePin(null);
                             (navigation as any).navigate('ProfileTab', {

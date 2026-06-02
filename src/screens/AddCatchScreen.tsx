@@ -718,7 +718,7 @@ export default function AddCatchScreen() {
           setUploadProgress(f);
         });
       }
-      await pushCatch(toSync, user.uid, user.displayName ?? user.email ?? 'Рибар', sharePublic);
+      await pushCatch(toSync, user.uid, user.displayName ?? 'Рибар', sharePublic);
       await catchesStore.save({ ...toSync, syncedToCloud: true });
       return { ok: true };
     } catch (e: any) {
@@ -1039,7 +1039,7 @@ export default function AddCatchScreen() {
                 const weight = item.weightKg != null ? ` · ${item.weightKg} кг` : '';
                 await notifyPersonalBest({
                   actorUid: user.uid,
-                  actorName: user.displayName ?? user.email ?? 'Рибар',
+                  actorName: user.displayName ?? 'Рибар',
                   followerUids: followers,
                   catchId: item.id,
                   preview: `${item.speciesName}${weight} — личен рекорд 🏆`,

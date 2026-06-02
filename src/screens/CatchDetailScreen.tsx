@@ -191,7 +191,7 @@ export default function CatchDetailScreen() {
   const social = useFeedPostSocial({
     item: feedItem ?? { id: '', ownerUid: '', speciesName: '' } as FeedItem,
     myUid: user?.uid,
-    myDisplayName: user?.displayName ?? user?.email ?? 'Рибар',
+    myDisplayName: user?.displayName ?? 'Рибар',
     ownerName: feedItem?.ownerName ?? 'Рибар',
     socialEnabled,
     isVisible: true,

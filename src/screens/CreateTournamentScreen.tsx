@@ -201,7 +201,7 @@ export default function CreateTournamentScreen() {
         name: name.trim(),
         description: description.trim() || undefined,
         hostUid: user.uid,
-        hostName: user.displayName ?? user.email ?? 'Рибар',
+        hostName: user.displayName ?? 'Рибар',
         startDate,
         endDate,
         category,

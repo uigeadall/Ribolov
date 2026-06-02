@@ -75,7 +75,7 @@ export default function CreateGroupPollScreen() {
       await createPoll(
         groupId,
         { question: question.trim(), options: valid },
-        { uid: user.uid, displayName: user.displayName ?? user.email ?? 'Рибар' },
+        { uid: user.uid, displayName: user.displayName ?? 'Рибар' },
       );
       Toast.show({ type: 'success', text1: 'Анкетата е създадена', visibilityTime: 2000 });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

@@ -136,7 +136,7 @@ export default function HashtagFeedScreen() {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       await createPost({
         ownerUid: user.uid,
-        ownerName: user.displayName?.trim() || user.email?.trim() || 'Рибар',
+        ownerName: user.displayName?.trim() || 'Рибар',
         ownerPhotoUrl: myPhotoUrl,
         text: '',
         mentionUids: [],

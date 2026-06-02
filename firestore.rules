@@ -342,7 +342,23 @@ service cloud.firestore {
           && request.resource.data.likeCount <= resource.data.get('likeCount', 0) + 1
           && request.resource.data.ownerUid == resource.data.ownerUid
           && request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['likeCount', 'reactionCounts']))
+              .hasOnly(['likeCount', 'reactionCounts'])
+          // Bound each per-type reaction tally to ±1 so a non-owner can't
+          // inflate/corrupt the free-form reactionCounts map on someone else's
+          // catch while satisfying the likeCount ±1 check. The client only ever
+          // increments/decrements a single key per toggle (and two keys by ±1
+          // on a reaction-switch), so per-key ±1 covers every legit write.
+          // .get(...,{}) defaults a missing map so the first reaction doesn't reject.
+          && request.resource.data.get('reactionCounts', {}).get('heart', 0) >= resource.data.get('reactionCounts', {}).get('heart', 0) - 1
+          && request.resource.data.get('reactionCounts', {}).get('heart', 0) <= resource.data.get('reactionCounts', {}).get('heart', 0) + 1
+          && request.resource.data.get('reactionCounts', {}).get('fire', 0) >= resource.data.get('reactionCounts', {}).get('fire', 0) - 1
+          && request.resource.data.get('reactionCounts', {}).get('fire', 0) <= resource.data.get('reactionCounts', {}).get('fire', 0) + 1
+          && request.resource.data.get('reactionCounts', {}).get('trophy', 0) >= resource.data.get('reactionCounts', {}).get('trophy', 0) - 1
+          && request.resource.data.get('reactionCounts', {}).get('trophy', 0) <= resource.data.get('reactionCounts', {}).get('trophy', 0) + 1
+          && request.resource.data.get('reactionCounts', {}).get('fish', 0) >= resource.data.get('reactionCounts', {}).get('fish', 0) - 1
+          && request.resource.data.get('reactionCounts', {}).get('fish', 0) <= resource.data.get('reactionCounts', {}).get('fish', 0) + 1
+          && request.resource.data.get('reactionCounts', {}).get('wow', 0) >= resource.data.get('reactionCounts', {}).get('wow', 0) - 1
+          && request.resource.data.get('reactionCounts', {}).get('wow', 0) <= resource.data.get('reactionCounts', {}).get('wow', 0) + 1)
       );
       allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
 
@@ -467,7 +483,19 @@ service cloud.firestore {
           && request.resource.data.commentCount <= resource.data.get('commentCount', 0) + 1
           && request.resource.data.ownerUid == resource.data.ownerUid
           && request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['likeCount', 'commentCount', 'reactionCounts']))
+              .hasOnly(['likeCount', 'commentCount', 'reactionCounts'])
+          // Same per-type ±1 bound as publicCatches so the reactionCounts map
+          // can't be inflated/corrupted on another user's post.
+          && request.resource.data.get('reactionCounts', {}).get('heart', 0) >= resource.data.get('reactionCounts', {}).get('heart', 0) - 1
+          && request.resource.data.get('reactionCounts', {}).get('heart', 0) <= resource.data.get('reactionCounts', {}).get('heart', 0) + 1
+          && request.resource.data.get('reactionCounts', {}).get('fire', 0) >= resource.data.get('reactionCounts', {}).get('fire', 0) - 1
+          && request.resource.data.get('reactionCounts', {}).get('fire', 0) <= resource.data.get('reactionCounts', {}).get('fire', 0) + 1
+          && request.resource.data.get('reactionCounts', {}).get('trophy', 0) >= resource.data.get('reactionCounts', {}).get('trophy', 0) - 1
+          && request.resource.data.get('reactionCounts', {}).get('trophy', 0) <= resource.data.get('reactionCounts', {}).get('trophy', 0) + 1
+          && request.resource.data.get('reactionCounts', {}).get('fish', 0) >= resource.data.get('reactionCounts', {}).get('fish', 0) - 1
+          && request.resource.data.get('reactionCounts', {}).get('fish', 0) <= resource.data.get('reactionCounts', {}).get('fish', 0) + 1
+          && request.resource.data.get('reactionCounts', {}).get('wow', 0) >= resource.data.get('reactionCounts', {}).get('wow', 0) - 1
+          && request.resource.data.get('reactionCounts', {}).get('wow', 0) <= resource.data.get('reactionCounts', {}).get('wow', 0) + 1)
       );
       allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
 
@@ -902,20 +930,55 @@ service cloud.firestore {
       allow update: if signedIn()
         && request.auth.uid in resource.data.participantIds
         && (
-          // Full update (e.g. add participant names) — participantIds must stay the same.
-          // Block check skipped: changing your own name in shared state shouldn't
-          // be rejected just because you've since been blocked.
-          request.resource.data.participantIds == resource.data.participantIds
+          // (1) Participant-name updates only — the merge write in
+          // ensureDirectConversation when a known conv is re-opened. Field-limited
+          // to participantNames. The previous `participantIds == participantIds`
+          // form was a CATCH-ALL: it passed for any update that left participantIds
+          // untouched, so either participant could overwrite arbitrary fields —
+          // including participantData (the notification cache the onNewMessage
+          // Cloud Function trusts), unreadCounts, and lastMessage — bypassing the
+          // block check in branch (2). Block check intentionally skipped here:
+          // refreshing your own display name in shared state shouldn't fail just
+          // because the peer has since blocked you.
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participantNames'])
           ||
-          // Message metadata update (lastMessage, unreadCounts) — only these
-          // fields allowed, and only if I haven't been blocked by the peer.
-          // This is the write that accompanies sendConversationMessage; without
-          // the block check here the batch would partially succeed (the message
-          // create is rejected separately) and the inbox row could update
-          // anyway, leaking the blocked sender's preview to the victim.
+          // (2) Message-metadata update that accompanies sendConversationMessage,
+          // plus markConversationRead/markConversationUnread adjusting unread.
+          // Only these fields allowed, and only if I haven't been blocked by the
+          // peer — without the block check a blocked sender could still poison the
+          // victim's inbox preview / unread badge even though their message create
+          // is rejected separately.
           (request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['lastMessage', 'lastMessageAt', 'lastSenderUid', 'unreadCounts'])
            && peerHasNotBlockedMeInConv(convId))
+          ||
+          // (3) Mute mirror: a participant may write ONLY their own
+          // participantData[uid] entry, and within it ONLY the `muted` sub-field
+          // (muteConversation/unmuteConversation). The onNewMessage Cloud Function
+          // reads participantData[recipient] for the recipient's prefs / mute /
+          // push-token cache, so a participant must never be able to write the
+          // OTHER participant's entry — nor inject extra fields into their own
+          // entry. In particular a forged `pushToken` here would let the CF
+          // deliver a peer's message to an attacker-chosen device, and forged
+          // prefs could re-enable a notification the recipient disabled. The
+          // prefs + pushToken cache is written EXCLUSIVELY by the CF (admin SDK,
+          // which bypasses these rules); the client only ever flips `muted`, so
+          // we pin the writable surface to exactly that.
+          // `.get(uid, {})` defaults a missing own-entry so the first mute write
+          // (before any CF backfill) still validates.
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participantData'])
+           && (
+             (!('participantData' in resource.data)
+               && request.resource.data.participantData.keys().hasOnly([request.auth.uid])
+               && request.resource.data.participantData[request.auth.uid].keys().hasOnly(['muted']))
+             ||
+             ('participantData' in resource.data
+               && request.resource.data.participantData.diff(resource.data.participantData)
+                    .affectedKeys().hasOnly([request.auth.uid])
+               && request.resource.data.participantData[request.auth.uid]
+                    .diff(resource.data.participantData.get(request.auth.uid, {}))
+                    .affectedKeys().hasOnly(['muted']))
+           ))
         );
       allow delete: if false;
 

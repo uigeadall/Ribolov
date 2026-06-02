@@ -670,7 +670,7 @@ export default function FeedScreen() {
     }
   }, [navigation]);
 
-  const myDisplayName = user?.displayName ?? user?.email ?? 'Аз';
+  const myDisplayName = user?.displayName ?? 'Аз';
   const socialEnabled = !!user && !!configured;
 
   /**
@@ -793,7 +793,7 @@ export default function FeedScreen() {
     if (!user) return;
     try {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      const ownerName = user.displayName?.trim() || user.email?.trim() || 'Рибар';
+      const ownerName = user.displayName?.trim() || 'Рибар';
       const id = await createPost({
         ownerUid: user.uid,
         ownerName,

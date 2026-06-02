@@ -120,7 +120,7 @@ async function runFlush(ctx: {
 
   const now = Date.now();
   const remaining: Entry[] = [];
-  const ownerName = ctx.user.displayName ?? ctx.user.email ?? 'Рибар';
+  const ownerName = ctx.user.displayName ?? 'Рибар';
 
   // Read the full catch list once — not once per queue entry
   const catchList = await catchesStore.list();

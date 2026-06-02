@@ -436,7 +436,7 @@ export default function UserPublicProfileScreen() {
         setFollowerCount((n) => Math.max(0, n - 1));
       } else {
         await followUser(user.uid, uid, summaryName);
-        await sendFollowNotification(uid, user.uid, user.displayName ?? user.email ?? 'Рибар');
+        await sendFollowNotification(uid, user.uid, user.displayName ?? 'Рибар');
         setFollowing(true);
         setFollowerCount((n) => n + 1);
       }
@@ -450,7 +450,7 @@ export default function UserPublicProfileScreen() {
   const openChat = async () => {
     if (!user || isSelf) return;
     try {
-      const myName = user.displayName ?? user.email ?? 'Рибар';
+      const myName = user.displayName ?? 'Рибар';
       const convId = await ensureDirectConversation(user.uid, myName, uid, summaryName);
       navigation.navigate('Main', {
         screen: 'ProfileTab',
@@ -972,7 +972,7 @@ export default function UserPublicProfileScreen() {
           <FeedPost
             item={item}
             myUid={user?.uid}
-            myDisplayName={user?.displayName ?? user?.email ?? 'Аз'}
+            myDisplayName={user?.displayName ?? 'Аз'}
             socialEnabled={Boolean(configured && user)}
             onPressAuthor={(authorUid, name) => {
               if (authorUid === uid) return;

@@ -339,12 +339,11 @@ export async function sendConversationMessage(
     lastSenderUid: senderUid,
     [`unreadCounts.${recipientUid}`]: increment(1),
   });
-  // NOTE: The recipient's users/{uid}.unreadMessageCount aggregate is bumped by
-  // the onNewMessage Cloud Function (admin SDK), not by the client — the
-  // user-doc rule requires isSelf(userId) which would reject this cross-user
-  // write from the sender. The conversation's unreadCounts.{recipientUid} is
-  // the authoritative per-conversation counter; the aggregate is just a UX
-  // optimization for the global bell badge.
+  // NOTE: conversations/{convId}.unreadCounts.{recipientUid} (bumped above) is
+  // the single source of truth for unread — the bell badge sums these per-conv
+  // counts (mute-aware, see subscribeUnreadMessagesCount). There is deliberately
+  // no users/{uid}.unreadMessageCount aggregate: it was write-only and drifted,
+  // so it was removed (see onNewMessage in functions/src/index.ts).
   await batch.commit();
 }
 
@@ -369,16 +368,10 @@ export async function fetchMyUnreadInConversation(convId: string, myUid: string)
 export async function markConversationRead(convId: string, myUid: string): Promise<void> {
   const fb = requireFirebase();
   const convRef = doc(fb.db, 'conversations', convId);
-  const userRef = doc(fb.db, 'users', myUid);
 
-  // Clear the per-conversation unread count FIRST, on its own transaction. The
-  // earlier implementation bundled this with the user-aggregate decrement, but
-  // the user-doc rule requires `request.resource.data.uid == userId` — and a
-  // merge write that didn't include `uid` (because the user doc was first
-  // created by the Cloud Function without setting it) would be rejected,
-  // aborting the whole transaction and leaving the per-conversation badge
-  // stuck. Splitting them means a failed aggregate decrement no longer rolls
-  // back the conv-doc clear.
+  // Clear the per-conversation unread count. This is the authoritative unread
+  // counter — the bell badge sums conversations/{convId}.unreadCounts (see
+  // subscribeUnreadMessagesCount), so zeroing my key here is all that's needed.
   //
   // Short-circuit when unreadCount is already 0: ChatDetailScreen calls this
   // on every message snapshot, and most of those snapshots are firing for
@@ -386,33 +379,18 @@ export async function markConversationRead(convId: string, myUid: string): Promi
   // ran a no-op transaction that frequently lost the race to the
   // onNewMessage Cloud Function (which writes to the same doc), spamming
   // the log with failed-precondition warnings.
-  let unread = 0;
   try {
     await runTransaction(fb.db, async (tx) => {
       const snap = await tx.get(convRef);
       if (!snap.exists()) return;
       const current = (snap.data().unreadCounts?.[myUid] as number) ?? 0;
-      if (current === 0) {
-        return;
-      }
-      unread = current;
+      if (current === 0) return;
       tx.update(convRef, { [`unreadCounts.${myUid}`]: 0 });
     });
   } catch {
     // Conv-doc clear failed (likely permission or contention). Caller will
     // retry on the next snapshot since markConversationRead is called
     // per-snapshot from the message subscription.
-  }
-
-  // Decrement the user aggregate as a separate best-effort write. Includes
-  // `uid: myUid` so the user-doc rule passes even if the doc was previously
-  // created by the Cloud Function without that field.
-  if (unread > 0) {
-    await setDoc(
-      userRef,
-      { uid: myUid, unreadMessageCount: increment(-unread) },
-      { merge: true },
-    ).catch(() => {});
   }
 
   // Also mark the bell-icon notification entry for this conversation as read.
@@ -455,13 +433,11 @@ export function subscribeUnreadMessagesCount(
     onNext(0);
     return () => {};
   }
-  // Mute-aware: sums unread across conversations the user hasn't muted. The
-  // user-aggregate field `users/{uid}.unreadMessageCount` is still maintained
-  // by markConversationRead/Unread and the onNewMessage Cloud Function, but
-  // we deliberately don't read it for the badge — it doesn't know about
-  // muting, so it would show a count the Inbox "Непрочетени" tab disagrees
-  // with. Cost is one extra listener per session (the same conv list the
-  // Inbox already subscribes to); Firestore deduplicates the network reads.
+  // Mute-aware: sums unread across conversations the user hasn't muted. This
+  // per-conversation sum is the only unread counter — there is no
+  // users/{uid}.unreadMessageCount aggregate (it was mute-unaware and drifted,
+  // so it was removed). Cost is one extra listener per session (the same conv
+  // list the Inbox already subscribes to); Firestore deduplicates the reads.
   let convs: ConversationPreview[] = [];
   let muted: Set<string> = new Set();
   const emit = () => {
@@ -662,24 +638,15 @@ export async function markConversationUnread(convId: string, myUid: string): Pro
   if (!convId || !myUid) return;
   const fb = requireFirebase();
   const convRef = doc(fb.db, 'conversations', convId);
-  // Only bump the user aggregate when we actually transition from 0 → 1.
-  // If the conv was already unread the transaction is a no-op, and we MUST
-  // skip the aggregate increment too — otherwise repeated mark-unread swipes
-  // on the same row leak phantom counts into the bell badge.
-  let didFlip = false;
+  // Flip the per-conversation counter from 0 → 1. If the conv was already
+  // unread this is a no-op — the per-conv unreadCounts map is the only counter
+  // the bell badge reads, so there's nothing else to keep in sync. (Repeated
+  // mark-unread swipes on an already-unread row are therefore harmless.)
   await runTransaction(fb.db, async (tx) => {
     const snap = await tx.get(convRef);
     if (!snap.exists()) return;
     const current = (snap.data().unreadCounts?.[myUid] as number) ?? 0;
     if (current > 0) return;
     tx.update(convRef, { [`unreadCounts.${myUid}`]: 1 });
-    didFlip = true;
   }).catch(() => undefined);
-  if (didFlip) {
-    await setDoc(
-      doc(fb.db, 'users', myUid),
-      { uid: myUid, unreadMessageCount: increment(1) },
-      { merge: true },
-    ).catch(() => undefined);
-  }
 }

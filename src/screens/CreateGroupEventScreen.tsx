@@ -60,7 +60,7 @@ export default function CreateGroupEventScreen() {
           dateIso: date.toISOString(),
           locationName: locationName.trim() || undefined,
         },
-        { uid: user.uid, displayName: user.displayName ?? user.email ?? 'Рибар' },
+        { uid: user.uid, displayName: user.displayName ?? 'Рибар' },
       );
       Toast.show({ type: 'success', text1: 'Събитието е създадено', visibilityTime: 2000 });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

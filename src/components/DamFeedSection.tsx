@@ -105,7 +105,7 @@ export function DamFeedSection({ damId, damName, user, firebaseConfigured }: Pro
       await createDamFeedPost({
         damId,
         ownerUid: user.uid,
-        ownerName: user.displayName || user.email || 'Рибар',
+        ownerName: user.displayName || 'Рибар',
         localImageUri: res.assets[0].uri,
       });
     } catch (e: unknown) {

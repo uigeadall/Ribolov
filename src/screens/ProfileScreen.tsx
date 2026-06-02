@@ -482,7 +482,7 @@ export default function ProfileScreen() {
     // both show the success toast.
     if (profileSavingRef.current) return;
     // Empty displayName would write `""` to Firestore. The rest of the app
-    // falls back to user.email or "Рибар" in that case, but the profile
+    // falls back to "Рибар" in that case, but the profile
     // looks broken (the public-profile header shows no name) and mention
     // autocomplete returns the user with an empty label.
     if (!displayName.trim()) {
@@ -580,7 +580,7 @@ export default function ProfileScreen() {
 
   const unreadNotifs = useUnreadNotifCount(user?.uid);
   const avatarUri = pickedAvatarUri ?? remotePhotoUrl ?? user?.photoURL ?? undefined;
-  const initialLetter = (displayName || user?.email || '?').slice(0, 1).toUpperCase();
+  const initialLetter = (displayName || '?').slice(0, 1).toUpperCase();
 
   const hasPhoto = !!(avatarUri);
   const hasDisplayName = !!(displayName.trim() && displayName.trim() !== user?.email);
@@ -1882,7 +1882,7 @@ export default function ProfileScreen() {
           <FeedPost
             item={item}
             myUid={user?.uid}
-            myDisplayName={user?.displayName ?? user?.email ?? 'Аз'}
+            myDisplayName={user?.displayName ?? 'Аз'}
             socialEnabled={Boolean(configured && user)}
             onPressAuthor={(authorUid, name) => {
               if (authorUid === user?.uid) return;

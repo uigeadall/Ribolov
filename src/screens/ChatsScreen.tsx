@@ -729,7 +729,7 @@ export default function ChatsScreen() {
     );
   }
 
-  const myName = user.displayName ?? user.email ?? 'Аз';
+  const myName = user.displayName ?? 'Аз';
 
   // ListHeader bundles the rail + search + tabs so they scroll with the list
   // (tabs are deliberately scrollable because the rail takes vertical space —

@@ -242,10 +242,19 @@ async function loadRecipientChatMeta(
   participantData: Record<string, unknown> | undefined,
 ): Promise<RecipientChatMeta> {
   const cached = participantData?.[recipientUid] as Record<string, unknown> | undefined;
-  // A populated cache entry includes pushToken (even if empty string is
-  // valid for "user hasn't enabled notifications"). We treat the *presence*
-  // of pushToken key as the cache-warm signal.
-  if (cached && typeof cached.pushToken === 'string') {
+  // SECURITY: the push *delivery target* (pushToken) is owner-only data living
+  // in users/{uid}/private/pushToken, and we ALWAYS read it fresh from there —
+  // never from this cache. `participantData` sits on the conversation doc, which
+  // is client-writable: a participant can write their own entry (the mute
+  // toggle). If we trusted a token mirrored here, that participant could point
+  // the CF at an arbitrary device and have a peer's message delivered to it. The
+  // cache therefore serves ONLY the cheap, non-sensitive prefs/mute fields.
+  // Cache-warm signal: `messagesPrefEnabled` is a boolean written exclusively by
+  // the CF backfill below — the client (per firestore.rules) can only write
+  // `muted`, so its presence reliably means "CF-populated".
+  if (cached && typeof cached.messagesPrefEnabled === 'boolean') {
+    const tokenSnap = await db.doc(`users/${recipientUid}/private/pushToken`).get();
+    const tokenData = (tokenSnap.data() ?? {}) as { expoPushToken?: unknown };
     return {
       messagesPrefEnabled: cached.messagesPrefEnabled !== false,
       quietHoursEnabled: !!cached.quietHoursEnabled,
@@ -253,7 +262,7 @@ async function loadRecipientChatMeta(
       quietHoursEnd: typeof cached.quietHoursEnd === 'number' ? cached.quietHoursEnd : 7,
       timezone: typeof cached.timezone === 'string' ? cached.timezone : 'Europe/Sofia',
       muted: !!cached.muted,
-      pushToken: cached.pushToken,
+      pushToken: typeof tokenData.expoPushToken === 'string' ? tokenData.expoPushToken : '',
     };
   }
 
@@ -278,8 +287,24 @@ async function loadRecipientChatMeta(
   // Backfill the cache. Fire-and-forget — a failed cache write just means
   // the next call re-runs the slow path. Each backfill is one merge write
   // amortized over all future messages in the conversation.
+  // SECURITY: deliberately exclude `pushToken` — it is never mirrored into the
+  // client-writable conversation doc (see the cache-hit path above, which always
+  // reads it fresh from the owner-only private/pushToken). Caching only the
+  // prefs/mute fields keeps the delivery target out of reach of a participant
+  // who can write their own participantData entry.
   void db.doc(`conversations/${convId}`).set(
-    { participantData: { [recipientUid]: meta } },
+    {
+      participantData: {
+        [recipientUid]: {
+          messagesPrefEnabled: meta.messagesPrefEnabled,
+          quietHoursEnabled: meta.quietHoursEnabled,
+          quietHoursStart: meta.quietHoursStart,
+          quietHoursEnd: meta.quietHoursEnd,
+          timezone: meta.timezone,
+          muted: meta.muted,
+        },
+      },
+    },
     { merge: true },
   ).catch((e) => logger.warn(`[loadRecipientChatMeta] backfill failed for ${convId}/${recipientUid}`, e));
 
@@ -602,27 +627,23 @@ export const onNewMessage = onDocumentCreated(
       });
     }
 
-    // ATOMIC claim + unread bump. Previously these were two separate writes
-    // with the claim ahead of the bump — if the unread `set` failed AFTER
-    // the claim, the function returned with claim=true and unread missing,
-    // and there's no automatic retry on v2 background functions. The
-    // recipient would have a notification doc but no unread badge bump.
+    // ATOMIC idempotency claim. onDocumentCreated has at-least-once delivery,
+    // so a duplicate fire could re-send the push below. Claiming `_fnProcessed`
+    // inside a transaction means a concurrent retry reads the flag in the same
+    // transaction and bails, so the push fires at most once.
     //
-    // Combining them in a transaction ensures: either both commit (correct)
-    // or neither commits and the function throws (CF logs the error; an
-    // operator can replay or a sweeper can resurface). The transaction also
-    // serves as the idempotency claim — a concurrent retry would see
-    // `_fnProcessed` set in the transaction read and skip.
+    // This used to also bump a per-recipient `users/{uid}.unreadMessageCount`
+    // aggregate, but nothing reads it: the unread badge sums the per-conversation
+    // `unreadCounts` map (which is mute-aware), and that map is written by the
+    // client's sendConversationMessage batch — the single source of truth. The
+    // aggregate only ever drifted (negative once markConversationRead decremented
+    // an amount the CF may never have incremented if it wasn't deployed), so it
+    // was removed along with its client-side increment/decrement.
     const claimed = await db.runTransaction(async (tx) => {
       const msgSnap = await tx.get(event.data!.ref);
       if (!msgSnap.exists) return false;
       if ((msgSnap.data() as Record<string, unknown>)?._fnProcessed) return false;
       tx.update(event.data!.ref, { _fnProcessed: true });
-      tx.set(
-        db.doc(`users/${recipientUid}`),
-        { unreadMessageCount: FieldValue.increment(1) },
-        { merge: true },
-      );
       return true;
     });
     if (!claimed) return;
