@@ -24,11 +24,13 @@
  * replaced with the app's neutral fallback name, 'Рибар'.
  *
  * RUNNING (from the functions/ directory):
- *   # Authenticate against the prod project first, e.g.:
- *   #   gcloud auth application-default login
- *   #   export GOOGLE_CLOUD_PROJECT=<your-firebase-project-id>
- *   # or point at a service-account key:
+ *   # Credentials: the Admin SDK uses Application Default Credentials, which are
+ *   # SEPARATE from the Firebase CLI login. If you haven't set them up:
+ *   #   gcloud auth application-default login        # the usual path
+ *   #   # ...or point at a service-account key:
  *   #   export GOOGLE_APPLICATION_CREDENTIALS=/path/to/serviceAccount.json
+ *   # The project id is auto-resolved from .firebaserc — no env var needed
+ *   # (override with --project=<id> or GOOGLE_CLOUD_PROJECT if you must).
  *
  *   node scripts/scrubEmailNames.js            # DRY RUN — reports, writes nothing
  *   node scripts/scrubEmailNames.js --apply    # actually writes the scrubbed names
@@ -39,6 +41,8 @@
 'use strict';
 
 const admin = require('firebase-admin');
+const fs = require('fs');
+const path = require('path');
 
 const APPLY = process.argv.includes('--apply');
 const FALLBACK_NAME = 'Рибар';
@@ -46,7 +50,33 @@ const FALLBACK_NAME = 'Рибар';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const BATCH_LIMIT = 400; // Firestore caps a batch at 500 ops; leave margin.
 
-admin.initializeApp();
+// Resolve the target project explicitly. firebase-admin's auto-detection can't
+// find a project id from user ADC (you hit "Unable to detect a Project Id"), so
+// we resolve it ourselves: --project=<id> flag > GOOGLE_CLOUD_PROJECT /
+// GCLOUD_PROJECT env > the `projects.default` in .firebaserc at the repo root.
+function resolveProjectId() {
+  const flag = process.argv.find((a) => a.startsWith('--project='));
+  if (flag) return flag.slice('--project='.length);
+  if (process.env.GOOGLE_CLOUD_PROJECT) return process.env.GOOGLE_CLOUD_PROJECT;
+  if (process.env.GCLOUD_PROJECT) return process.env.GCLOUD_PROJECT;
+  try {
+    const rc = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../.firebaserc'), 'utf8'));
+    return rc.projects && rc.projects.default;
+  } catch {
+    return undefined;
+  }
+}
+
+const projectId = resolveProjectId();
+if (!projectId) {
+  console.error('Could not resolve a project id. Pass --project=<id> or set GOOGLE_CLOUD_PROJECT.');
+  process.exit(1);
+}
+
+// Credentials come from Application Default Credentials. If a query later fails
+// with an auth error (rather than the project-id error), run
+// `gcloud auth application-default login` or set GOOGLE_APPLICATION_CREDENTIALS.
+admin.initializeApp({ projectId });
 const db = admin.firestore();
 
 const looksLikeEmail = (v) => typeof v === 'string' && EMAIL_RE.test(v.trim());
