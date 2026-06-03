@@ -22,7 +22,12 @@ npm run build:testflight
 npm run submit:ios
 ```
 
-No lint or test scripts are configured. TypeScript checking: `npx tsc --noEmit`.
+TypeScript checking: `npx tsc --noEmit`. No lint script is configured.
+
+Tests (Vitest):
+- `npm test` — logic suite (pure services; no emulator needed)
+- `npm run test:rules` — Firestore security-rules suite (boots the Firestore emulator via `firebase emulators:exec`; needs Java)
+- `npm run test:all` — both
 
 ## Architecture
 
@@ -74,7 +79,7 @@ All type definitions are in `src/navigation/types.ts`. Every navigator uses `hea
 |---|---|
 | `publicCatches` | Public feed items |
 | `users/{uid}/following`, `users/{uid}/followers` | Follow graph |
-| `users/{uid}` | Profile + `unreadMessageCount` aggregate |
+| `users/{uid}` | Profile (the `unreadMessageCount` aggregate was removed 2026-06-02) |
 | `conversations/{convId}/messages` | Direct messages |
 | `leaderboardCache` | Precomputed global leaderboard rows |
 
