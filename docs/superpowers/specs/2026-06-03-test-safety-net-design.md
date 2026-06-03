@@ -60,9 +60,7 @@ logic suite and gated behind the emulator.
   logic/
     firestoreSanitize.test.ts
     feedRanking.test.ts
-    moon.test.ts
     solunar.test.ts
-    stats.test.ts
     personalBests.test.ts
   rules/
     setup.ts                 # initializeTestEnvironment, load firestore.rules
@@ -71,6 +69,13 @@ logic suite and gated behind the emulator.
     users-private.test.ts
     notifications.test.ts
 ```
+
+> **Reality check (2026-06-03):** `moon.ts`, `stats.ts`, and `insights.ts` are
+> empty stub files — there is no standalone moon or stats service to test. The
+> moon-phase / bite-window math lives privately inside `solunar.ts` and is
+> exercised through its only public export, `getSolunarDay`. Standalone
+> catch-stats aggregation does not exist as a pure service (it lives in
+> firebase-coupled `leaderboards.ts` / screens), so it is not in this net.
 
 ### package.json scripts
 
@@ -100,16 +105,15 @@ implementation details.
   - preserves `FieldValue` and `Timestamp` instances (not treated as plain objects)
   - recurses into nested objects
   - leaves arrays intact
-- **`feedRanking.test.ts`** — `scoreFeedItem` (signal weighting monotonicity),
-  `rankFeedItems` (correct ordering, stable for equal scores, empty input).
-- **`moon.test.ts`** — moon phase for known reference dates (a documented
-  new/full moon date maps to the expected phase bucket).
-- **`solunar.test.ts`** — major/minor window computation against a known
-  reference; windows fall in valid ranges; cross-day handling.
-- **`stats.test.ts`** — aggregation correctness (totals, averages, bests) over a
-  fixed catch list, including empty list.
-- **`personalBests.test.ts`** — PB detection: first catch of a species is a PB,
-  a heavier catch is a PB, an equal/lighter one is not, unit consistency.
+- **`feedRanking.test.ts`** — `scoreFeedItem` (own-catch/hidden/not-interested =
+  `-Infinity`, follow/recency monotonicity), `rankFeedItems` (descending order,
+  finite-filtering, empty input).
+- **`solunar.test.ts`** — `getSolunarDay`: `illumination` in 0..1, `ageDays` in
+  0..29.5, `phaseName` bucket for fixed reference dates, `rating` in 1..5, and
+  `periods` sorted by start time. (Covers the private moon math via the public API.)
+- **`personalBests.test.ts`** — `computePersonalBests` (first catch sets the PB,
+  heavier overtakes, weight-vs-length record divergence), `isPersonalBestCatch`
+  (matches either dimension's holder), `checkNewPersonalBest` (weight/length/both/none).
 
 ## Rules suite — coverage (security regression net)
 
