@@ -1,7 +1,9 @@
 # Home Screen Redesign — Design
 
 **Date:** 2026-06-04
-**Status:** Approved (user approved the 3-phase design; starting with Phase 1)
+**Status:** Phase 1 code-complete (awaiting device check); **Phase 2 — DONE 2026-06-05**; Phase 3 pending.
+
+> **Phase 2 note (2026-06-05):** Implemented on `feature/home-redesign`. `selectTodayCard` is a pure, unit-tested decision fn (7 tests in the Vitest logic suite); `TodayBlock` renders social / good-conditions / baseline. Sections reordered by intent (Today under hero, Following promoted above Forecast). Deviation from the draft reorder: **ShortcutRow was KEPT** (placed after Add-CTA) per the user's explicit choice, rather than dropped.
 **Screen:** `src/screens/HomeScreen.tsx` (currently 1,376 lines, a single `ScrollView` rendering ~13 stacked sections)
 
 ## Goal
