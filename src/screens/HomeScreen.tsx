@@ -34,6 +34,7 @@ import { HeroHeader } from './home/sections/HeroHeader';
 import { MonthlyBestPill } from './home/sections/MonthlyBestPill';
 import { AddCatchCta } from './home/sections/AddCatchCta';
 import { ShortcutRow } from './home/sections/ShortcutRow';
+import { TodayBlock } from './home/sections/TodayBlock';
 import { WeatherForecastCard } from './home/sections/WeatherForecastCard';
 import { SolunarSection } from './home/sections/SolunarSection';
 import { TournamentsSection } from './home/sections/TournamentsSection';
@@ -295,14 +296,15 @@ export default function HomeScreen() {
     { key: 'onboarding', render: () => (user && configured
       ? <OnboardingChecklist hasProfilePhoto={!!user.photoURL} catchCount={catchCount} followingCount={followingCount} />
       : null) },
+    { key: 'today', render: () => <TodayBlock followingCatches={followingCatches} weather={weather} nearestSpotName={nearestWaters[0]?.name ?? null} /> },
     { key: 'monthlyBest', render: () => <MonthlyBestPill best={bestThisMonth} /> },
     { key: 'addCatch', render: () => <AddCatchCta /> },
     { key: 'shortcuts', render: () => <ShortcutRow /> },
+    { key: 'following', render: () => <FollowingSection catches={followingCatches} /> },
     { key: 'forecast', render: () => <WeatherForecastCard weather={weather} weatherStatus={weatherStatus} forecast={forecast} /> },
     { key: 'solunar', render: () => <SolunarSection coord={userCoord} /> },
     { key: 'tournaments', render: () => <TournamentsSection tournaments={activeTournaments} /> },
     { key: 'thisDay', render: () => <ThisDayRail catches={thisDayCatches} /> },
-    { key: 'following', render: () => <FollowingSection catches={followingCatches} /> },
     { key: 'nearest', render: () => <NearestWaterSection waters={nearestWaters} onRequestLocation={requestLocation} /> },
     { key: 'recent', render: () => <RecentCatchesSection catches={recentCatches} /> },
     { key: 'featured', render: () => <FeaturedAnglerCard /> },
