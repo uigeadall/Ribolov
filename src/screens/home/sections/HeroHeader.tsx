@@ -27,6 +27,7 @@ export function HeroHeader({
   const navigation = useAppNavigation();
   const { heroGrad } = useHomeTheme();
   const fLabel = weather ? fishingLabel(weather.fishingRating) : null;
+  const [metaExpanded, setMetaExpanded] = React.useState(false);
 
   return (
     <View style={S.hero}>
@@ -107,24 +108,33 @@ export function HeroHeader({
           </View>
         </View>
 
-        {/* Meta row: wind / humidity / moon — full width glass bar */}
+        {/* Meta row: wind / precip / moon — collapsed by default so the hero
+            breathes; tap "Детайли за времето" to expand the full glass bar. */}
         {weather && (
-          <View style={S.heroMetaRow}>
-            <View style={S.heroMetaItem}>
-              <Ionicons name="flag-outline" size={13} color="rgba(255,255,255,0.75)" />
-              <Text style={S.heroMetaText}>{weather.windKmh} км/ч</Text>
-            </View>
-            <View style={S.heroMetaDivider} />
-            <View style={S.heroMetaItem}>
-              <Ionicons name="rainy-outline" size={13} color="rgba(255,255,255,0.75)" />
-              <Text style={S.heroMetaText}>{weather.precipitationProbability}%</Text>
-            </View>
-            <View style={S.heroMetaDivider} />
-            <View style={S.heroMetaItem}>
-              <Text style={S.heroMetaText}>{moonPhaseEmoji(weather.moonPhaseName)}</Text>
-              <Text style={S.heroMetaText}>{weather.moonPhaseName}</Text>
-            </View>
-          </View>
+          metaExpanded ? (
+            <Pressable onPress={() => setMetaExpanded(false)} style={S.heroMetaRow}>
+              <View style={S.heroMetaItem}>
+                <Ionicons name="flag-outline" size={13} color="rgba(255,255,255,0.75)" />
+                <Text style={S.heroMetaText}>{weather.windKmh} км/ч</Text>
+              </View>
+              <View style={S.heroMetaDivider} />
+              <View style={S.heroMetaItem}>
+                <Ionicons name="rainy-outline" size={13} color="rgba(255,255,255,0.75)" />
+                <Text style={S.heroMetaText}>{weather.precipitationProbability}%</Text>
+              </View>
+              <View style={S.heroMetaDivider} />
+              <View style={S.heroMetaItem}>
+                <Text style={S.heroMetaText}>{moonPhaseEmoji(weather.moonPhaseName)}</Text>
+                <Text style={S.heroMetaText}>{weather.moonPhaseName}</Text>
+              </View>
+              <Ionicons name="chevron-up" size={14} color="rgba(255,255,255,0.6)" style={{ marginLeft: 6 }} />
+            </Pressable>
+          ) : (
+            <Pressable onPress={() => setMetaExpanded(true)} style={S.heroMetaCollapsed}>
+              <Text style={S.heroMetaText}>Детайли за времето</Text>
+              <Ionicons name="chevron-down" size={14} color="rgba(255,255,255,0.7)" />
+            </Pressable>
+          )
         )}
         {weatherStatus === 'loading' && !weather && (
           <View style={[S.heroMetaRow, { justifyContent: 'center' }]}>
@@ -215,6 +225,13 @@ const S = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)',
     borderRadius: 18, paddingHorizontal: 16, paddingVertical: 10,
     marginTop: spacing.sm,
+  },
+  heroMetaCollapsed: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)',
+    borderRadius: 18, paddingHorizontal: 16, paddingVertical: 8,
+    marginTop: spacing.sm, alignSelf: 'center',
   },
   heroMetaItem: {
     flex: 1, flexDirection: 'row', alignItems: 'center',
