@@ -9,12 +9,13 @@ import { useHomeTheme } from '../useHomeTheme';
 import { sectionStyles as ss } from './sectionStyles';
 import { HomeSectionHeader } from './HomeSectionHeader';
 import { EmptyHint } from './EmptyHint';
+import { CatchRailSkeleton } from './CatchRailSkeleton';
 
-type Props = { catches: Catch[] };
+type Props = { catches: Catch[]; loading?: boolean };
 
-/** The user's latest logbook entries as a horizontal rail; falls back to a
-    "log your first catch" hint when empty. */
-export function RecentCatchesSection({ catches }: Props) {
+/** The user's latest logbook entries as a horizontal rail. Shows skeleton
+    tiles while loading, then either the rail or a "log your first catch" hint. */
+export function RecentCatchesSection({ catches, loading }: Props) {
   const navigation = useAppNavigation();
   const { mode, colors, textColor } = useHomeTheme();
   return (
@@ -55,6 +56,8 @@ export function RecentCatchesSection({ catches }: Props) {
             </Pressable>
           ))}
         </ScrollView>
+      ) : loading ? (
+        <CatchRailSkeleton />
       ) : (
         <EmptyHint
           icon="add-circle-outline"

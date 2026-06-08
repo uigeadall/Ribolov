@@ -77,6 +77,11 @@ export default function HomeScreen() {
   // ── "Today" hub data ────────────────────────────────────────────
   const [followingCatches, setFollowingCatches] = useState<CloudCatch[]>([]);
   const [activeTournaments, setActiveTournaments] = useState<Tournament[]>([]);
+  // Initial-load flags so the catch rails show skeletons on cold load rather
+  // than flashing their empty CTA before data lands. They flip true after the
+  // first load and stay true for the session (refresh uses the pull spinner).
+  const [statsLoaded, setStatsLoaded] = useState(false);
+  const [hubLoaded, setHubLoaded] = useState(false);
   // ── Data loading ────────────────────────────────────────────────
 
   const loadStats = useCallback(async (isCancelled: () => boolean = () => false) => {
@@ -122,6 +127,7 @@ export default function HomeScreen() {
     } else {
       if (!isCancelled()) setFollowingCount(0);
     }
+    if (!isCancelled()) setStatsLoaded(true);
   }, [user, configured]);
 
   /** Loads the "Today" hub data — catches from people the user follows + their
@@ -132,6 +138,7 @@ export default function HomeScreen() {
       if (!isCancelled()) {
         setFollowingCatches([]);
         setActiveTournaments([]);
+        setHubLoaded(true);
       }
       return;
     }
@@ -155,6 +162,7 @@ export default function HomeScreen() {
     } catch {
       if (!isCancelled()) setActiveTournaments([]);
     }
+    if (!isCancelled()) setHubLoaded(true);
   }, [user, configured]);
 
   const loadWeather = useCallback(async (isCancelled: () => boolean = () => false) => {
@@ -243,6 +251,8 @@ export default function HomeScreen() {
     setUserCoord(null);
     setPressureTrend('stable');
     setLocLabel('София (примерно)');
+    setStatsLoaded(false);
+    setHubLoaded(false);
   }, [user?.uid]);
 
   const onRefresh = async () => {
@@ -300,20 +310,20 @@ export default function HomeScreen() {
     { key: 'monthlyBest', render: () => <MonthlyBestPill best={bestThisMonth} /> },
     { key: 'addCatch', render: () => <AddCatchCta /> },
     { key: 'shortcuts', render: () => <ShortcutRow /> },
-    { key: 'following', render: () => <FollowingSection catches={followingCatches} /> },
+    { key: 'following', render: () => <FollowingSection catches={followingCatches} loading={!hubLoaded} /> },
     { key: 'forecast', render: () => <WeatherForecastCard weather={weather} weatherStatus={weatherStatus} forecast={forecast} /> },
     { key: 'solunar', render: () => <SolunarSection coord={userCoord} /> },
     { key: 'tournaments', render: () => <TournamentsSection tournaments={activeTournaments} /> },
     { key: 'thisDay', render: () => <ThisDayRail catches={thisDayCatches} /> },
     { key: 'nearest', render: () => <NearestWaterSection waters={nearestWaters} onRequestLocation={requestLocation} /> },
-    { key: 'recent', render: () => <RecentCatchesSection catches={recentCatches} /> },
+    { key: 'recent', render: () => <RecentCatchesSection catches={recentCatches} loading={!statsLoaded} /> },
     { key: 'featured', render: () => <FeaturedAnglerCard /> },
     { key: 'classics', render: () => <ClassicsHighlight classic={topClassic} /> },
     { key: 'tail', render: () => <View style={{ height: spacing.xxl }} /> },
   ], [
     user, configured, catchCount, followingCount, bestThisMonth, weather, weatherStatus,
     forecast, userCoord, activeTournaments, thisDayCatches, followingCatches, nearestWaters,
-    requestLocation, recentCatches, topClassic,
+    requestLocation, recentCatches, topClassic, statsLoaded, hubLoaded,
   ]);
 
   // ── Render ──────────────────────────────────────────────────────

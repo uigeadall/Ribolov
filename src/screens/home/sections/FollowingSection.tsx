@@ -9,12 +9,13 @@ import { useHomeTheme } from '../useHomeTheme';
 import { sectionStyles as ss } from './sectionStyles';
 import { HomeSectionHeader } from './HomeSectionHeader';
 import { EmptyHint } from './EmptyHint';
+import { CatchRailSkeleton } from './CatchRailSkeleton';
 
-type Props = { catches: CloudCatch[] };
+type Props = { catches: CloudCatch[]; loading?: boolean };
 
-/** Fresh catches from anglers the user follows, as a horizontal rail. Falls
-    back to a "find friends" hint when the user follows nobody / has no data. */
-export function FollowingSection({ catches }: Props) {
+/** Fresh catches from anglers the user follows, as a horizontal rail. Shows
+    skeleton tiles while loading, then the rail or a "find friends" hint. */
+export function FollowingSection({ catches, loading }: Props) {
   const navigation = useAppNavigation();
   const { mode, colors, textColor } = useHomeTheme();
   return (
@@ -64,6 +65,8 @@ export function FollowingSection({ catches }: Props) {
             </Pressable>
           ))}
         </ScrollView>
+      ) : loading ? (
+        <CatchRailSkeleton />
       ) : (
         <EmptyHint
           icon="people-outline"
