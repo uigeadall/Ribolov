@@ -70,7 +70,7 @@ export function FollowingSection({ catches, loading }: Props) {
       ) : (
         <EmptyHint
           icon="people-outline"
-          text="Намери приятели, за да виждаш техните улови"
+          text="Последвай рибари — уловите им ще се появят тук"
           onPress={() => (navigation as any).navigate('ProfileTab', { screen: 'Friends' })}
         />
       )}

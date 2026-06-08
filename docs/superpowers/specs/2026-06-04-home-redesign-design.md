@@ -1,9 +1,11 @@
 # Home Screen Redesign — Design
 
 **Date:** 2026-06-04
-**Status:** Phase 1 code-complete (awaiting device check); **Phase 2 — DONE 2026-06-05**; Phase 3 pending.
+**Status:** Phase 1 code-complete (awaiting device check); **Phase 2 — DONE 2026-06-05**; **Phase 3 — DONE 2026-06-08** (awaiting device check).
 
 > **Phase 2 note (2026-06-05):** Implemented on `feature/home-redesign`. `selectTodayCard` is a pure, unit-tested decision fn (7 tests in the Vitest logic suite); `TodayBlock` renders social / good-conditions / baseline. Sections reordered by intent (Today under hero, Following promoted above Forecast). Deviation from the draft reorder: **ShortcutRow was KEPT** (placed after Add-CTA) per the user's explicit choice, rather than dropped.
+
+> **Phase 3 note (2026-06-08):** Polish phase. **#8 cold-load skeletons (real bug)** — Following + Recent rails now show shimmer skeleton tiles via `statsLoaded`/`hubLoaded` flags (shared `CatchRailSkeleton`) instead of flashing the empty CTA for ~1s before data lands; flags reset on user change, pull-to-refresh keeps the spinner. **#4 collapsible hero meta** — the wind/precip/moon glass bar is collapsed by default behind a slim "Детайли за времето ⌄" toggle so the hero reads as a welcome, not a dashboard. **#3 aspirational empty states — SATISFIED** by the existing compact `EmptyHint`s (Following copy sharpened to "Последвай рибари — уловите им ще се появят тук"); the rich full-screen `EmptyState` is too heavy stacked in the feed, and the sections that hide (ThisDay/Solunar/Tournaments/Classics) should stay hidden. **#5 card consistency — DEFERRED**: sections already read cohesively; routing every one-off card through `GlassCard` risks shadow/radius/border regressions uncatchable without UI tests — low value, real risk (user can override on device check).
 **Screen:** `src/screens/HomeScreen.tsx` (currently 1,376 lines, a single `ScrollView` rendering ~13 stacked sections)
 
 ## Goal
