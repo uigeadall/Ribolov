@@ -4,13 +4,11 @@ import { radius, spacing } from '../../../theme/typography';
 /** Style keys shared by 2+ home sections, moved verbatim out of HomeScreen's
     local `S` so the extracted section components don't each copy them. */
 export const sectionStyles = StyleSheet.create({
-  // Section headers (accent bar + label + optional right link)
+  // Section headers (overline label + optional right link)
   sectionRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: spacing.xl, marginBottom: spacing.sm, marginTop: spacing.md,
   },
-  sectionLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  sectionAccent: { width: 3, height: 16, borderRadius: 2 },
   sectionLabel: {
     fontSize: 11, fontFamily: 'Nunito_700Bold',
     letterSpacing: 1.2, textTransform: 'uppercase',
@@ -22,7 +20,7 @@ export const sectionStyles = StyleSheet.create({
     marginHorizontal: spacing.xl, marginBottom: spacing.xl,
     paddingVertical: spacing.md, paddingHorizontal: spacing.lg,
     borderRadius: radius.lg,
-    borderWidth: 1, borderStyle: 'dashed',
+    borderWidth: 1,
     flexDirection: 'row', alignItems: 'center', gap: spacing.md,
   },
   emptyHintIcon: {

@@ -15,11 +15,11 @@ type Props = { catches: Catch[] };
     day in prior years. Renders nothing until there's at least one. */
 export function ThisDayRail({ catches }: Props) {
   const navigation = useAppNavigation();
-  const { mode, colors, textColor } = useHomeTheme();
+  const { surface, textColor, accent, onAccent } = useHomeTheme();
   if (catches.length === 0) return null;
   return (
     <>
-      <HomeSectionHeader label="В този ден" accentColor="#E8902E" />
+      <HomeSectionHeader label="В този ден" />
       <ScrollView
         horizontal showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: spacing.xl, gap: spacing.sm, paddingBottom: spacing.xl }}
@@ -30,7 +30,7 @@ export function ThisDayRail({ catches }: Props) {
           return (
             <Pressable
               key={c.id}
-              style={[ss.catchCard, { backgroundColor: c.photoUri ? 'transparent' : (mode === 'dark' ? '#0E1E35' : colors.primarySurface) }]}
+              style={[ss.catchCard, { backgroundColor: c.photoUri ? 'transparent' : surface }]}
               onPress={() => navigation.navigate('LogbookTab', { screen: 'CatchDetail', params: { id: c.id } })}
             >
               {c.photoUri ? (
@@ -41,8 +41,8 @@ export function ThisDayRail({ catches }: Props) {
                     start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
                     style={StyleSheet.absoluteFillObject}
                   />
-                  <View style={{ position: 'absolute', top: 8, left: 8, backgroundColor: 'rgba(232,144,46,0.95)', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8 }}>
-                    <Text style={{ color: '#fff', fontSize: 9, fontFamily: 'Nunito_700Bold', letterSpacing: 0.3 }} numberOfLines={1}>{ageLabel}</Text>
+                  <View style={{ position: 'absolute', top: 8, left: 8, backgroundColor: accent, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8 }}>
+                    <Text style={{ color: onAccent, fontSize: 9, fontFamily: 'Nunito_700Bold', letterSpacing: 0.3 }} numberOfLines={1}>{ageLabel}</Text>
                   </View>
                   <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 10 }}>
                     <Text style={{ color: '#fff', fontSize: 11, fontFamily: 'Nunito_700Bold' }} numberOfLines={1}>{c.speciesName}</Text>
@@ -53,8 +53,8 @@ export function ThisDayRail({ catches }: Props) {
                 </>
               ) : (
                 <View style={ss.catchEmpty}>
-                  <View style={{ position: 'absolute', top: 8, left: 8, backgroundColor: '#E8902E', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8 }}>
-                    <Text style={{ color: '#fff', fontSize: 9, fontFamily: 'Nunito_700Bold', letterSpacing: 0.3 }} numberOfLines={1}>{ageLabel}</Text>
+                  <View style={{ position: 'absolute', top: 8, left: 8, backgroundColor: accent, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8 }}>
+                    <Text style={{ color: onAccent, fontSize: 9, fontFamily: 'Nunito_700Bold', letterSpacing: 0.3 }} numberOfLines={1}>{ageLabel}</Text>
                   </View>
                   <Text style={{ fontSize: 28 }}>🐟</Text>
                   <Text style={{ fontSize: 10, color: textColor, fontFamily: 'Nunito_600SemiBold', textAlign: 'center', marginTop: 4 }} numberOfLines={2}>

@@ -5,25 +5,21 @@ import { useHomeTheme } from '../useHomeTheme';
 
 type Props = {
   label: string;
-  /** Accent bar colour. Defaults to the theme primary. */
-  accentColor?: string;
   /** Optional right-aligned link (e.g. "Виж всички →"). */
   link?: { text: string; onPress: () => void };
 };
 
-/** The accent-bar + label (+ optional link) header that repeats across home
-    sections. Replaces the inline `S.sectionRow` markup, preserving its look. */
-export function HomeSectionHeader({ label, accentColor, link }: Props) {
-  const { primary, mutedColor } = useHomeTheme();
+/** Overline label (+ optional accent link) that repeats across home sections.
+    The per-section accent bars died with the dark-premium redesign — one
+    accent colour, carried by the link. */
+export function HomeSectionHeader({ label, link }: Props) {
+  const { accent, mutedColor } = useHomeTheme();
   return (
     <View style={s.sectionRow}>
-      <View style={s.sectionLeft}>
-        <View style={[s.sectionAccent, { backgroundColor: accentColor ?? primary }]} />
-        <Text style={[s.sectionLabel, { color: mutedColor }]}>{label}</Text>
-      </View>
+      <Text style={[s.sectionLabel, { color: mutedColor }]}>{label}</Text>
       {link ? (
         <Pressable onPress={link.onPress} hitSlop={8}>
-          <Text style={[s.sectionLink, { color: primary }]}>{link.text}</Text>
+          <Text style={[s.sectionLink, { color: accent }]}>{link.text}</Text>
         </Pressable>
       ) : null}
     </View>

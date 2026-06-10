@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '../storage/kv';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../services/themeContext';
@@ -70,18 +69,15 @@ export function OnboardingChecklist({ hasProfilePhoto, catchCount, followingCoun
   }, [allDone, dismissed]);
 
   const styles = useMemo(() => StyleSheet.create({
+    // Flat hairline card per the home dark-premium language (no gradient/shadow).
     wrapper: {
       marginHorizontal: spacing.xl,
       marginBottom: spacing.xl,
       borderRadius: radius.lg,
       borderWidth: 1,
-      borderColor: mode === 'dark' ? 'rgba(78,174,224,0.22)' : 'rgba(21,112,184,0.14)',
+      borderColor: colors.border,
+      backgroundColor: colors.card,
       overflow: 'hidden',
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.1,
-      shadowRadius: 10,
-      elevation: 4,
     },
     inner: { padding: spacing.md + 2 },
     headerRow: {
@@ -175,19 +171,8 @@ export function OnboardingChecklist({ hasProfilePhoto, catchCount, followingCoun
 
   if (dismissed !== false || allDone) return null;
 
-  const bgColors: [string, string, string] = mode === 'dark'
-    ? ['rgba(78,174,224,0.10)', 'rgba(78,174,224,0.05)', 'transparent']
-    : ['rgba(78,174,224,0.18)', 'rgba(78,174,224,0.08)', 'transparent'];
-
   return (
     <View style={styles.wrapper}>
-      <LinearGradient
-        colors={bgColors}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
-        pointerEvents="none"
-      />
       <View style={styles.inner}>
         <View style={styles.headerRow}>
           <Ionicons name="sparkles-outline" size={18} color={colors.primary} />

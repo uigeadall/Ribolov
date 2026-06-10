@@ -13,7 +13,6 @@ import { fetchRankedClassicPhotos, periodStartIso, type RankedClassicPhoto } fro
 import { DAMS } from '../data/dams';
 import { RIVERS } from '../data/rivers';
 import { haversineKm } from '../services/leaderboards';
-import { FeaturedAnglerCard } from '../components/FeaturedAnglerCard';
 import { OnboardingChecklist } from '../components/OnboardingChecklist';
 import { getFollowingCount, getFollowing } from '../services/social';
 import { fetchPublicFeed, type CloudCatch } from '../services/catchSync';
@@ -38,7 +37,7 @@ import { ThisDayRail } from './home/sections/ThisDayRail';
 import { FollowingSection } from './home/sections/FollowingSection';
 import { NearestWaterSection, type NearestWater } from './home/sections/NearestWaterSection';
 import { RecentCatchesSection } from './home/sections/RecentCatchesSection';
-import { ClassicsHighlight } from './home/sections/ClassicsHighlight';
+import { CommunitySection } from './home/sections/CommunitySection';
 
 const FALLBACK_COORD = { latitude: 42.6977, longitude: 23.3219 };
 
@@ -319,8 +318,7 @@ export default function HomeScreen() {
     { key: 'thisDay', render: () => <ThisDayRail catches={thisDayCatches} /> },
     { key: 'recent', render: () => <RecentCatchesSection catches={recentCatches} loading={!statsLoaded} /> },
     { key: 'nearest', render: () => <NearestWaterSection waters={nearestWaters} onRequestLocation={requestLocation} /> },
-    { key: 'featured', render: () => <FeaturedAnglerCard /> },
-    { key: 'classics', render: () => <ClassicsHighlight classic={topClassic} /> },
+    { key: 'community', render: () => <CommunitySection classic={topClassic} /> },
     { key: 'more', render: () => <MoreLinksSection /> },
     { key: 'tail', render: () => <View style={{ height: spacing.xxl }} /> },
   ], [

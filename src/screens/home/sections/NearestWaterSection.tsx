@@ -23,11 +23,11 @@ type Props = {
   onRequestLocation: () => void;
 };
 
-/** Closest dams / rivers to the user. Falls back to a "grant location" hint
-    when no coordinate is available yet. */
+/** Closest dams / rivers to the user as one grouped card with hairline row
+    dividers. Falls back to a "grant location" hint when no coordinate yet. */
 export function NearestWaterSection({ waters, onRequestLocation }: Props) {
   const navigation = useAppNavigation();
-  const { cardBg, cardBorder, textColor, mutedColor, primary, colors } = useHomeTheme();
+  const { surface, hairline, textColor, mutedColor, accent, accentSoft } = useHomeTheme();
   return (
     <>
       <HomeSectionHeader
@@ -35,15 +35,15 @@ export function NearestWaterSection({ waters, onRequestLocation }: Props) {
         link={waters.length > 0 ? { text: 'Виж карта →', onPress: () => navigation.navigate('MapTab') } : undefined}
       />
       {waters.length > 0 ? (
-        <View style={S.nearbyList}>
-          {waters.map((w) => (
+        <View style={[S.nearbyGroup, { backgroundColor: surface, borderColor: hairline }]}>
+          {waters.map((w, i) => (
             <ScalePressable
               key={`${w.kind}-${w.id}`}
-              style={[S.nearbyRow, { backgroundColor: cardBg, borderColor: cardBorder }]}
+              style={[S.nearbyRow, i < waters.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: hairline }]}
               onPress={() => navigation.navigate('WaterDetail', { kind: w.kind, id: w.id })}
             >
-              <View style={[S.nearbyIconWrap, { backgroundColor: colors.primarySurface }]}>
-                <Ionicons name={w.kind === 'dam' ? 'layers-outline' : 'git-branch-outline'} size={20} color={primary} />
+              <View style={[S.nearbyIconWrap, { backgroundColor: accentSoft }]}>
+                <Ionicons name={w.kind === 'dam' ? 'layers-outline' : 'git-branch-outline'} size={18} color={accent} />
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={[S.nearbyName, { color: textColor }]} numberOfLines={1}>{w.name}</Text>
@@ -52,7 +52,7 @@ export function NearestWaterSection({ waters, onRequestLocation }: Props) {
                 </Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
-                <Text style={[S.nearbyDistance, { color: primary }]}>{Math.round(w.km)} км</Text>
+                <Text style={[S.nearbyDistance, { color: textColor }]}>{Math.round(w.km)} км</Text>
               </View>
             </ScalePressable>
           ))}
@@ -69,22 +69,21 @@ export function NearestWaterSection({ waters, onRequestLocation }: Props) {
 }
 
 const S = StyleSheet.create({
-  nearbyList: {
+  nearbyGroup: {
     marginHorizontal: spacing.xl,
     marginBottom: spacing.xl,
-    gap: spacing.sm,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
   },
   nearbyRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    borderRadius: 16,
-    borderWidth: 1,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
+    paddingVertical: spacing.sm + 4,
   },
   nearbyIconWrap: {
-    width: 40, height: 40, borderRadius: 12,
+    width: 36, height: 36, borderRadius: 11,
     alignItems: 'center', justifyContent: 'center',
   },
   nearbyName: { fontSize: 14, fontFamily: 'Nunito_700Bold' },

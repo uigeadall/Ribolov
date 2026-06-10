@@ -17,7 +17,7 @@ type Props = { catches: CloudCatch[]; loading?: boolean };
     skeleton tiles while loading, then the rail or a "find friends" hint. */
 export function FollowingSection({ catches, loading }: Props) {
   const navigation = useAppNavigation();
-  const { mode, colors, textColor } = useHomeTheme();
+  const { surface, textColor } = useHomeTheme();
   return (
     <>
       <HomeSectionHeader
@@ -32,7 +32,7 @@ export function FollowingSection({ catches, loading }: Props) {
           {catches.map((c) => (
             <Pressable
               key={c.id}
-              style={[ss.catchCard, { backgroundColor: c.photoUri ? 'transparent' : (mode === 'dark' ? '#0E1E35' : colors.primarySurface) }]}
+              style={[ss.catchCard, { backgroundColor: c.photoUri ? 'transparent' : surface }]}
               onPress={() => (navigation as any).navigate('LogbookTab', { screen: 'CatchDetail', params: { id: c.id } })}
             >
               {c.photoUri ? (

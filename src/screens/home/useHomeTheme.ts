@@ -26,10 +26,6 @@ export function useHomeTheme() {
     accentSoft: colors.accent + '1A',
     /** Ink used ON accent-filled surfaces (teal needs dark ink in dark mode). */
     onAccent:   mode === 'dark' ? '#04201C' : '#FFFFFF',
-    // Migration aliases — pre-redesign names still used by untouched
-    // sections; collapse onto surface/hairline in Phase 3.
-    cardBg:     colors.card,
-    cardBorder: hairline,
     textColor:  colors.text,
     mutedColor: colors.textMuted,
     primary:    colors.primary,

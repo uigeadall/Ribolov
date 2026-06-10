@@ -13,13 +13,12 @@ type Props = { tournaments: Tournament[] };
     Shows up to two; renders nothing when the user has none. */
 export function TournamentsSection({ tournaments }: Props) {
   const navigation = useAppNavigation();
-  const { cardBg, cardBorder, textColor, mutedColor, primary } = useHomeTheme();
+  const { surface, hairline, textColor, mutedColor, accent, accentSoft } = useHomeTheme();
   if (tournaments.length === 0) return null;
   return (
     <View style={{ paddingHorizontal: spacing.xl, marginBottom: spacing.lg }}>
       <HomeSectionHeader
         label="Твои турнири"
-        accentColor="#E8902E"
         link={tournaments.length > 1
           ? { text: 'Виж всички →', onPress: () => (navigation as any).navigate('ProfileTab', { screen: 'Tournaments' }) }
           : undefined}
@@ -33,10 +32,10 @@ export function TournamentsSection({ tournaments }: Props) {
             key={t.id}
             onPress={() => (navigation as any).navigate('ProfileTab', { screen: 'TournamentDetail', params: { id: t.id } })}
             style={{
-              backgroundColor: cardBg,
+              backgroundColor: surface,
               borderRadius: radius.lg,
               borderWidth: 1,
-              borderColor: cardBorder,
+              borderColor: hairline,
               padding: spacing.md,
               marginBottom: spacing.sm,
               flexDirection: 'row',
@@ -45,11 +44,11 @@ export function TournamentsSection({ tournaments }: Props) {
             }}
           >
             <View style={{
-              width: 44, height: 44, borderRadius: 22,
-              backgroundColor: 'rgba(232,144,46,0.16)',
+              width: 44, height: 44, borderRadius: 14,
+              backgroundColor: accentSoft,
               alignItems: 'center', justifyContent: 'center',
             }}>
-              <Ionicons name="trophy" size={22} color="#E8902E" />
+              <Ionicons name="trophy-outline" size={22} color={accent} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={{ ...typography.bodyBold, color: textColor }} numberOfLines={1}>
