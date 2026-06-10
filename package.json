@@ -19,7 +19,7 @@
     "reinstall:ios": "expo run:ios --device 00008150-0015359E36D2401C --configuration Release",
     "test": "vitest run test/logic",
     "test:watch": "vitest test/logic",
-    "test:rules": "firebase emulators:exec --only firestore 'vitest run test/rules'",
+    "test:rules": "firebase emulators:exec --only firestore,storage 'vitest run test/rules'",
     "test:all": "npm test && npm run test:rules"
   },
   "dependencies": {

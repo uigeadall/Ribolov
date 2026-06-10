@@ -7,6 +7,17 @@ import { logger } from "firebase-functions/v2";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import type { Period } from "./lib/buckets";
+import {
+  dayBucketKey,
+  isoWeekBucketKey,
+  monthBucketKey,
+  yearBucketKey,
+  bucketsForDate,
+  rollupDocId,
+  ttlDateForBucket,
+} from "./lib/buckets";
+import { shouldNotify, quietHoursActive } from "./lib/notifyGating";
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -24,7 +35,7 @@ interface LeaderboardRow {
   bestKg: number;
 }
 
-type Period = "day" | "week" | "month" | "year";
+// `Period` and the bucket-key helpers live in ./lib/buckets (pure, unit-tested).
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -201,18 +212,7 @@ async function getNotifPrefs(uid: string): Promise<NotifPrefs> {
   };
 }
 
-function shouldNotify(type: string | undefined, prefs: NotifPrefs): boolean {
-  switch (type) {
-    case "like": return prefs.likes;
-    case "comment": return prefs.comments;
-    case "follow": return prefs.follows;
-    case "message": return prefs.messages;
-    case "mention": return prefs.mentions;
-    case "storyLike":
-    case "storyComment": return prefs.storyReactions;
-    default: return true;
-  }
-}
+// shouldNotify is imported from ./lib/notifyGating (pure, unit-tested).
 
 // ---------------------------------------------------------------------------
 // Denormalized chat metadata cache
@@ -319,45 +319,14 @@ async function loadRecipientChatMeta(
 function isQuietHoursActive(
   args: { quietHoursEnabled: boolean; quietHoursStart?: number; quietHoursEnd?: number; timezone?: string },
 ): boolean {
-  if (!args.quietHoursEnabled) return false;
-  const start = args.quietHoursStart;
-  const end = args.quietHoursEnd;
-  if (typeof start !== 'number' || typeof end !== 'number') return false;
-  const hour = parseInt(
-    new Intl.DateTimeFormat('en-US', {
-      timeZone: args.timezone || 'Europe/Sofia',
-      hour: '2-digit',
-      hour12: false,
-    }).format(new Date()),
-    10,
-  );
-  if (!Number.isFinite(hour)) return false;
-  if (start === end) return false;
-  return start < end ? hour >= start && hour < end : hour >= start || hour < end;
+  return quietHoursActive(args);
 }
 
 /** True when the current wall-clock time in the user's timezone falls
     inside their quiet-hours window. Kept for the `onNotificationCreated`
     caller that still passes a full NotifPrefs. */
 function isInQuietHours(prefs: NotifPrefs): boolean {
-  if (!prefs.quietHoursEnabled) return false;
-  const start = prefs.quietHoursStart;
-  const end = prefs.quietHoursEnd;
-  if (typeof start !== "number" || typeof end !== "number") return false;
-  // Get the current hour in the user's local timezone. Intl is available
-  // in the Node 20 runtime functions ship on.
-  const hour = parseInt(
-    new Intl.DateTimeFormat("en-US", {
-      timeZone: prefs.timezone || "Europe/Sofia",
-      hour: "2-digit",
-      hour12: false,
-    }).format(new Date()),
-    10,
-  );
-  if (!Number.isFinite(hour)) return false;
-  if (start === end) return false; // empty window
-  // Same-day window (e.g. 13→18). Cross-midnight window (e.g. 22→7) wraps.
-  return start < end ? hour >= start && hour < end : hour >= start || hour < end;
+  return quietHoursActive(prefs);
 }
 
 // ---------------------------------------------------------------------------
@@ -772,60 +741,11 @@ export const aggregateLeaderboards = onSchedule(
 // recomputes it correctly from publicCatches. The leaderboard sorts by
 // totalKg anyway — bestKg is a sort-tiebreak / display value only.
 
-function dayBucketKey(d: Date): string {
-  return `day_${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
-}
-
-function isoWeekBucketKey(d: Date): string {
-  // ISO-8601 week: weeks start Monday, week 1 contains the first Thursday
-  // of the year. Reused for both bucket keying and consistency with the
-  // periodMinIso() above (which also treats Monday as week start).
-  const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-  t.setUTCDate(t.getUTCDate() + 3 - ((t.getUTCDay() + 6) % 7));
-  const firstThu = new Date(Date.UTC(t.getUTCFullYear(), 0, 4));
-  const diff = (t.getTime() - firstThu.getTime()) / 86400000;
-  const week = 1 + Math.round((diff - 3 + ((firstThu.getUTCDay() + 6) % 7)) / 7);
-  return `week_${t.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
-}
-
-function monthBucketKey(d: Date): string {
-  return `month_${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-}
-
-function yearBucketKey(d: Date): string {
-  return `year_${d.getUTCFullYear()}`;
-}
-
-function bucketsForDate(date: Date): Array<{ period: Period; bucket: string }> {
-  return [
-    { period: "day", bucket: dayBucketKey(date) },
-    { period: "week", bucket: isoWeekBucketKey(date) },
-    { period: "month", bucket: monthBucketKey(date) },
-    { period: "year", bucket: yearBucketKey(date) },
-  ];
-}
-
-// TTL durations per bucket period. Day buckets become irrelevant the moment
-// the day rolls over; we keep them ~5 weeks just to allow late drift fixes
-// to inspect them. Week ~2mo, month ~13mo, year never (year buckets need
-// to live for at least a year to be queryable as "current year").
-const TTL_DAYS: Record<Period, number | null> = {
-  day: 35,
-  week: 60,
-  month: 400,
-  year: null,
-};
-
+// Thin wrapper over the pure ttlDateForBucket (in ./lib/buckets): converts the
+// computed expiry Date into an admin Firestore Timestamp (or null for year).
 function ttlForBucket(period: Period, date: Date): Timestamp | null {
-  const days = TTL_DAYS[period];
-  if (days == null) return null;
-  const t = new Date(date);
-  t.setUTCDate(t.getUTCDate() + days);
-  return Timestamp.fromDate(t);
-}
-
-function rollupDocId(bucket: string, ownerUid: string): string {
-  return `${bucket}_${ownerUid}`;
+  const d = ttlDateForBucket(period, date);
+  return d ? Timestamp.fromDate(d) : null;
 }
 
 // onPublicCatchForRollup ------------------------------------------------------
