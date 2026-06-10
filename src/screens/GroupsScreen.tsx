@@ -1,8 +1,9 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, Pressable,
+  View, Text, StyleSheet, Pressable,
   TextInput, Platform,
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import * as Haptics from 'expo-haptics';
 import { FishingRefreshControl } from '../components/FishingRefreshControl';
 import { useFocusEffect } from '@react-navigation/native';
@@ -113,11 +114,14 @@ export default function GroupsScreen() {
         />
       </View>
 
-      <FlatList
+      <FlashList
         data={displayed}
         keyExtractor={(g) => g.id}
         refreshControl={<FishingRefreshControl refreshing={refreshing} onRefresh={() => reload(true)} />}
-        contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: insets.bottom + spacing.xl, gap: spacing.sm }}
+        // FlashList's contentContainerStyle ignores `gap`; use a separator to
+        // preserve the inter-card spacing the FlatList got from `gap: spacing.sm`.
+        ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
+        contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: insets.bottom + spacing.xl }}
         ListEmptyComponent={
           !loading ? (
             <View style={{ marginTop: spacing.xxl }}>

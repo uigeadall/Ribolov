@@ -3,13 +3,13 @@ import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   TextInput,
   Pressable,
   Alert,
   ActivityIndicator,
   Platform,
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { Skeleton } from '../components/Skeleton';
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect } from '@react-navigation/native';
@@ -352,7 +352,7 @@ export default function FriendsScreen() {
               </FadeIn>
             ) : (
               <FadeIn>
-              <FlatList
+              <FlashList
                 data={followedRows ?? []}
                 keyExtractor={(r) => r.uid}
                 renderItem={({ item }) => renderUserRow(item.uid, item.displayName, item.photoUrl)}

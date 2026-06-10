@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '../storage/kv';
-import { View, Text, StyleSheet, FlatList, Pressable, Alert } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Alert } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -254,7 +255,7 @@ export default function HashtagFeedScreen() {
           subtitle={`Все още никой не е публикувал с #${tag}. Бъди първият!`}
         />
       ) : (
-        <FlatList
+        <FlashList
           data={items}
           keyExtractor={(p) => p.id}
           refreshing={refreshing}
