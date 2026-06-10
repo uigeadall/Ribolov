@@ -5,11 +5,11 @@ import {
   Text,
   StyleSheet,
   TextInput,
-  FlatList,
   Pressable,
   ActivityIndicator,
   Platform,
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import type { DocumentSnapshot } from 'firebase/firestore';
 
 import { Ionicons } from '@expo/vector-icons';
@@ -343,7 +343,7 @@ export default function SearchScreen() {
       )}
 
       {tab === 'users' && (
-        <FlatList
+        <FlashList
           data={userResults}
           keyExtractor={(u) => u.uid}
           keyboardShouldPersistTaps="handled"
@@ -400,7 +400,7 @@ export default function SearchScreen() {
       )}
 
       {tab === 'waters' && (
-        <FlatList
+        <FlashList
           data={waterResults}
           keyExtractor={(w) => w.id}
           keyboardShouldPersistTaps="handled"
@@ -441,7 +441,7 @@ export default function SearchScreen() {
       )}
 
       {tab === 'species' && (
-        <FlatList
+        <FlashList
           data={speciesResults}
           keyExtractor={(s) => s.id}
           keyboardShouldPersistTaps="handled"
