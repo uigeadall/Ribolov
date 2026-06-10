@@ -30,12 +30,9 @@ import { spacing } from '../theme/typography';
 import { useHomeTheme } from './home/useHomeTheme';
 import type { HomeSection } from './home/types';
 import { HomeTopBar } from './home/sections/HomeTopBar';
-import { MonthlyBestPill } from './home/sections/MonthlyBestPill';
-import { AddCatchCta } from './home/sections/AddCatchCta';
-import { ShortcutRow } from './home/sections/ShortcutRow';
-import { TodayBlock } from './home/sections/TodayBlock';
-import { WeatherForecastCard } from './home/sections/WeatherForecastCard';
-import { SolunarSection } from './home/sections/SolunarSection';
+import { ConditionsCard } from './home/sections/ConditionsCard';
+import { StatTileRow } from './home/sections/StatTileRow';
+import { MoreLinksSection } from './home/sections/MoreLinksSection';
 import { TournamentsSection } from './home/sections/TournamentsSection';
 import { ThisDayRail } from './home/sections/ThisDayRail';
 import { FollowingSection } from './home/sections/FollowingSection';
@@ -305,24 +302,31 @@ export default function HomeScreen() {
     { key: 'onboarding', render: () => (user && configured
       ? <OnboardingChecklist hasProfilePhoto={!!user.photoURL} catchCount={catchCount} followingCount={followingCount} />
       : null) },
-    { key: 'today', render: () => <TodayBlock followingCatches={followingCatches} weather={weather} nearestSpotName={nearestWaters[0]?.name ?? null} /> },
-    { key: 'monthlyBest', render: () => <MonthlyBestPill best={bestThisMonth} /> },
-    { key: 'addCatch', render: () => <AddCatchCta /> },
-    { key: 'shortcuts', render: () => <ShortcutRow /> },
+    { key: 'conditions', render: () => (
+      <ConditionsCard
+        weather={weather}
+        weatherStatus={weatherStatus}
+        forecast={forecast}
+        coord={userCoord}
+        followingCatches={followingCatches}
+        nearestSpotName={nearestWaters[0]?.name ?? null}
+        onRetryWeather={() => { void loadWeather(); }}
+      />
+    ) },
     { key: 'following', render: () => <FollowingSection catches={followingCatches} loading={!hubLoaded} /> },
-    { key: 'forecast', render: () => <WeatherForecastCard weather={weather} weatherStatus={weatherStatus} forecast={forecast} /> },
-    { key: 'solunar', render: () => <SolunarSection coord={userCoord} /> },
+    { key: 'stats', render: () => <StatTileRow catchCount={catchCount} best={bestThisMonth} /> },
     { key: 'tournaments', render: () => <TournamentsSection tournaments={activeTournaments} /> },
     { key: 'thisDay', render: () => <ThisDayRail catches={thisDayCatches} /> },
-    { key: 'nearest', render: () => <NearestWaterSection waters={nearestWaters} onRequestLocation={requestLocation} /> },
     { key: 'recent', render: () => <RecentCatchesSection catches={recentCatches} loading={!statsLoaded} /> },
+    { key: 'nearest', render: () => <NearestWaterSection waters={nearestWaters} onRequestLocation={requestLocation} /> },
     { key: 'featured', render: () => <FeaturedAnglerCard /> },
     { key: 'classics', render: () => <ClassicsHighlight classic={topClassic} /> },
+    { key: 'more', render: () => <MoreLinksSection /> },
     { key: 'tail', render: () => <View style={{ height: spacing.xxl }} /> },
   ], [
     user, configured, catchCount, followingCount, bestThisMonth, weather, weatherStatus,
     forecast, userCoord, activeTournaments, thisDayCatches, followingCatches, nearestWaters,
-    requestLocation, recentCatches, topClassic, statsLoaded, hubLoaded,
+    requestLocation, recentCatches, topClassic, statsLoaded, hubLoaded, loadWeather,
   ]);
 
   // ── Render ──────────────────────────────────────────────────────
