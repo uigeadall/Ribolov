@@ -1,10 +1,6 @@
 // Shared home-screen helpers + constants, extracted from HomeScreen so the
 // section components can use them without importing the screen.
 
-/** Corner radius of the "wave" that the content rises over the hero with.
-    Used by the hero's bottom padding and the wave wrapper. */
-export const WAVE = 32;
-
 export function greeting(): string {
   const h = new Date().getHours();
   if (h < 12) return 'Добро утро';
@@ -15,7 +11,8 @@ export function greeting(): string {
 export function fishingLabel(rating: number): { text: string; color: string } {
   if (rating >= 4) return { text: 'Перфектно за риболов', color: '#34C97A' };
   if (rating >= 3) return { text: 'Добри условия', color: '#F5C842' };
-  return { text: 'Умерени условия', color: '#F5890A' };
+  // Semantic amber — decoupled from the retired brand orange #F5890A.
+  return { text: 'Умерени условия', color: '#F0A830' };
 }
 
 export function moonPhaseEmoji(name: string): string {

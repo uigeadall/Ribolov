@@ -5,6 +5,7 @@ import * as Haptics from 'expo-haptics';
 import { ActionSheet } from './ActionSheet';
 import { useAuth } from '../services/authContext';
 import { useAppNavigation } from '../navigation/useAppNavigation';
+import { useTheme } from '../services/themeContext';
 import { spacing } from '../theme/typography';
 
 /**
@@ -17,6 +18,7 @@ import { spacing } from '../theme/typography';
  */
 export function ComposeFab() {
   const { user, configured } = useAuth();
+  const { colors, mode } = useTheme();
   const navigation = useAppNavigation();
 
   const openSheet = useCallback(() => {
@@ -57,7 +59,7 @@ export function ComposeFab() {
         width: 56,
         height: 56,
         borderRadius: 28,
-        backgroundColor: '#F5A020',
+        backgroundColor: colors.accent,
         alignItems: 'center',
         justifyContent: 'center',
         shadowColor: '#000',
@@ -69,7 +71,8 @@ export function ComposeFab() {
         opacity: pressed && Platform.OS === 'ios' ? 0.85 : 1,
       })}
     >
-      <Ionicons name="add" size={30} color="#fff" />
+      {/* Light accents (teal #2DD4BF) need dark ink for contrast in dark mode. */}
+      <Ionicons name="add" size={30} color={mode === 'dark' ? '#04201C' : '#fff'} />
     </Pressable>
   );
 }

@@ -28,9 +28,8 @@ import { FishingRefreshControl } from '../components/FishingRefreshControl';
 import { spacing } from '../theme/typography';
 
 import { useHomeTheme } from './home/useHomeTheme';
-import { WAVE } from './home/homeHelpers';
 import type { HomeSection } from './home/types';
-import { HeroHeader } from './home/sections/HeroHeader';
+import { HomeTopBar } from './home/sections/HomeTopBar';
 import { MonthlyBestPill } from './home/sections/MonthlyBestPill';
 import { AddCatchCta } from './home/sections/AddCatchCta';
 import { ShortcutRow } from './home/sections/ShortcutRow';
@@ -50,7 +49,7 @@ const FALLBACK_COORD = { latitude: 42.6977, longitude: 23.3219 };
 
 export default function HomeScreen() {
   const { user, configured } = useAuth();
-  const { waveColor } = useHomeTheme();
+  const { bg } = useHomeTheme();
   const firstName = user?.displayName?.trim().split(/\s+/)[0] || 'рибарю';
 
   const lastFetchRef = useRef<number>(0);
@@ -330,7 +329,9 @@ export default function HomeScreen() {
 
   return (
     <View style={{ flex: 1 }}>
-      <Screen padded={false}>
+      {/* Flat tuple kills Screen's background gradient on Home only — the new
+          design language is a single flat canvas. */}
+      <Screen padded={false} gradient={[bg, bg, bg]}>
         <FlashList
           data={sections}
           keyExtractor={(item) => item.key}
@@ -338,31 +339,14 @@ export default function HomeScreen() {
           renderItem={({ item }) => item.render()}
           showsVerticalScrollIndicator={false}
           refreshControl={<FishingRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-          style={{ backgroundColor: waveColor }}
           ListHeaderComponent={
-            <>
-              <HeroHeader
-                weather={weather}
-                weatherStatus={weatherStatus}
-                firstName={firstName}
-                dateStr={dateStr}
-                locLabel={locLabel}
-                unreadMsgs={unreadMsgs}
-                unreadNotifs={unreadNotifs}
-                onRetryWeather={() => { void loadWeather(); }}
-              />
-              {/* Wave cap — rounds the top of the content and pulls it up over
-                  the hero's bottom padding (the "content rises over the hero"
-                  effect that the single wave View used to create). The list's
-                  waveColor background continues it for the remaining sections. */}
-              <View style={{
-                marginTop: -WAVE,
-                paddingTop: WAVE + spacing.xl,
-                backgroundColor: waveColor,
-                borderTopLeftRadius: WAVE,
-                borderTopRightRadius: WAVE,
-              }} />
-            </>
+            <HomeTopBar
+              firstName={firstName}
+              dateStr={dateStr}
+              locLabel={locLabel}
+              unreadMsgs={unreadMsgs}
+              unreadNotifs={unreadNotifs}
+            />
           }
         />
       </Screen>

@@ -39,7 +39,8 @@ export const lightColors: AppColors = {
   primaryLight: '#2A8FD4',
   primaryDark: '#0D559A',
   primarySurface: '#DFF0FF',
-  accent: '#F5890A',
+  // Teal-700 — #2DD4BF is only ~1.9:1 on white, so light mode needs the darker step
+  accent: '#0F766E',
   white: '#FFFFFF',
   overlay: 'rgba(10, 40, 80, 0.45)',
   success: '#00A86A',
@@ -64,7 +65,7 @@ export const darkColors: AppColors = {
   primaryLight: '#6EC0F0',
   primaryDark: '#2A8FD4',
   primarySurface: '#0A1E38',
-  accent: '#F5890A',
+  accent: '#2DD4BF',
   white: '#FFFFFF',
   overlay: 'rgba(0, 0, 0, 0.6)',
   success: '#00D98E',
@@ -88,8 +89,8 @@ export const accentPresets: Record<AccentTheme, {
   ocean: {
     label: 'Океан',
     emoji: '🌊',
-    light: { primary: '#1570B8', primaryLight: '#2A8FD4', primaryDark: '#0D559A', primarySurface: '#DFF0FF', accent: '#F5890A' },
-    dark:  { primary: '#4AA8E8', primaryLight: '#6EC0F0', primaryDark: '#2A8FD4', primarySurface: '#0A1E38', accent: '#F5890A' },
+    light: { primary: '#1570B8', primaryLight: '#2A8FD4', primaryDark: '#0D559A', primarySurface: '#DFF0FF', accent: '#0F766E' },
+    dark:  { primary: '#4AA8E8', primaryLight: '#6EC0F0', primaryDark: '#2A8FD4', primarySurface: '#0A1E38', accent: '#2DD4BF' },
   },
   forest: {
     label: 'Гора',
