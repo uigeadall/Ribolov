@@ -59,8 +59,8 @@ export function BiteForecast({ weather }: Props) {
     Animated.parallel(anims).start();
   }, [windows, animRefs]);
 
-  const trackColor = mode === 'dark' ? 'rgba(74,168,232,0.07)' : 'rgba(21,112,184,0.05)';
-  const inactiveBar = mode === 'dark' ? 'rgba(74,168,232,0.32)' : 'rgba(21,112,184,0.28)';
+  const trackColor = colors.surfaceAlt;
+  const inactiveBar = colors.chartDim;
 
   const styles = useMemo(
     () =>

@@ -15,17 +15,16 @@ import { useTheme } from '../../services/themeContext';
  */
 export function useHomeTheme() {
   const { colors, mode } = useTheme();
-  const hairline = mode === 'dark' ? 'rgba(148,191,224,0.16)' : colors.border;
   return {
     colors,
     mode,
     bg:         colors.background,
     surface:    colors.card,
-    hairline,
+    hairline:   colors.cardEdge,
     /** Soft chip/tint fill behind accent-coloured content. */
     accentSoft: colors.accent + '1A',
-    /** Ink used ON accent-filled surfaces (teal needs dark ink in dark mode). */
-    onAccent:   mode === 'dark' ? '#04201C' : '#FFFFFF',
+    /** Ink used ON accent-filled surfaces (chartreuse always takes navy ink). */
+    onAccent:   colors.onAccent,
     textColor:  colors.text,
     mutedColor: colors.textMuted,
     primary:    colors.primary,
