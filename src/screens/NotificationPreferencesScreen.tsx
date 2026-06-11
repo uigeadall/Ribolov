@@ -189,8 +189,8 @@ export default function NotificationPreferencesScreen() {
                     <Switch
                       value={prefs[row.key]}
                       onValueChange={() => void toggle(row.key)}
-                      trackColor={{ false: mode === 'dark' ? '#1A3050' : '#E0E8F0', true: colors.primary + '88' }}
-                      thumbColor={prefs[row.key] ? colors.primary : (mode === 'dark' ? '#3A5070' : '#C0D0E0')}
+                      trackColor={{ false: colors.border, true: colors.primary + '88' }}
+                      thumbColor={prefs[row.key] ? colors.primary : colors.surfaceAlt}
                     />
                   </View>
                 </View>
@@ -230,8 +230,8 @@ export default function NotificationPreferencesScreen() {
               <Switch
                 value={prefs.quietHoursEnabled}
                 onValueChange={(v) => void updatePrefs({ quietHoursEnabled: v })}
-                trackColor={{ false: mode === 'dark' ? '#1A3050' : '#E0E8F0', true: colors.primary + '88' }}
-                thumbColor={prefs.quietHoursEnabled ? colors.primary : (mode === 'dark' ? '#3A5070' : '#C0D0E0')}
+                trackColor={{ false: colors.border, true: colors.primary + '88' }}
+                thumbColor={prefs.quietHoursEnabled ? colors.primary : colors.surfaceAlt}
               />
             </View>
             {prefs.quietHoursEnabled ? (

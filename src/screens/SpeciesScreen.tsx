@@ -109,9 +109,9 @@ export default function SpeciesScreen() {
   const { colors, mode } = useTheme();
   const isDark = mode === 'dark';
   const heroColors = isDark
-    ? (['#0A1E38', '#050C1A', '#030810'] as const)
-    : (['#2B87CE', '#1570B8', '#0D559A'] as const);
-  const waveColor = isDark ? '#0E1628' : '#FFFFFF';
+    ? ([colors.navy, colors.navy, colors.navy] as const)
+    : ([colors.navy, colors.navy, colors.navy] as const);
+  const waveColor = colors.background;
   const styles = useMemo(() => createSpeciesListStyles(colors), [colors]);
   const [q, setQ] = useState('');
 
