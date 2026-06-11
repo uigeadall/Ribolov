@@ -1242,7 +1242,7 @@ export default function FeedScreen() {
             {unreadNotifCount > 0 && (
               <View style={{
                 position: 'absolute', top: -3, right: -5,
-                backgroundColor: '#e53935', borderRadius: 8,
+                backgroundColor: colors.danger, borderRadius: 8,
                 minWidth: 14, height: 14,
                 alignItems: 'center', justifyContent: 'center',
                 paddingHorizontal: 3,
