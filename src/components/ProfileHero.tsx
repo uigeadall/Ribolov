@@ -30,9 +30,9 @@ type Props = {
     mode keeps the colors muted so the cover doesn't burn out in night use. */
 function heroGradient(mode: 'dark' | 'light'): [string, string, string] {
   if (mode === 'dark') {
-    return ['#06121F', '#102C44', '#8C4F1F'];
+    return ['#0A1A2B', '#0E2235', '#115B7D'];
   }
-  return ['#0A3A57', '#1F6F92', '#E8902E'];
+  return ['#0E2235', '#16729B', '#1B7FA8'];
 }
 
 // Cover band height (above the avatar). Together with AVATAR_OVERLAP it
@@ -281,7 +281,7 @@ export function HeroButton({
             height: 16,
             paddingHorizontal: 4,
             borderRadius: 8,
-            backgroundColor: '#E8902E',
+            backgroundColor: '#C77F12',
             alignItems: 'center',
             justifyContent: 'center',
           }}

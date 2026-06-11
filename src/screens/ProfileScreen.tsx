@@ -615,13 +615,12 @@ export default function ProfileScreen() {
 
   // ── Design tokens ───────────────────────────────────────────────────────────
 
-  const heroGrad: [string, string, string] = mode === 'dark'
-    ? ['#0A1E38', '#050C1A', '#030810']
-    : ['#4EAEE0', '#1E7CC4', '#0D559A'];
+  // Flat navy hero band (tuple kept for the LinearGradient plumbing).
+  const heroGrad: [string, string, string] = [colors.navy, colors.navy, colors.navy];
 
-  const waveColor  = mode === 'dark' ? '#080E1A' : '#F2F8FF';
-  const cardBg     = mode === 'dark' ? '#0E1E35' : '#FFFFFF';
-  const cardBorder = mode === 'dark' ? 'rgba(74,168,232,0.15)' : 'rgba(21,112,184,0.10)';
+  const waveColor  = colors.background;
+  const cardBg     = colors.card;
+  const cardBorder = colors.cardEdge;
 
   // ── Styles ──────────────────────────────────────────────────────────────────
 
@@ -763,10 +762,10 @@ export default function ProfileScreen() {
           justifyContent: 'center',
           borderWidth: 2,
           borderColor: 'rgba(255,255,255,0.4)',
-          shadowColor: '#4AA8E8',
+          shadowColor: '#000',
           shadowOffset: { width: 0, height: 0 },
           shadowRadius: 12,
-          shadowOpacity: 0.6,
+          shadowOpacity: 0.3,
           elevation: 10,
           marginBottom: spacing.sm,
         },
@@ -774,7 +773,7 @@ export default function ProfileScreen() {
           width: 100,
           height: 100,
           borderRadius: 50,
-          backgroundColor: '#0D559A',
+          backgroundColor: colors.primaryDark,
           alignItems: 'center',
           justifyContent: 'center',
           overflow: 'hidden',
@@ -1198,10 +1197,10 @@ export default function ProfileScreen() {
           borderRadius: 28,
           overflow: 'hidden',
           alignSelf: 'stretch',
-          shadowColor: '#F5890A',
-          shadowOffset: { width: 0, height: 8 },
-          shadowOpacity: 0.5,
-          shadowRadius: 14,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.25,
+          shadowRadius: 10,
           elevation: 8,
         },
         guestBtnInner: {
@@ -1658,7 +1657,7 @@ export default function ProfileScreen() {
                 accessibilityLabel="Следващ излет"
               >
                 <LinearGradient
-                  colors={['#0A1E38', '#0D2240']}
+                  colors={[colors.navy, colors.navy]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={styles.tripGradBg}

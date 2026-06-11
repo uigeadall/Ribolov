@@ -40,8 +40,8 @@ const RING_WIDTH = 4;
 
 function fallbackGradient(mode: 'dark' | 'light'): [string, string, string] {
   return mode === 'dark'
-    ? ['#06121F', '#102C44', '#8C4F1F']
-    : ['#0A3A57', '#1F6F92', '#E8902E'];
+    ? ['#0A1A2B', '#0E2235', '#115B7D']
+    : ['#0E2235', '#16729B', '#1B7FA8'];
 }
 
 function createStyles(colors: AppColors, topPad: number) {
@@ -356,7 +356,7 @@ export function FacebookHeroButton({
             height: 16,
             paddingHorizontal: 4,
             borderRadius: 8,
-            backgroundColor: '#E8902E',
+            backgroundColor: '#C77F12',
             alignItems: 'center',
             justifyContent: 'center',
           }}
