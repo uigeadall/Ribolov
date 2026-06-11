@@ -359,6 +359,20 @@ service cloud.firestore {
           && request.resource.data.get('reactionCounts', {}).get('fish', 0) <= resource.data.get('reactionCounts', {}).get('fish', 0) + 1
           && request.resource.data.get('reactionCounts', {}).get('wow', 0) >= resource.data.get('reactionCounts', {}).get('wow', 0) - 1
           && request.resource.data.get('reactionCounts', {}).get('wow', 0) <= resource.data.get('reactionCounts', {}).get('wow', 0) + 1)
+        ||
+        // Comment-count bump — any signed-in user steps commentCount by ±1,
+        // paired client-side with creating/deleting a comment doc (see
+        // addCatchComment / deleteCatchComment). Kept as its own disjunct
+        // (unlike /posts, which folds it into the like clause) so reaction
+        // writes on legacy catches missing commentCount don't start failing
+        // the `is number` check. affectedKeys.hasOnly prevents smuggling
+        // other fields; get('commentCount', 0) defaults legacy docs.
+        (request.resource.data.commentCount is number
+          && request.resource.data.commentCount >= resource.data.get('commentCount', 0) - 1
+          && request.resource.data.commentCount <= resource.data.get('commentCount', 0) + 1
+          && request.resource.data.ownerUid == resource.data.ownerUid
+          && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['commentCount']))
       );
       allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
 
