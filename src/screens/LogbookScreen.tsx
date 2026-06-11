@@ -27,7 +27,6 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Image } from 'expo-image';
 import { Skeleton } from '../components/Skeleton';
-import { ComposeFab } from '../components/ComposeFab';
 import { useCountUp } from '../hooks/useCountUp';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
@@ -1171,12 +1170,6 @@ export default function LogbookScreen() {
         )}
       </View>
 
-      {/* The previous "add catch" FAB used to live here. Removed in favor of
-          the unified ComposeFab (rendered below) which opens an action sheet
-          for both "Сподели улов" and "Напиши пост". Two pluses on one screen
-          confused users — they tapped the orange one thinking it would also
-          show the post option. */}
-
       {/* ── Undo snackbar ── */}
       {pendingDelete ? (
         <View style={{ position: 'absolute', bottom: 88, left: spacing.lg, right: spacing.lg, backgroundColor: mode === 'dark' ? '#2a2a2a' : '#1c1c1c', borderRadius: 20, flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.md, paddingHorizontal: 0, elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, overflow: 'hidden' }}>
@@ -1270,8 +1263,6 @@ export default function LogbookScreen() {
         </View>
       </Modal>
 
-      {/* Compose FAB — same component as Home and Feed for consistency. */}
-      <ComposeFab />
     </View>
   );
 }

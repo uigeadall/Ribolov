@@ -19,7 +19,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { ActionSheet } from '../components/ActionSheet';
 import { Card } from '../components/Card';
-import { ComposeFab } from '../components/ComposeFab';
 import { EmptyState } from '../components/EmptyState';
 import { Button } from '../components/Button';
 import { FeedPost, FeedItem } from '../components/FeedPost';
@@ -1665,11 +1664,6 @@ export default function FeedScreen() {
       <View style={{ flex: 1 }}>
         {waveContent}
       </View>
-
-      {/* Compose FAB — shared component (also used on Home + Logbook) so the
-          compose entrypoint feels identical across high-traffic surfaces.
-          Hidden on the empty feed so the empty-state CTA owns the action. */}
-      {!feedIsEmpty ? <ComposeFab /> : null}
 
       {/* Water-body picker. Same component used by MapScreen and
           LeaderboardScreen so the dam/river list + region grouping stays

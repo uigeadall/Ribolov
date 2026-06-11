@@ -22,7 +22,6 @@ import { scheduleForecastNotificationIfGood } from '../services/pushNotification
 import { useUnreadMessagesCount } from '../hooks/useUnreadMessagesCount';
 import { useUnreadNotifCount } from '../hooks/useUnreadNotifCount';
 import type { Catch } from '../types/index';
-import { ComposeFab } from '../components/ComposeFab';
 import { FishingRefreshControl } from '../components/FishingRefreshControl';
 import { spacing } from '../theme/typography';
 
@@ -350,9 +349,6 @@ export default function HomeScreen() {
           }
         />
       </Screen>
-      {/* Floating compose button — outside Screen so it stays pinned while
-          the rest of the page scrolls. Same component as Feed + Logbook. */}
-      <ComposeFab />
     </View>
   );
 }
