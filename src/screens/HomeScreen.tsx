@@ -331,9 +331,7 @@ export default function HomeScreen() {
 
   return (
     <View style={{ flex: 1 }}>
-      {/* Flat tuple kills Screen's background gradient on Home only — the new
-          design language is a single flat canvas. */}
-      <Screen padded={false} gradient={[bg, bg, bg]}>
+      <Screen padded={false} background={bg}>
         <FlashList
           data={sections}
           keyExtractor={(item) => item.key}
