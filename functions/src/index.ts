@@ -638,80 +638,11 @@ export const onNewMessage = onDocumentCreated(
 );
 
 // ---------------------------------------------------------------------------
-// aggregateLeaderboards — runs every 10 minutes
-// ---------------------------------------------------------------------------
-
-// PARALLEL-RUN: the legacy aggregator is kept temporarily as a safety net
-// while the new trigger-based rollup system (`onPublicCatchForRollup` +
-// `consolidateLeaderboards` + `weeklyLeaderboardDriftFix` below) proves
-// itself. Cadence dropped from every-10-min to once-daily — still validates
-// the new system's output against a full-scan recompute, but at ~1/144 the
-// read cost during the overlap. Remove after 7 days of confirmed agreement.
-export const aggregateLeaderboards = onSchedule(
-  { schedule: "every 24 hours", maxInstances: 1 },
-  async () => {
-  const periods: Period[] = ["day", "week", "month", "year"];
-
-  for (const period of periods) {
-    const minIso = periodMinIso(period);
-
-    const snapshot = await db
-      .collection("publicCatches")
-      .where("date", ">=", minIso)
-      .get();
-
-    // Aggregate by ownerUid
-    const map = new Map<
-      string,
-      { ownerName: string; totalKg: number; catchCount: number; bestKg: number }
-    >();
-
-    for (const doc of snapshot.docs) {
-      const d = doc.data();
-      const uid: string = d.ownerUid ?? "";
-      const name: string = d.ownerName ?? "Unknown";
-      // `typeof NaN === "number"` is true — without the isFinite check, a
-      // single NaN weight (corrupt write, division-by-zero in client) would
-      // poison the aggregation: NaN propagates through every sum and sort,
-      // tangling ranks across the entire leaderboard.
-      const kg: number = typeof d.weightKg === "number" && Number.isFinite(d.weightKg) ? d.weightKg : 0;
-
-      if (!uid) continue;
-
-      const existing = map.get(uid);
-      if (existing) {
-        existing.totalKg += kg;
-        existing.catchCount += 1;
-        if (kg > existing.bestKg) existing.bestKg = kg;
-      } else {
-        map.set(uid, { ownerName: name, totalKg: kg, catchCount: 1, bestKg: kg });
-      }
-    }
-
-    // Sort by totalKg desc and assign ranks
-    const rows: LeaderboardRow[] = Array.from(map.entries())
-      .sort((a, b) => b[1].totalKg - a[1].totalKg)
-      .map(([ownerUid, agg], index) => ({
-        rank: index + 1,
-        ownerUid,
-        ownerName: agg.ownerName,
-        totalKg: agg.totalKg,
-        catchCount: agg.catchCount,
-        bestKg: agg.bestKg,
-      }));
-
-    await db.collection("leaderboardCache").doc(`global_${period}`).set({
-      rows,
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-  }
-});
-
-// ---------------------------------------------------------------------------
 // Trigger-based leaderboard rollups (replaces the full-scan aggregator).
 // ---------------------------------------------------------------------------
 // Why this exists:
-//   The old `aggregateLeaderboards` above does a full collection scan of
+//   The old `aggregateLeaderboards` (deleted 2026-06-11 after the parallel-run
+//   validation window) did a full collection scan of
 //   `publicCatches` every 10 minutes, for each of 4 periods. At 10k DAU
 //   with a year of accumulated catches that's ~76M reads/day = ~$1,300/mo
 //   just from this one function. The pattern below replaces that with:
