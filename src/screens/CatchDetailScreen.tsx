@@ -37,7 +37,8 @@ import type { FeedItem } from '../services/catchSync';
 
 type R = RouteProp<LogbookStackParamList, 'CatchDetail'>;
 
-const CATCH_ACCENTS = ['#1A7A9C', '#2E9B5A', '#0E4D64', '#7BB7CC', '#006E8A', '#C49A00'];
+// Harmonized with the Navy & Chartreuse palette (kept in sync with LogbookScreen).
+const CATCH_ACCENTS = ['#16729B', '#1E8E5A', '#115B7D', '#4FA8CE', '#0E2235', '#C77F12'];
 function speciesAccent(name: string): string {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
