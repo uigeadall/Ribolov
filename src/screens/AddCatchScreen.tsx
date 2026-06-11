@@ -1804,17 +1804,12 @@ export default function AddCatchScreen() {
           disabled={saving}
           style={{ borderRadius: 20, overflow: 'hidden' }}
         >
-          <LinearGradient
-            colors={[colors.primary, colors.primaryDark ?? colors.primary]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.saveBtn}
-          >
+          <View style={[styles.saveBtn, { backgroundColor: colors.accent }]}>
             {saving
-              ? <ActivityIndicator color="#fff" />
+              ? <ActivityIndicator color={colors.onAccent} />
               : <Text style={styles.saveBtnText}>{editCatchId ? 'Запази промените' : 'Запази улова'}</Text>
             }
-          </LinearGradient>
+          </View>
         </Pressable>
       </View>
 
@@ -1880,21 +1875,14 @@ function PhotoSection({
         </>
       ) : (
         <>
-          {/* Outdoorsy dawn-water gradient — matches the rest of the redesigned screens.
-              Replaces the old hardcoded Material blue that clashed with the new palette. */}
-          <LinearGradient
-            colors={['#0A3A57', '#1F6F92', '#0E4D64']}
-            start={{ x: 0.1, y: 0 }}
-            end={{ x: 0.9, y: 1 }}
-            style={StyleSheet.absoluteFillObject}
-          />
+          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.navy }]} />
           <View style={styles.heroPlaceholderInner}>
             <Ionicons name="fish-outline" size={48} color="rgba(255,255,255,0.7)" />
             <Text style={styles.heroPlaceholderText}>Сними улова</Text>
             <Text style={styles.heroPlaceholderSub}>Снимка не е задължителна, но прави спомена по-силен.</Text>
             <View style={styles.heroEmptyActions}>
               <Pressable onPress={onTakePhoto} style={styles.heroPrimaryBtn}>
-                <Ionicons name="camera" size={18} color="#0E4D64" />
+                <Ionicons name="camera" size={18} color={colors.onAccent} />
                 <Text style={styles.heroPrimaryBtnText}>Камера</Text>
               </Pressable>
               {!shareToFeed && (
@@ -1955,7 +1943,7 @@ function createAddCatchStyles(colors: AppColors) {
       width: '100%',
       height: 320,
       overflow: 'hidden',
-      backgroundColor: '#0E4D64',
+      backgroundColor: colors.navy,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -1983,7 +1971,7 @@ function createAddCatchStyles(colors: AppColors) {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 6,
-      backgroundColor: '#fff',
+      backgroundColor: colors.accent,
       borderRadius: 22,
       paddingHorizontal: 18,
       paddingVertical: 10,
@@ -1991,7 +1979,7 @@ function createAddCatchStyles(colors: AppColors) {
     heroPrimaryBtnText: {
       fontSize: 14,
       fontFamily: 'Manrope_700Bold',
-      color: '#0E4D64',
+      color: colors.onAccent,
     },
     heroSecondaryBtn: {
       flexDirection: 'row',
@@ -2626,7 +2614,7 @@ function createAddCatchStyles(colors: AppColors) {
     saveBtnText: {
       fontSize: 18,
       fontFamily: 'Manrope_800ExtraBold',
-      color: '#fff',
+      color: colors.onAccent,
       letterSpacing: 0.2,
     },
     // ── Sticky save bar (sibling to the ScrollView) ──
