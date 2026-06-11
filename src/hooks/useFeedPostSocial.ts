@@ -131,30 +131,37 @@ export function useFeedPostSocial({
   const sendBusyRef = useRef(false);
   const likersRequestIdRef = useRef(0);
 
-  // likeCount and reactionCounts both live inline on the catch doc (maintained
-  // atomically by toggleCatchReaction), so we can render them with zero
-  // Firestore reads. Only fetchCatchCommentCount still hits the network — one
-  // count() aggregation read per card. fetchReactionSummary is reserved for
-  // legacy catches that pre-date the denormalized `reactionCounts` field.
+  // likeCount, reactionCounts, and commentCount all live inline on the catch
+  // doc (maintained by toggleCatchReaction / addCatchComment), so we can
+  // render them with zero Firestore reads. The fetch fallbacks below are
+  // reserved for legacy catches that pre-date the denormalized fields.
   const inlineLikeCount = typeof item.likeCount === 'number' ? item.likeCount : 0;
   const inlineSummary = useMemo(
     () => reactionSummaryFromCounts(item.reactionCounts),
     [item.reactionCounts],
   );
+  const inlineCommentCount = typeof item.commentCount === 'number' ? item.commentCount : null;
 
   useEffect(() => {
     if (!socialEnabled || !catchId || !isVisible) return;
     // Inline counts are the source of truth — set immediately, no roundtrip.
     setLikeCount(inlineLikeCount);
     if (inlineSummary !== null) setReactionSummary(inlineSummary);
+    if (inlineCommentCount !== null) setCommentCount(inlineCommentCount);
 
     let cancelled = false;
     void (async () => {
-      const tasks: Promise<unknown>[] = [
-        fetchCatchCommentCount(catchId).then((cc) => {
-          if (!cancelled) setCommentCount(cc);
-        }),
-      ];
+      const tasks: Promise<unknown>[] = [];
+      // Only pay the per-card count() read for legacy catches that pre-date
+      // the denormalized commentCount field. New catches seed it at publish
+      // and addCatchComment/deleteCatchComment maintain it.
+      if (inlineCommentCount === null) {
+        tasks.push(
+          fetchCatchCommentCount(catchId).then((cc) => {
+            if (!cancelled) setCommentCount(cc);
+          }),
+        );
+      }
       // Only pay the per-card reaction-summary read when the inline map is
       // missing (legacy catch from before this field was tracked).
       if (inlineSummary === null) {
@@ -173,10 +180,11 @@ export function useFeedPostSocial({
           );
         }
       }
+      if (tasks.length === 0) return;
       await Promise.all(tasks);
     })();
     return () => { cancelled = true; };
-  }, [socialEnabled, catchId, isVisible, inlineLikeCount, inlineSummary, item.likeCount]);
+  }, [socialEnabled, catchId, isVisible, inlineLikeCount, inlineSummary, inlineCommentCount, item.likeCount]);
 
   useEffect(() => {
     if (!socialEnabled || !myUid || !catchId || !isVisible) return;
@@ -399,6 +407,9 @@ export function useFeedPostSocial({
         onPress: async () => {
           try {
             await deleteCatchComment(catchId, commentId);
+            // Keep the inline-count label honest until the next feed fetch
+            // delivers the authoritative (service-decremented) value.
+            setCommentCount((c) => Math.max(0, c - 1));
           } catch (e) {
             Toast.show({ type: 'error', text1: e instanceof Error ? e.message : 'Неуспешно изтриване', visibilityTime: 2400 });
           }
@@ -431,6 +442,9 @@ export function useFeedPostSocial({
     setSendBusy(true);
     try {
       await addCatchComment(catchId, myUid, myDisplayName, t, item.ownerUid, reply ?? undefined);
+      // Keep the inline-count label honest until the next feed fetch
+      // delivers the authoritative (service-incremented) value.
+      setCommentCount((c) => c + 1);
     } catch (e) {
       setPendingComments((prev) => prev.filter((c) => c.id !== tempId));
       // Only restore the failed text if the user hasn't already started

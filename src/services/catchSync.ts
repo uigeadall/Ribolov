@@ -37,6 +37,11 @@ export type CloudCatch = Catch & {
       Optional because legacy catches created before this field existed
       don't have it — callers fall back to fetchReactionSummary in that case. */
   reactionCounts?: Partial<Record<'heart' | 'fire' | 'trophy' | 'fish' | 'wow', number>>;
+  /** Denormalized comments tally maintained best-effort by addCatchComment /
+      deleteCatchComment (mirrors posts.commentCount). Optional because
+      legacy catches pre-date the field — useFeedPostSocial falls back to a
+      fetchCatchCommentCount count() read for those. */
+  commentCount?: number;
 };
 
 export type FeedItem = CloudCatch;
@@ -233,14 +238,15 @@ export async function pushCatch(c: Catch, ownerUid: string, ownerName: string, i
     const publicRef = doc(fb.db, 'publicCatches', c.id);
     await runTransaction(fb.db, async (txn) => {
       const snap = await txn.get(publicRef);
-      // Seed both `likeCount` and `reactionCounts` on first write so the feed
-      // can render the inline emoji breakdown with zero Firestore reads.
-      // Without the empty-map seed, every brand-new catch falls back to the
-      // legacy fetchReactionSummary path (50-doc read per card) until
-      // someone reacts.
+      // Seed `likeCount`, `reactionCounts`, and `commentCount` on first
+      // write so the feed can render the inline emoji breakdown and the
+      // "View N comments" label with zero Firestore reads. Without the
+      // seeds, every brand-new catch falls back to the legacy per-card
+      // fetch paths (fetchReactionSummary's 50-doc read, plus a count()
+      // aggregation for comments) until someone interacts.
       const publicPayload = snap.exists()
         ? payload
-        : { ...payload, likeCount: 0, reactionCounts: {} };
+        : { ...payload, likeCount: 0, reactionCounts: {}, commentCount: 0 };
       txn.set(publicRef, publicPayload, { merge: true });
     });
   } else {
