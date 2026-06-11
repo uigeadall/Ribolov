@@ -317,8 +317,8 @@ export default function StatsScreen() {
   }), [colors]);
 
   const heroColors: [string, string, string] = mode === 'dark'
-    ? ['#0A1E38', '#050C1A', '#030810']
-    : ['#2B87CE', '#1570B8', '#0D559A'];
+    ? [colors.navy, colors.navy, colors.navy]
+    : [colors.navy, colors.navy, colors.navy];
   const waveColor = mode === 'dark' ? '#0E1628' : '#F4F8FC';
 
   const SimpleHero = ({ title }: { title: string }) => (

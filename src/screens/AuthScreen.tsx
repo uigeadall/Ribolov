@@ -19,8 +19,8 @@ import Toast from 'react-native-toast-message';
     Keeps the auth screen visually consistent with the rest of the app. */
 function heroGradient(mode: 'dark' | 'light'): [string, string, string] {
   return mode === 'dark'
-    ? ['#06121F', '#102C44', '#8C4F1F']
-    : ['#0A3A57', '#1F6F92', '#E8902E'];
+    ? ['#0A1A2B', '#0E2235', '#115B7D']
+    : ['#0E2235', '#16729B', '#1B7FA8'];
 }
 
 export default function AuthScreen() {
@@ -57,7 +57,7 @@ export default function AuthScreen() {
   const [errors, setErrors] = useState<{ name?: string; email?: string; password?: string }>({});
 
   const gradient = useMemo(() => heroGradient(mode), [mode]);
-  const waveColor = mode === 'dark' ? '#0E1628' : colors.background;
+  const waveColor = colors.background;
 
   const styles = useMemo(
     () =>
@@ -368,7 +368,7 @@ export default function AuthScreen() {
           <View style={styles.wave}>
             {!configured ? (
               <View style={styles.warnBanner}>
-                <Ionicons name="warning-outline" size={18} color="#E8902E" />
+                <Ionicons name="warning-outline" size={18} color="#C77F12" />
                 <Text style={styles.warnText}>
                   Firebase не е конфигуриран. Добави ключове в app.json или EXPO_PUBLIC_FIREBASE_*.
                 </Text>

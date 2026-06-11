@@ -622,9 +622,9 @@ export default function NotificationsScreen() {
   const { user, configured } = useAuth();
 
   const heroColors: [string, string, string] = mode === 'dark'
-    ? ['#0A1E38', '#050C1A', '#030810']
-    : ['#2B87CE', '#1570B8', '#0D559A'];
-  const waveColor = mode === 'dark' ? '#0E1628' : '#FFFFFF';
+    ? [colors.navy, colors.navy, colors.navy]
+    : [colors.navy, colors.navy, colors.navy];
+  const waveColor = colors.background;
 
   const S = useMemo(() => StyleSheet.create({
     hero: { paddingBottom: 28 + 16 },

@@ -271,8 +271,8 @@ export default function ChatDetailScreen() {
   );
 
   const heroColors: [string, string, string] = mode === 'dark'
-    ? ['#0A1E38', '#050C1A', '#030810']
-    : ['#2B87CE', '#1570B8', '#0D559A'];
+    ? [colors.navy, colors.navy, colors.navy]
+    : [colors.navy, colors.navy, colors.navy];
 
   const otherInitials = otherName.slice(0, 1).toUpperCase();
   const avatarUrl = useAvatarUrl({
@@ -1240,13 +1240,13 @@ export default function ChatDetailScreen() {
               // captures the count at entry time).
               return (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginVertical: spacing.md, paddingHorizontal: spacing.lg }}>
-                  <View style={{ flex: 1, height: 1, backgroundColor: '#E53935', opacity: 0.5 }} />
-                  <View style={{ backgroundColor: '#E53935', borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 4 }}>
+                  <View style={{ flex: 1, height: 1, backgroundColor: colors.danger, opacity: 0.5 }} />
+                  <View style={{ backgroundColor: colors.danger, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 4 }}>
                     <Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>
                       {item.count === 1 ? '1 ново съобщение' : `${item.count} нови съобщения`}
                     </Text>
                   </View>
-                  <View style={{ flex: 1, height: 1, backgroundColor: '#E53935', opacity: 0.5 }} />
+                  <View style={{ flex: 1, height: 1, backgroundColor: colors.danger, opacity: 0.5 }} />
                 </View>
               );
             }

@@ -125,7 +125,7 @@ function ChatRow({ item, myUid, muted, styles, colors, onPress, onToggleMute, on
   const renderRightActions = () => (
     <Pressable
       onPress={() => onToggleMute(item, !muted)}
-      style={[styles.swipeAction, { backgroundColor: muted ? colors.primary : '#8E8E93' }]}
+      style={[styles.swipeAction, { backgroundColor: muted ? colors.primary : colors.textMuted }]}
       accessibilityRole="button"
       accessibilityLabel={muted ? 'Включи известията' : 'Заглуши'}
     >
@@ -529,9 +529,9 @@ export default function ChatsScreen() {
   const [swipeRefs] = useState(() => new Map<string, Swipeable | null>());
 
   const heroColors: [string, string, string] = mode === 'dark'
-    ? ['#0A1E38', '#050C1A', '#030810']
-    : ['#2B87CE', '#1570B8', '#0D559A'];
-  const waveColor = mode === 'dark' ? '#0E1628' : '#FFFFFF';
+    ? [colors.navy, colors.navy, colors.navy]
+    : [colors.navy, colors.navy, colors.navy];
+  const waveColor = colors.background;
 
   const S = useMemo(() => StyleSheet.create({
     hero: { paddingBottom: 28 + 16 },

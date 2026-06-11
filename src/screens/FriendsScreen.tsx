@@ -54,9 +54,9 @@ export default function FriendsScreen() {
   const { user, configured } = useAuth();
 
   const heroColors: [string, string, string] = mode === 'dark'
-    ? ['#0A1E38', '#050C1A', '#030810']
-    : ['#2B87CE', '#1570B8', '#0D559A'];
-  const waveColor = mode === 'dark' ? '#0E1628' : '#FFFFFF';
+    ? [colors.navy, colors.navy, colors.navy]
+    : [colors.navy, colors.navy, colors.navy];
+  const waveColor = colors.background;
 
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState<SearchUserResult[]>([]);
