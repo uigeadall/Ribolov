@@ -51,6 +51,44 @@ describe('publicCatches update/delete rule', () => {
     );
   });
 
+  it('lets a commenter bump commentCount +1 alone (legacy doc without the field)', async () => {
+    await seedCatch();
+    const alice = (await getTestEnv()).authenticatedContext('alice').firestore();
+    await assertSucceeds(
+      updateDoc(doc(alice, 'publicCatches', CATCH), { commentCount: 1 }),
+    );
+  });
+
+  it('lets a commenter decrement commentCount -1', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'publicCatches', CATCH), {
+        ownerUid: 'bob',
+        speciesName: 'Костур',
+        likeCount: 0,
+        reactionCounts: { heart: 0 },
+        commentCount: 3,
+      });
+    });
+    const alice = (await getTestEnv()).authenticatedContext('alice').firestore();
+    await assertSucceeds(
+      updateDoc(doc(alice, 'publicCatches', CATCH), { commentCount: 2 }),
+    );
+  });
+
+  it('DENIES a commentCount jump greater than 1', async () => {
+    await seedCatch();
+    const alice = (await getTestEnv()).authenticatedContext('alice').firestore();
+    await assertFails(updateDoc(doc(alice, 'publicCatches', CATCH), { commentCount: 5 }));
+  });
+
+  it('DENIES a commentCount bump that smuggles other fields', async () => {
+    await seedCatch();
+    const alice = (await getTestEnv()).authenticatedContext('alice').firestore();
+    await assertFails(
+      updateDoc(doc(alice, 'publicCatches', CATCH), { commentCount: 1, speciesName: 'хакнат' }),
+    );
+  });
+
   it('lets the owner delete; denies a non-owner delete', async () => {
     await seedCatch();
     const bob = (await getTestEnv()).authenticatedContext('bob').firestore();

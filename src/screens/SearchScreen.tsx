@@ -173,7 +173,7 @@ export default function SearchScreen() {
       const fb = ensureFirebase();
       if (!fb) return;
       // Refresh the block list per fresh query so a recent block applies.
-      // `getBlockedUids` is server-cached so the cost is low.
+      // `getBlockedUids` is TTL-cached in blockUser.ts so the cost is low.
       if (user?.uid) {
         blockedUidsRef.current = await getBlockedUids(user.uid).catch(() => new Set<string>());
       }

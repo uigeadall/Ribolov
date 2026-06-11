@@ -18,6 +18,7 @@ import {
   ttlDateForBucket,
 } from "./lib/buckets";
 import { shouldNotify, quietHoursActive } from "./lib/notifyGating";
+import { shouldConsolidate } from "./lib/consolidateGate";
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -638,80 +639,11 @@ export const onNewMessage = onDocumentCreated(
 );
 
 // ---------------------------------------------------------------------------
-// aggregateLeaderboards — runs every 10 minutes
-// ---------------------------------------------------------------------------
-
-// PARALLEL-RUN: the legacy aggregator is kept temporarily as a safety net
-// while the new trigger-based rollup system (`onPublicCatchForRollup` +
-// `consolidateLeaderboards` + `weeklyLeaderboardDriftFix` below) proves
-// itself. Cadence dropped from every-10-min to once-daily — still validates
-// the new system's output against a full-scan recompute, but at ~1/144 the
-// read cost during the overlap. Remove after 7 days of confirmed agreement.
-export const aggregateLeaderboards = onSchedule(
-  { schedule: "every 24 hours", maxInstances: 1 },
-  async () => {
-  const periods: Period[] = ["day", "week", "month", "year"];
-
-  for (const period of periods) {
-    const minIso = periodMinIso(period);
-
-    const snapshot = await db
-      .collection("publicCatches")
-      .where("date", ">=", minIso)
-      .get();
-
-    // Aggregate by ownerUid
-    const map = new Map<
-      string,
-      { ownerName: string; totalKg: number; catchCount: number; bestKg: number }
-    >();
-
-    for (const doc of snapshot.docs) {
-      const d = doc.data();
-      const uid: string = d.ownerUid ?? "";
-      const name: string = d.ownerName ?? "Unknown";
-      // `typeof NaN === "number"` is true — without the isFinite check, a
-      // single NaN weight (corrupt write, division-by-zero in client) would
-      // poison the aggregation: NaN propagates through every sum and sort,
-      // tangling ranks across the entire leaderboard.
-      const kg: number = typeof d.weightKg === "number" && Number.isFinite(d.weightKg) ? d.weightKg : 0;
-
-      if (!uid) continue;
-
-      const existing = map.get(uid);
-      if (existing) {
-        existing.totalKg += kg;
-        existing.catchCount += 1;
-        if (kg > existing.bestKg) existing.bestKg = kg;
-      } else {
-        map.set(uid, { ownerName: name, totalKg: kg, catchCount: 1, bestKg: kg });
-      }
-    }
-
-    // Sort by totalKg desc and assign ranks
-    const rows: LeaderboardRow[] = Array.from(map.entries())
-      .sort((a, b) => b[1].totalKg - a[1].totalKg)
-      .map(([ownerUid, agg], index) => ({
-        rank: index + 1,
-        ownerUid,
-        ownerName: agg.ownerName,
-        totalKg: agg.totalKg,
-        catchCount: agg.catchCount,
-        bestKg: agg.bestKg,
-      }));
-
-    await db.collection("leaderboardCache").doc(`global_${period}`).set({
-      rows,
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-  }
-});
-
-// ---------------------------------------------------------------------------
 // Trigger-based leaderboard rollups (replaces the full-scan aggregator).
 // ---------------------------------------------------------------------------
 // Why this exists:
-//   The old `aggregateLeaderboards` above does a full collection scan of
+//   The old `aggregateLeaderboards` (deleted 2026-06-11 after the parallel-run
+//   validation window) did a full collection scan of
 //   `publicCatches` every 10 minutes, for each of 4 periods. At 10k DAU
 //   with a year of accumulated catches that's ~76M reads/day = ~$1,300/mo
 //   just from this one function. The pattern below replaces that with:
@@ -901,6 +833,17 @@ export const onPublicCatchForRollup = onDocumentWritten(
       // already handle.
       logger.warn(`[onPublicCatchForRollup] tx failed for event ${event.id}`, e);
     }
+
+    // Dirty-flag for consolidateLeaderboards: record that rollup state
+    // changed so the next consolidation run knows it has work. Outside the
+    // transaction to keep the hot path free of contention on this shared
+    // doc — if this write is lost (crash between tx commit and here), the
+    // flag is healed by the next catch write, the next bucket rollover
+    // (which always consolidates), or the weekly drift fix.
+    await db
+      .doc("leaderboardMeta/state")
+      .set({ lastRollupWriteAt: FieldValue.serverTimestamp() }, { merge: true })
+      .catch((e) => logger.warn("[onPublicCatchForRollup] meta bump failed", e));
   },
 );
 
@@ -922,6 +865,35 @@ export const consolidateLeaderboards = onSchedule(
   async () => {
   const now = new Date();
   const periods: Period[] = ["day", "week", "month", "year"];
+
+  // Dirty-flag gate: 1 meta read decides whether the ~800-read consolidation
+  // below has anything to do. Idle 10-minute ticks (no new catches, no
+  // bucket rollover) exit here — that was ~3.5M reads/month of pure waste.
+  const metaRef = db.doc("leaderboardMeta/state");
+  const currentBucketsKey = [
+    dayBucketKey(now),
+    isoWeekBucketKey(now),
+    monthBucketKey(now),
+    yearBucketKey(now),
+  ].join("|");
+  const metaSnap = await metaRef.get();
+  const lastRollupWriteAt = metaSnap.exists
+    ? (metaSnap.get("lastRollupWriteAt") as Timestamp | undefined)
+    : undefined;
+  const consolidatedThroughAt = metaSnap.exists
+    ? (metaSnap.get("consolidatedThroughAt") as Timestamp | undefined)
+    : undefined;
+  const lastBucketsKey = metaSnap.exists
+    ? (metaSnap.get("consolidatedBucketsKey") as string | undefined)
+    : undefined;
+  if (!shouldConsolidate({
+    lastRollupWriteAtMillis: lastRollupWriteAt?.toMillis() ?? null,
+    consolidatedThroughMillis: consolidatedThroughAt?.toMillis() ?? null,
+    currentBucketsKey,
+    lastBucketsKey: lastBucketsKey ?? null,
+  })) {
+    return;
+  }
 
   for (const period of periods) {
     const currentBucket =
@@ -960,6 +932,14 @@ export const consolidateLeaderboards = onSchedule(
       updatedAt: FieldValue.serverTimestamp(),
     });
   }
+
+  // Record what this run covered. consolidatedThroughAt is the rollup
+  // timestamp observed at the START of this run — a write landing mid-run
+  // stays newer than this and triggers the next cycle.
+  await metaRef.set({
+    consolidatedThroughAt: lastRollupWriteAt ?? Timestamp.now(),
+    consolidatedBucketsKey: currentBucketsKey,
+  }, { merge: true });
 });
 
 // weeklyLeaderboardDriftFix ---------------------------------------------------
@@ -1049,6 +1029,11 @@ export const weeklyLeaderboardDriftFix = onSchedule(
 
       logger.info(`[weeklyLeaderboardDriftFix] period=${period} bucket=${currentBucket} users=${map.size}`);
     }
+
+    // Drift fixes rewrite rollup docs directly — tell the consolidator.
+    await db
+      .doc("leaderboardMeta/state")
+      .set({ lastRollupWriteAt: FieldValue.serverTimestamp() }, { merge: true });
   },
 );
 

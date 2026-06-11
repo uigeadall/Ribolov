@@ -184,6 +184,12 @@ export async function addCatchComment(
       ...(replyTo ? { replyToId: replyTo.id, replyToName: replyTo.name } : {}),
     })
   );
+  // Bump the denormalized commentCount on the catch doc so feed cards can
+  // render "View N comments" with zero reads (mirrors posts.commentCount).
+  // Best-effort: if this fails the comment is still saved; capture to
+  // observability so silent count drift is visible to us.
+  updateDoc(doc(fb.db, 'publicCatches', catchId), { commentCount: increment(1) })
+    .catch((e) => captureException(e, { area: 'catch_comment_count_inc', catchId }));
   // Notification is fire-and-forget — never block the user on it, but log
   // failures so a silently-dropped bell is visible in observability rather
   // than only as a user wondering why the recipient never saw their comment.
@@ -212,4 +218,10 @@ export async function editCatchComment(catchId: string, commentId: string, newTe
 export async function deleteCatchComment(catchId: string, commentId: string): Promise<void> {
   const fb = requireFirebase();
   await deleteDoc(doc(fb.db, 'publicCatches', catchId, 'comments', commentId));
+  // Best-effort decrement — see addCatchComment. Deliberately NOT batched
+  // with the delete: comments can outlive their parent doc (catch toggled
+  // private deletes publicCatches/{id} but leaves the subcollection), and
+  // an atomic batch would make those deletions fail entirely.
+  updateDoc(doc(fb.db, 'publicCatches', catchId), { commentCount: increment(-1) })
+    .catch((e) => captureException(e, { area: 'catch_comment_count_dec', catchId, commentId }));
 }
