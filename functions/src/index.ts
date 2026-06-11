@@ -18,6 +18,7 @@ import {
   ttlDateForBucket,
 } from "./lib/buckets";
 import { shouldNotify, quietHoursActive } from "./lib/notifyGating";
+import { shouldConsolidate } from "./lib/consolidateGate";
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -832,6 +833,17 @@ export const onPublicCatchForRollup = onDocumentWritten(
       // already handle.
       logger.warn(`[onPublicCatchForRollup] tx failed for event ${event.id}`, e);
     }
+
+    // Dirty-flag for consolidateLeaderboards: record that rollup state
+    // changed so the next consolidation run knows it has work. Outside the
+    // transaction to keep the hot path free of contention on this shared
+    // doc — if this write is lost (crash between tx commit and here), the
+    // flag is healed by the next catch write, the next bucket rollover
+    // (which always consolidates), or the weekly drift fix.
+    await db
+      .doc("leaderboardMeta/state")
+      .set({ lastRollupWriteAt: FieldValue.serverTimestamp() }, { merge: true })
+      .catch((e) => logger.warn("[onPublicCatchForRollup] meta bump failed", e));
   },
 );
 
@@ -853,6 +865,35 @@ export const consolidateLeaderboards = onSchedule(
   async () => {
   const now = new Date();
   const periods: Period[] = ["day", "week", "month", "year"];
+
+  // Dirty-flag gate: 1 meta read decides whether the ~800-read consolidation
+  // below has anything to do. Idle 10-minute ticks (no new catches, no
+  // bucket rollover) exit here — that was ~3.5M reads/month of pure waste.
+  const metaRef = db.doc("leaderboardMeta/state");
+  const currentBucketsKey = [
+    dayBucketKey(now),
+    isoWeekBucketKey(now),
+    monthBucketKey(now),
+    yearBucketKey(now),
+  ].join("|");
+  const metaSnap = await metaRef.get();
+  const lastRollupWriteAt = metaSnap.exists
+    ? (metaSnap.get("lastRollupWriteAt") as Timestamp | undefined)
+    : undefined;
+  const consolidatedThroughAt = metaSnap.exists
+    ? (metaSnap.get("consolidatedThroughAt") as Timestamp | undefined)
+    : undefined;
+  const lastBucketsKey = metaSnap.exists
+    ? (metaSnap.get("consolidatedBucketsKey") as string | undefined)
+    : undefined;
+  if (!shouldConsolidate({
+    lastRollupWriteAtMillis: lastRollupWriteAt?.toMillis() ?? null,
+    consolidatedThroughMillis: consolidatedThroughAt?.toMillis() ?? null,
+    currentBucketsKey,
+    lastBucketsKey: lastBucketsKey ?? null,
+  })) {
+    return;
+  }
 
   for (const period of periods) {
     const currentBucket =
@@ -891,6 +932,14 @@ export const consolidateLeaderboards = onSchedule(
       updatedAt: FieldValue.serverTimestamp(),
     });
   }
+
+  // Record what this run covered. consolidatedThroughAt is the rollup
+  // timestamp observed at the START of this run — a write landing mid-run
+  // stays newer than this and triggers the next cycle.
+  await metaRef.set({
+    consolidatedThroughAt: lastRollupWriteAt ?? Timestamp.now(),
+    consolidatedBucketsKey: currentBucketsKey,
+  }, { merge: true });
 });
 
 // weeklyLeaderboardDriftFix ---------------------------------------------------
@@ -980,6 +1029,11 @@ export const weeklyLeaderboardDriftFix = onSchedule(
 
       logger.info(`[weeklyLeaderboardDriftFix] period=${period} bucket=${currentBucket} users=${map.size}`);
     }
+
+    // Drift fixes rewrite rollup docs directly — tell the consolidator.
+    await db
+      .doc("leaderboardMeta/state")
+      .set({ lastRollupWriteAt: FieldValue.serverTimestamp() }, { merge: true });
   },
 );
 
