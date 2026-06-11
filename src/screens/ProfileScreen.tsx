@@ -38,7 +38,6 @@ import { TrophyShelf } from '../components/TrophyShelf';
 import { FeedPost } from '../components/FeedPost';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
-import { accentPresets, type AccentTheme } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
 import { shadowCard } from '../theme/shadows';
 import { useAuth, type DeleteAccountCredential } from '../services/authContext';
@@ -144,7 +143,7 @@ export default function ProfileScreen() {
   const navigation = useAppNavigation();
   const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
-  const { colors, mode, toggleMode, accent, setAccent } = useTheme();
+  const { colors, mode, toggleMode } = useTheme();
   const { user, configured, loading: authLoading, signOut, deleteAccount } = useAuth();
 
   // Defensive redirect: if the user lands on Profile while signed out — most
@@ -277,7 +276,6 @@ export default function ProfileScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [profileLoading, setProfileLoading] = useState(false);
   const [pubExpanded, setPubExpanded] = useState(false);
-  const [accentPickerExpanded, setAccentPickerExpanded] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Active tab in the new Facebook-style profile layout.
   const [activeTab, setActiveTab] = useState<ProfileTabKey>('posts');
@@ -1493,7 +1491,7 @@ export default function ProfileScreen() {
       {/* ── Cloud warning banner ── */}
       {!configured ? (
         <View style={styles.warnBanner}>
-          <Ionicons name="cloud-offline-outline" size={18} color={colors.accent} />
+          <Ionicons name="cloud-offline-outline" size={18} color={colors.warning} />
           <Text style={styles.warnText}>
             Облакът не е активен — настрой Firebase, за да редактираш снимка и онлайн профил.
           </Text>
@@ -1666,7 +1664,7 @@ export default function ProfileScreen() {
                   style={styles.tripGradBg}
                 />
                 <View style={styles.tripIconWrap}>
-                  <Ionicons name="calendar-outline" size={22} color="#fff" />
+                  <Ionicons name="calendar-outline" size={22} color={colors.onAccent} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.tripLabel}>СЛЕДВАЩ ИЗЛЕТ</Text>
@@ -1931,70 +1929,6 @@ export default function ProfileScreen() {
                   <Text style={styles.settingsSignOutText}>Изход</Text>
                 </Pressable>
               ) : null}
-
-              <View style={styles.settingsDivider} />
-
-              {/* Accent theme picker */}
-              <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xs }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm }}>
-                  <Ionicons name="color-palette-outline" size={16} color={colors.primary} style={{ marginRight: spacing.xs }} />
-                  <Text style={{ ...typography.bodyBold, fontSize: 14, color: colors.text }}>Цветова тема</Text>
-                  {!accentPickerExpanded ? (
-                    <Text style={{ ...typography.small, color: colors.textMuted, marginLeft: spacing.sm }}>
-                      {accentPresets[accent].emoji} {accentPresets[accent].label}
-                    </Text>
-                  ) : null}
-                  <Pressable onPress={() => { void Haptics.selectionAsync(); setAccentPickerExpanded((v) => !v); }} style={{ marginLeft: 'auto' }} hitSlop={8}>
-                    <Ionicons name={accentPickerExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} />
-                  </Pressable>
-                </View>
-                {accentPickerExpanded ? (
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={{ gap: spacing.sm, flexDirection: 'row', paddingBottom: spacing.sm }}
-                  >
-                    {(Object.keys(accentPresets) as AccentTheme[]).map((key) => {
-                      const preset = accentPresets[key];
-                      const selected = accent === key;
-                      return (
-                        <Pressable
-                          key={key}
-                          onPress={() => { void Haptics.selectionAsync(); setAccent(key); }}
-                          accessibilityRole="button"
-                          accessibilityLabel={preset.label}
-                          accessibilityState={{ selected }}
-                          style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            gap: spacing.xs,
-                            paddingVertical: 8,
-                            paddingHorizontal: 12,
-                            borderRadius: 20,
-                            borderWidth: 1.5,
-                            borderColor: selected ? colors.primary : colors.border,
-                            backgroundColor: selected ? colors.primarySurface : 'transparent',
-                          }}
-                        >
-                          <Text style={{ fontSize: 15 }}>{preset.emoji}</Text>
-                          <Text style={{
-                            ...typography.small,
-                            fontWeight: selected ? '700' : '400',
-                            color: selected ? colors.primary : colors.textMuted,
-                          }}>
-                            {preset.label}
-                          </Text>
-                          {selected ? (
-                            <Ionicons name="checkmark" size={14} color={colors.primary} />
-                          ) : (
-                            <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: preset.light.primary }} />
-                          )}
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
-                ) : null}
-              </View>
 
               <View style={styles.settingsDivider} />
 

@@ -45,3 +45,6 @@ firestore-debug.log
 
 # superpowers brainstorming sessions (mockups, server state)
 .superpowers/
+
+# Claude Code local state
+.claude/

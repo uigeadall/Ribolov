@@ -71,8 +71,7 @@ export function ComposeFab() {
         opacity: pressed && Platform.OS === 'ios' ? 0.85 : 1,
       })}
     >
-      {/* Light accents (teal #2DD4BF) need dark ink for contrast in dark mode. */}
-      <Ionicons name="add" size={30} color={mode === 'dark' ? '#04201C' : '#fff'} />
+      <Ionicons name="add" size={30} color={colors.onAccent} />
     </Pressable>
   );
 }

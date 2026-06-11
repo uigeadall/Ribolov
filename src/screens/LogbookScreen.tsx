@@ -118,8 +118,8 @@ const CatchCard = React.memo(function CatchCard({
       }}
       style={{ backgroundColor: colors.accent, width: 70, alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 14, marginBottom: 12, marginRight: 6 }}
     >
-      <Ionicons name="share-outline" size={20} color="#fff" />
-      <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>Сподели</Text>
+      <Ionicons name="share-outline" size={20} color={colors.onAccent} />
+      <Text style={{ color: colors.onAccent, fontSize: 11, fontWeight: '700' }}>Сподели</Text>
     </Pressable>
   );
 

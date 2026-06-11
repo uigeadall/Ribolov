@@ -635,7 +635,7 @@ export default function StatsScreen() {
                     {c.weightKg != null ? <Text style={{ ...typography.caption, color: colors.textMuted }}>{c.weightKg} кг{c.lengthCm != null ? ` · ${c.lengthCm} см` : ''}</Text> : null}
                     {c.location?.name ? <Text style={{ ...typography.caption, color: colors.textMuted }}>{c.location.name}</Text> : null}
                   </View>
-                  {c.released ? <Text style={{ ...typography.caption, color: colors.accent, fontWeight: '700' }}>Пуснат</Text> : null}
+                  {c.released ? <Text style={{ ...typography.caption, color: colors.success, fontWeight: '700' }}>Пуснат</Text> : null}
                 </View>
               ))}
             </ScrollView>

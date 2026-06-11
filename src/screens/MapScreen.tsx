@@ -1689,7 +1689,7 @@ const SpotSheet = React.memo(function SpotSheet({
               <View style={{ marginLeft: 'auto' }}>
                 <StarRatingBar
                   rating={spotWeather.fishingRating}
-                  color={colors.accent}
+                  color={colors.warning}
                   emptyColor={colors.border}
                   size={12}
                 />
