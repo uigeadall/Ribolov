@@ -234,7 +234,7 @@ export default function HashtagFeedScreen() {
             }}
           >
             <Text style={{
-              fontFamily: 'Nunito_800ExtraBold',
+              fontFamily: 'Manrope_800ExtraBold',
               fontSize: 12,
               color: tagFollowed ? '#fff' : '#0D559A',
             }}>

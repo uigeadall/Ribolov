@@ -1279,7 +1279,7 @@ export default function AddCatchScreen() {
               <Ionicons name="bulb-outline" size={15} color={colors.primary} />
               <Text style={[styles.chipPillText, { flex: 1 }]}>
                 Препоръчан вид:{' '}
-                <Text style={{ color: colors.primary, fontFamily: 'Nunito_700Bold' }}>{suggestedSpecies}</Text>
+                <Text style={{ color: colors.primary, fontFamily: 'Manrope_700Bold' }}>{suggestedSpecies}</Text>
               </Text>
               <Pressable onPress={() => setSuggestedSpecies(null)} hitSlop={8}>
                 <Ionicons name="close-outline" size={15} color={colors.textMuted} />
@@ -1968,7 +1968,7 @@ function createAddCatchStyles(colors: AppColors) {
     },
     heroPlaceholderSub: {
       fontSize: 12,
-      fontFamily: 'Nunito_400Regular',
+      fontFamily: 'Manrope_400Regular',
       color: 'rgba(255,255,255,0.65)',
       textAlign: 'center',
       paddingHorizontal: 16,
@@ -1990,7 +1990,7 @@ function createAddCatchStyles(colors: AppColors) {
     },
     heroPrimaryBtnText: {
       fontSize: 14,
-      fontFamily: 'Nunito_700Bold',
+      fontFamily: 'Manrope_700Bold',
       color: '#0E4D64',
     },
     heroSecondaryBtn: {
@@ -2005,7 +2005,7 @@ function createAddCatchStyles(colors: AppColors) {
     },
     heroSecondaryBtnText: {
       fontSize: 14,
-      fontFamily: 'Nunito_700Bold',
+      fontFamily: 'Manrope_700Bold',
       color: '#fff',
     },
     heroBack: {
@@ -2076,7 +2076,7 @@ function createAddCatchStyles(colors: AppColors) {
     },
     heroPhotoBtnText: {
       fontSize: 12,
-      fontFamily: 'Nunito_700Bold',
+      fontFamily: 'Manrope_700Bold',
       color: '#111',
     },
     heroPhotoBtnDark: {
@@ -2090,7 +2090,7 @@ function createAddCatchStyles(colors: AppColors) {
     },
     heroPhotoBtnDarkText: {
       fontSize: 12,
-      fontFamily: 'Nunito_700Bold',
+      fontFamily: 'Manrope_700Bold',
       color: '#fff',
     },
     heroGrid: {
@@ -2124,7 +2124,7 @@ function createAddCatchStyles(colors: AppColors) {
     },
     heroPlaceholderText: {
       fontSize: 16,
-      fontFamily: 'Nunito_700Bold',
+      fontFamily: 'Manrope_700Bold',
       color: 'rgba(255,255,255,0.9)',
       marginTop: 14,
       letterSpacing: 0.3,
@@ -2141,7 +2141,7 @@ function createAddCatchStyles(colors: AppColors) {
     },
     heroGalleryLinkText: {
       fontSize: 12,
-      fontFamily: 'Nunito_400Regular',
+      fontFamily: 'Manrope_400Regular',
       color: 'rgba(255,255,255,0.7)',
       textDecorationLine: 'underline',
     },
@@ -2173,7 +2173,7 @@ function createAddCatchStyles(colors: AppColors) {
     },
     chipPillText: {
       fontSize: 13,
-      fontFamily: 'Nunito_600SemiBold',
+      fontFamily: 'Manrope_600SemiBold',
       color: colors.text,
     },
 
@@ -2186,13 +2186,13 @@ function createAddCatchStyles(colors: AppColors) {
     },
     speciesName: {
       fontSize: 26,
-      fontFamily: 'Nunito_800ExtraBold',
+      fontFamily: 'Manrope_800ExtraBold',
       color: colors.text,
       lineHeight: 30,
     },
     speciesLatin: {
       fontSize: 13,
-      fontFamily: 'Nunito_400Regular',
+      fontFamily: 'Manrope_400Regular',
       color: colors.textMuted,
       fontStyle: 'italic',
       marginTop: 2,
@@ -2210,7 +2210,7 @@ function createAddCatchStyles(colors: AppColors) {
     },
     speciesChangeBtnText: {
       fontSize: 13,
-      fontFamily: 'Nunito_600SemiBold',
+      fontFamily: 'Manrope_600SemiBold',
       color: colors.primary,
     },
 
@@ -2223,7 +2223,7 @@ function createAddCatchStyles(colors: AppColors) {
     },
     photoMetaInput: {
       fontSize: 14,
-      fontFamily: 'Nunito_400Regular',
+      fontFamily: 'Manrope_400Regular',
       color: colors.text,
       padding: 0,
     },
@@ -2252,7 +2252,7 @@ function createAddCatchStyles(colors: AppColors) {
     },
     metricTileLabel: {
       fontSize: 11,
-      fontFamily: 'Nunito_700Bold',
+      fontFamily: 'Manrope_700Bold',
       color: colors.textMuted,
       letterSpacing: 0.8,
       textTransform: 'uppercase',
@@ -2260,7 +2260,7 @@ function createAddCatchStyles(colors: AppColors) {
     },
     metricTileInput: {
       fontSize: 32,
-      fontFamily: 'Nunito_800ExtraBold',
+      fontFamily: 'Manrope_800ExtraBold',
       color: colors.text,
       padding: 0,
       minWidth: 60,
@@ -2268,7 +2268,7 @@ function createAddCatchStyles(colors: AppColors) {
     },
     metricTileUnit: {
       fontSize: 16,
-      fontFamily: 'Nunito_600SemiBold',
+      fontFamily: 'Manrope_600SemiBold',
       color: colors.textMuted,
       marginBottom: 5,
     },
@@ -2298,7 +2298,7 @@ function createAddCatchStyles(colors: AppColors) {
     detailInput: {
       flex: 1,
       fontSize: 15,
-      fontFamily: 'Nunito_400Regular',
+      fontFamily: 'Manrope_400Regular',
       color: colors.text,
       padding: 0,
     },
@@ -2318,7 +2318,7 @@ function createAddCatchStyles(colors: AppColors) {
     },
     detailButtonText: {
       fontSize: 12,
-      fontFamily: 'Nunito_600SemiBold',
+      fontFamily: 'Manrope_600SemiBold',
       color: colors.primary,
     },
 
@@ -2337,7 +2337,7 @@ function createAddCatchStyles(colors: AppColors) {
     },
     baitPillText: {
       fontSize: 12,
-      fontFamily: 'Nunito_600SemiBold',
+      fontFamily: 'Manrope_600SemiBold',
       color: colors.text,
     },
     baitPillTextActive: {
@@ -2366,7 +2366,7 @@ function createAddCatchStyles(colors: AppColors) {
     },
     gearSheetTitle: {
       fontSize: 16,
-      fontFamily: 'Nunito_700Bold',
+      fontFamily: 'Manrope_700Bold',
       paddingHorizontal: 18,
       paddingTop: 6,
       paddingBottom: 12,
@@ -2387,11 +2387,11 @@ function createAddCatchStyles(colors: AppColors) {
     },
     gearRowName: {
       fontSize: 15,
-      fontFamily: 'Nunito_700Bold',
+      fontFamily: 'Manrope_700Bold',
     },
     gearRowNotes: {
       fontSize: 12,
-      fontFamily: 'Nunito_400Regular',
+      fontFamily: 'Manrope_400Regular',
       marginTop: 2,
     },
 
@@ -2404,7 +2404,7 @@ function createAddCatchStyles(colors: AppColors) {
     },
     switchLabel: {
       fontSize: 15,
-      fontFamily: 'Nunito_600SemiBold',
+      fontFamily: 'Manrope_600SemiBold',
       color: colors.text,
     },
     switchSub: {
@@ -2439,14 +2439,14 @@ function createAddCatchStyles(colors: AppColors) {
     },
     summarySpeciesName: {
       fontSize: 24,
-      fontFamily: 'Nunito_800ExtraBold',
+      fontFamily: 'Manrope_800ExtraBold',
       color: colors.text,
       lineHeight: 28,
       letterSpacing: -0.3,
     },
     summarySpeciesLatin: {
       fontSize: 12,
-      fontFamily: 'Nunito_400Regular',
+      fontFamily: 'Manrope_400Regular',
       color: colors.textMuted,
       fontStyle: 'italic',
       marginTop: 2,
@@ -2462,7 +2462,7 @@ function createAddCatchStyles(colors: AppColors) {
     },
     summarySpeciesPillText: {
       fontSize: 12,
-      fontFamily: 'Nunito_700Bold',
+      fontFamily: 'Manrope_700Bold',
       color: colors.primary,
     },
     summaryDivider: {
@@ -2486,7 +2486,7 @@ function createAddCatchStyles(colors: AppColors) {
     },
     summaryMetricLabel: {
       fontSize: 11,
-      fontFamily: 'Nunito_700Bold',
+      fontFamily: 'Manrope_700Bold',
       color: colors.textMuted,
       letterSpacing: 0.8,
       textTransform: 'uppercase',
@@ -2499,7 +2499,7 @@ function createAddCatchStyles(colors: AppColors) {
     },
     summaryMetricInput: {
       fontSize: 30,
-      fontFamily: 'Nunito_800ExtraBold',
+      fontFamily: 'Manrope_800ExtraBold',
       color: colors.text,
       padding: 0,
       minWidth: 56,
@@ -2507,7 +2507,7 @@ function createAddCatchStyles(colors: AppColors) {
     },
     summaryMetricUnit: {
       fontSize: 14,
-      fontFamily: 'Nunito_600SemiBold',
+      fontFamily: 'Manrope_600SemiBold',
       color: colors.textMuted,
       marginBottom: 5,
     },
@@ -2535,20 +2535,20 @@ function createAddCatchStyles(colors: AppColors) {
     },
     summaryRowLabel: {
       fontSize: 11,
-      fontFamily: 'Nunito_700Bold',
+      fontFamily: 'Manrope_700Bold',
       color: colors.textMuted,
       letterSpacing: 0.8,
       textTransform: 'uppercase',
     },
     summaryRowValue: {
       fontSize: 16,
-      fontFamily: 'Nunito_700Bold',
+      fontFamily: 'Manrope_700Bold',
       color: colors.text,
       marginTop: 2,
     },
     summaryRowSub: {
       fontSize: 12,
-      fontFamily: 'Nunito_400Regular',
+      fontFamily: 'Manrope_400Regular',
       color: colors.textMuted,
       marginTop: 2,
     },
@@ -2565,7 +2565,7 @@ function createAddCatchStyles(colors: AppColors) {
     },
     datePickerDoneText: {
       fontSize: 14,
-      fontFamily: 'Nunito_700Bold',
+      fontFamily: 'Manrope_700Bold',
       color: colors.primary,
     },
 
@@ -2596,7 +2596,7 @@ function createAddCatchStyles(colors: AppColors) {
     },
     sharingTitle: {
       fontSize: 15,
-      fontFamily: 'Nunito_700Bold',
+      fontFamily: 'Manrope_700Bold',
       color: colors.text,
     },
 
@@ -2611,7 +2611,7 @@ function createAddCatchStyles(colors: AppColors) {
     },
     detailsToggleText: {
       fontSize: 14,
-      fontFamily: 'Nunito_700Bold',
+      fontFamily: 'Manrope_700Bold',
       color: colors.primary,
       letterSpacing: 0.2,
     },
@@ -2625,7 +2625,7 @@ function createAddCatchStyles(colors: AppColors) {
     },
     saveBtnText: {
       fontSize: 18,
-      fontFamily: 'Nunito_800ExtraBold',
+      fontFamily: 'Manrope_800ExtraBold',
       color: '#fff',
       letterSpacing: 0.2,
     },

@@ -310,7 +310,7 @@ function PostCardInner({
       alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
     },
     avatarImg: { width: 40, height: 40 },
-    avatarText: { color: colors.white, fontFamily: 'Nunito_700Bold', fontSize: 15 },
+    avatarText: { color: colors.white, fontFamily: 'Manrope_700Bold', fontSize: 15 },
     headerName: { fontWeight: '700', color: colors.text, fontSize: 15 },
     headerSep: { color: colors.textMuted, fontSize: 14 },
     headerTime: { color: colors.textMuted, fontSize: 14 },

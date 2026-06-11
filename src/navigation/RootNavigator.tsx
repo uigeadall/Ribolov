@@ -334,7 +334,7 @@ function TabNavigator() {
                 {focused && (
                   <Text style={{
                     fontSize: 10,
-                    fontFamily: 'Nunito_700Bold',
+                    fontFamily: 'Manrope_700Bold',
                     color: colors.primary,
                     lineHeight: 11,
                   }}>

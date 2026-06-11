@@ -82,7 +82,7 @@ export default function AuthScreen() {
         },
         heroTitle: {
           fontSize: 32,
-          fontFamily: 'Nunito_800ExtraBold',
+          fontFamily: 'Manrope_800ExtraBold',
           color: '#fff',
           letterSpacing: -0.5,
         },

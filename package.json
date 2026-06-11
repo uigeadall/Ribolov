@@ -23,8 +23,7 @@
     "test:all": "npm test && npm run test:rules"
   },
   "dependencies": {
-    "@expo-google-fonts/dm-sans": "^0.4.2",
-    "@expo-google-fonts/nunito": "^0.4.2",
+    "@expo-google-fonts/manrope": "^0.4.2",
     "@expo/config-plugins": "~54.0.4",
     "@expo/ngrok": "^4.0.0",
     "@expo/vector-icons": "^15.0.3",

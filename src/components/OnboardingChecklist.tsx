@@ -88,14 +88,14 @@ export function OnboardingChecklist({ hasProfilePhoto, catchCount, followingCoun
     },
     kicker: {
       fontSize: 10,
-      fontFamily: 'Nunito_700Bold',
+      fontFamily: 'Manrope_700Bold',
       color: colors.primary,
       letterSpacing: 1.2,
       textTransform: 'uppercase' as const,
     },
     title: {
       fontSize: 17,
-      fontFamily: 'Nunito_800ExtraBold',
+      fontFamily: 'Manrope_800ExtraBold',
       color: colors.text,
       marginTop: 2,
     },
@@ -144,7 +144,7 @@ export function OnboardingChecklist({ hasProfilePhoto, catchCount, followingCoun
     },
     stepText: {
       fontSize: 14,
-      fontFamily: 'Nunito_600SemiBold',
+      fontFamily: 'Manrope_600SemiBold',
       color: colors.text,
       flex: 1,
     },
@@ -164,7 +164,7 @@ export function OnboardingChecklist({ hasProfilePhoto, catchCount, followingCoun
     },
     nextCtaText: {
       color: '#fff',
-      fontFamily: 'Nunito_800ExtraBold',
+      fontFamily: 'Manrope_800ExtraBold',
       fontSize: 14,
     },
   }), [colors, mode]);

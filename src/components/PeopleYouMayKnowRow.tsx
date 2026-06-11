@@ -134,11 +134,11 @@ export function PeopleYouMayKnowRow({ collapseWhenEmpty = true }: Props) {
     },
     avatarText: { fontSize: 22, fontWeight: '800', color: colors.primary },
     name: {
-      fontSize: 12, fontFamily: 'Nunito_700Bold', color: colors.text,
+      fontSize: 12, fontFamily: 'Manrope_700Bold', color: colors.text,
       textAlign: 'center', maxWidth: '100%', marginBottom: 2,
     },
     mutual: {
-      fontSize: 10, fontFamily: 'Nunito_600SemiBold', color: colors.textMuted,
+      fontSize: 10, fontFamily: 'Manrope_600SemiBold', color: colors.textMuted,
       textAlign: 'center', marginBottom: 8,
     },
     followBtn: {
@@ -150,7 +150,7 @@ export function PeopleYouMayKnowRow({ collapseWhenEmpty = true }: Props) {
     },
     followBtnIdle: { backgroundColor: colors.primary },
     followBtnDone: { backgroundColor: colors.primarySurface, borderWidth: 1, borderColor: colors.border },
-    followBtnText: { fontSize: 11, fontFamily: 'Nunito_700Bold', color: '#fff' },
+    followBtnText: { fontSize: 11, fontFamily: 'Manrope_700Bold', color: '#fff' },
     followBtnTextDone: { color: colors.primary },
     emptyText: { ...typography.small, color: colors.textMuted, paddingHorizontal: spacing.lg },
   }), [colors, mode]);

@@ -86,7 +86,7 @@ const S = StyleSheet.create({
     width: 36, height: 36, borderRadius: 11,
     alignItems: 'center', justifyContent: 'center',
   },
-  nearbyName: { fontSize: 14, fontFamily: 'Nunito_700Bold' },
-  nearbyMeta: { fontSize: 11, fontFamily: 'Nunito_400Regular', marginTop: 1 },
-  nearbyDistance: { fontSize: 14, fontFamily: 'Nunito_800ExtraBold' },
+  nearbyName: { fontSize: 14, fontFamily: 'Manrope_700Bold' },
+  nearbyMeta: { fontSize: 11, fontFamily: 'Manrope_400Regular', marginTop: 1 },
+  nearbyDistance: { fontSize: 14, fontFamily: 'Manrope_800ExtraBold' },
 });

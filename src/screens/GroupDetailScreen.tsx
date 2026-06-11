@@ -103,7 +103,7 @@ export default function GroupDetailScreen() {
       alignItems: 'center',
     },
     tabBtnActive: { borderBottomColor: colors.primary },
-    tabBtnText: { fontSize: 13, fontFamily: 'Nunito_700Bold', color: colors.textMuted },
+    tabBtnText: { fontSize: 13, fontFamily: 'Manrope_700Bold', color: colors.textMuted },
     tabBtnTextActive: { color: colors.text },
     // Posts
     postRow: { marginBottom: spacing.md },
@@ -119,8 +119,8 @@ export default function GroupDetailScreen() {
       paddingVertical: 6,
       marginRight: spacing.md,
     },
-    eventDay: { fontSize: 22, fontFamily: 'Nunito_800ExtraBold', color: colors.primary, lineHeight: 24, letterSpacing: -0.5 },
-    eventMonth: { fontSize: 10, fontFamily: 'Nunito_700Bold', color: colors.primary, textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 2 },
+    eventDay: { fontSize: 22, fontFamily: 'Manrope_800ExtraBold', color: colors.primary, lineHeight: 24, letterSpacing: -0.5 },
+    eventMonth: { fontSize: 10, fontFamily: 'Manrope_700Bold', color: colors.primary, textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 2 },
     eventTitle: { ...typography.bodyBold, color: colors.text, fontSize: 15 },
     eventMeta: { ...typography.small, color: colors.textMuted, marginTop: 2 },
     eventDesc: { ...typography.body, color: colors.text, marginTop: spacing.sm, lineHeight: 20 },
@@ -139,9 +139,9 @@ export default function GroupDetailScreen() {
     rsvpBtnActiveGoing: { backgroundColor: '#2E9B5A', borderColor: '#2E9B5A' },
     rsvpBtnActiveMaybe: { backgroundColor: '#F5A020', borderColor: '#F5A020' },
     rsvpBtnActiveNo: { backgroundColor: colors.danger, borderColor: colors.danger },
-    rsvpBtnText: { fontSize: 11, fontFamily: 'Nunito_700Bold', color: colors.text },
+    rsvpBtnText: { fontSize: 11, fontFamily: 'Manrope_700Bold', color: colors.text },
     rsvpBtnTextActive: { color: '#fff' },
-    rsvpCount: { fontSize: 11, fontFamily: 'Nunito_600SemiBold' },
+    rsvpCount: { fontSize: 11, fontFamily: 'Manrope_600SemiBold' },
     // Polls
     pollQuestion: { ...typography.bodyBold, color: colors.text, fontSize: 15, marginBottom: spacing.sm },
     pollOption: {

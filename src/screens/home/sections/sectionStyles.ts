@@ -10,10 +10,10 @@ export const sectionStyles = StyleSheet.create({
     paddingHorizontal: spacing.xl, marginBottom: spacing.sm, marginTop: spacing.md,
   },
   sectionLabel: {
-    fontSize: 11, fontFamily: 'Nunito_700Bold',
+    fontSize: 11, fontFamily: 'Manrope_700Bold',
     letterSpacing: 1.2, textTransform: 'uppercase',
   },
-  sectionLink: { fontSize: 12, fontFamily: 'Nunito_700Bold' },
+  sectionLink: { fontSize: 12, fontFamily: 'Manrope_700Bold' },
 
   // Empty-section hint pressable
   emptyHint: {
@@ -27,7 +27,7 @@ export const sectionStyles = StyleSheet.create({
     width: 36, height: 36, borderRadius: 18,
     alignItems: 'center', justifyContent: 'center',
   },
-  emptyHintText: { flex: 1, fontSize: 12, fontFamily: 'Nunito_600SemiBold' },
+  emptyHintText: { flex: 1, fontSize: 12, fontFamily: 'Manrope_600SemiBold' },
 
   // Horizontal catch tiles (this-day / following / recent rails)
   catchCard: {

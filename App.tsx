@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Linking } from 'react-native';
 import * as Updates from 'expo-updates';
 import * as ScreenOrientation from 'expo-screen-orientation';
-import { useFonts, Nunito_400Regular, Nunito_500Medium, Nunito_600SemiBold, Nunito_700Bold, Nunito_800ExtraBold } from '@expo-google-fonts/nunito';
+import { useFonts, Manrope_400Regular, Manrope_500Medium, Manrope_600SemiBold, Manrope_700Bold, Manrope_800ExtraBold } from '@expo-google-fonts/manrope';
 import { StatusBar } from 'expo-status-bar';
 import { SafeToast } from './src/components/SafeToast';
 import { ActionSheetHost } from './src/components/ActionSheet';
@@ -27,7 +27,7 @@ const MIN_SPLASH_MS = 3500;
 
 export default function App() {
   const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
-  const [fontsLoaded] = useFonts({ Nunito_400Regular, Nunito_500Medium, Nunito_600SemiBold, Nunito_700Bold, Nunito_800ExtraBold });
+  const [fontsLoaded] = useFonts({ Manrope_400Regular, Manrope_500Medium, Manrope_600SemiBold, Manrope_700Bold, Manrope_800ExtraBold });
   const [minTimeElapsed, setMinTimeElapsed] = useState(false);
 
   useEffect(() => {

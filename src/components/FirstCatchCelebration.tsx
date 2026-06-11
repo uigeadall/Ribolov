@@ -284,7 +284,7 @@ const styles = StyleSheet.create({
   firstBadgeText: {
     color: '#2a1800',
     fontSize: 10,
-    fontFamily: 'Nunito_800ExtraBold',
+    fontFamily: 'Manrope_800ExtraBold',
     letterSpacing: 1,
   },
   body: {
@@ -315,7 +315,7 @@ const styles = StyleSheet.create({
   },
   weightLine: {
     ...typography.body,
-    fontFamily: 'Nunito_800ExtraBold',
+    fontFamily: 'Manrope_800ExtraBold',
     marginTop: 2,
   },
   actions: {

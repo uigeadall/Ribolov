@@ -7,7 +7,7 @@ import { useTheme } from '../../services/themeContext';
  *  - flat `surface` cards with 1px `hairline` borders
  *  - NO shadows except photo tiles, NO gradients except photo overlays
  *  - uppercase `typography.overline` micro-labels in `mutedColor`
- *  - big numerals (Nunito_800ExtraBold, 32–48pt, tight letterSpacing)
+ *  - big numerals (Manrope_800ExtraBold, 32–48pt, tight letterSpacing)
  *  - a single accent (teal on the ocean preset); no per-section accents
  *
  * Sections derive every theme-dependent value here instead of receiving

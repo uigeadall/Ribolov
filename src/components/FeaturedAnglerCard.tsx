@@ -63,7 +63,7 @@ export function FeaturedAnglerCard() {
     body: { flex: 1, minWidth: 0 },
     kicker: {
       fontSize: 10,
-      fontFamily: 'Nunito_700Bold',
+      fontFamily: 'Manrope_700Bold',
       color: mode === 'dark' ? '#FFD86A' : '#9A7700',
       letterSpacing: 1.2,
       textTransform: 'uppercase',
@@ -71,7 +71,7 @@ export function FeaturedAnglerCard() {
     },
     name: {
       fontSize: 17,
-      fontFamily: 'Nunito_800ExtraBold',
+      fontFamily: 'Manrope_800ExtraBold',
       color: colors.text,
       letterSpacing: -0.3,
     },

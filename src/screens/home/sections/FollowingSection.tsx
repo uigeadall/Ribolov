@@ -43,10 +43,10 @@ export function FollowingSection({ catches, loading }: Props) {
                     start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
                     style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 92, justifyContent: 'flex-end', padding: 10 }}
                   >
-                    <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 10, fontFamily: 'Nunito_600SemiBold' }} numberOfLines={1}>
+                    <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 10, fontFamily: 'Manrope_600SemiBold' }} numberOfLines={1}>
                       {c.ownerName ?? 'Рибар'}
                     </Text>
-                    <Text style={{ color: '#fff', fontSize: 11, fontFamily: 'Nunito_700Bold', marginTop: 1 }} numberOfLines={1}>
+                    <Text style={{ color: '#fff', fontSize: 11, fontFamily: 'Manrope_700Bold', marginTop: 1 }} numberOfLines={1}>
                       {c.speciesName}
                     </Text>
                     {c.weightKg != null ? (
@@ -57,7 +57,7 @@ export function FollowingSection({ catches, loading }: Props) {
               ) : (
                 <View style={ss.catchEmpty}>
                   <Text style={{ fontSize: 28 }}>🐟</Text>
-                  <Text style={{ fontSize: 10, color: textColor, fontFamily: 'Nunito_600SemiBold', textAlign: 'center', marginTop: 4 }} numberOfLines={2}>
+                  <Text style={{ fontSize: 10, color: textColor, fontFamily: 'Manrope_600SemiBold', textAlign: 'center', marginTop: 4 }} numberOfLines={2}>
                     {c.speciesName}
                   </Text>
                 </View>

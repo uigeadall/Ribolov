@@ -728,7 +728,7 @@ export default function ProfileScreen() {
         heroBarCenter: {
           color: '#fff',
           fontSize: 13,
-          fontFamily: 'Nunito_700Bold',
+          fontFamily: 'Manrope_700Bold',
           letterSpacing: 2.2,
           textTransform: 'uppercase',
           opacity: 0.6,
@@ -784,7 +784,7 @@ export default function ProfileScreen() {
         avatarLetter: {
           color: '#fff',
           fontSize: 38,
-          fontFamily: 'Nunito_800ExtraBold',
+          fontFamily: 'Manrope_800ExtraBold',
         },
         avatarBadge: {
           position: 'absolute',
@@ -802,7 +802,7 @@ export default function ProfileScreen() {
         heroDisplayName: {
           color: '#fff',
           fontSize: 22,
-          fontFamily: 'Nunito_800ExtraBold',
+          fontFamily: 'Manrope_800ExtraBold',
           letterSpacing: -0.4,
           textAlign: 'center',
           marginBottom: 4,
@@ -810,14 +810,14 @@ export default function ProfileScreen() {
         heroCity: {
           color: 'rgba(255,255,255,0.65)',
           fontSize: 12,
-          fontFamily: 'Nunito_600SemiBold',
+          fontFamily: 'Manrope_600SemiBold',
           textAlign: 'center',
           marginBottom: 4,
         },
         heroBio: {
           color: 'rgba(255,255,255,0.55)',
           fontSize: 12,
-          fontFamily: 'Nunito_600SemiBold',
+          fontFamily: 'Manrope_600SemiBold',
           textAlign: 'center',
           lineHeight: 17,
           paddingHorizontal: spacing.xl,
@@ -848,13 +848,13 @@ export default function ProfileScreen() {
         heroStatNum: {
           color: '#fff',
           fontSize: 22,
-          fontFamily: 'Nunito_800ExtraBold',
+          fontFamily: 'Manrope_800ExtraBold',
           letterSpacing: -0.5,
         },
         heroStatLabel: {
           color: 'rgba(255,255,255,0.6)',
           fontSize: 10,
-          fontFamily: 'Nunito_600SemiBold',
+          fontFamily: 'Manrope_600SemiBold',
           marginTop: 2,
         },
 
@@ -880,7 +880,7 @@ export default function ProfileScreen() {
         heroActionBtnText: {
           color: '#fff',
           fontSize: 12,
-          fontFamily: 'Nunito_700Bold',
+          fontFamily: 'Manrope_700Bold',
         },
 
         // ── Hero completion nudge ──
@@ -896,12 +896,12 @@ export default function ProfileScreen() {
         heroNudgeText: {
           color: 'rgba(255,255,255,0.65)',
           fontSize: 11,
-          fontFamily: 'Nunito_600SemiBold',
+          fontFamily: 'Manrope_600SemiBold',
         },
         heroNudgePct: {
           color: '#fff',
           fontSize: 11,
-          fontFamily: 'Nunito_700Bold',
+          fontFamily: 'Manrope_700Bold',
         },
         heroNudgeBarBg: {
           height: 3,
@@ -944,14 +944,14 @@ export default function ProfileScreen() {
         },
         sectionLabel: {
           fontSize: 11,
-          fontFamily: 'Nunito_700Bold',
+          fontFamily: 'Manrope_700Bold',
           letterSpacing: 1.2,
           textTransform: 'uppercase',
           color: colors.textMuted,
         },
         sectionLink: {
           fontSize: 12,
-          fontFamily: 'Nunito_700Bold',
+          fontFamily: 'Manrope_700Bold',
           color: colors.primary,
         },
 
@@ -977,14 +977,14 @@ export default function ProfileScreen() {
         },
         panelTitle: {
           fontSize: 15,
-          fontFamily: 'Nunito_700Bold',
+          fontFamily: 'Manrope_700Bold',
           color: colors.text,
           flex: 1,
           marginLeft: spacing.sm,
         },
         fieldLabel: {
           fontSize: 11,
-          fontFamily: 'Nunito_700Bold',
+          fontFamily: 'Manrope_700Bold',
           color: colors.textMuted,
           marginTop: spacing.sm,
           marginBottom: spacing.xs,
@@ -1000,7 +1000,7 @@ export default function ProfileScreen() {
           paddingVertical: Platform.OS === 'ios' ? spacing.sm + 4 : spacing.sm + 2,
           fontSize: 15,
           color: colors.text,
-          fontFamily: 'Nunito_600SemiBold',
+          fontFamily: 'Manrope_600SemiBold',
         },
 
         // ── Cloud warning banner ──
@@ -1050,7 +1050,7 @@ export default function ProfileScreen() {
         },
         tripLabel: {
           fontSize: 9,
-          fontFamily: 'Nunito_700Bold',
+          fontFamily: 'Manrope_700Bold',
           color: 'rgba(255,255,255,0.55)',
           letterSpacing: 1.2,
           textTransform: 'uppercase',
@@ -1058,12 +1058,12 @@ export default function ProfileScreen() {
         },
         tripTitle: {
           fontSize: 14,
-          fontFamily: 'Nunito_800ExtraBold',
+          fontFamily: 'Manrope_800ExtraBold',
           color: '#fff',
         },
         tripDate: {
           fontSize: 11,
-          fontFamily: 'Nunito_600SemiBold',
+          fontFamily: 'Manrope_600SemiBold',
           color: 'rgba(255,255,255,0.6)',
           marginTop: 2,
         },
@@ -1096,11 +1096,11 @@ export default function ProfileScreen() {
         friendAvatarText: {
           color: '#fff',
           fontSize: 22,
-          fontFamily: 'Nunito_800ExtraBold',
+          fontFamily: 'Manrope_800ExtraBold',
         },
         friendName: {
           fontSize: 10,
-          fontFamily: 'Nunito_600SemiBold',
+          fontFamily: 'Manrope_600SemiBold',
           color: colors.text,
           textAlign: 'center',
         },
@@ -1142,12 +1142,12 @@ export default function ProfileScreen() {
         },
         clubName: {
           fontSize: 14,
-          fontFamily: 'Nunito_700Bold',
+          fontFamily: 'Manrope_700Bold',
           color: colors.text,
         },
         clubMeta: {
           fontSize: 11,
-          fontFamily: 'Nunito_600SemiBold',
+          fontFamily: 'Manrope_600SemiBold',
           color: colors.textMuted,
           marginTop: 2,
         },
@@ -1180,7 +1180,7 @@ export default function ProfileScreen() {
         guestTitle: {
           color: '#fff',
           fontSize: 24,
-          fontFamily: 'Nunito_800ExtraBold',
+          fontFamily: 'Manrope_800ExtraBold',
           textAlign: 'center',
           letterSpacing: -0.4,
           marginBottom: spacing.sm,
@@ -1188,7 +1188,7 @@ export default function ProfileScreen() {
         guestSub: {
           color: 'rgba(255,255,255,0.62)',
           fontSize: 14,
-          fontFamily: 'Nunito_600SemiBold',
+          fontFamily: 'Manrope_600SemiBold',
           textAlign: 'center',
           lineHeight: 20,
           paddingHorizontal: spacing.md,
@@ -1215,7 +1215,7 @@ export default function ProfileScreen() {
         guestBtnText: {
           color: '#fff',
           fontSize: 16,
-          fontFamily: 'Nunito_800ExtraBold',
+          fontFamily: 'Manrope_800ExtraBold',
           letterSpacing: -0.2,
         },
 
@@ -1789,7 +1789,7 @@ export default function ProfileScreen() {
                               style={{
                                 color: '#fff',
                                 fontSize: 44,
-                                fontFamily: 'Nunito_800ExtraBold',
+                                fontFamily: 'Manrope_800ExtraBold',
                               }}
                             >
                               {(f.displayName || '?').slice(0, 1).toUpperCase()}

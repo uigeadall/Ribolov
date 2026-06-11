@@ -56,5 +56,5 @@ const S = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 14, paddingRight: spacing.md,
   },
-  linkText: { fontSize: 14, fontFamily: 'Nunito_700Bold' },
+  linkText: { fontSize: 14, fontFamily: 'Manrope_700Bold' },
 });

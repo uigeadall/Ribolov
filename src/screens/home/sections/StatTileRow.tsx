@@ -70,7 +70,7 @@ const S = StyleSheet.create({
   },
   action: { borderWidth: 0 },
   num: {
-    fontSize: 26, fontFamily: 'Nunito_800ExtraBold',
+    fontSize: 26, fontFamily: 'Manrope_800ExtraBold',
     letterSpacing: -0.8, lineHeight: 30,
   },
   numUnit: { fontSize: 13, letterSpacing: 0 },

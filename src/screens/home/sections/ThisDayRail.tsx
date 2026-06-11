@@ -42,10 +42,10 @@ export function ThisDayRail({ catches }: Props) {
                     style={StyleSheet.absoluteFillObject}
                   />
                   <View style={{ position: 'absolute', top: 8, left: 8, backgroundColor: accent, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8 }}>
-                    <Text style={{ color: onAccent, fontSize: 9, fontFamily: 'Nunito_700Bold', letterSpacing: 0.3 }} numberOfLines={1}>{ageLabel}</Text>
+                    <Text style={{ color: onAccent, fontSize: 9, fontFamily: 'Manrope_700Bold', letterSpacing: 0.3 }} numberOfLines={1}>{ageLabel}</Text>
                   </View>
                   <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 10 }}>
-                    <Text style={{ color: '#fff', fontSize: 11, fontFamily: 'Nunito_700Bold' }} numberOfLines={1}>{c.speciesName}</Text>
+                    <Text style={{ color: '#fff', fontSize: 11, fontFamily: 'Manrope_700Bold' }} numberOfLines={1}>{c.speciesName}</Text>
                     {c.weightKg != null ? (
                       <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 10 }}>{c.weightKg} кг</Text>
                     ) : null}
@@ -54,10 +54,10 @@ export function ThisDayRail({ catches }: Props) {
               ) : (
                 <View style={ss.catchEmpty}>
                   <View style={{ position: 'absolute', top: 8, left: 8, backgroundColor: accent, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8 }}>
-                    <Text style={{ color: onAccent, fontSize: 9, fontFamily: 'Nunito_700Bold', letterSpacing: 0.3 }} numberOfLines={1}>{ageLabel}</Text>
+                    <Text style={{ color: onAccent, fontSize: 9, fontFamily: 'Manrope_700Bold', letterSpacing: 0.3 }} numberOfLines={1}>{ageLabel}</Text>
                   </View>
                   <Text style={{ fontSize: 28 }}>🐟</Text>
-                  <Text style={{ fontSize: 10, color: textColor, fontFamily: 'Nunito_600SemiBold', textAlign: 'center', marginTop: 4 }} numberOfLines={2}>
+                  <Text style={{ fontSize: 10, color: textColor, fontFamily: 'Manrope_600SemiBold', textAlign: 'center', marginTop: 4 }} numberOfLines={2}>
                     {c.speciesName}
                   </Text>
                 </View>

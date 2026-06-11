@@ -111,11 +111,11 @@ const S = StyleSheet.create({
     height: 120, justifyContent: 'flex-end', padding: spacing.md,
   },
   photoKicker: {
-    fontSize: 10, fontFamily: 'Nunito_700Bold',
+    fontSize: 10, fontFamily: 'Manrope_700Bold',
     color: 'rgba(255,255,255,0.7)', letterSpacing: 0.8, textTransform: 'uppercase',
   },
   photoTitle: {
-    fontSize: 16, fontFamily: 'Nunito_800ExtraBold',
+    fontSize: 16, fontFamily: 'Manrope_800ExtraBold',
     color: '#fff', marginTop: 2, marginBottom: 8, letterSpacing: -0.3,
   },
   photoActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -124,7 +124,7 @@ const S = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.15)',
     paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
   },
-  likeText: { fontSize: 12, fontFamily: 'Nunito_700Bold', color: '#fff' },
+  likeText: { fontSize: 12, fontFamily: 'Manrope_700Bold', color: '#fff' },
   votePill: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20,
@@ -139,8 +139,8 @@ const S = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
   },
   avatarImg: { width: 44, height: 44 },
-  avatarInitial: { fontSize: 18, fontFamily: 'Nunito_800ExtraBold' },
+  avatarInitial: { fontSize: 18, fontFamily: 'Manrope_800ExtraBold' },
   anglerKicker: { fontSize: 9 },
-  anglerName: { fontSize: 15, fontFamily: 'Nunito_800ExtraBold', letterSpacing: -0.2, marginTop: 1 },
-  anglerMeta: { fontSize: 11, fontFamily: 'Nunito_600SemiBold', marginTop: 1 },
+  anglerName: { fontSize: 15, fontFamily: 'Manrope_800ExtraBold', letterSpacing: -0.2, marginTop: 1 },
+  anglerMeta: { fontSize: 11, fontFamily: 'Manrope_600SemiBold', marginTop: 1 },
 });

@@ -862,7 +862,7 @@ export default function LogbookScreen() {
                 accessibilityLabel="Опитай качването отново"
               >
                 <Ionicons name="cloud-upload-outline" size={13} color={colors.primary} />
-                <Text style={{ fontSize: 11, fontFamily: 'Nunito_700Bold', color: colors.primary }}>
+                <Text style={{ fontSize: 11, fontFamily: 'Manrope_700Bold', color: colors.primary }}>
                   {pendingUploadCount === 1
                     ? '1 улов чака качване'
                     : `${pendingUploadCount} улова чакат качване`}
@@ -1080,7 +1080,7 @@ export default function LogbookScreen() {
               }}>
                 <Ionicons name="fish" size={42} color={colors.primary} />
               </View>
-              <Text style={{ fontSize: 22, fontFamily: 'Nunito_800ExtraBold', color: colors.text, textAlign: 'center', letterSpacing: -0.3 }}>
+              <Text style={{ fontSize: 22, fontFamily: 'Manrope_800ExtraBold', color: colors.text, textAlign: 'center', letterSpacing: -0.3 }}>
                 Запиши първия си улов
               </Text>
               <Text style={{ fontSize: 14, color: colors.textMuted, textAlign: 'center', lineHeight: 20, paddingHorizontal: spacing.md }}>
@@ -1104,7 +1104,7 @@ export default function LogbookScreen() {
               }}
             >
               <Ionicons name="add-circle" size={20} color="#fff" />
-              <Text style={{ color: '#fff', fontFamily: 'Nunito_800ExtraBold', fontSize: 15 }}>Добави улов</Text>
+              <Text style={{ color: '#fff', fontFamily: 'Manrope_800ExtraBold', fontSize: 15 }}>Добави улов</Text>
             </Pressable>
             <View style={{ flexDirection: 'row', justifyContent: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, flexWrap: 'wrap' }}>
               {[
@@ -1120,7 +1120,7 @@ export default function LogbookScreen() {
                   borderWidth: 1, borderColor: colors.border,
                 }}>
                   <Ionicons name={feat.icon} size={12} color={colors.primary} />
-                  <Text style={{ fontSize: 11, fontFamily: 'Nunito_600SemiBold', color: colors.textMuted }}>{feat.label}</Text>
+                  <Text style={{ fontSize: 11, fontFamily: 'Manrope_600SemiBold', color: colors.textMuted }}>{feat.label}</Text>
                 </View>
               ))}
             </View>

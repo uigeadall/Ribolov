@@ -43,14 +43,14 @@ export function RecentCatchesSection({ catches, loading }: Props) {
                     start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
                     style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 80, justifyContent: 'flex-end', padding: 10 }}
                   >
-                    <Text style={{ color: '#fff', fontSize: 11, fontFamily: 'Nunito_700Bold' }} numberOfLines={1}>{c.speciesName}</Text>
+                    <Text style={{ color: '#fff', fontSize: 11, fontFamily: 'Manrope_700Bold' }} numberOfLines={1}>{c.speciesName}</Text>
                     {c.weightKg != null && <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 10 }}>{c.weightKg} кг</Text>}
                   </LinearGradient>
                 </>
               ) : (
                 <View style={ss.catchEmpty}>
                   <Text style={{ fontSize: 28 }}>🐟</Text>
-                  <Text style={{ fontSize: 10, color: textColor, fontFamily: 'Nunito_600SemiBold', textAlign: 'center', marginTop: 4 }} numberOfLines={2}>{c.speciesName}</Text>
+                  <Text style={{ fontSize: 10, color: textColor, fontFamily: 'Manrope_600SemiBold', textAlign: 'center', marginTop: 4 }} numberOfLines={2}>{c.speciesName}</Text>
                 </View>
               )}
             </Pressable>

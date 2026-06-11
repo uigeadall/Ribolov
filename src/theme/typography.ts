@@ -1,17 +1,17 @@
 import { TextStyle } from 'react-native';
 
 export const typography: Record<string, TextStyle> = {
-  h1: { fontSize: 28, fontFamily: 'Nunito_800ExtraBold', letterSpacing: -0.5, lineHeight: 34 },
-  h2: { fontSize: 22, fontFamily: 'Nunito_700Bold', letterSpacing: -0.3, lineHeight: 28 },
-  h3: { fontSize: 17, fontFamily: 'Nunito_600SemiBold', letterSpacing: -0.1, lineHeight: 22 },
-  body: { fontSize: 15, fontFamily: 'Nunito_400Regular', letterSpacing: 0.05, lineHeight: 22 },
-  bodyBold: { fontSize: 15, fontFamily: 'Nunito_600SemiBold', letterSpacing: 0.05, lineHeight: 22 },
-  caption: { fontSize: 13, fontFamily: 'Nunito_400Regular', letterSpacing: 0.1, lineHeight: 18 },
-  small: { fontSize: 12, fontFamily: 'Nunito_400Regular', letterSpacing: 0.12, lineHeight: 16 },
+  h1: { fontSize: 28, fontFamily: 'Manrope_800ExtraBold', letterSpacing: -0.5, lineHeight: 34 },
+  h2: { fontSize: 22, fontFamily: 'Manrope_700Bold', letterSpacing: -0.3, lineHeight: 28 },
+  h3: { fontSize: 17, fontFamily: 'Manrope_600SemiBold', letterSpacing: -0.1, lineHeight: 22 },
+  body: { fontSize: 15, fontFamily: 'Manrope_400Regular', letterSpacing: 0.05, lineHeight: 22 },
+  bodyBold: { fontSize: 15, fontFamily: 'Manrope_600SemiBold', letterSpacing: 0.05, lineHeight: 22 },
+  caption: { fontSize: 13, fontFamily: 'Manrope_400Regular', letterSpacing: 0.1, lineHeight: 18 },
+  small: { fontSize: 12, fontFamily: 'Manrope_400Regular', letterSpacing: 0.12, lineHeight: 16 },
   /** Етикети над секции */
   overline: {
     fontSize: 11,
-    fontFamily: 'Nunito_700Bold',
+    fontFamily: 'Manrope_700Bold',
     letterSpacing: 1.1,
     textTransform: 'uppercase' as const,
   },

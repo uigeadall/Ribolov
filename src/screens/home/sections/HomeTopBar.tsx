@@ -57,11 +57,11 @@ const S = StyleSheet.create({
   brand: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   icons: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   greeting: {
-    fontSize: 30, fontFamily: 'Nunito_800ExtraBold',
+    fontSize: 30, fontFamily: 'Manrope_800ExtraBold',
     letterSpacing: -0.8, lineHeight: 36,
   },
   meta: {
-    fontSize: 13, fontFamily: 'Nunito_600SemiBold',
+    fontSize: 13, fontFamily: 'Manrope_600SemiBold',
     letterSpacing: 0.2, marginTop: 4, textTransform: 'capitalize',
   },
 });

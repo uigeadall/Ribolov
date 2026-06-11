@@ -80,7 +80,7 @@ const styles = StyleSheet.create({
   },
   caption: {
     fontSize: 11,
-    fontFamily: 'Nunito_600SemiBold',
+    fontFamily: 'Manrope_600SemiBold',
     marginTop: 2,
     letterSpacing: 0.2,
   },

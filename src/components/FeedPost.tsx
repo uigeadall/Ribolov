@@ -82,7 +82,7 @@ function feedStyles(colors: AppColors) {
       overflow: 'hidden',
     },
     avatarImg: { width: 40, height: 40 },
-    avatarText: { color: colors.white, fontFamily: 'Nunito_700Bold', fontSize: 15 },
+    avatarText: { color: colors.white, fontFamily: 'Manrope_700Bold', fontSize: 15 },
     headerName: { fontWeight: '700', color: colors.text, fontSize: 15 },
     headerSep: { color: colors.textMuted, fontSize: 14 },
     headerTime: { color: colors.textMuted, fontSize: 14 },
@@ -823,7 +823,7 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                 borderRadius: 10,
               }}
             >
-              <Text style={{ color: '#fff', fontSize: 11, fontFamily: 'Nunito_700Bold' }}>
+              <Text style={{ color: '#fff', fontSize: 11, fontFamily: 'Manrope_700Bold' }}>
                 {currentPhotoIdx + 1}/{carouselPhotos.length}
               </Text>
             </View>

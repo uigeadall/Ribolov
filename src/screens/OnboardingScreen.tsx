@@ -289,7 +289,7 @@ const styles = StyleSheet.create({
   previewBadgeText: {
     color: '#fff',
     fontSize: 10,
-    fontFamily: 'Nunito_700Bold',
+    fontFamily: 'Manrope_700Bold',
   },
   title: {
     ...typography.h1,

@@ -159,7 +159,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.25)',
   },
-  releasedText: { color: '#fff', fontFamily: 'Nunito_700Bold', fontSize: 18, letterSpacing: 1.5 },
+  releasedText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 18, letterSpacing: 1.5 },
   titleBlock: {
     position: 'absolute',
     left: 56,
@@ -169,7 +169,7 @@ const styles = StyleSheet.create({
   },
   species: {
     color: '#fff',
-    fontFamily: 'Nunito_700Bold',
+    fontFamily: 'Manrope_700Bold',
     fontSize: 96,
     lineHeight: 100,
     letterSpacing: -1,
@@ -179,7 +179,7 @@ const styles = StyleSheet.create({
   },
   measure: {
     color: '#FFD700',
-    fontFamily: 'Nunito_700Bold',
+    fontFamily: 'Manrope_700Bold',
     fontSize: 60,
     letterSpacing: 1,
     marginTop: 8,
@@ -193,7 +193,7 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 16,
   },
-  location: { color: '#fff', fontFamily: 'Nunito_700Bold', fontSize: 36, opacity: 0.92 },
+  location: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 36, opacity: 0.92 },
   byline: {
     flexDirection: 'row',
     alignItems: 'center',
