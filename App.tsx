@@ -1,5 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Linking } from 'react-native';
+import { Linking, LogBox } from 'react-native';
+
+// @react-native-firebase's namespaced-API deprecation fires on every launch
+// (via App Check + analytics) until the v22 modular migration — known noise
+// that buries real warnings and covers the tab bar with the LogBox toast.
+LogBox.ignoreLogs([/This method is deprecated.*React Native Firebase/]);
 import * as Updates from 'expo-updates';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { useFonts, Manrope_400Regular, Manrope_500Medium, Manrope_600SemiBold, Manrope_700Bold, Manrope_800ExtraBold } from '@expo-google-fonts/manrope';
