@@ -22,7 +22,7 @@ import { Skeleton } from '../components/Skeleton';
 import { CatchConditionsCard } from '../components/CatchConditionsCard';
 import { CatchLocationCard } from '../components/CatchLocationCard';
 import { useTheme } from '../services/themeContext';
-import { spacing, typography } from '../theme/typography';
+import { radius, spacing, typography } from '../theme/typography';
 import { catchesStore } from '../storage/storage';
 import { requireFirebase } from '../services/firebase';
 import { deleteCatchEverywhere } from '../services/cloudSync';
@@ -147,14 +147,14 @@ export default function CatchDetailScreen() {
     chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
     chip: {
       alignSelf: 'flex-start',
-      paddingHorizontal: spacing.sm + 2,
+      paddingHorizontal: spacing.sm + 4,
       paddingVertical: 4,
-      borderRadius: 8,
+      borderRadius: radius.pill,
       backgroundColor: colors.primarySurface,
       borderWidth: 1,
       borderColor: colors.border,
     },
-    chipText: { ...typography.small, fontWeight: '600', color: colors.primary },
+    chipText: { ...typography.small, fontFamily: 'Manrope_700Bold', color: colors.primary },
     photoTitle: { ...typography.bodyBold, color: colors.text, marginTop: spacing.md, fontSize: 17, lineHeight: 24 },
     notes: { ...typography.body, color: colors.text, marginTop: spacing.md, lineHeight: 22 },
     photo: { width: '100%', borderRadius: 12, marginTop: spacing.md, backgroundColor: colors.surfaceAlt, overflow: 'hidden' },
@@ -387,13 +387,15 @@ export default function CatchDetailScreen() {
 
               {/* Condensed chip row kept only for share-image purposes. */}
               <View style={styles.chipRow}>
-                {item.conditions?.fishingRating != null ? <View style={styles.chip}><Text style={styles.chipText}>{'⭐'.repeat(item.conditions.fishingRating)} риболов</Text></View> : null}
+                {item.conditions?.fishingRating != null ? <View style={styles.chip}><Text style={styles.chipText}>{item.conditions.fishingRating}/5 риболов</Text></View> : null}
                 {item.conditions?.temperatureC != null ? <View style={styles.chip}><Text style={styles.chipText}>{item.conditions.temperatureC}°C</Text></View> : null}
                 {item.conditions?.moonPhaseName ? <View style={styles.chip}><Text style={styles.chipText}>{item.conditions.moonPhaseName}</Text></View> : null}
+                {item.weightKg != null ? <View style={styles.chip}><Text style={styles.chipText}>{item.weightKg} кг</Text></View> : null}
+                {item.released ? <View style={styles.chip}><Text style={[styles.chipText, { color: colors.success }]}>C&R</Text></View> : null}
               </View>
 
               {item.photoTitle ? <Text style={styles.photoTitle}>{item.photoTitle}</Text> : null}
-              <Text style={styles.watermark}>🎣 Риболов</Text>
+              <Text style={styles.watermark}>Риболов</Text>
             </View>
           </ViewShot>
 
