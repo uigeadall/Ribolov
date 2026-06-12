@@ -1281,7 +1281,7 @@ export default function AddCatchScreen() {
                 Препоръчан вид:{' '}
                 <Text style={{ color: colors.primary, fontFamily: 'Manrope_700Bold' }}>{suggestedSpecies}</Text>
               </Text>
-              <Pressable onPress={() => setSuggestedSpecies(null)} hitSlop={8}>
+              <Pressable onPress={() => setSuggestedSpecies(null)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Скрий предложението">
                 <Ionicons name="close-outline" size={15} color={colors.textMuted} />
               </Pressable>
             </Pressable>

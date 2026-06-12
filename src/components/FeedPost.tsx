@@ -1278,12 +1278,12 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                               </Pressable>
                             )}
                             {isMyComment && (
-                              <Pressable onPress={() => social.setEditingComment({ id: c.id, text: c.text })} hitSlop={8}>
+                              <Pressable onPress={() => social.setEditingComment({ id: c.id, text: c.text })} hitSlop={8} accessibilityRole="button" accessibilityLabel="Редактирай коментара">
                                 <Ionicons name="pencil-outline" size={13} color={colors.textMuted} />
                               </Pressable>
                             )}
                             {canDelete && (
-                              <Pressable onPress={() => social.onDeleteComment(c.id)} hitSlop={8}>
+                              <Pressable onPress={() => social.onDeleteComment(c.id)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Изтрий коментара">
                                 <Ionicons name="trash-outline" size={13} color={colors.danger} />
                               </Pressable>
                             )}
@@ -1298,7 +1298,7 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                   <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.primarySurface, borderRadius: radius.sm, paddingHorizontal: spacing.sm, paddingVertical: 4, marginBottom: spacing.xs, gap: spacing.sm }}>
                     <Ionicons name="return-down-forward-outline" size={14} color={colors.primary} />
                     <Text style={{ ...typography.caption, color: colors.primary, flex: 1 }}>Отговор на {social.replyingTo.name}</Text>
-                    <Pressable onPress={() => social.setReplyingTo(null)} hitSlop={8}>
+                    <Pressable onPress={() => social.setReplyingTo(null)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Откажи отговора">
                       <Ionicons name="close-circle" size={16} color={colors.textMuted} />
                     </Pressable>
                   </View>
@@ -1316,7 +1316,7 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
                     autoFocus={quickReplyFocused}
                     onBlur={() => setQuickReplyFocused(false)}
                   />
-                  <Pressable onPress={social.onSendComment} disabled={social.sendBusy || !social.draft.trim()} hitSlop={8}>
+                  <Pressable onPress={social.onSendComment} disabled={social.sendBusy || !social.draft.trim()} hitSlop={8} accessibilityRole="button" accessibilityLabel="Изпрати коментар">
                     {social.sendBusy ? (
                       <ActivityIndicator size="small" color={colors.primary} />
                     ) : (

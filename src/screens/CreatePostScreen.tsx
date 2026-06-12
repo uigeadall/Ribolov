@@ -527,7 +527,7 @@ export default function CreatePostScreen() {
           {photoUri ? (
             <View style={styles.photoWrap}>
               <Image source={{ uri: photoUri }} style={styles.photo} contentFit="cover" />
-              <Pressable onPress={() => setPhotoUri(undefined)} style={styles.photoRemove} hitSlop={8}>
+              <Pressable onPress={() => setPhotoUri(undefined)} style={styles.photoRemove} hitSlop={8} accessibilityRole="button" accessibilityLabel="Премахни снимката">
                 <Ionicons name="close" size={18} color="#fff" />
               </Pressable>
             </View>

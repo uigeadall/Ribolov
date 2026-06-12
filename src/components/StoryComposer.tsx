@@ -633,7 +633,7 @@ export function StoryComposer({ visible, onClose, addStory }: Props) {
               returnKeyType="done"
               onSubmitEditing={() => setLocationOpen(false)}
             />
-            <Pressable hitSlop={8} onPress={() => setLocationOpen(false)}>
+            <Pressable hitSlop={8} onPress={() => setLocationOpen(false)} accessibilityRole="button" accessibilityLabel="Готово">
               <Ionicons name="checkmark" size={20} color="#fff" />
             </Pressable>
           </View>

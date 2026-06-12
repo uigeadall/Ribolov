@@ -381,7 +381,7 @@ export default function StatsScreen() {
     <View style={{ paddingBottom: 44 }}>
       <LinearGradient colors={heroColors} style={StyleSheet.absoluteFillObject} pointerEvents="none" />
       <View style={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 }}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={8} style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+        <Pressable onPress={() => navigation.goBack()} hitSlop={8} accessibilityRole="button" accessibilityLabel="Назад" style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
           <Ionicons name="chevron-back" size={24} color="#fff" />
         </Pressable>
         <Text style={{ fontSize: 26, fontWeight: '800', color: '#fff', letterSpacing: -0.5 }}>{title}</Text>
@@ -445,7 +445,7 @@ export default function StatsScreen() {
       <View style={{ paddingBottom: 44 }}>
         <LinearGradient colors={heroColors} style={StyleSheet.absoluteFillObject} pointerEvents="none" />
         <View style={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 }}>
-          <Pressable onPress={() => navigation.goBack()} hitSlop={8} style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+          <Pressable onPress={() => navigation.goBack()} hitSlop={8} accessibilityRole="button" accessibilityLabel="Назад" style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
             <Ionicons name="chevron-back" size={24} color="#fff" />
           </Pressable>
           <Text style={{ fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.65)', letterSpacing: 1.2, marginBottom: 4 }}>РИБОЛОВНА СТАТИСТИКА</Text>

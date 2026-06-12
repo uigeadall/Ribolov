@@ -531,7 +531,7 @@ export default function CatchDetailScreen() {
               {social.replyingTo && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.primarySurface, borderRadius: 8, paddingHorizontal: spacing.sm, paddingVertical: 4, marginBottom: spacing.xs, gap: spacing.sm }}>
                   <Text style={{ ...typography.caption, color: colors.primary, flex: 1 }}>↩ Отговор на {social.replyingTo.name}</Text>
-                  <Pressable onPress={() => social.setReplyingTo(null)} hitSlop={8}>
+                  <Pressable onPress={() => social.setReplyingTo(null)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Откажи отговора">
                     <Ionicons name="close-circle" size={16} color={colors.textMuted} />
                   </Pressable>
                 </View>
@@ -549,7 +549,7 @@ export default function CatchDetailScreen() {
                   maxLength={2000}
                   editable={!social.sendBusy}
                 />
-                <Pressable onPress={social.onSendComment} disabled={social.sendBusy || !social.draft.trim()} hitSlop={8}>
+                <Pressable onPress={social.onSendComment} disabled={social.sendBusy || !social.draft.trim()} hitSlop={8} accessibilityRole="button" accessibilityLabel="Изпрати коментар">
                   {social.sendBusy
                     ? <ActivityIndicator size="small" color={colors.primary} />
                     : <Ionicons name="send" size={22} color={social.draft.trim() ? colors.primary : colors.textMuted} />}

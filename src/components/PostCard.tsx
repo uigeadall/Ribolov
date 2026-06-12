@@ -756,7 +756,7 @@ function PostCardInner({
                         ) : null}
                       </View>
                       {canDelete ? (
-                        <Pressable onPress={() => onDeleteComment(c.id)} hitSlop={8} style={{ paddingTop: 2 }}>
+                        <Pressable onPress={() => onDeleteComment(c.id)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Изтрий коментара" style={{ paddingTop: 2 }}>
                           <Ionicons name="trash-outline" size={14} color={colors.textMuted} />
                         </Pressable>
                       ) : null}
@@ -772,7 +772,7 @@ function PostCardInner({
                   <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.primarySurface, borderRadius: radius.sm, paddingHorizontal: spacing.sm, paddingVertical: 4, marginTop: spacing.sm, gap: spacing.sm }}>
                     <Ionicons name="return-down-forward-outline" size={14} color={colors.primary} />
                     <Text style={{ ...typography.caption, color: colors.primary, flex: 1 }}>Отговор на {replyingTo.name}</Text>
-                    <Pressable onPress={() => setReplyingTo(null)} hitSlop={8}>
+                    <Pressable onPress={() => setReplyingTo(null)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Откажи отговора">
                       <Ionicons name="close-circle" size={16} color={colors.textMuted} />
                     </Pressable>
                   </View>

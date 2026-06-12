@@ -149,10 +149,10 @@ export default function TripDetailScreen() {
         <Text style={[styles.title, { flex: 1 }]} numberOfLines={1}>{trip.title}</Text>
         {!editing && (
           <>
-            <Pressable onPress={() => setEditing(true)} hitSlop={8} style={{ marginRight: spacing.sm }}>
+            <Pressable onPress={() => setEditing(true)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Редактирай излета" style={{ marginRight: spacing.sm }}>
               <Ionicons name="pencil-outline" size={22} color={colors.primary} />
             </Pressable>
-            <Pressable onPress={confirmDelete} hitSlop={8}>
+            <Pressable onPress={confirmDelete} hitSlop={8} accessibilityRole="button" accessibilityLabel="Изтрий излета">
               <Ionicons name="trash-outline" size={22} color={colors.danger} />
             </Pressable>
           </>

@@ -197,7 +197,7 @@ export function SharePickerModal({ visible, onClose, sharedRef }: Props) {
           <View style={styles.handle} />
           <View style={styles.header}>
             <Text style={styles.title}>Изпрати до приятел</Text>
-            <Pressable onPress={onClose} hitSlop={8}>
+            <Pressable onPress={onClose} hitSlop={8} accessibilityRole="button" accessibilityLabel="Затвори">
               <Ionicons name="close" size={24} color={colors.text} />
             </Pressable>
           </View>

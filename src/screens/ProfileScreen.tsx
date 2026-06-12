@@ -1449,7 +1449,7 @@ export default function ProfileScreen() {
           <View style={styles.panelTitleRow}>
             <Ionicons name="person-circle-outline" size={20} color={colors.primary} />
             <Text style={styles.panelTitle}>Редактирай профил</Text>
-            <Pressable onPress={() => setPubExpanded(false)} hitSlop={8}>
+            <Pressable onPress={() => setPubExpanded(false)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Затвори">
               <Ionicons name="close" size={20} color={colors.textMuted} />
             </Pressable>
           </View>

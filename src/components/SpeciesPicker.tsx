@@ -127,7 +127,7 @@ export function SpeciesPicker({ visible, selectedId, onSelect, onClose }: Props)
           <View style={styles.handle} />
           <View style={styles.headerRow}>
             <Text style={styles.title}>Вид риба</Text>
-            <Pressable onPress={onClose} hitSlop={8}>
+            <Pressable onPress={onClose} hitSlop={8} accessibilityRole="button" accessibilityLabel="Затвори">
               <Ionicons name="close" size={22} color={colors.textMuted} />
             </Pressable>
           </View>

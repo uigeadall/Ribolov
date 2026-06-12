@@ -1126,7 +1126,7 @@ export default function ChatDetailScreen() {
               autoFocus
               clearButtonMode="while-editing"
             />
-            <Pressable onPress={() => { setSearchOpen(false); setSearchTerm(''); }} hitSlop={8}>
+            <Pressable onPress={() => { setSearchOpen(false); setSearchTerm(''); }} hitSlop={8} accessibilityRole="button" accessibilityLabel="Затвори търсенето">
               <Ionicons name="close" size={20} color={colors.textMuted} />
             </Pressable>
           </View>
@@ -1435,7 +1435,7 @@ export default function ChatDetailScreen() {
               <Text style={{ ...typography.caption, color: colors.primary, fontWeight: '700' }}>Редактираш съобщение</Text>
               <Text style={{ ...typography.caption, color: colors.textMuted }} numberOfLines={1}>{editingMsg.text}</Text>
             </View>
-            <Pressable onPress={cancelEdit} hitSlop={8}>
+            <Pressable onPress={cancelEdit} hitSlop={8} accessibilityRole="button" accessibilityLabel="Откажи редакцията">
               <Ionicons name="close" size={20} color={colors.textMuted} />
             </Pressable>
           </View>
@@ -1453,7 +1453,7 @@ export default function ChatDetailScreen() {
                 {messagePreviewText(replyingTo)}
               </Text>
             </View>
-            <Pressable onPress={cancelReply} hitSlop={8}>
+            <Pressable onPress={cancelReply} hitSlop={8} accessibilityRole="button" accessibilityLabel="Откажи отговора">
               <Ionicons name="close" size={20} color={colors.textMuted} />
             </Pressable>
           </View>

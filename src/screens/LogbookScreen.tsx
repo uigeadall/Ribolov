@@ -322,11 +322,11 @@ function LogbookCalendar({ catches, colors, onDayPress, selectedDay, calMonth, s
       refreshControl={<FishingRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}>
-        <Pressable onPress={goToPrev} hitSlop={8} style={{ padding: spacing.sm }}>
+        <Pressable onPress={goToPrev} hitSlop={8} style={{ padding: spacing.sm }} accessibilityRole="button" accessibilityLabel="Предишен месец">
           <Ionicons name="chevron-back" size={22} color={colors.primary} />
         </Pressable>
         <Text style={{ ...typography.h3, color: colors.text, textTransform: 'capitalize' }}>{monthLabel}</Text>
-        <Pressable onPress={goToNext} hitSlop={8} style={{ padding: spacing.sm }}>
+        <Pressable onPress={goToNext} hitSlop={8} style={{ padding: spacing.sm }} accessibilityRole="button" accessibilityLabel="Следващ месец">
           <Ionicons name="chevron-forward" size={22} color={colors.primary} />
         </Pressable>
       </View>
@@ -905,7 +905,7 @@ export default function LogbookScreen() {
               style={{ flex: 1, fontSize: 15, color: colors.text, paddingVertical: 0 }}
             />
             {searchQuery.length > 0 ? (
-              <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
+              <Pressable onPress={() => setSearchQuery('')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Изчисти търсенето">
                 <Ionicons name="close-circle" size={18} color={colors.textMuted} />
               </Pressable>
             ) : null}
@@ -1157,7 +1157,7 @@ export default function LogbookScreen() {
                   <Text style={{ fontSize: 14, fontWeight: '700', color: colors.primary }}>Изчисти</Text>
                 </Pressable>
               ) : null}
-              <Pressable onPress={() => setFiltersOpen(false)} hitSlop={8} style={{ padding: spacing.xs, marginLeft: 4 }}>
+              <Pressable onPress={() => setFiltersOpen(false)} hitSlop={8} style={{ padding: spacing.xs, marginLeft: 4 }} accessibilityRole="button" accessibilityLabel="Затвори филтрите">
                 <Ionicons name="close" size={22} color={colors.text} />
               </Pressable>
             </View>
@@ -1194,7 +1194,7 @@ export default function LogbookScreen() {
                   </View>
                 </Pressable>
                 {(dateFrom || dateTo) ? (
-                  <Pressable onPress={() => { setDateFrom(null); setDateTo(null); }} hitSlop={8} style={{ width: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceAlt, borderRadius: 14, borderWidth: 1, borderColor: colors.border }}>
+                  <Pressable onPress={() => { setDateFrom(null); setDateTo(null); }} hitSlop={8} accessibilityRole="button" accessibilityLabel="Изчисти датите" style={{ width: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceAlt, borderRadius: 14, borderWidth: 1, borderColor: colors.border }}>
                     <Ionicons name="close" size={20} color={colors.primary} />
                   </Pressable>
                 ) : null}

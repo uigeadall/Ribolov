@@ -698,7 +698,7 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
                 <FlyingEmojiView key={fe.id} item={fe} onDone={() => viewer.removeFlyingEmoji(fe.id)} />
               ))}
 
-              <Pressable style={styles.viewerClose} onPress={closeViewer} hitSlop={12}>
+              <Pressable style={styles.viewerClose} onPress={closeViewer} hitSlop={12} accessibilityRole="button" accessibilityLabel="Затвори">
                 <Ionicons name="close-circle" size={32} color="rgba(255,255,255,0.85)" />
               </Pressable>
 
@@ -749,7 +749,7 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
                   <View style={styles.commentsPanel}>
                     <View style={styles.commentsPanelHeader}>
                       <Text style={{ ...typography.bodyBold, color: '#fff' }}>Коментари ({viewer.comments.length})</Text>
-                      <Pressable onPress={() => viewer.setCommentsOpen(false)} hitSlop={8}>
+                      <Pressable onPress={() => viewer.setCommentsOpen(false)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Скрий коментарите">
                         <Ionicons name="chevron-down" size={20} color="rgba(255,255,255,0.5)" />
                       </Pressable>
                     </View>
@@ -767,7 +767,7 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
                               <Text style={{ ...typography.body, color: '#fff', marginTop: 2, lineHeight: 20 }}>{c.text}</Text>
                             </View>
                             {canDelete && (
-                              <Pressable onPress={() => viewer.handleDeleteComment(c.id)} hitSlop={8} style={{ paddingLeft: spacing.sm, paddingTop: 2 }}>
+                              <Pressable onPress={() => viewer.handleDeleteComment(c.id)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Изтрий коментара" style={{ paddingLeft: spacing.sm, paddingTop: 2 }}>
                                 <Ionicons name="trash-outline" size={14} color="rgba(255,80,80,0.65)" />
                               </Pressable>
                             )}
@@ -786,7 +786,7 @@ export function StoriesRow({ onStoriesLoaded }: Props) {
                         returnKeyType="send"
                         onSubmitEditing={viewer.handleSendComment}
                       />
-                      <Pressable onPress={viewer.handleSendComment} disabled={viewer.commentBusy || !viewer.commentDraft.trim()} hitSlop={8}>
+                      <Pressable onPress={viewer.handleSendComment} disabled={viewer.commentBusy || !viewer.commentDraft.trim()} hitSlop={8} accessibilityRole="button" accessibilityLabel="Изпрати коментар">
                         {viewer.commentBusy
                           ? <ActivityIndicator size="small" color="rgba(255,255,255,0.6)" />
                           : <Ionicons name="send" size={22} color={viewer.commentDraft.trim() ? '#fff' : 'rgba(255,255,255,0.25)'} />}

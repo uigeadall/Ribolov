@@ -70,7 +70,7 @@ function CatchGridCell({
   const [imgError, setImgError] = useState(false);
   const showFallback = !item.photoUri || imgError;
   return (
-    <Pressable onPress={onPress} style={styles.gridCell}>
+    <Pressable onPress={onPress} style={styles.gridCell} accessibilityRole="button" accessibilityLabel="Отвори улова">
       {showFallback ? (
         <Ionicons name="fish-outline" size={28} color={colors.textMuted} />
       ) : (

@@ -195,7 +195,7 @@ export function PeopleYouMayKnowRow({ collapseWhenEmpty = true }: Props) {
           const initials = u.displayName.slice(0, 1).toUpperCase();
           return (
             <View key={u.uid} style={styles.tile}>
-              <Pressable onPress={() => onDismiss(u)} style={styles.dismissBtn} hitSlop={8}>
+              <Pressable onPress={() => onDismiss(u)} style={styles.dismissBtn} hitSlop={8} accessibilityRole="button" accessibilityLabel="Скрий предложението">
                 <Ionicons name="close" size={13} color={colors.textMuted} />
               </Pressable>
               <Pressable onPress={() => onPressUser(u)} style={{ alignItems: 'center', width: '100%' }}>

@@ -269,7 +269,7 @@ export function DamPicker({ visible, userCoord, onClose, onSelect }: Props) {
               autoCorrect={false}
             />
             {query.length > 0 ? (
-              <Pressable onPress={() => setQuery('')} hitSlop={8}>
+              <Pressable onPress={() => setQuery('')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Изчисти търсенето">
                 <Ionicons name="close-circle" size={18} color={colors.textMuted} />
               </Pressable>
             ) : null}

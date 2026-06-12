@@ -213,10 +213,10 @@ export default function GearScreen() {
                   <Text style={styles.itemName}>{item.name}</Text>
                   {item.notes ? <Text style={styles.itemNotes}>{item.notes}</Text> : null}
                 </View>
-                <Pressable style={styles.iconBtn} onPress={() => startEdit(item)} hitSlop={8}>
+                <Pressable style={styles.iconBtn} onPress={() => startEdit(item)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Редактирай">
                   <Ionicons name="pencil-outline" size={18} color={colors.primary} />
                 </Pressable>
-                <Pressable style={styles.iconBtn} onPress={() => confirmDelete(item)} hitSlop={8}>
+                <Pressable style={styles.iconBtn} onPress={() => confirmDelete(item)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Изтрий">
                   <Ionicons name="trash-outline" size={18} color={colors.danger} />
                 </Pressable>
               </View>

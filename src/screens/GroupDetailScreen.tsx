@@ -401,7 +401,7 @@ export default function GroupDetailScreen() {
           {item.createdAt ? <Text style={styles.postTime}>{formatPostTime(item.createdAt)}</Text> : null}
         </View>
         {(user && (item.ownerUid === user.uid || isAdmin)) ? (
-          <Pressable onPress={() => handleDeletePost(item)} hitSlop={8}>
+          <Pressable onPress={() => handleDeletePost(item)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Изтрий публикацията">
             <Ionicons name="trash-outline" size={16} color={colors.danger} />
           </Pressable>
         ) : null}
@@ -431,7 +431,7 @@ export default function GroupDetailScreen() {
             ) : null}
           </View>
           {(user && (item.createdBy === user.uid || isAdmin)) ? (
-            <Pressable onPress={() => handleDeleteEvent(item)} hitSlop={8}>
+            <Pressable onPress={() => handleDeleteEvent(item)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Изтрий събитието">
               <Ionicons name="trash-outline" size={16} color={colors.danger} />
             </Pressable>
           ) : null}
@@ -487,7 +487,7 @@ export default function GroupDetailScreen() {
             <Text style={styles.pollQuestion}>{item.question}</Text>
           </View>
           {(user && (item.createdBy === user.uid || isAdmin)) ? (
-            <Pressable onPress={() => handleDeletePoll(item)} hitSlop={8}>
+            <Pressable onPress={() => handleDeletePoll(item)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Изтрий анкетата">
               <Ionicons name="trash-outline" size={16} color={colors.danger} />
             </Pressable>
           ) : null}
@@ -634,7 +634,7 @@ export default function GroupDetailScreen() {
               multiline
               maxLength={2000}
             />
-            <Pressable onPress={handlePost} disabled={posting || !postText.trim()} hitSlop={8}>
+            <Pressable onPress={handlePost} disabled={posting || !postText.trim()} hitSlop={8} accessibilityRole="button" accessibilityLabel="Публикувай">
               {posting ? <ActivityIndicator size="small" color={colors.primary} /> : (
                 <Ionicons name="send" size={24} color={postText.trim() ? colors.primary : colors.textMuted} />
               )}

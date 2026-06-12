@@ -285,7 +285,7 @@ export function ImageViewer({ uri, uris, initialIndex = 0, visible, onClose }: P
       <View style={StyleSheet.absoluteFillObject}>
         <Animated.View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#000', opacity: backdropOpacity }]} />
         <View style={styles.center}>
-          <Pressable style={styles.closeBtn} onPress={onClose} hitSlop={12}>
+          <Pressable style={styles.closeBtn} onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Затвори">
             <Ionicons name="close" size={28} color="#fff" />
           </Pressable>
           {/* Page counter — only shown when there's more than one photo to

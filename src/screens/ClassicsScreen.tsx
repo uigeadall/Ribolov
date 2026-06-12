@@ -415,7 +415,7 @@ export default function ClassicsScreen() {
           {fullScreen && (
             <Image source={{ uri: fullScreen.uri }} style={{ width: SW, height: SH }} contentFit="contain" />
           )}
-          <Pressable style={s.fsClose} onPress={() => setFullScreen(null)} hitSlop={8}>
+          <Pressable style={s.fsClose} onPress={() => setFullScreen(null)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Затвори">
             <Ionicons name="close" size={22} color="#fff" />
           </Pressable>
           {fullScreen && (

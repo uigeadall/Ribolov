@@ -187,7 +187,7 @@ export default function CreateGroupPollScreen() {
                   maxLength={80}
                 />
                 {options.length > 2 ? (
-                  <Pressable style={styles.removeBtn} onPress={() => removeOption(o.id)} hitSlop={6}>
+                  <Pressable style={styles.removeBtn} onPress={() => removeOption(o.id)} hitSlop={6} accessibilityRole="button" accessibilityLabel="Премахни опцията">
                     <Ionicons name="close-circle" size={20} color={colors.textMuted} />
                   </Pressable>
                 ) : null}

@@ -49,7 +49,7 @@ export function TripPickerModal({ visible, trips, selectedTripId, onSelect, onCl
           }}
         >
           <Text style={{ ...typography.h3, color: colors.text }}>Избери излет</Text>
-          <Pressable onPress={onClose} hitSlop={8}>
+          <Pressable onPress={onClose} hitSlop={8} accessibilityRole="button" accessibilityLabel="Затвори">
             <Ionicons name="close" size={24} color={colors.textMuted} />
           </Pressable>
         </View>

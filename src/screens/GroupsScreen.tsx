@@ -86,7 +86,7 @@ export default function GroupsScreen() {
         </Pressable>
         <Text style={styles.title}>Клубове</Text>
         {user && configured ? (
-          <Pressable onPress={() => navigation.navigate('CreateGroup')} hitSlop={8}>
+          <Pressable onPress={() => navigation.navigate('CreateGroup')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Създай клуб">
             <Ionicons name="add-circle-outline" size={26} color={colors.primary} />
           </Pressable>
         ) : null}
