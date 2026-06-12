@@ -43,34 +43,57 @@ import * as Haptics from 'expo-haptics';
 
 function feedStyles(colors: AppColors) {
   return StyleSheet.create({
-    // Outer wrapper — X (Twitter) style two-column layout. The avatar lives
-    // in its own left column (avatarCol) and everything else (header line,
-    // caption, photo, action bar, comments) renders inside the right column
-    // (contentCol). A single hairline divides one post from the next.
+    // Outer wrapper — FishAngler/Facebook-style stacked card: header row
+    // (avatar + name block + ⋯), edge-to-edge media, species pill, caption,
+    // action bar, comments. A single hairline divides one post from the next.
     postWrap: {
       backgroundColor: colors.card,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.border,
-      flexDirection: 'row',
-      paddingHorizontal: 14,
       paddingTop: 12,
       paddingBottom: 4,
-      gap: 12,
-    },
-    avatarCol: {
-      width: 40,
-      alignItems: 'center',
     },
     contentCol: {
-      flex: 1,
       minWidth: 0, // prevents flexbox overflow on long words / URLs
     },
-    // ── Header (one tight line: name · time · more) ──
-    postHeader: {
+    // Horizontal inset for text content — media stays edge-to-edge.
+    padded: {
+      paddingHorizontal: 14,
+    },
+    // ── Header row (avatar + two-line name block + more menu) ──
+    headerRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 4,
-      marginBottom: 2,
+      gap: 10,
+      paddingHorizontal: 14,
+      marginBottom: 6,
+    },
+    headerTextCol: {
+      flex: 1,
+      minWidth: 0,
+    },
+    headerMeta: {
+      color: colors.textMuted,
+      fontSize: 12.5,
+      marginTop: 1,
+    },
+    // ── Species pill — sits under the photo, FishAngler tag style ──
+    speciesPill: {
+      alignSelf: 'flex-start',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor: colors.navy,
+      borderRadius: radius.pill,
+      paddingHorizontal: 12,
+      paddingVertical: 5,
+      marginTop: 10,
+      marginHorizontal: 14,
+    },
+    speciesPillText: {
+      color: colors.onNavy,
+      fontSize: 12,
+      fontFamily: 'Manrope_700Bold',
     },
     avatar: {
       width: 40,
@@ -98,8 +121,11 @@ function feedStyles(colors: AppColors) {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      marginTop: 8,
-      paddingRight: 12,
+      marginTop: 10,
+      paddingTop: 6,
+      paddingHorizontal: 14,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
     },
     actionCell: {
       flexDirection: 'row',
@@ -226,12 +252,9 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
   const { colors, mode } = useTheme();
   const styles = useMemo(() => feedStyles(colors), [colors]);
   const { width: screenWidth } = useWindowDimensions();
-  // Width of the right content column once the avatar (40), gap (12), and
-  // wrapper horizontal padding (14 each side) are deducted. The photo
-  // carousel pages this column width instead of the full screen so the
-  // photo sits inside the X-style two-column layout rather than bleeding
-  // across the avatar gutter.
-  const contentWidth = Math.max(0, screenWidth - 14 - 40 - 12 - 14);
+  // FishAngler-style stacked card: media runs edge-to-edge, so the photo
+  // carousel pages the full screen width.
+  const contentWidth = screenWidth;
   const [commentsOpen, setCommentsOpen] = useState(false);
   // True when commentsOpen was set via the quick-reply stub (so the
   // composer input should autofocus on mount). Reset to false after a
@@ -505,112 +528,66 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
       >
       <View style={styles.postWrap}>
 
-        {/* ── Avatar column (X-style) — sits to the left of everything,
-            tapping it opens the author's profile. The "recent" ring (a
-            primary-coloured halo for catches < 24h old) wraps the avatar
-            so it still reads at a glance. */}
-        <Pressable
-          onPress={() => onPressAuthor(item.ownerUid, displayName)}
-          style={styles.avatarCol}
-          hitSlop={4}
-          accessibilityRole="button"
-          accessibilityLabel={`Профил на ${displayName}`}
-        >
-          <View style={{ position: 'relative' }}>
-            {isRecent && (
-              <View style={{
-                position: 'absolute', top: -3, left: -3,
-                width: 46, height: 46, borderRadius: 23,
-                borderWidth: 2.5, borderColor: colors.primary,
-              }} />
-            )}
-            <View style={styles.avatar}>
-              {avatarUrl ? (
-                <Image
-                  source={{ uri: getImageVariant(avatarUrl, ImageSize.avatar) ?? avatarUrl }}
-                  style={styles.avatarImg}
-                  contentFit="cover"
-                  cachePolicy="memory-disk"
-                  transition={200}
-                  recyclingKey={avatarUrl}
-                />
-              ) : (
-                <Text style={styles.avatarText}>{initials}</Text>
+        {/* ── Header row (FishAngler style) — avatar, bold "Name при Water"
+            line with a muted time line under it, ⋯ menu at the far right.
+            The "recent" ring (a primary-coloured halo for catches < 24h
+            old) wraps the avatar so it still reads at a glance. */}
+        <View style={styles.headerRow}>
+          <Pressable
+            onPress={() => onPressAuthor(item.ownerUid, displayName)}
+            hitSlop={4}
+            accessibilityRole="button"
+            accessibilityLabel={`Профил на ${displayName}`}
+          >
+            <View style={{ position: 'relative' }}>
+              {isRecent && (
+                <View style={{
+                  position: 'absolute', top: -3, left: -3,
+                  width: 46, height: 46, borderRadius: 23,
+                  borderWidth: 2.5, borderColor: colors.primary,
+                }} />
               )}
+              <View style={styles.avatar}>
+                {avatarUrl ? (
+                  <Image
+                    source={{ uri: getImageVariant(avatarUrl, ImageSize.avatar) ?? avatarUrl }}
+                    style={styles.avatarImg}
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                    transition={200}
+                    recyclingKey={avatarUrl}
+                  />
+                ) : (
+                  <Text style={styles.avatarText}>{initials}</Text>
+                )}
+              </View>
             </View>
-          </View>
-        </Pressable>
+          </Pressable>
+          <Pressable
+            onPress={() => onPressAuthor(item.ownerUid, displayName)}
+            style={styles.headerTextCol}
+            hitSlop={4}
+          >
+            <Text style={styles.headerName} numberOfLines={1}>
+              {displayName}
+              {item.location?.name ? <Text style={styles.headerTime}> при </Text> : null}
+              {item.location?.name ?? ''}
+            </Text>
+            <Text style={styles.headerMeta} numberOfLines={1}>{formatTimeAgo(item.date)}</Text>
+          </Pressable>
+          <Pressable
+            onPress={openMoreMenu}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Опции"
+          >
+            <Ionicons name="ellipsis-horizontal" size={18} color={colors.textMuted} />
+          </Pressable>
+        </View>
 
-        {/* ── Right content column — header line, caption, photo, action
-            bar, comments. Everything previously below the old header now
-            renders here. */}
+        {/* ── Content column — media first (FishAngler order), then the
+            species pill, then the caption, then actions + comments. */}
         <View style={styles.contentCol}>
-
-          {/* X-style header — one tight line of text. Bold display name in
-              normal text colour, then muted "· Локация · 2ч" suffix.
-              Location lives next to the time so the header carries all the
-              post metadata. Tap target is the whole line; the ⋯ menu sits
-              at the far right with its own hit area. */}
-          <View style={styles.postHeader}>
-            <Pressable
-              onPress={() => onPressAuthor(item.ownerUid, displayName)}
-              style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 4, minWidth: 0 }}
-              hitSlop={4}
-            >
-              <Text style={styles.headerName} numberOfLines={1}>{displayName}</Text>
-              <Text style={styles.headerSep}>·</Text>
-              {item.location?.name ? (
-                <>
-                  <Text style={styles.headerTime} numberOfLines={1}>{item.location.name}</Text>
-                  <Text style={styles.headerSep}>·</Text>
-                </>
-              ) : null}
-              <Text style={styles.headerTime} numberOfLines={1}>{formatTimeAgo(item.date)}</Text>
-            </Pressable>
-            <Pressable
-              onPress={openMoreMenu}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Опции"
-            >
-              <Ionicons name="ellipsis-horizontal" size={16} color={colors.textMuted} />
-            </Pressable>
-          </View>
-
-          {/* Tweet-text body — X renders post text in default body weight,
-              no colour accents. If the user wrote notes, those are the
-              tweet text. Otherwise we fall back to a natural-language
-              species summary ("Щука · 3 кг · 60 см"). Either way it's
-              normal text weight; no bold colored "headline" treatment.
-              Hashtags and @mentions are tappable inside RichText. */}
-          {item.notes ? (
-            <RichText
-              text={item.notes}
-              style={{ color: colors.text, fontSize: 15, lineHeight: 20, marginTop: 2 }}
-              linkStyle={{ color: colors.primary }}
-              numberOfLines={commentsOpen ? undefined : 6}
-              onPressHashtag={onPressHashtag}
-              onPressMention={onPressMention}
-            />
-          ) : captionBody ? (
-            <Text
-              style={{ color: colors.text, fontSize: 15, lineHeight: 20, marginTop: 2 }}
-              numberOfLines={2}
-            >
-              {captionBody}
-            </Text>
-          ) : null}
-
-          {/* When BOTH notes and species info exist, surface the species
-              summary as a small secondary line under the notes — same
-              treatment as a Twitter "context" label (e.g. "Replying to
-              @x"). Hidden when notes are absent (the captionBody is
-              already the tweet text in that case). */}
-          {item.notes && captionBody ? (
-            <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 4 }} numberOfLines={1}>
-              {captionBody}
-            </Text>
-          ) : null}
 
         {/* ── Media area ──
             Branch order matters and reflects priority:
@@ -630,7 +607,7 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
           // feed video plays at a time. Tap opens the catch detail.
           <View style={{
             marginTop: 8,
-            borderRadius: 18,
+            borderRadius: 0,
             overflow: 'hidden',
             width: contentWidth,
             height: Math.round(contentWidth * (5 / 4)),
@@ -652,7 +629,7 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
           // gaps come from the parent's gap prop on Android/iOS RN ≥0.71.
           <View style={{
             marginTop: 8,
-            borderRadius: 18,
+            borderRadius: 0,
             overflow: 'hidden',
             width: contentWidth,
             height: Math.round(contentWidth * (9 / 16)),
@@ -695,7 +672,7 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
           // bleed. The carousel pages the content column width (not the screen
           // width) so the photo sits inside the right column. marginTop pads
           // off the caption above.
-          <View style={{ marginTop: 8, borderRadius: 18, overflow: 'hidden' }}>
+          <View style={{ marginTop: 8, overflow: 'hidden' }}>
             <ScrollView
               horizontal
               pagingEnabled
@@ -832,7 +809,7 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
           // Single-photo case — same X-style rounded media block as the
           // carousel branch. marginTop pads off the caption above; overflow
           // hidden clips the image content to the 18px corners.
-          <Pressable onPress={handlePhotoPress} style={{ marginTop: 8, borderRadius: 18, overflow: 'hidden' }}>
+          <Pressable onPress={handlePhotoPress} style={{ marginTop: 8, overflow: 'hidden' }}>
             <View style={{ width: '100%', height: photoHeight, backgroundColor: colors.surfaceAlt }}>
               {imageError || photoLooksLocal ? (
                 // Fallback for unreachable URIs (failed upload, expired URL, etc.).
@@ -981,6 +958,31 @@ function FeedPostInner({ item, myUid, myDisplayName, myPhotoUrl, resolvedAvatarU
               render here — keeps text-only posts compact. */
           null
         )}
+
+        {/* ── Species tag pill — FishAngler's signature element: the catch
+            summary as a navy pill right under the photo. Text-only posts
+            keep it too (it's the only species surface then). */}
+        {captionBody ? (
+          <View style={styles.speciesPill}>
+            <Ionicons name="fish" size={13} color={colors.onNavy} />
+            <Text style={styles.speciesPillText} numberOfLines={1}>{captionBody}</Text>
+          </View>
+        ) : null}
+
+        {/* Caption — the user's own words, under the species tag. Hashtags
+            and @mentions stay tappable inside RichText. */}
+        {item.notes ? (
+          <View style={[styles.padded, { marginTop: captionBody ? 8 : 10 }]}>
+            <RichText
+              text={item.notes}
+              style={{ color: colors.text, fontSize: 15, lineHeight: 20 }}
+              linkStyle={{ color: colors.primary }}
+              numberOfLines={commentsOpen ? undefined : 6}
+              onPressHashtag={onPressHashtag}
+              onPressMention={onPressMention}
+            />
+          </View>
+        ) : null}
 
         {/* Lazy-mount: ImageViewer constructs 5 Animated.Values + a PanResponder
             on mount. Without this guard every FeedPost in the list paid for a
