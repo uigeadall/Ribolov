@@ -25,6 +25,7 @@ import { FeedPost, FeedItem } from '../components/FeedPost';
 import { PeekPreview } from '../components/PeekPreview';
 import { PostCard } from '../components/PostCard';
 import { PeopleYouMayKnowRow } from '../components/PeopleYouMayKnowRow';
+import { FeedConditionsStrip } from '../components/FeedConditionsStrip';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { spacing, typography } from '../theme/typography';
@@ -1224,7 +1225,7 @@ export default function FeedScreen() {
           fontSize: 20, fontWeight: '800', color: colors.text,
           flex: 1, letterSpacing: -0.3,
         }}>
-          Начало
+          Риболов
         </Text>
         <Pressable
           onPress={() => navigation.navigate('Notifications')}
@@ -1458,6 +1459,7 @@ export default function FeedScreen() {
     if (items.length === 0) {
       return (
         <View style={{ flex: 1, paddingTop: headerHeight }}>
+          <FeedConditionsStrip />
           {/* Suggested anglers — most useful first-time content. Collapses
               when there's nobody to suggest either (e.g. brand-new account
               before the suggestion engine has scored candidates), so the
@@ -1531,7 +1533,13 @@ export default function FeedScreen() {
               </View>
             ) : null
           }
-          ListHeaderComponent={<PeopleYouMayKnowRow />}
+          ListHeaderComponent={
+            <>
+              {/* Daily conditions — the sole survivor of the old Home tab. */}
+              <FeedConditionsStrip />
+              <PeopleYouMayKnowRow />
+            </>
+          }
           ListFooterComponent={
             loadingMore ? (
               <FeedSkeleton />

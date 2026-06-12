@@ -4,9 +4,10 @@ import { useTheme } from '../services/themeContext';
 import { radius, spacing } from '../theme/typography';
 import type { WeatherSnapshot } from '../services/weather';
 
-type Window = { key: 'dawn' | 'day' | 'dusk' | 'night'; label: string; range: string; rating: number };
+export type BiteWindow = { key: 'dawn' | 'day' | 'dusk' | 'night'; label: string; range: string; rating: number };
+type Window = BiteWindow;
 
-function calcBiteWindows(w: WeatherSnapshot): Window[] {
+export function calcBiteWindows(w: WeatherSnapshot): Window[] {
   const hour = new Date().getHours();
   const base = w.fishingRating;
 

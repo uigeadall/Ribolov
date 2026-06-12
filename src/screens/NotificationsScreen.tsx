@@ -678,7 +678,7 @@ export default function NotificationsScreen() {
     },
     [configured, user?.uid],
     // Cross-screen badge for unreads is powered by `subscribeMyNotifications`
-    // in HomeScreen, not by this listener — so we can safely tear this one
+    // by the tab-bar badge hooks, not by this listener — so we can safely tear this one
     // down whenever the user is on a different screen.
     { pauseInBackground: true, pauseWhenUnfocused: true },
   );

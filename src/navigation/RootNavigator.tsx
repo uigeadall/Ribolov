@@ -28,7 +28,6 @@ import { catchesStore } from '../storage/storage';
 // Eagerly-loaded screens — first-paint path or hot navigation targets.
 // Everything else uses `getComponent` lower down for code-splitting via
 // Metro's lazy-require handling.
-import HomeScreen from '../screens/HomeScreen';
 import LogbookScreen from '../screens/LogbookScreen';
 import AddCatchScreen from '../screens/AddCatchScreen';
 import CatchDetailScreen from '../screens/CatchDetailScreen';
@@ -57,7 +56,6 @@ const wrap = (label: string, Component: React.ComponentType<any>) => (props: any
     </ErrorBoundary>
   );
 
-const HomeScreenWrapped = wrap('Начало', HomeScreen);
 const MapScreenWrapped = wrap('Карта', MapScreen);
 const AuthScreenWrapped = wrap('Вход', AuthScreen);
 const FeedScreenWrapped = wrap('Feed', FeedScreen);
@@ -220,14 +218,21 @@ function TabNavigator() {
     <Tabs.Navigator
       tabBar={(props) => <AppTabBar {...props} />}
       screenOptions={{ headerShown: false }}
+      initialRouteName="FeedTab"
     >
-      <Tabs.Screen name="HomeTab" component={HomeScreenWrapped} options={{ title: 'Начало' }} />
+      {/* Feed-first (Facebook-style): the app opens on the feed; the old
+          Home dashboard is gone — its conditions strip lives atop the feed. */}
       <Tabs.Screen
-        name="LogbookTab"
-        component={LogbookNavigator}
-        options={{ title: 'Дневник' }}
+        name="FeedTab"
+        component={FeedNavigator}
+        options={{ title: 'Лента', tabBarBadge: feedBadge }}
         listeners={({ navigation }) => ({
-          tabPress: (e) => { e.preventDefault(); navigation.navigate('LogbookTab', { screen: 'LogbookList' }); },
+          tabPress: (e) => {
+            e.preventDefault();
+            setFeedBadge(undefined);
+            AsyncStorage.setItem('@ribolov/feedLastVisit', String(Date.now())).catch(() => {});
+            navigation.navigate('FeedTab', { screen: 'FeedList' });
+          },
         })}
       />
       <Tabs.Screen
@@ -247,16 +252,11 @@ function TabNavigator() {
         })}
       />
       <Tabs.Screen
-        name="FeedTab"
-        component={FeedNavigator}
-        options={{ title: 'Лента', tabBarBadge: feedBadge }}
+        name="LogbookTab"
+        component={LogbookNavigator}
+        options={{ title: 'Дневник' }}
         listeners={({ navigation }) => ({
-          tabPress: (e) => {
-            e.preventDefault();
-            setFeedBadge(undefined);
-            AsyncStorage.setItem('@ribolov/feedLastVisit', String(Date.now())).catch(() => {});
-            navigation.navigate('FeedTab', { screen: 'FeedList' });
-          },
+          tabPress: (e) => { e.preventDefault(); navigation.navigate('LogbookTab', { screen: 'LogbookList' }); },
         })}
       />
       <Tabs.Screen

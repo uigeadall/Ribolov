@@ -368,7 +368,7 @@ export default function ChatDetailScreen() {
   // other screen) and re-establishes on return. Without this, opening 5 chats
   // in a session would leave 5×4 listeners alive in the background, each
   // racking up reads on every new message in those convs. Inbox unread state
-  // is handled by separate listeners in HomeScreen / ChatsScreen, so pausing
+  // is handled by separate listeners (tab-bar badge / ChatsScreen), so pausing
   // the per-chat listeners here doesn't affect the global badge.
   useFocusEffect(
     useCallback(() => {

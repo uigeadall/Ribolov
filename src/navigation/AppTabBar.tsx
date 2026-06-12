@@ -10,10 +10,9 @@ import { openComposeSheet } from '../components/composeActions';
 import { spacing } from '../theme/typography';
 
 const TAB_META: Record<string, { label: string; on: keyof typeof Ionicons.glyphMap; off: keyof typeof Ionicons.glyphMap }> = {
-  HomeTab: { label: 'Начало', on: 'home', off: 'home-outline' },
-  LogbookTab: { label: 'Дневник', on: 'book', off: 'book-outline' },
-  MapTab: { label: 'Карта', on: 'map', off: 'map-outline' },
   FeedTab: { label: 'Лента', on: 'newspaper', off: 'newspaper-outline' },
+  MapTab: { label: 'Карта', on: 'map', off: 'map-outline' },
+  LogbookTab: { label: 'Дневник', on: 'book', off: 'book-outline' },
   ProfileTab: { label: 'Профил', on: 'person', off: 'person-outline' },
 };
 
@@ -42,9 +41,9 @@ function AnimatedTabIcon({ focused, color, icon }: { focused: boolean; color: st
 }
 
 /**
- * Плътна navy лента с 6 равни слота: Начало, Дневник, [+], Карта, Лента,
- * Профил. Централният „+" (шартрьоз, повдигнат) отваря compose листа и се
- * показва само при логнат потребител.
+ * Плътна teal лента с 5 равни слота: Лента, Карта, [+], Дневник, Профил.
+ * Централният „+" (бял кръг, повдигнат) отваря compose листа и се показва
+ * само при логнат потребител. С 4 таба плюсът е в геометричния център.
  */
 export function AppTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const { colors } = useTheme();
@@ -67,7 +66,8 @@ export function AppTabBar({ state, descriptors, navigation }: BottomTabBarProps)
     const meta = TAB_META[route.name];
     const { options } = descriptors[route.key];
     const focused = state.index === index;
-    const color = focused ? colors.accent : colors.onNavyMuted;
+    // FishAngler-style solid teal bar: white when active, soft white otherwise.
+    const color = focused ? colors.onNavy : 'rgba(255,255,255,0.6)';
     const badge = options.tabBarBadge;
 
     const onPress = () => {
@@ -94,9 +94,9 @@ export function AppTabBar({ state, descriptors, navigation }: BottomTabBarProps)
           <AnimatedTabIcon focused={focused} color={color} icon={focused ? meta.on : meta.off} />
           {badge != null ? (
             badge === '·' ? (
-              <View style={[styles.dotBadge, { backgroundColor: colors.accent, borderColor: colors.navy }]} />
+              <View style={[styles.dotBadge, { backgroundColor: colors.onNavy, borderColor: colors.accent }]} />
             ) : (
-              <View style={[styles.badge, { backgroundColor: colors.danger, borderColor: colors.navy }]}>
+              <View style={[styles.badge, { backgroundColor: colors.danger, borderColor: colors.accent }]}>
                 <Text style={styles.badgeText}>{String(badge)}</Text>
               </View>
             )
@@ -114,8 +114,8 @@ export function AppTabBar({ state, descriptors, navigation }: BottomTabBarProps)
       style={[
         styles.bar,
         {
-          backgroundColor: colors.navy,
-          borderTopColor: colors.border,
+          backgroundColor: colors.accent,
+          borderTopColor: colors.primaryDark,
           paddingBottom: Math.max(insets.bottom, spacing.sm),
         },
       ]}
@@ -130,11 +130,11 @@ export function AppTabBar({ state, descriptors, navigation }: BottomTabBarProps)
             android_ripple={{ color: `${colors.onAccent}22`, borderless: true, radius: 26 }}
             style={({ pressed }) => [
               styles.compose,
-              { backgroundColor: colors.accent },
+              { backgroundColor: colors.onNavy },
               pressed && Platform.OS === 'ios' && { opacity: 0.85 },
             ]}
           >
-            <Ionicons name="add" size={30} color={colors.onAccent} />
+            <Ionicons name="add" size={30} color={colors.accent} />
           </Pressable>
         </View>
       ) : null}

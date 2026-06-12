@@ -31,9 +31,9 @@ const { width: SW, height: SH } = Dimensions.get('window');
 
 const EMOJIS = ['🎣', '🐟', '🌊', '🌅', '🌧️', '☀️', '🔥', '🤙'];
 
-// Brand story ring (chartreuse → lake-blue) for the unseen-story state —
+// Brand story ring (teal → navy) for the unseen-story state —
 // replaces the old Instagram-style orange/pink ring.
-const IG_GRADIENT: readonly [string, string, ...string[]] = ['#A3C520', '#16729B'];
+const IG_GRADIENT: readonly [string, string, ...string[]] = ['#14B8B8', '#13294B'];
 
 const STORY_RING_OUTER = 68; // outer ring diameter (gradient ring)
 const STORY_RING_GAP = 2.5;   // gap between ring and avatar (theme bg colour)

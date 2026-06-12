@@ -7,7 +7,7 @@ import { subscribeMyNotifications } from '../services/socialFeed';
  * Implementation note — shared subscription.
  *
  * Multiple call sites use this hook concurrently (RootNavigator's tab badge
- * + HomeScreen's hero icons + potentially elsewhere). The naive version of
+ * + the Feed top-bar icons + potentially elsewhere). The naive version of
  * this hook (one `subscribeMyNotifications` per `useEffect` mount) created
  * a distinct Firestore listener per call site, which doubled snapshot reads
  * and billing on every notifications doc update. The module-level cache
