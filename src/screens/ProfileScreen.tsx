@@ -2013,6 +2013,17 @@ export default function ProfileScreen() {
                   <MenuRow dense icon="images-outline" title="Седмични и месечни класации" onPress={() => { setSettingsOpen(false); navigation.navigate('Classics'); }} />
                 </Card>
 
+                {/* ── Наръчник — reference content that previously lived in the
+                    deleted Home tab's quick links. Without these rows the
+                    Species/Gear/Knots/Regulations stack is unreachable. ── */}
+                <Text style={[styles.menuCardTitle, { paddingHorizontal: spacing.sm, paddingTop: spacing.md }]}>Наръчник</Text>
+                <Card style={styles.menuCardWrap}>
+                  <MenuRow dense icon="fish-outline" title="Видове риби" onPress={() => { setSettingsOpen(false); (navigation as any).navigate('Species', { screen: 'SpeciesList' }); }} showDivider />
+                  <MenuRow dense icon="construct-outline" title="Екипировка" onPress={() => { setSettingsOpen(false); (navigation as any).navigate('Species', { screen: 'Gear' }); }} showDivider />
+                  <MenuRow dense icon="git-merge-outline" title="Възли" onPress={() => { setSettingsOpen(false); (navigation as any).navigate('Species', { screen: 'Knots' }); }} showDivider />
+                  <MenuRow dense icon="shield-checkmark-outline" title="Правила и забрани" onPress={() => { setSettingsOpen(false); (navigation as any).navigate('Species', { screen: 'Regulations' }); }} />
+                </Card>
+
                 {/* ── Настройки — preferences / legal / destructive ── */}
                 <Text style={[styles.menuCardTitle, { paddingHorizontal: spacing.sm, paddingTop: spacing.md }]}>Настройки</Text>
                 <Card style={styles.menuCardWrap}>
