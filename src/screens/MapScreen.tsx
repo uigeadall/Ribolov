@@ -862,10 +862,12 @@ export default function MapScreen() {
           </View>
 
           {/* Toggle chips */}
+          {/* Active state is uniformly brand primary — the semantic colors
+              live on the map markers themselves, not in the chrome. */}
           {[
-            { key: 'dams', active: showDams, icon: 'layers-outline' as const, label: 'Язовири', activeColor: '#062D3D', onPress: () => setShowDams((v) => !v) },
-            { key: 'rivers', active: showRivers, icon: 'git-branch-outline' as const, label: 'Реки', activeColor: '#1e6b3d', onPress: () => setShowRivers((v) => !v) },
-            { key: 'favs', active: showFavoritesOnly, icon: 'star' as const, label: 'Любими', activeColor: '#B8860B', onPress: () => setShowFavoritesOnly((v) => !v) },
+            { key: 'dams', active: showDams, icon: 'layers-outline' as const, label: 'Язовири', activeColor: colors.primary, onPress: () => setShowDams((v) => !v) },
+            { key: 'rivers', active: showRivers, icon: 'git-branch-outline' as const, label: 'Реки', activeColor: colors.primary, onPress: () => setShowRivers((v) => !v) },
+            { key: 'favs', active: showFavoritesOnly, icon: 'star' as const, label: 'Любими', activeColor: colors.primary, onPress: () => setShowFavoritesOnly((v) => !v) },
           ].map((chip) => (
             <Pressable
               key={chip.key}
@@ -891,12 +893,12 @@ export default function MapScreen() {
               style={{
                 flexDirection: 'row', alignItems: 'center', gap: 5,
                 paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
-                backgroundColor: showCatchMarkers ? '#E85D04' : (mode === 'dark' ? 'rgba(18,28,36,0.96)' : 'rgba(255,255,255,0.97)'),
+                backgroundColor: showCatchMarkers ? colors.primary : (mode === 'dark' ? 'rgba(18,28,36,0.96)' : 'rgba(255,255,255,0.97)'),
                 shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
                 elevation: 4,
               }}
             >
-              <Text style={{ fontSize: 12 }}>🎣</Text>
+              <Ionicons name="fish-outline" size={13} color={showCatchMarkers ? '#fff' : colors.textMuted} />
               <Text style={{ fontSize: 12, fontFamily: 'Manrope_700Bold', color: showCatchMarkers ? '#fff' : colors.text }}>
                 Мои улови
               </Text>
@@ -909,7 +911,7 @@ export default function MapScreen() {
             style={{
               flexDirection: 'row', alignItems: 'center', gap: 5,
               paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
-              backgroundColor: showHeatmap ? '#C92A2A' : (mode === 'dark' ? 'rgba(18,28,36,0.96)' : 'rgba(255,255,255,0.97)'),
+              backgroundColor: showHeatmap ? colors.primary : (mode === 'dark' ? 'rgba(18,28,36,0.96)' : 'rgba(255,255,255,0.97)'),
               shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
               elevation: 4,
             }}
