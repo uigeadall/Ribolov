@@ -39,97 +39,132 @@ const MONTH_LABELS = ['Яну', 'Фев', 'Мар', 'Апр', 'Май', 'Юни'
 
 const CHART_COLORS = ['#1A7A9C', '#2E9B5A', '#E8A020', '#C93030', '#7B4F9C', '#6E6E6E'];
 
-// ── Chart 1: Animated monthly bar chart (last 6 months) ──────────────────────
-type MonthBar = { label: string; count: number };
+// (The old single-color 6-month MonthlyBarChart was replaced by IntelChart.)
 
-function MonthlyBarChart({ months, maxCount, primaryColor }: {
-  months: MonthBar[];
-  maxCount: number;
+// ── Chart 2: FishAngler "Catches by Species" intel chart ─────────────────────
+type SpeciesSegment = { name: string; count: number; color: string };
+type StackedMonth = { label: string; total: number; parts: { color: string; count: number }[] };
+
+const INTEL_BAR_H = 110;
+
+function IntelChart({ months, segments, total, primaryColor }: {
+  months: StackedMonth[];
+  segments: SpeciesSegment[];
+  total: number;
   primaryColor: string;
 }) {
   const { colors } = useTheme();
-  const { width } = useWindowDimensions();
-  // Account for screen horizontal padding (spacing.lg * 2) + Card padding (spacing.md * 2)
-  const availableWidth = width - spacing.lg * 2 - spacing.md * 2;
-  const barWidth = Math.floor(availableWidth / 6) - 8;
-  const MAX_H = 80;
-
-  // One animated value per bar
-  const animVals = useRef<Animated.Value[]>(months.map(() => new Animated.Value(0))).current;
-
-  useEffect(() => {
-    animVals.forEach((av) => av.setValue(0));
-    const animations = months.map((m, i) => {
-      const targetH = m.count > 0 ? Math.max((m.count / Math.max(maxCount, 1)) * MAX_H, 4) : 0;
-      return Animated.timing(animVals[i], {
-        toValue: targetH,
-        duration: 600,
-        delay: i * 60,
-        useNativeDriver: false,
-      });
-    });
-    Animated.parallel(animations).start();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [months, maxCount]);
+  const [bySpecies, setBySpecies] = useState(true);
+  const maxTotal = Math.max(...months.map((m) => m.total), 1);
 
   return (
     <Card style={{ marginBottom: spacing.md }}>
-      <Text style={{ ...typography.h3, color: colors.text, marginBottom: spacing.md }}>Улови по месеци</Text>
-      <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: MAX_H + 32 }}>
-        {months.map((m, i) => (
-          <View key={i} style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-end' }}>
-            {m.count > 0 && (
-              <Text style={{ fontSize: 9, fontWeight: '700', color: primaryColor, marginBottom: 2 }}>
-                {m.count}
-              </Text>
-            )}
-            <Animated.View
+      <Text style={{ ...typography.h3, color: colors.text }}>Улови по видове</Text>
+
+      {/* Total / Species segmented toggle (FishAngler style) */}
+      <View style={{
+        flexDirection: 'row', backgroundColor: colors.surfaceAlt,
+        borderRadius: radius.pill, padding: 3, marginTop: spacing.sm, marginBottom: spacing.md,
+      }}>
+        {[{ key: false, label: `Общо (${total})` }, { key: true, label: `По видове (${segments.length})` }].map((opt) => {
+          const active = bySpecies === opt.key;
+          return (
+            <Pressable
+              key={String(opt.key)}
+              onPress={() => setBySpecies(opt.key)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
               style={{
-                width: barWidth,
-                height: animVals[i],
-                backgroundColor: primaryColor,
-                borderTopLeftRadius: 3,
-                borderTopRightRadius: 3,
+                flex: 1, alignItems: 'center', paddingVertical: 6,
+                borderRadius: radius.pill,
+                backgroundColor: active ? colors.card : 'transparent',
+                borderWidth: active ? 1 : 0, borderColor: colors.cardEdge,
               }}
-            />
-            <Text style={{ fontSize: 9, color: colors.textMuted, marginTop: 4, textAlign: 'center' }}>{m.label}</Text>
-          </View>
+            >
+              <Text style={{
+                fontSize: 12, fontFamily: active ? 'Manrope_700Bold' : 'Manrope_600SemiBold',
+                color: active ? colors.primary : colors.textMuted,
+              }}>
+                {opt.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {/* 12-month bars — stacked per species or flat primary */}
+      <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: INTEL_BAR_H, gap: 3 }}>
+        {months.map((m, i) => {
+          const h = m.total > 0 ? Math.max((m.total / maxTotal) * INTEL_BAR_H, 4) : 0;
+          return (
+            <View key={i} style={{ flex: 1, height: INTEL_BAR_H, justifyContent: 'flex-end' }}>
+              {m.total > 0 ? (
+                bySpecies ? (
+                  <View style={{ height: h, borderRadius: 3, overflow: 'hidden', justifyContent: 'flex-end' }}>
+                    {m.parts.map((p, j) => (
+                      <View key={j} style={{ flex: p.count, backgroundColor: p.color }} />
+                    ))}
+                  </View>
+                ) : (
+                  <View style={{ height: h, borderRadius: 3, backgroundColor: primaryColor }} />
+                )
+              ) : null}
+            </View>
+          );
+        })}
+      </View>
+      <View style={{ flexDirection: 'row', gap: 3, marginTop: 4 }}>
+        {months.map((m, i) => (
+          <Text key={i} style={{ flex: 1, fontSize: 8, color: colors.textMuted, textAlign: 'center' }} numberOfLines={1}>
+            {m.label}
+          </Text>
         ))}
       </View>
+
+      {/* Legend (species mode only) */}
+      {bySpecies ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md }}>
+          {segments.map((seg, i) => (
+            <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: seg.color }} />
+              <Text style={{ ...typography.small, color: colors.textMuted }} numberOfLines={1}>{seg.name}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
     </Card>
   );
 }
 
-// ── Chart 2: Species stacked horizontal bar + legend ─────────────────────────
-type SpeciesSegment = { name: string; count: number; color: string };
-
-function SpeciesDonutChart({ segments, total }: { segments: SpeciesSegment[]; total: number }) {
+// ── Species rows — FishAngler list under the intel chart ─────────────────────
+function SpeciesCountRows({ segments }: { segments: SpeciesSegment[] }) {
   const { colors } = useTheme();
   return (
-    <Card style={{ marginBottom: spacing.md }}>
-      <Text style={{ ...typography.h3, color: colors.text, marginBottom: spacing.md }}>Разпределение по видове</Text>
-      {/* Stacked bar */}
-      <View style={{ flexDirection: 'row', height: 20, borderRadius: 10, overflow: 'hidden', marginBottom: spacing.md }}>
-        {segments.map((seg, i) => (
-          <View
-            key={i}
-            style={{
-              flex: seg.count / total,
-              backgroundColor: seg.color,
-            }}
-          />
-        ))}
-      </View>
-      {/* Legend */}
-      <View style={{ gap: spacing.sm }}>
-        {segments.map((seg, i) => (
-          <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-            <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: seg.color }} />
-            <Text style={{ ...typography.caption, color: colors.text, flex: 1 }} numberOfLines={1}>{seg.name}</Text>
-            <Text style={{ ...typography.caption, fontWeight: '700', color: seg.color }}>{seg.count}</Text>
+    <Card style={{ marginBottom: spacing.md, paddingVertical: spacing.xs, paddingHorizontal: 0 }}>
+      {segments.map((seg, i) => (
+        <View
+          key={i}
+          style={{
+            flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+            paddingVertical: spacing.sm + 2, paddingHorizontal: spacing.lg,
+            borderBottomWidth: i < segments.length - 1 ? StyleSheet.hairlineWidth : 0,
+            borderBottomColor: colors.border,
+          }}
+        >
+          <View style={{
+            width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
+            backgroundColor: seg.color + '22',
+          }}>
+            <Ionicons name="fish-outline" size={17} color={seg.color} />
           </View>
-        ))}
-      </View>
+          <Text style={{ ...typography.bodyBold, color: colors.text, flex: 1 }} numberOfLines={1}>{seg.name}</Text>
+          <View style={{ backgroundColor: colors.surfaceAlt, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 3 }}>
+            <Text style={{ ...typography.small, color: colors.text, fontFamily: 'Manrope_700Bold' }}>
+              {seg.count} улова
+            </Text>
+          </View>
+        </View>
+      ))}
     </Card>
   );
 }
@@ -274,7 +309,28 @@ export default function StatsScreen() {
     if (otherCount > 0) speciesSegments.push({ name: 'Други', count: otherCount, color: CHART_COLORS[5] });
     const speciesTotal = speciesSegments.reduce((s, seg) => s + seg.count, 0);
 
-    return { totalWeight, avgWeight, released, speciesMap, topSpecies, monthly, maxMonthly, maxSpecies, n: catches.length, calCells, currentStreak, longestStreak, activeDaysThisYear, pbList, monthly6, maxMonthly6, speciesSegments, speciesTotal };
+    // Last 12 months stacked by species (FishAngler "Catches by Species").
+    // Parts follow speciesSegments order so bar colors match the legend.
+    const colorByName = new Map(speciesSegments.map((s) => [s.name, s.color]));
+    const top5Names = new Set(top5.map(([name]) => name));
+    const monthlyStacked = monthly.map((m, idx) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - (11 - idx), 1);
+      const yr = d.getFullYear();
+      const mo = d.getMonth();
+      const perSpecies = new Map<string, number>();
+      catches.forEach((c) => {
+        const cd = new Date(c.date);
+        if (cd.getFullYear() !== yr || cd.getMonth() !== mo) return;
+        const key = top5Names.has(c.speciesName) ? c.speciesName : 'Други';
+        perSpecies.set(key, (perSpecies.get(key) ?? 0) + 1);
+      });
+      const parts = speciesSegments
+        .map((seg) => ({ color: seg.color, count: perSpecies.get(seg.name) ?? 0 }))
+        .filter((p) => p.count > 0);
+      return { label: m.label, total: m.count, parts };
+    });
+
+    return { totalWeight, avgWeight, released, speciesMap, topSpecies, monthly, maxMonthly, maxSpecies, n: catches.length, calCells, currentStreak, longestStreak, activeDaysThisYear, pbList, monthly6, maxMonthly6, speciesSegments, speciesTotal, monthlyStacked };
   }, [catches]);
 
   const styles = useMemo(() => StyleSheet.create({
@@ -416,19 +472,17 @@ export default function StatsScreen() {
         contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}
         refreshControl={<FishingRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
-        {/* Chart 1: Animated monthly bar chart (last 6 months) */}
-        <MonthlyBarChart
-          months={stats!.monthly6}
-          maxCount={stats!.maxMonthly6}
-          primaryColor={colors.primary}
-        />
-
-        {/* Chart 2: Species stacked bar + legend */}
+        {/* Intel chart — 12-month bars, stacked by species, with toggle */}
         {stats!.speciesSegments.length > 0 && (
-          <SpeciesDonutChart
-            segments={stats!.speciesSegments}
-            total={stats!.speciesTotal}
-          />
+          <>
+            <IntelChart
+              months={stats!.monthlyStacked}
+              segments={stats!.speciesSegments}
+              total={stats!.n}
+              primaryColor={colors.primary}
+            />
+            <SpeciesCountRows segments={stats!.speciesSegments} />
+          </>
         )}
 
         {/* Summary numbers */}
