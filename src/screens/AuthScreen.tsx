@@ -19,8 +19,8 @@ import Toast from 'react-native-toast-message';
     Keeps the auth screen visually consistent with the rest of the app. */
 function heroGradient(mode: 'dark' | 'light'): [string, string, string] {
   return mode === 'dark'
-    ? ['#0A1A2B', '#0E2235', '#115B7D']
-    : ['#0E2235', '#16729B', '#1B7FA8'];
+    ? ['#0B1B30', '#0C1929', '#0F2B33']
+    : ['#13294B', '#0F766E', '#14B8B8'];
 }
 
 export default function AuthScreen() {
