@@ -84,6 +84,9 @@ function feedStyles(colors: AppColors) {
       alignItems: 'center',
       gap: 6,
       backgroundColor: colors.navy,
+      // Hairline keeps the navy pill visible on dark cards (navy-on-navy).
+      borderWidth: 1,
+      borderColor: colors.cardEdge,
       borderRadius: radius.pill,
       paddingHorizontal: 12,
       paddingVertical: 5,
