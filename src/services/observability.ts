@@ -14,15 +14,39 @@
  */
 
 let _initialized = false;
-type CrashlyticsMod = typeof import('@react-native-firebase/crashlytics').default;
-let _crashlytics: ReturnType<CrashlyticsMod> | null = null;
 
-function loadCrashlytics(): ReturnType<CrashlyticsMod> | null {
+// Old instance-method shape, preserved by an adapter over RNFB's v22
+// modular surface (the namespaced `crashlytics()` factory is deprecated).
+type CrashlyticsAdapter = {
+  setCrashlyticsCollectionEnabled: (enabled: boolean) => Promise<void>;
+  setUserId: (id: string) => Promise<void>;
+  setAttribute: (key: string, value: string) => Promise<void>;
+  log: (message: string) => void;
+  recordError: (err: Error) => void;
+};
+type CrashlyticsModule = {
+  getCrashlytics: () => unknown;
+  setCrashlyticsCollectionEnabled: (c: unknown, enabled: boolean) => Promise<void>;
+  setUserId: (c: unknown, id: string) => Promise<void>;
+  setAttribute: (c: unknown, key: string, value: string) => Promise<void>;
+  log: (c: unknown, message: string) => void;
+  recordError: (c: unknown, err: Error) => void;
+};
+let _crashlytics: CrashlyticsAdapter | null = null;
+
+function loadCrashlytics(): CrashlyticsAdapter | null {
   if (_crashlytics) return _crashlytics;
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const mod = require('@react-native-firebase/crashlytics').default as CrashlyticsMod;
-    _crashlytics = mod();
+    const mod = require('@react-native-firebase/crashlytics') as CrashlyticsModule;
+    const instance = mod.getCrashlytics();
+    _crashlytics = {
+      setCrashlyticsCollectionEnabled: (enabled) => mod.setCrashlyticsCollectionEnabled(instance, enabled),
+      setUserId: (id) => mod.setUserId(instance, id),
+      setAttribute: (key, value) => mod.setAttribute(instance, key, value),
+      log: (message) => mod.log(instance, message),
+      recordError: (err) => mod.recordError(instance, err),
+    };
     return _crashlytics;
   } catch {
     // Expo Go path or any environment where the native module isn't bound.

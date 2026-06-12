@@ -170,7 +170,7 @@ export default function SpeciesTargetScreen() {
             <Text style={styles.sectionTitle}>Най-добър ден тази седмица</Text>
             <View style={styles.forecastCard}>
               <Text style={styles.dayLabel}>{bestDay.dayLabel} — {bestDay.dateIso}</Text>
-              <StarRatingBar rating={bestDay.fishingRating} color={colors.accent} emptyColor={colors.border} size={16} />
+              <StarRatingBar rating={bestDay.fishingRating} color={colors.warning} emptyColor={colors.border} size={16} />
               <Text style={{ ...typography.caption, color: colors.textMuted, marginTop: 4 }}>
                 {bestDay.maxTempC}°C · {bestDay.precipProbability > 0 ? `💧 ${bestDay.precipProbability}%` : 'без дъжд'} · {bestDay.moonPhaseName}
               </Text>

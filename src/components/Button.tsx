@@ -7,7 +7,6 @@ import {
   ViewStyle,
   StyleProp,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing, typography } from '../theme/typography';
@@ -34,7 +33,7 @@ export function Button({ title, onPress, onLongPress, variant = 'primary', loadi
           ? colors.danger
           : variant === 'ghost'
             ? 'transparent'
-            : 'transparent'; // primary: gradient handles bg
+            : colors.accent;
     const fg =
       variant === 'secondary'
         ? colors.primary
@@ -42,7 +41,7 @@ export function Button({ title, onPress, onLongPress, variant = 'primary', loadi
           ? colors.textMuted
           : variant === 'danger'
             ? colors.white
-            : colors.white;
+            : colors.onAccent;
     const border =
       variant === 'secondary' || variant === 'ghost' ? colors.border : 'transparent';
     return StyleSheet.create({
@@ -66,7 +65,11 @@ export function Button({ title, onPress, onLongPress, variant = 'primary', loadi
 
   const isDisabled = disabled || loading;
   const indicatorColor =
-    variant === 'secondary' || variant === 'ghost' ? colors.primary : colors.white;
+    variant === 'secondary' || variant === 'ghost'
+      ? colors.primary
+      : variant === 'danger'
+        ? colors.white
+        : colors.onAccent;
 
   // Light impact haptic on every button tap. Universal "felt the press"
   // confirmation that doesn't fight with system audio/visual cues. Variant
@@ -85,17 +88,9 @@ export function Button({ title, onPress, onLongPress, variant = 'primary', loadi
       onPress={() => { tapHaptic(); onPress(); }}
       onLongPress={onLongPress}
       disabled={isDisabled}
-      android_ripple={{ color: variant === 'primary' ? 'rgba(255,255,255,0.2)' : `${colors.primary}22` }}
+      android_ripple={{ color: variant === 'primary' ? `${colors.onAccent}22` : `${colors.primary}22` }}
       style={[styles.btn, isDisabled && styles.disabled, style]}
     >
-      {variant === 'primary' && (
-        <LinearGradient
-          colors={[colors.primaryLight, colors.primaryDark]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={StyleSheet.absoluteFillObject}
-        />
-      )}
       {loading ? (
         <ActivityIndicator color={indicatorColor} />
       ) : (

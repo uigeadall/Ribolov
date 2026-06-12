@@ -73,7 +73,6 @@ export type FeedStackParamList = {
 
 
 export type TabsParamList = {
-  HomeTab: undefined;
   LogbookTab: NavigatorScreenParams<LogbookStackParamList>;
   MapTab: { focusDamId?: string; focusRiverId?: string } | undefined;
   FeedTab: NavigatorScreenParams<FeedStackParamList>;

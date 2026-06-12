@@ -326,16 +326,16 @@ export default function SearchScreen() {
       {query2.trim() === '' && recentSearches.length > 0 && (
         <View style={{ paddingHorizontal: spacing.xl, paddingTop: spacing.md }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm }}>
-            <Text style={{ fontSize: 11, fontFamily: 'Nunito_700Bold', color: colors.textMuted, letterSpacing: 0.5 }}>ПОСЛЕДНИ ТЪРСЕНИЯ</Text>
+            <Text style={{ fontSize: 11, fontFamily: 'Manrope_700Bold', color: colors.textMuted, letterSpacing: 0.5 }}>ПОСЛЕДНИ ТЪРСЕНИЯ</Text>
             <Pressable onPress={() => { setRecentSearches([]); AsyncStorage.removeItem('@ribolov/recentSearches').catch(() => {}); }}>
-              <Text style={{ fontSize: 11, fontFamily: 'Nunito_600SemiBold', color: colors.primary }}>Изчисти</Text>
+              <Text style={{ fontSize: 11, fontFamily: 'Manrope_600SemiBold', color: colors.primary }}>Изчисти</Text>
             </Pressable>
           </View>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
             {recentSearches.map((s) => (
               <Pressable key={s} onPress={() => { setQuery2(s); if (tab === 'users') searchUsers(s); }}
                 style={{ backgroundColor: colors.primarySurface, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: colors.cardEdge }}>
-                <Text style={{ fontSize: 12, fontFamily: 'Nunito_600SemiBold', color: colors.primary }}>{s}</Text>
+                <Text style={{ fontSize: 12, fontFamily: 'Manrope_600SemiBold', color: colors.primary }}>{s}</Text>
               </Pressable>
             ))}
           </View>

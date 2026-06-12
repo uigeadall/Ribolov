@@ -190,7 +190,7 @@ export default function InsightsScreen() {
       >
         <Text style={{ ...typography.h2, color: colors.text, marginBottom: spacing.lg }}>Инсайти</Text>
 
-        <Text style={{ ...typography.caption, color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 1.2, fontFamily: 'Nunito_700Bold' }}>
+        <Text style={{ ...typography.caption, color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 1.2, fontFamily: 'Manrope_700Bold' }}>
           Твоят риболовен профил
         </Text>
         <Card style={{ marginTop: spacing.sm }}>

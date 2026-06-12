@@ -1,5 +1,6 @@
-import React, { useMemo } from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, Pressable } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { useRoute, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
@@ -127,6 +128,14 @@ function ArticleSection({ title, subtitle, children, styles }: SectionProps) {
   );
 }
 
+type DetailTab = 'details' | 'gear' | 'season';
+
+const DETAIL_TABS: { key: DetailTab; label: string }[] = [
+  { key: 'details', label: 'Детайли' },
+  { key: 'gear', label: 'Техника' },
+  { key: 'season', label: 'Сезон' },
+];
+
 export default function SpeciesDetailScreen() {
   const route = useRoute<R>();
   const navigation = useAppNavigation();
@@ -134,6 +143,7 @@ export default function SpeciesDetailScreen() {
   const styles = useMemo(() => createDetailStyles(colors, mode), [colors, mode]);
   const sp = speciesList.find((x) => x.id === route.params.id);
   const photo = sp ? speciesPhotos[sp.id] : undefined;
+  const [tab, setTab] = useState<DetailTab>('details');
 
   if (!sp) {
     return (
@@ -186,73 +196,116 @@ export default function SpeciesDetailScreen() {
           </View>
         </Card>
 
-        {sp.minSizeCm != null ? (
-          <Card style={{ marginBottom: spacing.md }}>
-            <View style={styles.infoCardRow}>
-              <View style={styles.infoIconCircle}>
-                <Ionicons name="resize-outline" size={22} color={colors.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.infoCardTitle}>Минимален размер за улов</Text>
-                <Text style={styles.infoCardBody}>
-                  Ориентировъчно <Text style={{ ...typography.bodyBold, color: colors.text }}>{sp.minSizeCm} см</Text> — задължително
-                  потвърди актуалните правила и заповедите за конкретния водообект (ИАРА / платен зонал).
+        {/* FishAngler-style underline tabs — Детайли / Техника / Сезон */}
+        <View style={{
+          flexDirection: 'row',
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: colors.border,
+          marginBottom: spacing.md,
+        }}>
+          {DETAIL_TABS.map((t) => {
+            const active = tab === t.key;
+            return (
+              <Pressable
+                key={t.key}
+                onPress={() => { void Haptics.selectionAsync(); setTab(t.key); }}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: active }}
+                style={{
+                  flex: 1,
+                  alignItems: 'center',
+                  paddingVertical: spacing.sm + 2,
+                  borderBottomWidth: 2,
+                  borderBottomColor: active ? colors.primary : 'transparent',
+                }}
+              >
+                <Text style={{
+                  fontSize: 14,
+                  fontFamily: active ? 'Manrope_700Bold' : 'Manrope_600SemiBold',
+                  color: active ? colors.primary : colors.textMuted,
+                }}>
+                  {t.label}
                 </Text>
-              </View>
-            </View>
-          </Card>
-        ) : null}
+              </Pressable>
+            );
+          })}
+        </View>
 
-        {sp.banPeriod ? (
-          <Card style={[styles.banCard, { marginBottom: spacing.md }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm }}>
-              <Ionicons name="warning-outline" size={22} color={colors.warning} />
-              <Text style={styles.banTitle}>Забранен период</Text>
-            </View>
-            <Text style={styles.infoCardBody}>
-              <Text style={{ ...typography.bodyBold, color: colors.text }}>
-                {sp.banPeriod.from} – {sp.banPeriod.to}
-              </Text>
-              {'\n'}
-              {sp.banPeriod.note}
-            </Text>
-          </Card>
-        ) : null}
+        {tab === 'details' ? (
+          <>
+            {sp.minSizeCm != null ? (
+              <Card style={{ marginBottom: spacing.md }}>
+                <View style={styles.infoCardRow}>
+                  <View style={styles.infoIconCircle}>
+                    <Ionicons name="resize-outline" size={22} color={colors.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.infoCardTitle}>Минимален размер за улов</Text>
+                    <Text style={styles.infoCardBody}>
+                      Ориентировъчно <Text style={{ ...typography.bodyBold, color: colors.text }}>{sp.minSizeCm} см</Text> — задължително
+                      потвърди актуалните правила и заповедите за конкретния водообект (ИАРА / платен зонал).
+                    </Text>
+                  </View>
+                </View>
+              </Card>
+            ) : null}
 
-        <ArticleSection styles={styles} title="Описание">
-          {sp.description}
-        </ArticleSection>
+            {sp.banPeriod ? (
+              <Card style={[styles.banCard, { marginBottom: spacing.md }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm }}>
+                  <Ionicons name="warning-outline" size={22} color={colors.warning} />
+                  <Text style={styles.banTitle}>Забранен период</Text>
+                </View>
+                <Text style={styles.infoCardBody}>
+                  <Text style={{ ...typography.bodyBold, color: colors.text }}>
+                    {sp.banPeriod.from} – {sp.banPeriod.to}
+                  </Text>
+                  {'\n'}
+                  {sp.banPeriod.note}
+                </Text>
+              </Card>
+            ) : null}
 
-        <ArticleSection styles={styles} title="Местообитание">
-          {sp.habitat}
-        </ArticleSection>
+            <ArticleSection styles={styles} title="Описание">
+              {sp.description}
+            </ArticleSection>
 
-        <ArticleSection styles={styles} title="Какъв размер да очакваш" subtitle="На практика в различни водоеми">
-          {sp.typicalSize}
-        </ArticleSection>
+            <ArticleSection styles={styles} title="Местообитание">
+              {sp.habitat}
+            </ArticleSection>
 
-        <ArticleSection styles={styles} title="Биология">
-          {sp.biology}
-        </ArticleSection>
+            <ArticleSection styles={styles} title="Какъв размер да очакваш" subtitle="На практика в различни водоеми">
+              {sp.typicalSize}
+            </ArticleSection>
 
-        <ArticleSection styles={styles} title="Техника на улова">
-          {sp.anglingTips}
-        </ArticleSection>
+            <ArticleSection styles={styles} title="Биология">
+              {sp.biology}
+            </ArticleSection>
+          </>
+        ) : tab === 'gear' ? (
+          <>
+            <ArticleSection styles={styles} title="Техника на улова">
+              {sp.anglingTips}
+            </ArticleSection>
 
-        <ArticleSection styles={styles} title="Примамки и стръвни">
-          {sp.baitsAndLures}
-        </ArticleSection>
+            <ArticleSection styles={styles} title="Примамки и стръвни">
+              {sp.baitsAndLures}
+            </ArticleSection>
+          </>
+        ) : (
+          <>
+            <ArticleSection styles={styles} title="Сезонност">
+              {sp.bestSeason}
+            </ArticleSection>
 
-        <ArticleSection styles={styles} title="Сезонност">
-          {sp.bestSeason}
-        </ArticleSection>
-
-        <Button
-          title="🎯 Таргетирай тази риба"
-          variant="secondary"
-          onPress={() => navigation.navigate('SpeciesTarget', { speciesId: sp.id })}
-          style={{ marginTop: spacing.lg }}
-        />
+            <Button
+              title="Таргетирай тази риба"
+              variant="primary"
+              onPress={() => navigation.navigate('SpeciesTarget', { speciesId: sp.id })}
+              style={{ marginTop: spacing.sm }}
+            />
+          </>
+        )}
       </ScrollView>
     </Screen>
   );

@@ -1,4 +1,4 @@
-/** Цветова система за светла / тъмна тема */
+/** Цветова система за светла / тъмна тема — "Navy & Chartreuse" */
 export type AppColors = {
   background: string;
   surfaceAlt: string;
@@ -14,105 +14,79 @@ export type AppColors = {
   primaryDark: string;
   /** Фон за филтри и chips около primary. */
   primarySurface: string;
+  /**
+   * Шартрьоз — единственият action цвят на марката. САМО за запълване
+   * (бутони, табове, маркери) с `onAccent` мастило върху него — НИКОГА
+   * като текст върху светъл фон (контраст ~2:1).
+   */
   accent: string;
+  /** Мастило върху accent (тъмно нави — ~8:1 върху шартрьоз). */
+  onAccent: string;
+  /** Нави лента — фон за header band и долната навигация. */
+  navy: string;
+  /** Текст/икони върху navy. */
+  onNavy: string;
+  /** Заглушен текст/икони върху navy (неактивни табове и др.). */
+  onNavyMuted: string;
+  /** Неактивни стълбчета в графики (до primary за активните). */
+  chartDim: string;
   white: string;
   overlay: string;
   success: string;
   warning: string;
   danger: string;
-  /** Border colour for glassmorphism cards */
-  glassBorder: string;
-  /** Top-left highlight start for glass card gradient */
-  glassOverlay: string;
 };
 
 export const lightColors: AppColors = {
-  background: '#EBF5FF',
-  surfaceAlt: '#D6EEFF',
+  background: '#F5F7F9',
+  surfaceAlt: '#EBEFF2',
   card: '#FFFFFF',
-  cardEdge: '#C2DDEF',
-  text: '#0A3060',
-  // Darkened from #6AABDC (≈2.3:1 on white) to meet WCAG AA (~4.6:1)
-  textMuted: '#4A7BA5',
-  border: '#BCD8EF',
-  primary: '#1570B8',
-  primaryLight: '#2A8FD4',
-  primaryDark: '#0D559A',
-  primarySurface: '#DFF0FF',
-  accent: '#F5890A',
+  cardEdge: '#DFE5EA',
+  text: '#13294B',
+  textMuted: '#5B6B7E',
+  border: '#E3E8ED',
+  // Teal-700 step — teal as TEXT needs this depth for AA (~4.6:1 on white)
+  primary: '#0F766E',
+  primaryLight: '#14B8B8',
+  primaryDark: '#0B5C5C',
+  primarySurface: '#DFF5F5',
+  accent: '#14B8B8',
+  onAccent: '#13294B',
+  navy: '#13294B',
+  onNavy: '#FFFFFF',
+  onNavyMuted: '#7E93AB',
+  chartDim: '#CBD5DE',
   white: '#FFFFFF',
-  overlay: 'rgba(10, 40, 80, 0.45)',
-  success: '#00A86A',
+  overlay: 'rgba(19, 41, 75, 0.45)',
+  success: '#1E9E6A',
   warning: '#D98C1A',
-  danger: '#C93030',
-  glassBorder: 'rgba(255,255,255,0.65)',
-  glassOverlay: 'rgba(255,255,255,0.88)',
+  danger: '#F05D5E',
 };
 
 export const darkColors: AppColors = {
-  background: '#050C1A',
-  surfaceAlt: '#0A1428',
-  card: '#0E1E35',
-  // Brighter than #1A3050 so card edges are actually visible against `card`.
-  cardEdge: '#23416C',
-  text: '#E4F2FF',
-  // Slightly cooler than light-mode value, ~5:1 against `card` and `background`.
-  textMuted: '#94BFE0',
-  // Brightened from #1C3555 so hairlines actually show up.
-  border: '#26456E',
-  primary: '#4AA8E8',
-  primaryLight: '#6EC0F0',
-  primaryDark: '#2A8FD4',
-  primarySurface: '#0A1E38',
-  accent: '#F5890A',
+  background: '#0C1929',
+  surfaceAlt: '#10202F',
+  card: '#142639',
+  cardEdge: '#273D58',
+  text: '#E9EFF5',
+  textMuted: '#93A7BB',
+  border: '#1F3247',
+  primary: '#3ECFCF',
+  primaryLight: '#6BDCDC',
+  primaryDark: '#22ABAB',
+  primarySurface: '#0F2B33',
+  accent: '#22C9C9',
+  onAccent: '#0C1929',
+  navy: '#0B1B30',
+  onNavy: '#FFFFFF',
+  onNavyMuted: '#7E93AB',
+  chartDim: '#29415D',
   white: '#FFFFFF',
   overlay: 'rgba(0, 0, 0, 0.6)',
-  success: '#00D98E',
-  warning: '#F0A830',
+  success: '#34C98A',
+  warning: '#E8A33A',
   danger: '#FF6B6B',
-  glassBorder: 'rgba(74,168,232,0.22)',
-  glassOverlay: 'rgba(255,255,255,0.055)',
 };
 
 /** Fallback за ErrorBoundary извън ThemeProvider */
 export const lightColorsLegacy = lightColors;
-
-export type AccentTheme = 'ocean' | 'forest' | 'sunset' | 'nordic' | 'midnight';
-
-export const accentPresets: Record<AccentTheme, {
-  label: string;
-  emoji: string;
-  light: Pick<AppColors, 'primary' | 'primaryLight' | 'primaryDark' | 'primarySurface' | 'accent'>;
-  dark: Pick<AppColors, 'primary' | 'primaryLight' | 'primaryDark' | 'primarySurface' | 'accent'>;
-}> = {
-  ocean: {
-    label: 'Океан',
-    emoji: '🌊',
-    light: { primary: '#1570B8', primaryLight: '#2A8FD4', primaryDark: '#0D559A', primarySurface: '#DFF0FF', accent: '#F5890A' },
-    dark:  { primary: '#4AA8E8', primaryLight: '#6EC0F0', primaryDark: '#2A8FD4', primarySurface: '#0A1E38', accent: '#F5890A' },
-  },
-  forest: {
-    label: 'Гора',
-    emoji: '🌲',
-    light: { primary: '#2D6A4F', primaryLight: '#40916C', primaryDark: '#1B4332', primarySurface: '#D8F3DC', accent: '#52B788' },
-    dark:  { primary: '#52B788', primaryLight: '#74C69D', primaryDark: '#40916C', primarySurface: '#081C0E', accent: '#95D5B2' },
-  },
-  sunset: {
-    label: 'Залез',
-    emoji: '🌅',
-    light: { primary: '#C05621', primaryLight: '#DD6B20', primaryDark: '#9C4221', primarySurface: '#FEEBC8', accent: '#D69E2E' },
-    dark:  { primary: '#F6AD55', primaryLight: '#FBD38D', primaryDark: '#ED8936', primarySurface: '#2D1A08', accent: '#ECC94B' },
-  },
-  nordic: {
-    label: 'Нордик',
-    emoji: '❄️',
-    light: { primary: '#2B6CB0', primaryLight: '#3182CE', primaryDark: '#2C5282', primarySurface: '#EBF8FF', accent: '#805AD5' },
-    dark:  { primary: '#63B3ED', primaryLight: '#90CDF4', primaryDark: '#4299E1', primarySurface: '#0A1A2B', accent: '#B794F4' },
-  },
-  midnight: {
-    label: 'Полунощ',
-    emoji: '🌙',
-    light: { primary: '#553C9A', primaryLight: '#6B46C1', primaryDark: '#44337A', primarySurface: '#FAF5FF', accent: '#D53F8C' },
-    dark:  { primary: '#B794F4', primaryLight: '#D6BCFA', primaryDark: '#9F7AEA', primarySurface: '#1A0B2E', accent: '#F687B3' },
-  },
-};

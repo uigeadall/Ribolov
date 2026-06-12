@@ -84,7 +84,7 @@ function ComposerVideoPreview({ uri }: { uri: string }) {
         <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center' }}>
           <Ionicons name="play" size={32} color="#fff" />
         </View>
-        <Text style={{ color: '#fff', fontFamily: 'Nunito_700Bold', fontSize: 14 }}>Видео избрано</Text>
+        <Text style={{ color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 14 }}>Видео избрано</Text>
         <Text style={{ color: MUTED, fontSize: 12 }}>Ще се качи при споделяне</Text>
       </View>
     );
@@ -219,7 +219,7 @@ export function StoryComposer({ visible, onClose, addStory }: Props) {
         topTitle: {
           color: '#fff',
           fontSize: 13,
-          fontFamily: 'Nunito_700Bold',
+          fontFamily: 'Manrope_700Bold',
           letterSpacing: 0.3,
         },
 
@@ -229,12 +229,12 @@ export function StoryComposer({ visible, onClose, addStory }: Props) {
 
         // Empty-state — when no media yet
         emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.xl, gap: 8 },
-        emptyTitle: { fontSize: 22, fontFamily: 'Nunito_800ExtraBold', color: '#fff', textAlign: 'center' },
+        emptyTitle: { fontSize: 22, fontFamily: 'Manrope_800ExtraBold', color: '#fff', textAlign: 'center' },
         emptySub: { fontSize: 13, color: MUTED, textAlign: 'center', marginBottom: spacing.xl },
         pickerCol: { width: '100%', gap: 10, marginTop: spacing.lg },
         pickerRow: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: spacing.md, borderRadius: radius.lg, backgroundColor: SURFACE, borderWidth: 1, borderColor: BORDER },
         pickerIconWrap: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.10)', alignItems: 'center', justifyContent: 'center' },
-        pickerTitle: { color: '#fff', fontFamily: 'Nunito_700Bold', fontSize: 15 },
+        pickerTitle: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 15 },
         pickerSub: { color: MUTED, fontSize: 12, marginTop: 2 },
 
         // Emoji sticker on the canvas. Anchored relative to the topBar so it
@@ -277,7 +277,7 @@ export function StoryComposer({ visible, onClose, addStory }: Props) {
         captionInput: {
           color: '#fff',
           fontSize: 17,
-          fontFamily: 'Nunito_700Bold',
+          fontFamily: 'Manrope_700Bold',
           minHeight: 28,
           textShadowColor: 'rgba(0,0,0,0.55)',
           textShadowOffset: { width: 0, height: 1 },
@@ -290,7 +290,7 @@ export function StoryComposer({ visible, onClose, addStory }: Props) {
         textOnlyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.xl },
         textOnlyInput: {
           color: '#fff',
-          fontFamily: 'Nunito_800ExtraBold',
+          fontFamily: 'Manrope_800ExtraBold',
           fontSize: 32,
           lineHeight: 40,
           textAlign: 'center',
@@ -327,7 +327,7 @@ export function StoryComposer({ visible, onClose, addStory }: Props) {
           borderWidth: 1,
           borderColor: BORDER,
         },
-        chipPillText: { color: '#fff', fontSize: 13, fontFamily: 'Nunito_700Bold', maxWidth: 130 },
+        chipPillText: { color: '#fff', fontSize: 13, fontFamily: 'Manrope_700Bold', maxWidth: 130 },
         iconBtn: {
           width: 38,
           height: 38,
@@ -354,7 +354,7 @@ export function StoryComposer({ visible, onClose, addStory }: Props) {
           elevation: 6,
           overflow: 'hidden',
         },
-        shareBtnText: { color: '#fff', fontFamily: 'Nunito_800ExtraBold', fontSize: 14 },
+        shareBtnText: { color: '#fff', fontFamily: 'Manrope_800ExtraBold', fontSize: 14 },
         // Determinate progress fill that grows from left → right inside the
         // share button while a media upload is in flight. Sits behind the
         // label so the percentage is implicit (visual) rather than text.
@@ -410,7 +410,7 @@ export function StoryComposer({ visible, onClose, addStory }: Props) {
           flex: 1,
           color: '#fff',
           fontSize: 14,
-          fontFamily: 'Nunito_600SemiBold',
+          fontFamily: 'Manrope_600SemiBold',
           paddingVertical: 6,
         },
 
@@ -427,7 +427,7 @@ export function StoryComposer({ visible, onClose, addStory }: Props) {
           justifyContent: 'flex-end',
         },
         accessoryDoneBtn: { paddingHorizontal: 14, paddingVertical: 6 },
-        accessoryDoneText: { color: '#4AA8E8', fontFamily: 'Nunito_800ExtraBold', fontSize: 15 },
+        accessoryDoneText: { color: '#4AA8E8', fontFamily: 'Manrope_800ExtraBold', fontSize: 15 },
       }),
     [insets.top, insets.bottom],
   );
@@ -513,7 +513,7 @@ export function StoryComposer({ visible, onClose, addStory }: Props) {
                   </Pressable>
                   <Pressable style={styles.pickerRow} onPress={() => addStory.setMode('text')}>
                     <View style={styles.pickerIconWrap}>
-                      <Text style={{ color: '#fff', fontSize: 18, fontFamily: 'Nunito_800ExtraBold' }}>Aa</Text>
+                      <Text style={{ color: '#fff', fontSize: 18, fontFamily: 'Manrope_800ExtraBold' }}>Aa</Text>
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.pickerTitle}>Просто текст</Text>

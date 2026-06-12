@@ -73,7 +73,7 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#F59E0B',
+    backgroundColor: '#C77F12',
     paddingVertical: 6,
     alignItems: 'center',
     zIndex: 9999,
@@ -81,7 +81,7 @@ const styles = StyleSheet.create({
   text: {
     color: '#fff',
     fontSize: 12,
-    fontWeight: '600',
+    fontFamily: 'Manrope_600SemiBold',
     textAlign: 'center',
   },
 });

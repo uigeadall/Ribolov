@@ -85,9 +85,8 @@ export default function CreatePostScreen() {
     if (searchTimer.current) clearTimeout(searchTimer.current);
   }, []);
 
-  const heroColors: [string, string, string] = mode === 'dark'
-    ? ['#0A1E38', '#050C1A', '#030810']
-    : ['#2B87CE', '#1570B8', '#0D559A'];
+  // Flat navy hero (tuple kept for the LinearGradient plumbing).
+  const heroColors: [string, string, string] = [colors.navy, colors.navy, colors.navy];
 
   // Detect a @prefix the user is currently typing — only the segment ending at the cursor
   const detectMentionAtCursor = useCallback((value: string, cursor: number) => {

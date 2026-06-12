@@ -80,8 +80,8 @@ export default function HashtagFeedScreen() {
   }, [user, tag, tagFollowed, tagFollowBusy]);
 
   const heroColors: [string, string, string] = mode === 'dark'
-    ? ['#0A1E38', '#050C1A', '#030810']
-    : ['#2B87CE', '#1570B8', '#0D559A'];
+    ? [colors.navy, colors.navy, colors.navy]
+    : [colors.navy, colors.navy, colors.navy];
 
   const load = useCallback(async (silent = false) => {
     if (!configured) { setLoading(false); return; }
@@ -234,7 +234,7 @@ export default function HashtagFeedScreen() {
             }}
           >
             <Text style={{
-              fontFamily: 'Nunito_800ExtraBold',
+              fontFamily: 'Manrope_800ExtraBold',
               fontSize: 12,
               color: tagFollowed ? '#fff' : '#0D559A',
             }}>

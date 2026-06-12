@@ -41,21 +41,21 @@ const SLIDES: Slide[] = [
     icon: 'fish',
     title: 'Добре дошъл в Риболов',
     body: 'Твоят риболовен дневник, общност и карта на водоемите — всичко на едно място.',
-    accent: '#0E4D64',
+    accent: '#14B8B8',
   },
   {
     key: 'logbook',
     icon: 'book',
     title: 'Записвай всеки улов',
     body: 'Вид риба, тегло, снимка, локация и бележки. Всичко се пази на телефона — дори без интернет.',
-    accent: '#1A7A9C',
+    accent: '#0F766E',
   },
   {
     key: 'social',
     icon: 'newspaper',
     title: 'Общност и карта',
     body: 'Виж улови от истински рибари, харесвай и участвай в класирания. Над 300 язовира и реки с прогноза за 7 дни и фаза на луната.',
-    accent: '#2E9B5A',
+    accent: '#1E8E5A',
   },
 ];
 
@@ -289,7 +289,7 @@ const styles = StyleSheet.create({
   previewBadgeText: {
     color: '#fff',
     fontSize: 10,
-    fontFamily: 'Nunito_700Bold',
+    fontFamily: 'Manrope_700Bold',
   },
   title: {
     ...typography.h1,

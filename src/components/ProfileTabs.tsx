@@ -27,7 +27,7 @@ type Props = {
 function createStyles(colors: AppColors) {
   return StyleSheet.create({
     wrap: {
-      backgroundColor: colors.background,
+      backgroundColor: colors.card,
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: colors.border,
       borderBottomWidth: StyleSheet.hairlineWidth,
@@ -35,30 +35,28 @@ function createStyles(colors: AppColors) {
     },
     scrollContent: {
       paddingHorizontal: spacing.md,
-      gap: 4,
-      paddingVertical: spacing.sm,
     },
     tab: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 6,
       paddingHorizontal: spacing.md,
-      paddingVertical: 8,
-      borderRadius: 999,
+      paddingVertical: spacing.sm + 4,
+      borderBottomWidth: 2,
     },
-    tabActive: { backgroundColor: colors.primary },
-    tabInactive: { backgroundColor: 'transparent' },
+    tabActive: { borderBottomColor: colors.primary },
+    tabInactive: { borderBottomColor: 'transparent' },
     label: {
-      ...typography.bodyBold,
       fontSize: 14,
+      fontFamily: 'Manrope_600SemiBold',
     },
-    labelActive: { color: '#fff' },
+    labelActive: { color: colors.primary, fontFamily: 'Manrope_700Bold' },
     labelInactive: { color: colors.textMuted },
   });
 }
 
-/** Horizontal segmented tabs for the profile screens. Active tab is a primary
-    pill, inactive tabs are unstyled muted text + icon. Haptic on change. */
+/** Horizontal underline tabs for the profile screens — same FishAngler tab
+    language as SpeciesDetail. Haptic on change. */
 export function ProfileTabs({ active, onChange, visibility }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -92,7 +90,7 @@ export function ProfileTabs({ active, onChange, visibility }: Props) {
               <Ionicons
                 name={t.icon}
                 size={16}
-                color={isActive ? '#fff' : colors.textMuted}
+                color={isActive ? colors.primary : colors.textMuted}
               />
               <Text style={[styles.label, isActive ? styles.labelActive : styles.labelInactive]}>
                 {t.label}

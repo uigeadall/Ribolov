@@ -19,13 +19,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { ActionSheet } from '../components/ActionSheet';
 import { Card } from '../components/Card';
-import { ComposeFab } from '../components/ComposeFab';
 import { EmptyState } from '../components/EmptyState';
 import { Button } from '../components/Button';
 import { FeedPost, FeedItem } from '../components/FeedPost';
 import { PeekPreview } from '../components/PeekPreview';
 import { PostCard } from '../components/PostCard';
 import { PeopleYouMayKnowRow } from '../components/PeopleYouMayKnowRow';
+import { FeedConditionsStrip } from '../components/FeedConditionsStrip';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
 import { spacing, typography } from '../theme/typography';
@@ -1225,7 +1225,7 @@ export default function FeedScreen() {
           fontSize: 20, fontWeight: '800', color: colors.text,
           flex: 1, letterSpacing: -0.3,
         }}>
-          Начало
+          Риболов
         </Text>
         <Pressable
           onPress={() => navigation.navigate('Notifications')}
@@ -1243,7 +1243,7 @@ export default function FeedScreen() {
             {unreadNotifCount > 0 && (
               <View style={{
                 position: 'absolute', top: -3, right: -5,
-                backgroundColor: '#e53935', borderRadius: 8,
+                backgroundColor: colors.danger, borderRadius: 8,
                 minWidth: 14, height: 14,
                 alignItems: 'center', justifyContent: 'center',
                 paddingHorizontal: 3,
@@ -1459,6 +1459,7 @@ export default function FeedScreen() {
     if (items.length === 0) {
       return (
         <View style={{ flex: 1, paddingTop: headerHeight }}>
+          <FeedConditionsStrip />
           {/* Suggested anglers — most useful first-time content. Collapses
               when there's nobody to suggest either (e.g. brand-new account
               before the suggestion engine has scored candidates), so the
@@ -1532,7 +1533,13 @@ export default function FeedScreen() {
               </View>
             ) : null
           }
-          ListHeaderComponent={<PeopleYouMayKnowRow />}
+          ListHeaderComponent={
+            <>
+              {/* Daily conditions — the sole survivor of the old Home tab. */}
+              <FeedConditionsStrip />
+              <PeopleYouMayKnowRow />
+            </>
+          }
           ListFooterComponent={
             loadingMore ? (
               <FeedSkeleton />
@@ -1665,11 +1672,6 @@ export default function FeedScreen() {
       <View style={{ flex: 1 }}>
         {waveContent}
       </View>
-
-      {/* Compose FAB — shared component (also used on Home + Logbook) so the
-          compose entrypoint feels identical across high-traffic surfaces.
-          Hidden on the empty feed so the empty-state CTA owns the action. */}
-      {!feedIsEmpty ? <ComposeFab /> : null}
 
       {/* Water-body picker. Same component used by MapScreen and
           LeaderboardScreen so the dam/river list + region grouping stays

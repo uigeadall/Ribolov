@@ -38,7 +38,6 @@ import { TrophyShelf } from '../components/TrophyShelf';
 import { FeedPost } from '../components/FeedPost';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
-import { accentPresets, type AccentTheme } from '../theme/palette';
 import { radius, spacing, typography } from '../theme/typography';
 import { shadowCard } from '../theme/shadows';
 import { useAuth, type DeleteAccountCredential } from '../services/authContext';
@@ -144,7 +143,7 @@ export default function ProfileScreen() {
   const navigation = useAppNavigation();
   const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
-  const { colors, mode, toggleMode, accent, setAccent } = useTheme();
+  const { colors, mode, toggleMode } = useTheme();
   const { user, configured, loading: authLoading, signOut, deleteAccount } = useAuth();
 
   // Defensive redirect: if the user lands on Profile while signed out — most
@@ -277,7 +276,6 @@ export default function ProfileScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [profileLoading, setProfileLoading] = useState(false);
   const [pubExpanded, setPubExpanded] = useState(false);
-  const [accentPickerExpanded, setAccentPickerExpanded] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Active tab in the new Facebook-style profile layout.
   const [activeTab, setActiveTab] = useState<ProfileTabKey>('posts');
@@ -617,13 +615,12 @@ export default function ProfileScreen() {
 
   // ── Design tokens ───────────────────────────────────────────────────────────
 
-  const heroGrad: [string, string, string] = mode === 'dark'
-    ? ['#0A1E38', '#050C1A', '#030810']
-    : ['#4EAEE0', '#1E7CC4', '#0D559A'];
+  // Flat navy hero band (tuple kept for the LinearGradient plumbing).
+  const heroGrad: [string, string, string] = [colors.navy, colors.navy, colors.navy];
 
-  const waveColor  = mode === 'dark' ? '#080E1A' : '#F2F8FF';
-  const cardBg     = mode === 'dark' ? '#0E1E35' : '#FFFFFF';
-  const cardBorder = mode === 'dark' ? 'rgba(74,168,232,0.15)' : 'rgba(21,112,184,0.10)';
+  const waveColor  = colors.background;
+  const cardBg     = colors.card;
+  const cardBorder = colors.cardEdge;
 
   // ── Styles ──────────────────────────────────────────────────────────────────
 
@@ -730,7 +727,7 @@ export default function ProfileScreen() {
         heroBarCenter: {
           color: '#fff',
           fontSize: 13,
-          fontFamily: 'Nunito_700Bold',
+          fontFamily: 'Manrope_700Bold',
           letterSpacing: 2.2,
           textTransform: 'uppercase',
           opacity: 0.6,
@@ -765,10 +762,10 @@ export default function ProfileScreen() {
           justifyContent: 'center',
           borderWidth: 2,
           borderColor: 'rgba(255,255,255,0.4)',
-          shadowColor: '#4AA8E8',
+          shadowColor: '#000',
           shadowOffset: { width: 0, height: 0 },
           shadowRadius: 12,
-          shadowOpacity: 0.6,
+          shadowOpacity: 0.3,
           elevation: 10,
           marginBottom: spacing.sm,
         },
@@ -776,7 +773,7 @@ export default function ProfileScreen() {
           width: 100,
           height: 100,
           borderRadius: 50,
-          backgroundColor: '#0D559A',
+          backgroundColor: colors.primaryDark,
           alignItems: 'center',
           justifyContent: 'center',
           overflow: 'hidden',
@@ -786,7 +783,7 @@ export default function ProfileScreen() {
         avatarLetter: {
           color: '#fff',
           fontSize: 38,
-          fontFamily: 'Nunito_800ExtraBold',
+          fontFamily: 'Manrope_800ExtraBold',
         },
         avatarBadge: {
           position: 'absolute',
@@ -804,7 +801,7 @@ export default function ProfileScreen() {
         heroDisplayName: {
           color: '#fff',
           fontSize: 22,
-          fontFamily: 'Nunito_800ExtraBold',
+          fontFamily: 'Manrope_800ExtraBold',
           letterSpacing: -0.4,
           textAlign: 'center',
           marginBottom: 4,
@@ -812,14 +809,14 @@ export default function ProfileScreen() {
         heroCity: {
           color: 'rgba(255,255,255,0.65)',
           fontSize: 12,
-          fontFamily: 'Nunito_600SemiBold',
+          fontFamily: 'Manrope_600SemiBold',
           textAlign: 'center',
           marginBottom: 4,
         },
         heroBio: {
           color: 'rgba(255,255,255,0.55)',
           fontSize: 12,
-          fontFamily: 'Nunito_600SemiBold',
+          fontFamily: 'Manrope_600SemiBold',
           textAlign: 'center',
           lineHeight: 17,
           paddingHorizontal: spacing.xl,
@@ -850,13 +847,13 @@ export default function ProfileScreen() {
         heroStatNum: {
           color: '#fff',
           fontSize: 22,
-          fontFamily: 'Nunito_800ExtraBold',
+          fontFamily: 'Manrope_800ExtraBold',
           letterSpacing: -0.5,
         },
         heroStatLabel: {
           color: 'rgba(255,255,255,0.6)',
           fontSize: 10,
-          fontFamily: 'Nunito_600SemiBold',
+          fontFamily: 'Manrope_600SemiBold',
           marginTop: 2,
         },
 
@@ -882,7 +879,7 @@ export default function ProfileScreen() {
         heroActionBtnText: {
           color: '#fff',
           fontSize: 12,
-          fontFamily: 'Nunito_700Bold',
+          fontFamily: 'Manrope_700Bold',
         },
 
         // ── Hero completion nudge ──
@@ -898,12 +895,12 @@ export default function ProfileScreen() {
         heroNudgeText: {
           color: 'rgba(255,255,255,0.65)',
           fontSize: 11,
-          fontFamily: 'Nunito_600SemiBold',
+          fontFamily: 'Manrope_600SemiBold',
         },
         heroNudgePct: {
           color: '#fff',
           fontSize: 11,
-          fontFamily: 'Nunito_700Bold',
+          fontFamily: 'Manrope_700Bold',
         },
         heroNudgeBarBg: {
           height: 3,
@@ -946,14 +943,14 @@ export default function ProfileScreen() {
         },
         sectionLabel: {
           fontSize: 11,
-          fontFamily: 'Nunito_700Bold',
+          fontFamily: 'Manrope_700Bold',
           letterSpacing: 1.2,
           textTransform: 'uppercase',
           color: colors.textMuted,
         },
         sectionLink: {
           fontSize: 12,
-          fontFamily: 'Nunito_700Bold',
+          fontFamily: 'Manrope_700Bold',
           color: colors.primary,
         },
 
@@ -979,14 +976,14 @@ export default function ProfileScreen() {
         },
         panelTitle: {
           fontSize: 15,
-          fontFamily: 'Nunito_700Bold',
+          fontFamily: 'Manrope_700Bold',
           color: colors.text,
           flex: 1,
           marginLeft: spacing.sm,
         },
         fieldLabel: {
           fontSize: 11,
-          fontFamily: 'Nunito_700Bold',
+          fontFamily: 'Manrope_700Bold',
           color: colors.textMuted,
           marginTop: spacing.sm,
           marginBottom: spacing.xs,
@@ -1002,7 +999,7 @@ export default function ProfileScreen() {
           paddingVertical: Platform.OS === 'ios' ? spacing.sm + 4 : spacing.sm + 2,
           fontSize: 15,
           color: colors.text,
-          fontFamily: 'Nunito_600SemiBold',
+          fontFamily: 'Manrope_600SemiBold',
         },
 
         // ── Cloud warning banner ──
@@ -1052,7 +1049,7 @@ export default function ProfileScreen() {
         },
         tripLabel: {
           fontSize: 9,
-          fontFamily: 'Nunito_700Bold',
+          fontFamily: 'Manrope_700Bold',
           color: 'rgba(255,255,255,0.55)',
           letterSpacing: 1.2,
           textTransform: 'uppercase',
@@ -1060,12 +1057,12 @@ export default function ProfileScreen() {
         },
         tripTitle: {
           fontSize: 14,
-          fontFamily: 'Nunito_800ExtraBold',
+          fontFamily: 'Manrope_800ExtraBold',
           color: '#fff',
         },
         tripDate: {
           fontSize: 11,
-          fontFamily: 'Nunito_600SemiBold',
+          fontFamily: 'Manrope_600SemiBold',
           color: 'rgba(255,255,255,0.6)',
           marginTop: 2,
         },
@@ -1098,11 +1095,11 @@ export default function ProfileScreen() {
         friendAvatarText: {
           color: '#fff',
           fontSize: 22,
-          fontFamily: 'Nunito_800ExtraBold',
+          fontFamily: 'Manrope_800ExtraBold',
         },
         friendName: {
           fontSize: 10,
-          fontFamily: 'Nunito_600SemiBold',
+          fontFamily: 'Manrope_600SemiBold',
           color: colors.text,
           textAlign: 'center',
         },
@@ -1144,12 +1141,12 @@ export default function ProfileScreen() {
         },
         clubName: {
           fontSize: 14,
-          fontFamily: 'Nunito_700Bold',
+          fontFamily: 'Manrope_700Bold',
           color: colors.text,
         },
         clubMeta: {
           fontSize: 11,
-          fontFamily: 'Nunito_600SemiBold',
+          fontFamily: 'Manrope_600SemiBold',
           color: colors.textMuted,
           marginTop: 2,
         },
@@ -1182,7 +1179,7 @@ export default function ProfileScreen() {
         guestTitle: {
           color: '#fff',
           fontSize: 24,
-          fontFamily: 'Nunito_800ExtraBold',
+          fontFamily: 'Manrope_800ExtraBold',
           textAlign: 'center',
           letterSpacing: -0.4,
           marginBottom: spacing.sm,
@@ -1190,7 +1187,7 @@ export default function ProfileScreen() {
         guestSub: {
           color: 'rgba(255,255,255,0.62)',
           fontSize: 14,
-          fontFamily: 'Nunito_600SemiBold',
+          fontFamily: 'Manrope_600SemiBold',
           textAlign: 'center',
           lineHeight: 20,
           paddingHorizontal: spacing.md,
@@ -1200,10 +1197,10 @@ export default function ProfileScreen() {
           borderRadius: 28,
           overflow: 'hidden',
           alignSelf: 'stretch',
-          shadowColor: '#F5890A',
-          shadowOffset: { width: 0, height: 8 },
-          shadowOpacity: 0.5,
-          shadowRadius: 14,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.25,
+          shadowRadius: 10,
           elevation: 8,
         },
         guestBtnInner: {
@@ -1217,7 +1214,7 @@ export default function ProfileScreen() {
         guestBtnText: {
           color: '#fff',
           fontSize: 16,
-          fontFamily: 'Nunito_800ExtraBold',
+          fontFamily: 'Manrope_800ExtraBold',
           letterSpacing: -0.2,
         },
 
@@ -1493,7 +1490,7 @@ export default function ProfileScreen() {
       {/* ── Cloud warning banner ── */}
       {!configured ? (
         <View style={styles.warnBanner}>
-          <Ionicons name="cloud-offline-outline" size={18} color={colors.accent} />
+          <Ionicons name="cloud-offline-outline" size={18} color={colors.warning} />
           <Text style={styles.warnText}>
             Облакът не е активен — настрой Firebase, за да редактираш снимка и онлайн профил.
           </Text>
@@ -1660,13 +1657,13 @@ export default function ProfileScreen() {
                 accessibilityLabel="Следващ излет"
               >
                 <LinearGradient
-                  colors={['#0A1E38', '#0D2240']}
+                  colors={[colors.navy, colors.navy]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={styles.tripGradBg}
                 />
                 <View style={styles.tripIconWrap}>
-                  <Ionicons name="calendar-outline" size={22} color="#fff" />
+                  <Ionicons name="calendar-outline" size={22} color={colors.onAccent} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.tripLabel}>СЛЕДВАЩ ИЗЛЕТ</Text>
@@ -1791,7 +1788,7 @@ export default function ProfileScreen() {
                               style={{
                                 color: '#fff',
                                 fontSize: 44,
-                                fontFamily: 'Nunito_800ExtraBold',
+                                fontFamily: 'Manrope_800ExtraBold',
                               }}
                             >
                               {(f.displayName || '?').slice(0, 1).toUpperCase()}
@@ -1934,70 +1931,6 @@ export default function ProfileScreen() {
 
               <View style={styles.settingsDivider} />
 
-              {/* Accent theme picker */}
-              <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xs }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm }}>
-                  <Ionicons name="color-palette-outline" size={16} color={colors.primary} style={{ marginRight: spacing.xs }} />
-                  <Text style={{ ...typography.bodyBold, fontSize: 14, color: colors.text }}>Цветова тема</Text>
-                  {!accentPickerExpanded ? (
-                    <Text style={{ ...typography.small, color: colors.textMuted, marginLeft: spacing.sm }}>
-                      {accentPresets[accent].emoji} {accentPresets[accent].label}
-                    </Text>
-                  ) : null}
-                  <Pressable onPress={() => { void Haptics.selectionAsync(); setAccentPickerExpanded((v) => !v); }} style={{ marginLeft: 'auto' }} hitSlop={8}>
-                    <Ionicons name={accentPickerExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} />
-                  </Pressable>
-                </View>
-                {accentPickerExpanded ? (
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={{ gap: spacing.sm, flexDirection: 'row', paddingBottom: spacing.sm }}
-                  >
-                    {(Object.keys(accentPresets) as AccentTheme[]).map((key) => {
-                      const preset = accentPresets[key];
-                      const selected = accent === key;
-                      return (
-                        <Pressable
-                          key={key}
-                          onPress={() => { void Haptics.selectionAsync(); setAccent(key); }}
-                          accessibilityRole="button"
-                          accessibilityLabel={preset.label}
-                          accessibilityState={{ selected }}
-                          style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            gap: spacing.xs,
-                            paddingVertical: 8,
-                            paddingHorizontal: 12,
-                            borderRadius: 20,
-                            borderWidth: 1.5,
-                            borderColor: selected ? colors.primary : colors.border,
-                            backgroundColor: selected ? colors.primarySurface : 'transparent',
-                          }}
-                        >
-                          <Text style={{ fontSize: 15 }}>{preset.emoji}</Text>
-                          <Text style={{
-                            ...typography.small,
-                            fontWeight: selected ? '700' : '400',
-                            color: selected ? colors.primary : colors.textMuted,
-                          }}>
-                            {preset.label}
-                          </Text>
-                          {selected ? (
-                            <Ionicons name="checkmark" size={14} color={colors.primary} />
-                          ) : (
-                            <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: preset.light.primary }} />
-                          )}
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
-                ) : null}
-              </View>
-
-              <View style={styles.settingsDivider} />
-
               {/* Menu rows — grouped into 4 logical sections so the previous
                   flat list of 16+ items no longer feels overwhelming. */}
               <View style={{ paddingHorizontal: spacing.xs, paddingVertical: 2, marginHorizontal: spacing.xs }}>
@@ -2078,6 +2011,17 @@ export default function ProfileScreen() {
                   <MenuRow dense icon="trophy-outline" title="Турнири" onPress={() => { setSettingsOpen(false); navigation.navigate('Tournaments'); }} showDivider />
                   <MenuRow dense icon="podium-outline" title="Класирания" onPress={() => { setSettingsOpen(false); navigation.navigate('Leaderboard'); }} showDivider />
                   <MenuRow dense icon="images-outline" title="Седмични и месечни класации" onPress={() => { setSettingsOpen(false); navigation.navigate('Classics'); }} />
+                </Card>
+
+                {/* ── Наръчник — reference content that previously lived in the
+                    deleted Home tab's quick links. Without these rows the
+                    Species/Gear/Knots/Regulations stack is unreachable. ── */}
+                <Text style={[styles.menuCardTitle, { paddingHorizontal: spacing.sm, paddingTop: spacing.md }]}>Наръчник</Text>
+                <Card style={styles.menuCardWrap}>
+                  <MenuRow dense icon="fish-outline" title="Видове риби" onPress={() => { setSettingsOpen(false); (navigation as any).navigate('Species', { screen: 'SpeciesList' }); }} showDivider />
+                  <MenuRow dense icon="construct-outline" title="Екипировка" onPress={() => { setSettingsOpen(false); (navigation as any).navigate('Species', { screen: 'Gear' }); }} showDivider />
+                  <MenuRow dense icon="git-merge-outline" title="Възли" onPress={() => { setSettingsOpen(false); (navigation as any).navigate('Species', { screen: 'Knots' }); }} showDivider />
+                  <MenuRow dense icon="shield-checkmark-outline" title="Правила и забрани" onPress={() => { setSettingsOpen(false); (navigation as any).navigate('Species', { screen: 'Regulations' }); }} />
                 </Card>
 
                 {/* ── Настройки — preferences / legal / destructive ── */}

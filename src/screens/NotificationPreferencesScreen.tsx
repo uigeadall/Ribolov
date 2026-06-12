@@ -148,7 +148,7 @@ export default function NotificationPreferencesScreen() {
         <Pressable onPress={() => navigation.goBack()} hitSlop={12} accessibilityRole="button" accessibilityLabel="Назад">
           <Ionicons name="chevron-back" size={26} color={colors.text} />
         </Pressable>
-        <Text style={{ fontSize: 20, fontFamily: 'Nunito_800ExtraBold', color: colors.text, flex: 1 }}>Известия</Text>
+        <Text style={{ fontSize: 20, fontFamily: 'Manrope_800ExtraBold', color: colors.text, flex: 1 }}>Известия</Text>
         {saving && <ActivityIndicator size="small" color={colors.primary} />}
       </View>
 
@@ -165,7 +165,7 @@ export default function NotificationPreferencesScreen() {
                 as "this is a subset" without taking much vertical space. */}
             <Text style={{
               fontSize: 11,
-              fontFamily: 'Nunito_700Bold',
+              fontFamily: 'Manrope_700Bold',
               letterSpacing: 0.8,
               textTransform: 'uppercase',
               color: colors.textMuted,
@@ -183,14 +183,14 @@ export default function NotificationPreferencesScreen() {
                       <Ionicons name={row.icon as any} size={18} color={colors.primary} />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 14, fontFamily: 'Nunito_700Bold', color: colors.text }}>{row.label}</Text>
-                      <Text style={{ fontSize: 11, fontFamily: 'Nunito_400Regular', color: colors.textMuted, marginTop: 1 }}>{row.sub}</Text>
+                      <Text style={{ fontSize: 14, fontFamily: 'Manrope_700Bold', color: colors.text }}>{row.label}</Text>
+                      <Text style={{ fontSize: 11, fontFamily: 'Manrope_400Regular', color: colors.textMuted, marginTop: 1 }}>{row.sub}</Text>
                     </View>
                     <Switch
                       value={prefs[row.key]}
                       onValueChange={() => void toggle(row.key)}
-                      trackColor={{ false: mode === 'dark' ? '#1A3050' : '#E0E8F0', true: colors.primary + '88' }}
-                      thumbColor={prefs[row.key] ? colors.primary : (mode === 'dark' ? '#3A5070' : '#C0D0E0')}
+                      trackColor={{ false: colors.border, true: colors.primary + '88' }}
+                      thumbColor={prefs[row.key] ? colors.primary : colors.surfaceAlt}
                     />
                   </View>
                 </View>
@@ -207,7 +207,7 @@ export default function NotificationPreferencesScreen() {
         <View style={{ marginBottom: spacing.lg }}>
           <Text style={{
             fontSize: 11,
-            fontFamily: 'Nunito_700Bold',
+            fontFamily: 'Manrope_700Bold',
             letterSpacing: 0.8,
             textTransform: 'uppercase',
             color: colors.textMuted,
@@ -222,16 +222,16 @@ export default function NotificationPreferencesScreen() {
                 <Ionicons name="moon-outline" size={18} color={colors.primary} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 14, fontFamily: 'Nunito_700Bold', color: colors.text }}>Не ме безпокой</Text>
-                <Text style={{ fontSize: 11, fontFamily: 'Nunito_400Regular', color: colors.textMuted, marginTop: 1 }}>
+                <Text style={{ fontSize: 14, fontFamily: 'Manrope_700Bold', color: colors.text }}>Не ме безпокой</Text>
+                <Text style={{ fontSize: 11, fontFamily: 'Manrope_400Regular', color: colors.textMuted, marginTop: 1 }}>
                   Известията остават в приложението, но няма да получаваш push.
                 </Text>
               </View>
               <Switch
                 value={prefs.quietHoursEnabled}
                 onValueChange={(v) => void updatePrefs({ quietHoursEnabled: v })}
-                trackColor={{ false: mode === 'dark' ? '#1A3050' : '#E0E8F0', true: colors.primary + '88' }}
-                thumbColor={prefs.quietHoursEnabled ? colors.primary : (mode === 'dark' ? '#3A5070' : '#C0D0E0')}
+                trackColor={{ false: colors.border, true: colors.primary + '88' }}
+                thumbColor={prefs.quietHoursEnabled ? colors.primary : colors.surfaceAlt}
               />
             </View>
             {prefs.quietHoursEnabled ? (
@@ -239,25 +239,25 @@ export default function NotificationPreferencesScreen() {
                 <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: cardBorder, marginLeft: 54 }} />
                 <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: 14, gap: 12 }}>
                   <View style={{ width: 34, height: 34 }} />
-                  <Text style={{ flex: 1, fontSize: 14, fontFamily: 'Nunito_600SemiBold', color: colors.text }}>Начало</Text>
+                  <Text style={{ flex: 1, fontSize: 14, fontFamily: 'Manrope_600SemiBold', color: colors.text }}>Начало</Text>
                   <Pressable
                     onPress={() => setPickingHour('start')}
                     hitSlop={8}
                     style={{ paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: 8, backgroundColor: colors.primarySurface }}
                   >
-                    <Text style={{ fontSize: 14, fontFamily: 'Nunito_700Bold', color: colors.primary }}>{formatHour(prefs.quietHoursStart)}</Text>
+                    <Text style={{ fontSize: 14, fontFamily: 'Manrope_700Bold', color: colors.primary }}>{formatHour(prefs.quietHoursStart)}</Text>
                   </Pressable>
                 </View>
                 <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: cardBorder, marginLeft: 54 }} />
                 <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: 14, gap: 12 }}>
                   <View style={{ width: 34, height: 34 }} />
-                  <Text style={{ flex: 1, fontSize: 14, fontFamily: 'Nunito_600SemiBold', color: colors.text }}>Край</Text>
+                  <Text style={{ flex: 1, fontSize: 14, fontFamily: 'Manrope_600SemiBold', color: colors.text }}>Край</Text>
                   <Pressable
                     onPress={() => setPickingHour('end')}
                     hitSlop={8}
                     style={{ paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: 8, backgroundColor: colors.primarySurface }}
                   >
-                    <Text style={{ fontSize: 14, fontFamily: 'Nunito_700Bold', color: colors.primary }}>{formatHour(prefs.quietHoursEnd)}</Text>
+                    <Text style={{ fontSize: 14, fontFamily: 'Manrope_700Bold', color: colors.primary }}>{formatHour(prefs.quietHoursEnd)}</Text>
                   </Pressable>
                 </View>
               </>
@@ -298,7 +298,7 @@ export default function NotificationPreferencesScreen() {
             onPress={() => setPickingHour(null)}
             style={{ marginHorizontal: spacing.xl, marginTop: spacing.sm, paddingVertical: 12, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center' }}
           >
-            <Text style={{ fontSize: 15, fontFamily: 'Nunito_700Bold', color: '#fff' }}>Готово</Text>
+            <Text style={{ fontSize: 15, fontFamily: 'Manrope_700Bold', color: '#fff' }}>Готово</Text>
           </Pressable>
         ) : null}
         </>

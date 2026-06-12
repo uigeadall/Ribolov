@@ -818,7 +818,7 @@ export default function MapScreen() {
         }}>
           <Ionicons name="search" size={18} color={colors.textMuted} />
           <Pressable style={{ flex: 1 }} onPress={() => setPickerOpen(true)}>
-            <Text style={{ fontSize: 15, color: colors.textMuted, fontFamily: 'Nunito_600SemiBold' }}>
+            <Text style={{ fontSize: 15, color: colors.textMuted, fontFamily: 'Manrope_600SemiBold' }}>
               Търси язовир или река…
             </Text>
           </Pressable>
@@ -854,7 +854,7 @@ export default function MapScreen() {
                   backgroundColor: mapType === type ? colors.primary : 'transparent',
                 }}
               >
-                <Text style={{ fontSize: 12, fontFamily: 'Nunito_700Bold', color: mapType === type ? '#fff' : colors.textMuted }}>
+                <Text style={{ fontSize: 12, fontFamily: 'Manrope_700Bold', color: mapType === type ? '#fff' : colors.textMuted }}>
                   {(['Карта', 'Сателит', 'Хибрид'])[idx]}
                 </Text>
               </Pressable>
@@ -862,10 +862,12 @@ export default function MapScreen() {
           </View>
 
           {/* Toggle chips */}
+          {/* Active state is uniformly brand primary — the semantic colors
+              live on the map markers themselves, not in the chrome. */}
           {[
-            { key: 'dams', active: showDams, icon: 'layers-outline' as const, label: 'Язовири', activeColor: '#062D3D', onPress: () => setShowDams((v) => !v) },
-            { key: 'rivers', active: showRivers, icon: 'git-branch-outline' as const, label: 'Реки', activeColor: '#1e6b3d', onPress: () => setShowRivers((v) => !v) },
-            { key: 'favs', active: showFavoritesOnly, icon: 'star' as const, label: 'Любими', activeColor: '#B8860B', onPress: () => setShowFavoritesOnly((v) => !v) },
+            { key: 'dams', active: showDams, icon: 'layers-outline' as const, label: 'Язовири', activeColor: colors.primary, onPress: () => setShowDams((v) => !v) },
+            { key: 'rivers', active: showRivers, icon: 'git-branch-outline' as const, label: 'Реки', activeColor: colors.primary, onPress: () => setShowRivers((v) => !v) },
+            { key: 'favs', active: showFavoritesOnly, icon: 'star' as const, label: 'Любими', activeColor: colors.primary, onPress: () => setShowFavoritesOnly((v) => !v) },
           ].map((chip) => (
             <Pressable
               key={chip.key}
@@ -879,7 +881,7 @@ export default function MapScreen() {
               }}
             >
               <Ionicons name={chip.icon} size={13} color={chip.active ? '#fff' : colors.textMuted} />
-              <Text style={{ fontSize: 12, fontFamily: 'Nunito_700Bold', color: chip.active ? '#fff' : colors.text }}>
+              <Text style={{ fontSize: 12, fontFamily: 'Manrope_700Bold', color: chip.active ? '#fff' : colors.text }}>
                 {chip.label}
               </Text>
             </Pressable>
@@ -891,13 +893,13 @@ export default function MapScreen() {
               style={{
                 flexDirection: 'row', alignItems: 'center', gap: 5,
                 paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
-                backgroundColor: showCatchMarkers ? '#E85D04' : (mode === 'dark' ? 'rgba(18,28,36,0.96)' : 'rgba(255,255,255,0.97)'),
+                backgroundColor: showCatchMarkers ? colors.primary : (mode === 'dark' ? 'rgba(18,28,36,0.96)' : 'rgba(255,255,255,0.97)'),
                 shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
                 elevation: 4,
               }}
             >
-              <Text style={{ fontSize: 12 }}>🎣</Text>
-              <Text style={{ fontSize: 12, fontFamily: 'Nunito_700Bold', color: showCatchMarkers ? '#fff' : colors.text }}>
+              <Ionicons name="fish-outline" size={13} color={showCatchMarkers ? '#fff' : colors.textMuted} />
+              <Text style={{ fontSize: 12, fontFamily: 'Manrope_700Bold', color: showCatchMarkers ? '#fff' : colors.text }}>
                 Мои улови
               </Text>
             </Pressable>
@@ -909,7 +911,7 @@ export default function MapScreen() {
             style={{
               flexDirection: 'row', alignItems: 'center', gap: 5,
               paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
-              backgroundColor: showHeatmap ? '#C92A2A' : (mode === 'dark' ? 'rgba(18,28,36,0.96)' : 'rgba(255,255,255,0.97)'),
+              backgroundColor: showHeatmap ? colors.primary : (mode === 'dark' ? 'rgba(18,28,36,0.96)' : 'rgba(255,255,255,0.97)'),
               shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
               elevation: 4,
             }}
@@ -923,7 +925,7 @@ export default function MapScreen() {
                 color={showHeatmap ? '#fff' : colors.textMuted}
               />
             )}
-            <Text style={{ fontSize: 12, fontFamily: 'Nunito_700Bold', color: showHeatmap ? '#fff' : colors.text }}>
+            <Text style={{ fontSize: 12, fontFamily: 'Manrope_700Bold', color: showHeatmap ? '#fff' : colors.text }}>
               Хийтмап
             </Text>
           </Pressable>
@@ -1040,13 +1042,13 @@ export default function MapScreen() {
                   <Ionicons name="flame" size={18} color="#fff" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 17, fontFamily: 'Nunito_800ExtraBold', color: colors.text }}>Тук съм за риболов</Text>
+                  <Text style={{ fontSize: 17, fontFamily: 'Manrope_800ExtraBold', color: colors.text }}>Тук съм за риболов</Text>
                   <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 2 }}>
                     Изчезва автоматично след 4 часа
                   </Text>
                 </View>
               </View>
-              <Text style={{ fontSize: 11, fontFamily: 'Nunito_700Bold', color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase', marginTop: spacing.md, marginBottom: 4 }}>
+              <Text style={{ fontSize: 11, fontFamily: 'Manrope_700Bold', color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase', marginTop: spacing.md, marginBottom: 4 }}>
                 Кратко съобщение (по избор)
               </Text>
               <TextInput
@@ -1067,7 +1069,7 @@ export default function MapScreen() {
                   onPress={() => { setLiveSheetOpen(false); setLiveNote(''); }}
                   style={{ flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', backgroundColor: colors.surfaceAlt }}
                 >
-                  <Text style={{ color: colors.text, fontFamily: 'Nunito_700Bold' }}>Отказ</Text>
+                  <Text style={{ color: colors.text, fontFamily: 'Manrope_700Bold' }}>Отказ</Text>
                 </Pressable>
                 <Pressable
                   onPress={confirmFishingSession}
@@ -1075,7 +1077,7 @@ export default function MapScreen() {
                   style={{ flex: 2, paddingVertical: 12, borderRadius: 12, alignItems: 'center', backgroundColor: '#E85D04', flexDirection: 'row', justifyContent: 'center', gap: 6, opacity: liveSaving ? 0.6 : 1 }}
                 >
                   {liveSaving ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="flame" size={18} color="#fff" />}
-                  <Text style={{ color: '#fff', fontFamily: 'Nunito_800ExtraBold' }}>{liveSaving ? 'Пускам…' : 'Пусни пин'}</Text>
+                  <Text style={{ color: '#fff', fontFamily: 'Manrope_800ExtraBold' }}>{liveSaving ? 'Пускам…' : 'Пусни пин'}</Text>
                 </Pressable>
               </View>
             </View>
@@ -1105,7 +1107,7 @@ export default function MapScreen() {
                     <Ionicons name="flame" size={22} color="#fff" />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 17, fontFamily: 'Nunito_800ExtraBold', color: colors.text }}>
+                    <Text style={{ fontSize: 17, fontFamily: 'Manrope_800ExtraBold', color: colors.text }}>
                       {selectedLivePin.ownerName} е тук
                     </Text>
                     <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 2 }}>
@@ -1134,7 +1136,7 @@ export default function MapScreen() {
                     style={{ flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', backgroundColor: colors.surfaceAlt, flexDirection: 'row', justifyContent: 'center', gap: 6 }}
                   >
                     <Ionicons name="navigate-outline" size={16} color={colors.primary} />
-                    <Text style={{ color: colors.text, fontFamily: 'Nunito_700Bold' }}>Покажи</Text>
+                    <Text style={{ color: colors.text, fontFamily: 'Manrope_700Bold' }}>Покажи</Text>
                   </Pressable>
                   {user && selectedLivePin.ownerUid === user.uid ? (
                     <Pressable
@@ -1144,7 +1146,7 @@ export default function MapScreen() {
                       style={{ flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', backgroundColor: colors.danger, flexDirection: 'row', justifyContent: 'center', gap: 6 }}
                     >
                       <Ionicons name="close-circle-outline" size={16} color="#fff" />
-                      <Text style={{ color: '#fff', fontFamily: 'Nunito_700Bold' }}>Прекрати</Text>
+                      <Text style={{ color: '#fff', fontFamily: 'Manrope_700Bold' }}>Прекрати</Text>
                     </Pressable>
                   ) : user && selectedLivePin.ownerUid !== user.uid ? (
                     <>
@@ -1169,7 +1171,7 @@ export default function MapScreen() {
                         style={{ flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', backgroundColor: colors.primary, flexDirection: 'row', justifyContent: 'center', gap: 6 }}
                       >
                         <Ionicons name="chatbubble-outline" size={16} color="#fff" />
-                        <Text style={{ color: '#fff', fontFamily: 'Nunito_700Bold' }}>Чат</Text>
+                        <Text style={{ color: '#fff', fontFamily: 'Manrope_700Bold' }}>Чат</Text>
                       </Pressable>
                       <Pressable
                         onPress={() => {
@@ -1689,7 +1691,7 @@ const SpotSheet = React.memo(function SpotSheet({
               <View style={{ marginLeft: 'auto' }}>
                 <StarRatingBar
                   rating={spotWeather.fishingRating}
-                  color={colors.accent}
+                  color={colors.warning}
                   emptyColor={colors.border}
                   size={12}
                 />

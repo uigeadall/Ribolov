@@ -4,9 +4,10 @@ import { useTheme } from '../services/themeContext';
 import { radius, spacing } from '../theme/typography';
 import type { WeatherSnapshot } from '../services/weather';
 
-type Window = { key: 'dawn' | 'day' | 'dusk' | 'night'; label: string; range: string; rating: number };
+export type BiteWindow = { key: 'dawn' | 'day' | 'dusk' | 'night'; label: string; range: string; rating: number };
+type Window = BiteWindow;
 
-function calcBiteWindows(w: WeatherSnapshot): Window[] {
+export function calcBiteWindows(w: WeatherSnapshot): Window[] {
   const hour = new Date().getHours();
   const base = w.fishingRating;
 
@@ -59,8 +60,8 @@ export function BiteForecast({ weather }: Props) {
     Animated.parallel(anims).start();
   }, [windows, animRefs]);
 
-  const trackColor = mode === 'dark' ? 'rgba(74,168,232,0.07)' : 'rgba(21,112,184,0.05)';
-  const inactiveBar = mode === 'dark' ? 'rgba(74,168,232,0.32)' : 'rgba(21,112,184,0.28)';
+  const trackColor = colors.surfaceAlt;
+  const inactiveBar = colors.chartDim;
 
   const styles = useMemo(
     () =>
@@ -85,21 +86,21 @@ export function BiteForecast({ weather }: Props) {
         },
         kicker: {
           fontSize: 10,
-          fontFamily: 'Nunito_700Bold',
+          fontFamily: 'Manrope_700Bold',
           color: colors.textMuted,
           letterSpacing: 1.4,
           textTransform: 'uppercase' as const,
         },
         peakName: {
           fontSize: 22,
-          fontFamily: 'Nunito_800ExtraBold',
+          fontFamily: 'Manrope_800ExtraBold',
           color: colors.text,
           marginTop: 4,
           letterSpacing: -0.3,
         },
         peakRange: {
           fontSize: 12,
-          fontFamily: 'Nunito_600SemiBold',
+          fontFamily: 'Manrope_600SemiBold',
           color: colors.textMuted,
           marginTop: 2,
           letterSpacing: 0.2,
@@ -109,14 +110,14 @@ export function BiteForecast({ weather }: Props) {
         },
         peakRatingNum: {
           fontSize: 28,
-          fontFamily: 'Nunito_800ExtraBold',
+          fontFamily: 'Manrope_800ExtraBold',
           color: colors.primary,
           lineHeight: 30,
           letterSpacing: -1,
         },
         peakRatingMax: {
           fontSize: 11,
-          fontFamily: 'Nunito_600SemiBold',
+          fontFamily: 'Manrope_600SemiBold',
           color: colors.textMuted,
           letterSpacing: 0.4,
         },
@@ -161,7 +162,7 @@ export function BiteForecast({ weather }: Props) {
         },
         labelText: {
           fontSize: 10,
-          fontFamily: 'Nunito_700Bold',
+          fontFamily: 'Manrope_700Bold',
           color: colors.textMuted,
           letterSpacing: 1,
           textTransform: 'uppercase' as const,
@@ -171,7 +172,7 @@ export function BiteForecast({ weather }: Props) {
         },
         labelRange: {
           fontSize: 10,
-          fontFamily: 'Nunito_600SemiBold',
+          fontFamily: 'Manrope_600SemiBold',
           color: colors.textMuted,
           marginTop: 2,
           opacity: 0.65,

@@ -1,6 +1,5 @@
 import React, { useMemo, useRef } from 'react';
 import { StyleSheet, View, ViewProps, Pressable, Animated } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../services/themeContext';
 import { radius, spacing } from '../theme/typography';
 import { shadowCard } from '../theme/shadows';
@@ -16,31 +15,18 @@ export function Card({ children, style, onPress, ...rest }: CardProps) {
   const styles = useMemo(
     () =>
       StyleSheet.create({
+        // Flat language: hairline edge in both modes, minimal shadow.
         wrap: {
           backgroundColor: colors.card,
-          borderRadius: radius.xl,
+          borderRadius: radius.lg,
           padding: spacing.lg,
-          borderWidth: mode === 'dark' ? 1 : 0,
+          borderWidth: 1,
           borderColor: colors.cardEdge,
           overflow: 'hidden',
           ...shadowCard(mode),
         },
       }),
     [colors, mode]
-  );
-
-  const sheen = (
-    <LinearGradient
-      colors={
-        mode === 'dark'
-          ? ['rgba(255,255,255,0.04)', 'transparent']
-          : ['rgba(255,255,255,0.92)', 'rgba(255,255,255,0.38)']
-      }
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={StyleSheet.absoluteFillObject}
-      pointerEvents="none"
-    />
   );
 
   if (onPress) {
@@ -52,7 +38,6 @@ export function Card({ children, style, onPress, ...rest }: CardProps) {
     return (
       <Pressable onPress={onPress} onPressIn={onPressIn} onPressOut={onPressOut}>
         <Animated.View style={[styles.wrap, style, { transform: [{ scale }] }]} {...rest}>
-          {sheen}
           {children}
         </Animated.View>
       </Pressable>
@@ -61,7 +46,6 @@ export function Card({ children, style, onPress, ...rest }: CardProps) {
 
   return (
     <View style={[styles.wrap, style]} {...rest}>
-      {sheen}
       {children}
     </View>
   );

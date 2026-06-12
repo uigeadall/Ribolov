@@ -1,6 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, StyleSheet, Text, View } from 'react-native';
-import * as Haptics from 'expo-haptics';
+import React, { useMemo, useState } from 'react';
 import {
   NavigationContainer,
   DefaultTheme,
@@ -9,10 +7,8 @@ import {
 } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { PlatformPressable } from '@react-navigation/elements';
-import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../services/themeContext';
+import { AppTabBar } from './AppTabBar';
 import {
   FeedStackParamList,
   LogbookStackParamList,
@@ -32,7 +28,6 @@ import { catchesStore } from '../storage/storage';
 // Eagerly-loaded screens — first-paint path or hot navigation targets.
 // Everything else uses `getComponent` lower down for code-splitting via
 // Metro's lazy-require handling.
-import HomeScreen from '../screens/HomeScreen';
 import LogbookScreen from '../screens/LogbookScreen';
 import AddCatchScreen from '../screens/AddCatchScreen';
 import CatchDetailScreen from '../screens/CatchDetailScreen';
@@ -61,7 +56,6 @@ const wrap = (label: string, Component: React.ComponentType<any>) => (props: any
     </ErrorBoundary>
   );
 
-const HomeScreenWrapped = wrap('Начало', HomeScreen);
 const MapScreenWrapped = wrap('Карта', MapScreen);
 const AuthScreenWrapped = wrap('Вход', AuthScreen);
 const FeedScreenWrapped = wrap('Feed', FeedScreen);
@@ -167,8 +161,6 @@ function ProfileNavigator() {
 }
 
 function TabNavigator() {
-  const { colors, mode } = useTheme();
-  const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const unreadNotifs = useUnreadNotifCount(user?.uid);
   const unreadMsgs = useUnreadMessagesCount(user?.uid);
@@ -222,147 +214,25 @@ function TabNavigator() {
       })
       .catch(() => {});
   }, []);
-  // Bubble tab bar: floats above safe area as a pill
-
-  // Animated icon that scales up + bounces on focus change. Lives inside the
-  // component so it captures the right Animated.Value lifecycle per tab.
-  // The spring runs whenever `focused` flips so a tab tap feels tactile —
-  // tap into a tab and the icon "pops" instead of jump-cutting. Color tween
-  // is driven by react-navigation's `color` prop (no extra animation).
-  function AnimatedTabIcon({
-    focused,
-    color,
-    icon,
-  }: {
-    focused: boolean;
-    color: string;
-    icon: keyof typeof Ionicons.glyphMap;
-  }) {
-    const scale = useRef(new Animated.Value(focused ? 1 : 0.92)).current;
-    const prevFocused = useRef(focused);
-    useEffect(() => {
-      // Spring animation gives the icon a tiny overshoot when activating —
-      // bouncier than a plain timing curve. On deactivation we just settle
-      // back to neutral with no overshoot.
-      Animated.spring(scale, {
-        toValue: focused ? 1.08 : 0.92,
-        useNativeDriver: true,
-        speed: 30,
-        bounciness: focused ? 14 : 0,
-      }).start();
-      // Light haptic on activation. Skipped on first mount (when
-      // prevFocused.current matches focused). Without this guard the user
-      // gets a buzz every app launch.
-      if (prevFocused.current !== focused && focused) {
-        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      }
-      prevFocused.current = focused;
-    }, [focused, scale]);
-    return (
-      <Animated.View style={{ transform: [{ scale }] }}>
-        <Ionicons name={icon} size={22} color={color} />
-      </Animated.View>
-    );
-  }
-
-  const bubbleTabBarStyle = useMemo(
-    () => ({
-      marginHorizontal: 12,
-      marginBottom: Math.max(insets.bottom + 6, 12),
-      height: 58,
-      borderRadius: 32,
-      backgroundColor: 'transparent',
-      borderTopWidth: 0,
-      elevation: 20,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 6 },
-      shadowOpacity: mode === 'dark' ? 0.45 : 0.10,
-      shadowRadius: 20,
-      paddingTop: 0,
-      paddingBottom: 0,
-    }),
-    [mode, insets.bottom]
-  );
-
-  const tabBarBackground = useMemo(
-    () => () => (
-      <View style={[StyleSheet.absoluteFillObject, {
-        borderRadius: 36,
-        backgroundColor: mode === 'dark' ? '#0C1C30' : '#FFFFFF',
-        borderWidth: 1,
-        borderColor: mode === 'dark' ? 'rgba(74,168,232,0.22)' : 'rgba(21,112,184,0.1)',
-        overflow: 'hidden',
-      }]} />
-    ),
-    [mode]
-  );
-
   return (
     <Tabs.Navigator
-      safeAreaInsets={{ bottom: 0 }}
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: mode === 'dark' ? '#3A6080' : '#AAC8E0',
-        tabBarStyle: bubbleTabBarStyle,
-        tabBarBackground,
-        tabBarShowLabel: false,
-        tabBarButton: (props) => {
-          const focused = !!props.accessibilityState?.selected;
-          const label =
-            route.name === 'HomeTab' ? 'Начало' :
-            route.name === 'LogbookTab' ? 'Дневник' :
-            route.name === 'MapTab' ? 'Карта' :
-            route.name === 'FeedTab' ? 'Лента' : 'Профил';
-          return (
-            <PlatformPressable
-              {...props}
-              style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
-            >
-              <View style={{
-                alignItems: 'center',
-                justifyContent: 'center',
-                paddingHorizontal: focused ? 14 : 8,
-                paddingVertical: focused ? 5 : 8,
-                borderRadius: 20,
-                gap: 2,
-                backgroundColor: focused
-                  ? (mode === 'dark' ? 'rgba(43,135,206,0.22)' : 'rgba(21,112,184,0.11)')
-                  : 'transparent',
-              }}>
-                {props.children}
-                {focused && (
-                  <Text style={{
-                    fontSize: 10,
-                    fontFamily: 'Nunito_700Bold',
-                    color: colors.primary,
-                    lineHeight: 11,
-                  }}>
-                    {label}
-                  </Text>
-                )}
-              </View>
-            </PlatformPressable>
-          );
-        },
-        tabBarIcon: ({ color, focused }) => {
-          let icon: keyof typeof Ionicons.glyphMap = 'home';
-          if (route.name === 'HomeTab') icon = focused ? 'home' : 'home-outline';
-          if (route.name === 'LogbookTab') icon = focused ? 'book' : 'book-outline';
-          if (route.name === 'MapTab') icon = focused ? 'map' : 'map-outline';
-          if (route.name === 'FeedTab') icon = focused ? 'newspaper' : 'newspaper-outline';
-          if (route.name === 'ProfileTab') icon = focused ? 'person' : 'person-outline';
-          return <AnimatedTabIcon focused={focused} color={color} icon={icon} />;
-        },
-      })}
+      tabBar={(props) => <AppTabBar {...props} />}
+      screenOptions={{ headerShown: false }}
+      initialRouteName="FeedTab"
     >
-      <Tabs.Screen name="HomeTab" component={HomeScreenWrapped} options={{ title: 'Начало' }} />
+      {/* Feed-first (Facebook-style): the app opens on the feed; the old
+          Home dashboard is gone — its conditions strip lives atop the feed. */}
       <Tabs.Screen
-        name="LogbookTab"
-        component={LogbookNavigator}
-        options={{ title: 'Дневник' }}
+        name="FeedTab"
+        component={FeedNavigator}
+        options={{ title: 'Лента', tabBarBadge: feedBadge }}
         listeners={({ navigation }) => ({
-          tabPress: (e) => { e.preventDefault(); navigation.navigate('LogbookTab', { screen: 'LogbookList' }); },
+          tabPress: (e) => {
+            e.preventDefault();
+            setFeedBadge(undefined);
+            AsyncStorage.setItem('@ribolov/feedLastVisit', String(Date.now())).catch(() => {});
+            navigation.navigate('FeedTab', { screen: 'FeedList' });
+          },
         })}
       />
       <Tabs.Screen
@@ -382,16 +252,11 @@ function TabNavigator() {
         })}
       />
       <Tabs.Screen
-        name="FeedTab"
-        component={FeedNavigator}
-        options={{ title: 'Лента', tabBarBadge: feedBadge }}
+        name="LogbookTab"
+        component={LogbookNavigator}
+        options={{ title: 'Дневник' }}
         listeners={({ navigation }) => ({
-          tabPress: (e) => {
-            e.preventDefault();
-            setFeedBadge(undefined);
-            AsyncStorage.setItem('@ribolov/feedLastVisit', String(Date.now())).catch(() => {});
-            navigation.navigate('FeedTab', { screen: 'FeedList' });
-          },
+          tabPress: (e) => { e.preventDefault(); navigation.navigate('LogbookTab', { screen: 'LogbookList' }); },
         })}
       />
       <Tabs.Screen

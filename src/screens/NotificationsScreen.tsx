@@ -622,9 +622,9 @@ export default function NotificationsScreen() {
   const { user, configured } = useAuth();
 
   const heroColors: [string, string, string] = mode === 'dark'
-    ? ['#0A1E38', '#050C1A', '#030810']
-    : ['#2B87CE', '#1570B8', '#0D559A'];
-  const waveColor = mode === 'dark' ? '#0E1628' : '#FFFFFF';
+    ? [colors.navy, colors.navy, colors.navy]
+    : [colors.navy, colors.navy, colors.navy];
+  const waveColor = colors.background;
 
   const S = useMemo(() => StyleSheet.create({
     hero: { paddingBottom: 28 + 16 },
@@ -678,7 +678,7 @@ export default function NotificationsScreen() {
     },
     [configured, user?.uid],
     // Cross-screen badge for unreads is powered by `subscribeMyNotifications`
-    // in HomeScreen, not by this listener — so we can safely tear this one
+    // by the tab-bar badge hooks, not by this listener — so we can safely tear this one
     // down whenever the user is on a different screen.
     { pauseInBackground: true, pauseWhenUnfocused: true },
   );

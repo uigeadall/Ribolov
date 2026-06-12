@@ -522,7 +522,7 @@ export default function WaterDetailScreen() {
               icon="star-outline"
               label="Риболов"
               value={`${weather.fishingRating}/5`}
-              accent={colors.accent}
+              accent={colors.warning}
             />
           ) : null}
         </View>

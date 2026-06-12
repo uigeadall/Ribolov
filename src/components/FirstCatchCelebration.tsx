@@ -117,7 +117,7 @@ export function FirstCatchCelebration({
       {/* Backdrop — dark gradient rather than flat black so the celebration
           card pops against it. */}
       <LinearGradient
-        colors={mode === 'dark' ? ['rgba(5,12,26,0.96)', 'rgba(3,8,16,0.99)'] : ['rgba(14,77,100,0.92)', 'rgba(9,53,69,0.97)']}
+        colors={mode === 'dark' ? ['rgba(5,12,26,0.96)', 'rgba(3,8,16,0.99)'] : ['rgba(14,34,53,0.94)', 'rgba(10,26,43,0.98)']}
         style={StyleSheet.absoluteFillObject}
       />
 
@@ -284,7 +284,7 @@ const styles = StyleSheet.create({
   firstBadgeText: {
     color: '#2a1800',
     fontSize: 10,
-    fontFamily: 'Nunito_800ExtraBold',
+    fontFamily: 'Manrope_800ExtraBold',
     letterSpacing: 1,
   },
   body: {
@@ -315,7 +315,7 @@ const styles = StyleSheet.create({
   },
   weightLine: {
     ...typography.body,
-    fontFamily: 'Nunito_800ExtraBold',
+    fontFamily: 'Manrope_800ExtraBold',
     marginTop: 2,
   },
   actions: {

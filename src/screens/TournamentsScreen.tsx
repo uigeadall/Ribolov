@@ -168,7 +168,7 @@ function TournamentRow({
   return (
     <Pressable onPress={onPress} style={styles.row}>
       <View style={styles.iconCircle}>
-        <Ionicons name="trophy" size={22} color="#E8902E" />
+        <Ionicons name="trophy" size={22} color="#C77F12" />
       </View>
       <View style={{ flex: 1 }}>
         <Text style={styles.name} numberOfLines={1}>{t.name}</Text>
@@ -335,7 +335,7 @@ export default function TournamentsScreen() {
 
             {/* Discover */}
             <View style={styles.sectionRow}>
-              <View style={[styles.sectionAccent, { backgroundColor: '#E8902E' }]} />
+              <View style={[styles.sectionAccent, { backgroundColor: '#C77F12' }]} />
               <Text style={styles.sectionTitle}>Открий</Text>
               {publicList.length > 0 ? (
                 <View style={styles.badge}>

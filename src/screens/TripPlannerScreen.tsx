@@ -281,7 +281,7 @@ export default function TripPlannerScreen() {
               </View>
             ) : null}
             <Card style={{ marginHorizontal: spacing.lg, marginTop: spacing.md, gap: spacing.sm }}>
-              <StarRatingBar rating={forecast.fishingRating} color={colors.accent} emptyColor={colors.border} size={20} />
+              <StarRatingBar rating={forecast.fishingRating} color={colors.warning} emptyColor={colors.border} size={20} />
               <Text style={{ ...typography.bodyBold, color: colors.text }}>
                 {forecast.dayLabel} · {new Date(forecast.dateIso).toLocaleDateString('bg-BG', { day: 'numeric', month: 'long' })}
               </Text>

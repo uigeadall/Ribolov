@@ -27,7 +27,6 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Image } from 'expo-image';
 import { Skeleton } from '../components/Skeleton';
-import { ComposeFab } from '../components/ComposeFab';
 import { useCountUp } from '../hooks/useCountUp';
 import { useTheme } from '../services/themeContext';
 import type { AppColors } from '../theme/palette';
@@ -43,7 +42,8 @@ import { EmptyState } from '../components/EmptyState';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-const CATCH_ACCENTS = ['#1A7A9C', '#2E9B5A', '#0E4D64', '#7BB7CC', '#006E8A', '#C49A00'];
+// Harmonized with the Navy & Chartreuse palette: lake-blue steps + moss + amber.
+const CATCH_ACCENTS = ['#16729B', '#1E8E5A', '#115B7D', '#4FA8CE', '#0E2235', '#C77F12'];
 function speciesAccent(name: string): string {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
@@ -90,7 +90,7 @@ const CatchCard = React.memo(function CatchCard({
   const accent = speciesAccent(item.speciesName);
 
   const renderRightActions = () => (
-    <View style={{ flexDirection: 'row', alignItems: 'stretch', marginBottom: 12, marginLeft: 6 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'stretch', marginBottom: 8, marginLeft: 6 }}>
       <Pressable
         onPress={() => { void Haptics.selectionAsync(); onEdit(item); }}
         // Edit button widened to 84px and label shortened to "Промени" — the
@@ -116,10 +116,10 @@ const CatchCard = React.memo(function CatchCard({
         void Haptics.selectionAsync();
         void Share.share({ message: `${item.speciesName} - ${item.weightKg ?? '—'}кг` });
       }}
-      style={{ backgroundColor: colors.accent, width: 70, alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 14, marginBottom: 12, marginRight: 6 }}
+      style={{ backgroundColor: colors.accent, width: 70, alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 14, marginBottom: 8, marginRight: 6 }}
     >
-      <Ionicons name="share-outline" size={20} color="#fff" />
-      <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>Сподели</Text>
+      <Ionicons name="share-outline" size={20} color={colors.onAccent} />
+      <Text style={{ color: colors.onAccent, fontSize: 11, fontWeight: '700' }}>Сподели</Text>
     </Pressable>
   );
 
@@ -130,125 +130,79 @@ const CatchCard = React.memo(function CatchCard({
         android_ripple={{ color: `${colors.primary}14` }}
         style={({ pressed }) => pressed && Platform.OS === 'ios' ? { opacity: 0.93 } : undefined}
       >
+        {/* FishAngler list-row: thumbnail · title+meta · weight chip + chevron */}
         <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 12,
           backgroundColor: colors.card,
-          borderRadius: 16,
-          overflow: 'hidden',
-          marginBottom: 12,
-          elevation: 2,
-          shadowColor: '#000',
-          shadowOpacity: 0.06,
-          shadowRadius: 8,
-          shadowOffset: { width: 0, height: 2 },
+          borderRadius: 14,
+          borderWidth: 1,
+          borderColor: colors.cardEdge,
+          marginBottom: 8,
+          padding: 10,
         }}>
-          {/* Full-width photo or accent strip */}
-          {item.photoUri ? (
-            <View style={{ height: 170 }}>
+          {/* Thumbnail (photo, or accent placeholder with fish icon) */}
+          <View style={{
+            width: 60, height: 60, borderRadius: 10, overflow: 'hidden',
+            backgroundColor: item.photoUri ? colors.surfaceAlt : accent + '22',
+            alignItems: 'center', justifyContent: 'center',
+          }}>
+            {item.photoUri ? (
               <Image source={{ uri: item.photoUri }} style={StyleSheet.absoluteFillObject} contentFit="cover" />
+            ) : (
+              <Ionicons name="fish-outline" size={26} color={accent} />
+            )}
+            {(item.extraPhotoUris?.length ?? 0) > 0 && (
+              <View style={{ position: 'absolute', bottom: 3, right: 3, backgroundColor: 'rgba(0,0,0,0.62)', borderRadius: 6, paddingHorizontal: 4, paddingVertical: 1 }}>
+                <Text style={{ color: '#fff', fontSize: 9, fontWeight: '700' }}>+{item.extraPhotoUris!.length}</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Title + meta */}
+          <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={{ fontSize: 15, fontFamily: 'Manrope_700Bold', color: colors.text, flexShrink: 1 }} numberOfLines={1}>
+                {item.speciesName}
+              </Text>
               {isPB && (
-                <View style={{ position: 'absolute', top: 10, left: 10, backgroundColor: '#FFD700', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8 }}>
-                  <Text style={{ fontSize: 10, fontWeight: '800', color: '#5A3D00' }}>⭐ PB</Text>
+                <View style={{ backgroundColor: '#FFD700', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 6 }}>
+                  <Text style={{ fontSize: 9, fontWeight: '800', color: '#5A3D00' }}>PB</Text>
                 </View>
               )}
-              {(item.extraPhotoUris?.length ?? 0) > 0 && (
-                <View style={{ position: 'absolute', top: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.62)', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 3 }}>
-                  <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>+{item.extraPhotoUris!.length}</Text>
+              {item.released ? (
+                <View style={{ backgroundColor: colors.success + '22', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 6, borderWidth: 1, borderColor: colors.success + '55' }}>
+                  <Text style={{ color: colors.success, fontSize: 9, fontWeight: '700' }}>C&R</Text>
                 </View>
-              )}
+              ) : null}
               {user && !item.syncedToCloud ? (
-                // Tap to force-retry the upload. Without this, an abandoned
-                // upload (queue gave up after MAX_ATTEMPTS) silently stays
-                // local with a file:// photoUri — the user has no way to
-                // recover the photo. The pill is small but tappable with a
-                // generous hit slop.
                 <Pressable
                   onPress={(e) => { e.stopPropagation?.(); onRetrySync(item); }}
                   hitSlop={10}
-                  style={{
-                    position: 'absolute',
-                    bottom: 6,
-                    right: 6,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 4,
-                    backgroundColor: 'rgba(0,0,0,0.55)',
-                    paddingHorizontal: 8,
-                    paddingVertical: 4,
-                    borderRadius: 12,
-                  }}
                   accessibilityRole="button"
                   accessibilityLabel="Опитай отново качване"
                 >
-                  <Ionicons name="cloud-upload-outline" size={12} color="#fff" />
-                  <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>Опитай отново</Text>
+                  <Ionicons name="cloud-upload-outline" size={14} color={colors.warning} />
                 </Pressable>
               ) : null}
             </View>
-          ) : (
-            /* Solid 4px colored accent strip */
-            <View style={{ height: 4, backgroundColor: accent }} />
-          )}
+            <Text style={{ fontSize: 12, color: colors.textMuted }} numberOfLines={1}>
+              {new Date(item.date).toLocaleDateString('bg-BG', { day: 'numeric', month: 'short', year: 'numeric' })}
+              {item.location?.name ? ` · ${item.location.name}` : ''}
+            </Text>
+          </View>
 
-          {/* Card content */}
-          <View style={{ paddingHorizontal: 14, paddingTop: 12, paddingBottom: 14 }}>
-            {/* Species + PB badge (no photo case) */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-              <Text style={{ fontSize: 17, fontWeight: '700', color: colors.text, letterSpacing: -0.3, flex: 1 }} numberOfLines={1}>
-                {item.speciesName}
-              </Text>
-              {isPB && !item.photoUri && (
-                <View style={{ backgroundColor: '#FFD700', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8, marginLeft: 8 }}>
-                  <Text style={{ fontSize: 10, fontWeight: '800', color: '#5A3D00' }}>⭐ PB</Text>
-                </View>
-              )}
-              {user && !item.syncedToCloud && !item.photoUri ? (
-                <Pressable
-                  onPress={(e) => { e.stopPropagation?.(); onRetrySync(item); }}
-                  hitSlop={8}
-                  style={{ marginLeft: 6 }}
-                  accessibilityRole="button"
-                  accessibilityLabel="Опитай отново синхронизация"
-                >
-                  <Ionicons name="cloud-upload-outline" size={14} color={colors.textMuted} />
-                </Pressable>
-              ) : null}
-            </View>
-
-            {/* Weight */}
+          {/* Weight chip + chevron */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             {item.weightKg != null ? (
-              <View style={{ flexDirection: 'row', alignItems: 'baseline', marginBottom: 8 }}>
-                <Text style={{ fontSize: 28, fontWeight: '900', color: colors.primary, letterSpacing: -0.5 }}>
-                  {item.weightKg}
+              <View style={{ backgroundColor: colors.primarySurface, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4 }}>
+                <Text style={{ color: colors.primary, fontSize: 13, fontFamily: 'Manrope_700Bold' }}>
+                  {item.weightKg} кг
                 </Text>
-                <Text style={{ fontSize: 14, fontWeight: '600', color: colors.primary, marginLeft: 3 }}>кг</Text>
               </View>
-            ) : (
-              <Text style={{ fontSize: 28, fontWeight: '900', color: colors.textMuted, letterSpacing: -0.5, marginBottom: 8 }}>—</Text>
-            )}
-
-            {/* Meta row: date · location · C&R */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-              <Text style={{ fontSize: 12, color: colors.textMuted }}>
-                {new Date(item.date).toLocaleDateString('bg-BG', { day: 'numeric', month: 'short', year: 'numeric' })}
-              </Text>
-              {item.location?.name ? (
-                <>
-                  <View style={{ width: 3, height: 3, borderRadius: 1.5, backgroundColor: colors.textMuted }} />
-                  <Ionicons name="location-outline" size={11} color={colors.textMuted} />
-                  <Text style={{ fontSize: 12, color: colors.textMuted, flexShrink: 1 }} numberOfLines={1}>
-                    {item.location.name}
-                  </Text>
-                </>
-              ) : null}
-              {item.released ? (
-                <>
-                  <View style={{ width: 3, height: 3, borderRadius: 1.5, backgroundColor: colors.textMuted }} />
-                  <View style={{ backgroundColor: '#34C97A22', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, borderWidth: 1, borderColor: '#34C97A55' }}>
-                    <Text style={{ color: '#2EA86A', fontSize: 10, fontWeight: '700' }}>C&R</Text>
-                  </View>
-                </>
-              ) : null}
-            </View>
+            ) : null}
+            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
           </View>
         </View>
       </Pressable>
@@ -862,7 +816,7 @@ export default function LogbookScreen() {
                 accessibilityLabel="Опитай качването отново"
               >
                 <Ionicons name="cloud-upload-outline" size={13} color={colors.primary} />
-                <Text style={{ fontSize: 11, fontFamily: 'Nunito_700Bold', color: colors.primary }}>
+                <Text style={{ fontSize: 11, fontFamily: 'Manrope_700Bold', color: colors.primary }}>
                   {pendingUploadCount === 1
                     ? '1 улов чака качване'
                     : `${pendingUploadCount} улова чакат качване`}
@@ -872,7 +826,7 @@ export default function LogbookScreen() {
           </View>
 
           {/* Segment control: list / grid / gallery / calendar */}
-          <View style={{ flexDirection: 'row', backgroundColor: mode === 'dark' ? colors.surfaceAlt : '#EFEFEF', borderRadius: 10, padding: 3, gap: 2 }}>
+          <View style={{ flexDirection: 'row', backgroundColor: colors.surfaceAlt, borderRadius: 10, padding: 3, gap: 2 }}>
             {/* List toggle */}
             <Pressable
               onPress={() => { setGridView(false); setCalendarView(false); }}
@@ -910,7 +864,7 @@ export default function LogbookScreen() {
 
         {/* Stats row — 3 columns with hairline dividers */}
         <Pressable onLongPress={handleStatsLongPress} delayLongPress={400}>
-          <View style={{ flexDirection: 'row', borderRadius: 14, overflow: 'hidden', backgroundColor: mode === 'dark' ? colors.card : '#F4F6F9', borderWidth: 1, borderColor: colors.border }}>
+          <View style={{ flexDirection: 'row', borderRadius: 14, overflow: 'hidden', backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }}>
             {/* Catches */}
             <View style={{ flex: 1, paddingVertical: 12, paddingHorizontal: 10, alignItems: 'center' }}>
               <Text style={{ fontSize: 22, fontWeight: '900', color: colors.text }}>{Math.round(animatedCount)}</Text>
@@ -941,7 +895,7 @@ export default function LogbookScreen() {
 
         {/* Search bar + filter button */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xs }}>
-          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: mode === 'dark' ? colors.surfaceAlt : '#F2F4F8', borderRadius: 24, paddingHorizontal: 14, paddingVertical: Platform.OS === 'ios' ? 10 : 7 }}>
+          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceAlt, borderRadius: 24, paddingHorizontal: 14, paddingVertical: Platform.OS === 'ios' ? 10 : 7 }}>
             <Ionicons name="search-outline" size={18} color={colors.textMuted} style={{ marginRight: 8 }} />
             <TextInput
               placeholder="Търси вид, място, бележки..."
@@ -959,11 +913,11 @@ export default function LogbookScreen() {
           <Pressable
             onPress={() => setFiltersOpen(true)}
             hitSlop={8}
-            style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: filtersActive ? colors.primary : (mode === 'dark' ? colors.surfaceAlt : '#F2F4F8'), alignItems: 'center', justifyContent: 'center' }}
+            style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: filtersActive ? colors.primary : colors.surfaceAlt, alignItems: 'center', justifyContent: 'center' }}
           >
             <Ionicons name="options-outline" size={20} color={filtersActive ? '#fff' : colors.primary} />
             {filtersActive && (
-              <View style={{ position: 'absolute', top: 8, right: 8, width: 8, height: 8, borderRadius: 4, backgroundColor: '#FF8C00', borderWidth: 1.5, borderColor: colors.background }} />
+              <View style={{ position: 'absolute', top: 8, right: 8, width: 8, height: 8, borderRadius: 4, backgroundColor: colors.warning, borderWidth: 1.5, borderColor: colors.background }} />
             )}
           </Pressable>
         </View>
@@ -1080,7 +1034,7 @@ export default function LogbookScreen() {
               }}>
                 <Ionicons name="fish" size={42} color={colors.primary} />
               </View>
-              <Text style={{ fontSize: 22, fontFamily: 'Nunito_800ExtraBold', color: colors.text, textAlign: 'center', letterSpacing: -0.3 }}>
+              <Text style={{ fontSize: 22, fontFamily: 'Manrope_800ExtraBold', color: colors.text, textAlign: 'center', letterSpacing: -0.3 }}>
                 Запиши първия си улов
               </Text>
               <Text style={{ fontSize: 14, color: colors.textMuted, textAlign: 'center', lineHeight: 20, paddingHorizontal: spacing.md }}>
@@ -1093,18 +1047,18 @@ export default function LogbookScreen() {
                 marginHorizontal: spacing.md,
                 paddingVertical: 14,
                 borderRadius: 16,
-                backgroundColor: colors.primary,
+                backgroundColor: colors.accent,
                 alignItems: 'center', justifyContent: 'center',
                 flexDirection: 'row', gap: 8,
-                shadowColor: colors.primary,
+                shadowColor: '#000',
                 shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.3,
+                shadowOpacity: 0.2,
                 shadowRadius: 10,
                 elevation: 6,
               }}
             >
-              <Ionicons name="add-circle" size={20} color="#fff" />
-              <Text style={{ color: '#fff', fontFamily: 'Nunito_800ExtraBold', fontSize: 15 }}>Добави улов</Text>
+              <Ionicons name="add-circle" size={20} color={colors.onAccent} />
+              <Text style={{ color: colors.onAccent, fontFamily: 'Manrope_800ExtraBold', fontSize: 15 }}>Добави улов</Text>
             </Pressable>
             <View style={{ flexDirection: 'row', justifyContent: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, flexWrap: 'wrap' }}>
               {[
@@ -1120,7 +1074,7 @@ export default function LogbookScreen() {
                   borderWidth: 1, borderColor: colors.border,
                 }}>
                   <Ionicons name={feat.icon} size={12} color={colors.primary} />
-                  <Text style={{ fontSize: 11, fontFamily: 'Nunito_600SemiBold', color: colors.textMuted }}>{feat.label}</Text>
+                  <Text style={{ fontSize: 11, fontFamily: 'Manrope_600SemiBold', color: colors.textMuted }}>{feat.label}</Text>
                 </View>
               ))}
             </View>
@@ -1171,15 +1125,9 @@ export default function LogbookScreen() {
         )}
       </View>
 
-      {/* The previous "add catch" FAB used to live here. Removed in favor of
-          the unified ComposeFab (rendered below) which opens an action sheet
-          for both "Сподели улов" and "Напиши пост". Two pluses on one screen
-          confused users — they tapped the orange one thinking it would also
-          show the post option. */}
-
       {/* ── Undo snackbar ── */}
       {pendingDelete ? (
-        <View style={{ position: 'absolute', bottom: 88, left: spacing.lg, right: spacing.lg, backgroundColor: mode === 'dark' ? '#2a2a2a' : '#1c1c1c', borderRadius: 20, flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.md, paddingHorizontal: 0, elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, overflow: 'hidden' }}>
+        <View style={{ position: 'absolute', bottom: 88, left: spacing.lg, right: spacing.lg, backgroundColor: colors.navy, borderRadius: 20, flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.md, paddingHorizontal: 0, elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, overflow: 'hidden' }}>
           {/* Left colored accent stripe */}
           <View style={{ width: 4, alignSelf: 'stretch', backgroundColor: colors.danger, borderRadius: 2 }} />
           <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: 0, paddingHorizontal: spacing.lg }}>
@@ -1270,8 +1218,6 @@ export default function LogbookScreen() {
         </View>
       </Modal>
 
-      {/* Compose FAB — same component as Home and Feed for consistency. */}
-      <ComposeFab />
     </View>
   );
 }

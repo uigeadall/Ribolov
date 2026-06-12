@@ -32,8 +32,14 @@ type AnalyticsInstance = {
   setAnalyticsCollectionEnabled: (enabled: boolean) => Promise<void>;
 };
 
+// RNFB v22 modular surface — instance-first free functions (the namespaced
+// `analytics()` factory is deprecated and warns on every call).
 type AnalyticsModule = {
-  default: () => AnalyticsInstance;
+  getAnalytics: () => unknown;
+  logEvent: (a: unknown, name: string, params?: Record<string, unknown>) => Promise<void>;
+  setUserId: (a: unknown, id: string | null) => Promise<void>;
+  setUserProperty: (a: unknown, name: string, value: string | null) => Promise<void>;
+  setAnalyticsCollectionEnabled: (a: unknown, enabled: boolean) => Promise<void>;
 };
 
 // undefined = haven't probed, null = probed and unavailable, value = ready.
@@ -57,9 +63,17 @@ function loadAnalytics(): AnalyticsInstance | null {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const mod = require('@react-native-firebase/analytics') as AnalyticsModule;
-    // Call the factory NOW so any unexpected init error happens inside this
-    // try/catch instead of escaping to a downstream call site.
-    cachedInstance = mod.default();
+    // Resolve the instance NOW so any unexpected init error happens inside
+    // this try/catch instead of escaping to a downstream call site. The
+    // adapter keeps the old instance-method shape so call sites and the
+    // exported helpers stay unchanged.
+    const instance = mod.getAnalytics();
+    cachedInstance = {
+      logEvent: (name, params) => mod.logEvent(instance, name, params),
+      setUserId: (id) => mod.setUserId(instance, id),
+      setUserProperty: (name, value) => mod.setUserProperty(instance, name, value),
+      setAnalyticsCollectionEnabled: (enabled) => mod.setAnalyticsCollectionEnabled(instance, enabled),
+    };
     return cachedInstance;
   } catch {
     cachedInstance = null;

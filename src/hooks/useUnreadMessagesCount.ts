@@ -7,8 +7,8 @@ import { subscribeUnreadMessagesCount } from '../services/messaging';
  * Mirrors the `useUnreadNotifCount` hook for symmetry — the tab navigator
  * combines both into a single ProfileTab badge so users see "5" when they
  * have 3 unread notifications + 2 unread DMs without two competing badges
- * on the same icon. HomeScreen separately surfaces the breakdown via
- * `BadgeIcon` on the chat + bell icons inside its hero.
+ * on the same icon. The Profile hero separately surfaces the breakdown via
+ * per-type counts.
  *
  * Returns 0 while signed out so the badge stays clean during auth flips.
  *

@@ -204,10 +204,11 @@ export default function AppSplashScreen() {
   );
 }
 
-const BG = '#070A12';
+// Brand splash: navy canvas, teal accent (was near-black + amber).
+const BG = '#13294B';
 const TEXT = '#FFFFFF';
 const MUTED = 'rgba(220, 230, 245, 0.45)';
-const AMBER = '#F5A020';
+const AMBER = '#14B8B8';
 
 const styles = StyleSheet.create({
   container: {

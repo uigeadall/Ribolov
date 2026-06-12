@@ -22,7 +22,7 @@ import { Skeleton } from '../components/Skeleton';
 import { CatchConditionsCard } from '../components/CatchConditionsCard';
 import { CatchLocationCard } from '../components/CatchLocationCard';
 import { useTheme } from '../services/themeContext';
-import { spacing, typography } from '../theme/typography';
+import { radius, spacing, typography } from '../theme/typography';
 import { catchesStore } from '../storage/storage';
 import { requireFirebase } from '../services/firebase';
 import { deleteCatchEverywhere } from '../services/cloudSync';
@@ -37,7 +37,8 @@ import type { FeedItem } from '../services/catchSync';
 
 type R = RouteProp<LogbookStackParamList, 'CatchDetail'>;
 
-const CATCH_ACCENTS = ['#1A7A9C', '#2E9B5A', '#0E4D64', '#7BB7CC', '#006E8A', '#C49A00'];
+// Harmonized with the Navy & Chartreuse palette (kept in sync with LogbookScreen).
+const CATCH_ACCENTS = ['#16729B', '#1E8E5A', '#115B7D', '#4FA8CE', '#0E2235', '#C77F12'];
 function speciesAccent(name: string): string {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
@@ -146,14 +147,14 @@ export default function CatchDetailScreen() {
     chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
     chip: {
       alignSelf: 'flex-start',
-      paddingHorizontal: spacing.sm + 2,
+      paddingHorizontal: spacing.sm + 4,
       paddingVertical: 4,
-      borderRadius: 8,
+      borderRadius: radius.pill,
       backgroundColor: colors.primarySurface,
       borderWidth: 1,
       borderColor: colors.border,
     },
-    chipText: { ...typography.small, fontWeight: '600', color: colors.primary },
+    chipText: { ...typography.small, fontFamily: 'Manrope_700Bold', color: colors.primary },
     photoTitle: { ...typography.bodyBold, color: colors.text, marginTop: spacing.md, fontSize: 17, lineHeight: 24 },
     notes: { ...typography.body, color: colors.text, marginTop: spacing.md, lineHeight: 22 },
     photo: { width: '100%', borderRadius: 12, marginTop: spacing.md, backgroundColor: colors.surfaceAlt, overflow: 'hidden' },
@@ -386,13 +387,15 @@ export default function CatchDetailScreen() {
 
               {/* Condensed chip row kept only for share-image purposes. */}
               <View style={styles.chipRow}>
-                {item.conditions?.fishingRating != null ? <View style={styles.chip}><Text style={styles.chipText}>{'⭐'.repeat(item.conditions.fishingRating)} риболов</Text></View> : null}
+                {item.conditions?.fishingRating != null ? <View style={styles.chip}><Text style={styles.chipText}>{item.conditions.fishingRating}/5 риболов</Text></View> : null}
                 {item.conditions?.temperatureC != null ? <View style={styles.chip}><Text style={styles.chipText}>{item.conditions.temperatureC}°C</Text></View> : null}
                 {item.conditions?.moonPhaseName ? <View style={styles.chip}><Text style={styles.chipText}>{item.conditions.moonPhaseName}</Text></View> : null}
+                {item.weightKg != null ? <View style={styles.chip}><Text style={styles.chipText}>{item.weightKg} кг</Text></View> : null}
+                {item.released ? <View style={styles.chip}><Text style={[styles.chipText, { color: colors.success }]}>C&R</Text></View> : null}
               </View>
 
               {item.photoTitle ? <Text style={styles.photoTitle}>{item.photoTitle}</Text> : null}
-              <Text style={styles.watermark}>🎣 Риболов</Text>
+              <Text style={styles.watermark}>Риболов</Text>
             </View>
           </ViewShot>
 

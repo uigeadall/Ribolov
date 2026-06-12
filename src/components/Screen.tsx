@@ -9,7 +9,6 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
 import { useTheme } from '../services/themeContext';
 import { spacing } from '../theme/typography';
@@ -22,8 +21,13 @@ type Props = ViewProps & {
   avoidKeyboard?: boolean;
   /** Кои safe area ръбове да се прилагат (виж react-native-safe-area-context). По подразбиране само top. */
   safeAreaEdges?: Edge[];
-  /** Override the background gradient (3-stop tuple). */
-  gradient?: [string, string, string];
+  /** Override на плоския фон (по подразбиране colors.background). */
+  background?: string;
+  /**
+   * Override на status-bar иконите. Екрани с navy лента отгоре подават
+   * 'light-content' дори в светла тема.
+   */
+  statusBarStyle?: 'light-content' | 'dark-content';
 };
 
 export function Screen({
@@ -34,27 +38,22 @@ export function Screen({
   scrollProps,
   avoidKeyboard = true,
   safeAreaEdges = ['top'],
-  gradient,
+  background,
+  statusBarStyle,
   ...rest
 }: Props) {
   const { colors, mode } = useTheme();
 
-  const gradientColors: [string, string, string] = gradient ?? (
-    mode === 'dark'
-      ? ['#030810', '#050C1A', '#0A1628']
-      : ['#D6EEFF', '#EBF5FF', '#FFFFFF']
-  );
-
-  const gradientFirst = gradient?.[0];
+  const bg = background ?? colors.background;
   const styles = useMemo(
     () =>
       StyleSheet.create({
-        safe: { flex: 1, backgroundColor: gradientFirst ?? (mode === 'dark' ? '#030810' : '#EBF5FF') },
+        safe: { flex: 1, backgroundColor: bg },
         fill: { flex: 1 },
         padded: { paddingHorizontal: spacing.xl, paddingTop: spacing.md, paddingBottom: spacing.lg },
         scroll: { flexGrow: 1, paddingBottom: spacing.xxl },
       }),
-    [gradientFirst, mode]
+    [bg]
   );
 
   const inner = (
@@ -94,19 +93,12 @@ export function Screen({
     <SafeAreaView style={styles.safe} edges={safeAreaEdges}>
       {/* Match status-bar icon color to the current theme so a dark→light
           flip doesn't leave white icons on a white bar (and vice versa).
-          On Android this also sets translucent so the gradient bleeds under
-          the bar correctly with edgeToEdgeEnabled in app.json. */}
+          On Android this also sets translucent so the background bleeds
+          under the bar correctly with edgeToEdgeEnabled in app.json. */}
       <StatusBar
-        barStyle={mode === 'dark' ? 'light-content' : 'dark-content'}
+        barStyle={statusBarStyle ?? (mode === 'dark' ? 'light-content' : 'dark-content')}
         backgroundColor="transparent"
         translucent
-      />
-      <LinearGradient
-        colors={gradientColors}
-        start={{ x: 0.25, y: 0 }}
-        end={{ x: 0.75, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
-        pointerEvents="none"
       />
       {body}
     </SafeAreaView>
